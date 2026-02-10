@@ -1,0 +1,78 @@
+---
+title: "Shipping & Logistics"
+description: "Reference for the ShippingService class in the Tybrite SDK."
+---
+
+The `ShippingService` class (accessed via `client.shipping`) handles delivery fee calculations, zone checking, and shipping configuration retrieval for your commerce storefront.
+
+<Note>
+  **Security Note:** All methods in this service require a **Secret Key** to protect your store's logistical configurations and pricing strategies from scraping.
+</Note>
+
+## Methods
+
+### `getShippingZones`
+
+Retrieve all active delivery zones and distance-based pricing tiers. This is useful for displaying delivery availability or potential costs to users early in the shopping journey.
+
+```typescript
+const { pricing_tiers, delivery_zones } = await client.shipping.getShippingZones();
+
+// Display zones on a map or list tiers
+console.log(`Configured ${delivery_zones.length} custom delivery zones.`);
+```
+
+---
+
+### `calculateShipping`
+
+Calculate the exact delivery fee for a customer based on their location and order total.
+
+<CodeGroup>
+
+```typescript Via Place Name
+// Calculate using a human-readable address or landmark
+// Tybrite internally geocodes this to find the best matching zone or tier.
+const shipping = await client.shipping.calculateShipping({
+  requestBody: {
+   place_name: "Westlands, Nairobi, Kenya",
+   order_total: 100000
+  }
+});
+```
+
+```typescript Via Coordinates
+// Calculate using exact GPS coordinates (recommended)
+const shipping = await client.shipping.calculateShipping({
+  requestBody: {
+    latitude: -1.286389,
+    longitude: 36.817223,
+    order_total: 100000 // In smallest unit ($10.00)
+  }
+});
+```
+
+</CodeGroup>
+
+**Response Fields:**
+
+| Field | Description |
+| :--- | :--- |
+| `fee` | The final calculated delivery cost. |
+| `applied_rule` | Indicates calculation logic: `'zone'`, `'distance'`, or `'default'`. |
+| `is_free` | Boolean indicating if a free delivery threshold was reached. |
+| `coordinates` | Returns the resolved [lat, lng] even if you searched via `place_name`. |
+
+### How Fees Are Calculated
+
+Tybrite uses a priority-based logic to determine the shipping fee:
+
+1.  **Custom Zones**: If the location falls within a defined polygon, the specific zone fee is applied.
+2.  **Distance Tiers**: If the customer is outside all zones, the system calculates the distance from your store and matches it to a pricing tier (e.g., 5-10km).
+3.  **Free Delivery**: If the `order_total` exceeds the threshold for that zone/tier, the fee is waived.
+
+---
+
+<Tip>
+  Using `place_name` is ideal for manual address entry, while `latitude`/`longitude` provides the most accurate results for "Use My Location" features.
+</Tip>

@@ -1,0 +1,99 @@
+---
+title: "Messaging & Support"
+description: "Reference for the MessagingService class in the Tybrite SDK."
+---
+
+The `MessagingService` class (accessed via `client.messaging`) enables localized customer support and direct messaging between your storefront and its users.
+
+## Thread Management
+
+### `listThreads`
+
+Retrieve all message threads for the store. You can filter by customer or current status (open/closed).
+
+```typescript
+const { threads } = await client.messaging.listThreads({
+  customerId: 'cust_123', // Optional
+  status: 'open',
+  limit: 50
+});
+```
+
+---
+
+### `getThread`
+
+Retrieve the high-level metadata for a thread, including the subject and current priority.
+
+```typescript
+const thread = await client.messaging.getThread({
+  id: 'thread-uuid-123'
+});
+```
+
+## Messaging Operations
+
+### `getThreadMessages`
+
+Fetch the full chat history of a specific thread.
+
+```typescript
+const { messages } = await client.messaging.getThreadMessages({
+  id: 'thread-uuid-123'
+});
+
+messages.forEach(msg => {
+  // sender_type is either 'customer' or 'agent'
+  console.log(`[${msg.sender_type}] ${msg.message_content}`);
+});
+```
+
+---
+
+### `sendMessage`
+
+Reply to an existing conversation.
+
+<Note>
+  This method requires a **Secret Key** and should be used from your backend or a secure server-side action.
+</Note>
+
+```typescript
+await client.messaging.sendMessage({
+  id: 'thread-uuid-123',
+  requestBody: {
+    message: "Thank you for the update. Here is my receipt.",
+    attachments: [
+      "https://cdn.mystore.com/uploads/receipt.pdf"
+    ]
+  }
+});
+```
+
+---
+
+### `createConversation`
+
+Initiate a brand new support ticket or conversation for a customer.
+
+<Note>
+  This method requires a **Secret Key**.
+</Note>
+
+```typescript
+const thread = await client.messaging.createConversation({
+  requestBody: {
+    customer_id: 'cust_456',
+    subject: "Return Request - Order #555",
+    message: "I would like to initiate a return for my order."
+  }
+});
+
+console.log(`Started new thread: ${thread.id}`);
+```
+
+---
+
+<Tip>
+  **Pro UX Tip:** Use the `unread_count` field from `listThreads` to display a badge on your "Support" icon to notify customers of agent replies.
+</Tip>

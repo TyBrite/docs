@@ -1,0 +1,59 @@
+---
+title: "Gift Cards"
+description: "Reference for the GiftCardsService class in the Tybrite SDK."
+---
+
+The `GiftCardsService` class (accessed via `client.giftCards`) manages the checking and redemption of store-issued gift cards.
+
+## Methods
+
+### `checkGiftCard`
+
+Retrieve the current balance and status of a gift card code. This endpoint is public-safe and can be used in your "Check Balance" UI.
+
+```typescript
+const details = await client.giftCards.checkGiftCard({
+  code: 'TYB-GIFT-123-456'
+});
+
+console.log(`Remaining Balance: ${details.balance}`);
+console.log(`Status: ${details.status}`); // 'active', 'redeemed', or 'expired'
+```
+
+---
+
+### `redeemGiftCard`
+
+Apply a gift card amount to an order. 
+
+<Note>
+  This is a sensitive operation that requires a **Secret Key**. It should be called from your backend during the checkout finalization process.
+</Note>
+
+```typescript
+const result = await client.giftCards.redeemGiftCard({
+  requestBody: {
+    code: 'TYB-GIFT-123-456',
+    amount: 5000, // Amount to deduct from the card
+    order_id: 'ord_789' // Optional: Link the redemption to an order
+  }
+});
+
+if (result.success) {
+  console.log(`Redeemed! Remaining on card: ${result.remaining_balance}`);
+}
+```
+
+## Card Lifecycle
+
+Gift cards in Tybrite move through three states:
+
+*   **Active**: Valid for use and has a non-zero balance.
+*   **Redeemed**: The balance has been fully utilized.
+*   **Expired**: The card has passed its `expires_at` date and can no longer be used, regardless of balance.
+
+---
+
+<Tip>
+  To let customers pay for partial orders with gift cards, use `checkGiftCard` to see the available balance first, then call `redeemGiftCard` for either the full order amount or the maximum available card balance.
+</Tip>

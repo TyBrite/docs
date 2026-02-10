@@ -1,0 +1,54 @@
+---
+title: "Promotions"
+description: "Reference for the PromotionsService class in the Tybrite SDK."
+---
+
+The `PromotionsService` class (accessed via `client.promotions`) handles active store discounts, marketing campaigns, and coupon validation logic.
+
+## Methods
+
+### `listPromotions`
+
+Retrieve a list of promotions based on their lifecycle status. This is useful for building a "Deals" or "Coupons" page on your storefront.
+
+```typescript
+const { promotions } = await client.promotions.listPromotions({
+  status: 'active',
+  cartTotal: '10000', // Filter for promos valid for a 100.00 cart
+  limit: 20
+});
+```
+
+**Filter: `cartTotal`**
+Providing a `cartTotal` allows the engine to pre-filter promotions that the customer is actually eligible for based on their current shopping bag value.
+
+---
+
+### `getPromotion`
+
+Fetch full configuration data for a promotion, including its exact discount logic and validity dates.
+
+```typescript
+const promo = await client.promotions.getPromotion({
+  id: 'promo-uuid-or-code'
+});
+
+if (promo.discount_type === 'percentage') {
+  console.log(`Discount: ${promo.discount_value}% OFF`);
+} else {
+  console.log(`Discount: SAVE ${promo.discount_value}`);
+}
+```
+
+## Discount Types
+
+Tybrite supports two primary promotion types out of the box:
+
+*   **Percentage**: Deducts a relative percentage (e.g., 15%) from the order subtotal.
+*   **Fixed**: Deducts a specific amount (e.g., $10) from the order subtotal.
+
+---
+
+<Tip>
+  **Pro Marketing Tip:** Use the `scheduled` status filter to build a "Coming Soon" deals section to build anticipation for Black Friday or seasonal sales.
+</Tip>

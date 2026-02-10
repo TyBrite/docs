@@ -1,0 +1,105 @@
+---
+title: "Payments"
+description: "Reference for the PaymentsService class in the Tybrite SDK."
+---
+
+The `PaymentsService` class (accessed via `client.payments`) handles the core initialization and status verification for diverse payment providers including Stripe, Paystack, M-Pesa, and Airtel Money.
+
+## Methods
+
+### `getPaymentMethods`
+
+Retrieve all active payment methods configured in your Tybrite Admin Panel. 
+
+```typescript
+const { methods } = await client.payments.getPaymentMethods();
+
+methods.forEach(method => {
+  console.log(`Provider: ${method.provider} | Type: ${method.integration_type}`);
+});
+```
+
+---
+
+### `initializePayment`
+
+Create a payment intent with your chosen provider. This method returns the specific data needed (URLs, references, or keys) to finalize the transaction in the UI.
+
+<Note>
+  This method requires a **Secret Key** and has a specific rate limit of **100 requests per hour** per store.
+</Note>
+
+<CodeGroup>
+
+```typescript Stripe (International)
+const response = await client.payments.initializePayment({
+  requestBody: {
+    provider: 'stripe',
+    amount: 5000, 
+    currency: 'USD',
+    email: 'customer@email.com',
+    success_url: 'https://store.com/thanks',
+    cancel_url: 'https://store.com/checkout'
+  }
+});
+// Redirect to Stripe Checkout
+window.location.href = response.checkout_url;
+```
+
+```typescript M-Pesa (Mobile Money)
+const response = await client.payments.initializePayment({
+  requestBody: {
+    provider: 'mpesa',
+    amount: 1500,
+    phone: '254700111222' // Format: 254XXXXXXXXX
+  }
+});
+// Customer receives an STK Push instantly
+```
+
+```typescript Airtel Money (Mobile Money)
+const response = await client.payments.initializePayment({
+  requestBody: {
+    provider: 'airtel',
+    amount: 1200,
+    phone: '254733444555',
+    country: 'KE' // Supports KE, UG, TZ, RW
+  }
+});
+```
+
+</CodeGroup>
+
+---
+
+### `verifyPayment`
+
+Retrieve the absolute source of truth for a transaction from the provider. You should call this after a customer is redirected back to your site or after an STK Push is completed.
+
+```typescript
+const result = await client.payments.verifyPayment({
+  requestBody: {
+    provider: 'mpesa',
+    reference: 'PAYMENT_REFERENCE_UUID'
+  }
+});
+
+if (result.status === 'paid') {
+  console.log(`Success! M-Pesa Receipt: ${result.provider_reference}`);
+}
+```
+
+## Provider Support Matrix
+
+| Provider | Best For | Requirement | Verification Method |
+| :--- | :--- | :--- | :--- |
+| **Stripe** | International Cards | Email | Session Query |
+| **Paystack**| African Cards | Email | Ref Verification |
+| **M-Pesa** | Kenyan Mobile Money | Phone (254) | STK Query |
+| **Airtel** | Regional Mobile Money| Phone + Country | Collection Query |
+
+---
+
+<Note>
+  **Formatting Tip:** For African mobile money (M-Pesa/Airtel), always provide the phone number in international format without the `+` prefix (e.g., `2547...`).
+</Note>

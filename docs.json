@@ -1,68 +1,92 @@
 {
   "$schema": "https://mintlify.com/docs.json",
+  "name": "Tybrite API Documentation",
   "theme": "mint",
-  "name": "Mint Starter Kit",
   "colors": {
-    "primary": "#16A34A",
+    "primary": "#0D9373",
     "light": "#07C983",
-    "dark": "#15803D"
+    "dark": "#0D9373"
   },
   "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Getting Started",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Introduction",
             "pages": [
               "index",
               "quickstart",
-              "development"
-            ]
-          },
-          {
-            "group": "Customization",
-            "pages": [
-              "essentials/settings",
-              "essentials/navigation"
-            ]
-          },
-          {
-            "group": "Writing content",
-            "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "authentication"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
+        "openapi": "openapi.yaml",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Reference",
             "pages": [
               "api-reference/introduction"
             ]
+          }
+        ]
+      },
+      {
+        "tab": "TypeScript SDK",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "sdk/introduction"
+            ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Core Commerce",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "sdk/api-reference/classes/ProductsService",
+              "sdk/api-reference/classes/OrdersService",
+              "sdk/api-reference/classes/CustomersService",
+              "sdk/api-reference/classes/CartWishlistService"
+            ]
+          },
+          {
+            "group": "Discovery",
+            "pages": [
+              "sdk/api-reference/classes/SearchService",
+              "sdk/api-reference/classes/RecommendationsService",
+              "sdk/api-reference/classes/TaxonomyService",
+              "sdk/api-reference/classes/CmsService"
+            ]
+          },
+          {
+            "group": "Checkout & Logistics",
+            "pages": [
+              "sdk/api-reference/classes/PaymentsService",
+              "sdk/api-reference/classes/ShippingService",
+              "sdk/api-reference/classes/PricingService",
+              "sdk/api-reference/classes/PromotionsService",
+              "sdk/api-reference/classes/GiftCardsService"
+            ]
+          },
+          {
+            "group": "Account & Support",
+            "pages": [
+              "sdk/api-reference/classes/AuthenticationService",
+              "sdk/api-reference/classes/MessagingService"
+            ]
+          },
+          {
+            "group": "Utility",
+            "pages": [
+              "sdk/api-reference/classes/SystemService"
             ]
           }
         ]
@@ -71,52 +95,50 @@
     "global": {
       "anchors": [
         {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
+          "anchor": "Dashboard",
+          "href": "https://app.tybrite.com",
+          "icon": "gauge"
         },
         {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
+          "anchor": "GitHub",
+          "href": "https://github.com/tybrite",
+          "icon": "github"
+        },
+        {
+          "anchor": "Support",
+          "href": "mailto:support@tybrite.com",
+          "icon": "envelope"
         }
       ]
     }
   },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
   "navbar": {
     "links": [
       {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
+        "label": "Dashboard",
+        "href": "https://app.tybrite.com"
       }
     ],
     "primary": {
       "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
+      "label": "Get Started",
+      "href": "/quickstart"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/tybrite",
+      "twitter": "https://twitter.com/tybrite",
+      "linkedin": "https://linkedin.com/company/tybrite"
     }
   },
   "contextual": {
     "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "cursor"
+    ]
   }
 }

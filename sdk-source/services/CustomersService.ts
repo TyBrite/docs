@@ -1,0 +1,117 @@
+/* generated using openapi-typescript-codegen -- do not edit */
+/* istanbul ignore file */
+/* tslint:disable */
+/* eslint-disable */
+import type { Customer } from '../models/Customer';
+import type { CancelablePromise } from '../core/CancelablePromise';
+import type { BaseHttpRequest } from '../core/BaseHttpRequest';
+export class CustomersService {
+    constructor(public readonly httpRequest: BaseHttpRequest) {}
+    /**
+     * Create customer
+     * Requires secret key
+     * @returns Customer Customer created
+     * @throws ApiError
+     */
+    public createCustomer({
+        requestBody,
+    }: {
+        requestBody: {
+            email: string;
+            phone?: string;
+            full_name?: string;
+            customer_type?: 'individual' | 'business';
+        },
+    }): CancelablePromise<Customer> {
+        return this.httpRequest.request({
+            method: 'POST',
+            url: '/v1/customers',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Invalid request - malformed data or missing required fields`,
+                401: `Authentication failed - invalid or missing API key`,
+                403: `Insufficient permissions - operation requires secret key`,
+                429: `Rate limit exceeded`,
+                500: `Internal server error`,
+            },
+        });
+    }
+    /**
+     * Update customer
+     * Partially update customer information. Only provided fields will be updated. Requires secret key.
+     * @returns Customer Customer updated successfully
+     * @throws ApiError
+     */
+    public updateCustomer({
+        id,
+        requestBody,
+    }: {
+        id: string,
+        requestBody?: {
+            email?: string;
+            phone?: string;
+            full_name?: string;
+            name?: string;
+            address?: string;
+            status?: 'active' | 'inactive';
+        },
+    }): CancelablePromise<Customer> {
+        return this.httpRequest.request({
+            method: 'PATCH',
+            url: '/v1/customers/{id}',
+            path: {
+                'id': id,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Invalid request - malformed data or missing required fields`,
+                401: `Authentication failed - invalid or missing API key`,
+                403: `Insufficient permissions - operation requires secret key`,
+                404: `Resource not found`,
+                429: `Rate limit exceeded`,
+                500: `Internal server error`,
+            },
+        });
+    }
+    /**
+     * Purchase gift card for customer
+     * Create a gift card purchase for a customer
+     * @returns any Gift card created
+     * @throws ApiError
+     */
+    public getCustomerGiftCards({
+        id,
+        requestBody,
+    }: {
+        id: string,
+        requestBody: {
+            amount: number;
+            recipient_email?: string;
+            message?: string;
+        },
+    }): CancelablePromise<{
+        code?: string;
+        amount?: number;
+        balance?: number;
+    }> {
+        return this.httpRequest.request({
+            method: 'POST',
+            url: '/v1/customers/{id}/gift-cards',
+            path: {
+                'id': id,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Invalid request - malformed data or missing required fields`,
+                401: `Authentication failed - invalid or missing API key`,
+                403: `Insufficient permissions - operation requires secret key`,
+                404: `Resource not found`,
+                429: `Rate limit exceeded`,
+                500: `Internal server error`,
+            },
+        });
+    }
+}
