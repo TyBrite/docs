@@ -1,33 +1,69 @@
 ---
 title: 'Introduction'
-description: 'Example section for showcasing API endpoints'
+description: 'Reference for the Tybrite API and the Galactic Core infrastructure'
 ---
 
-<Note>
-  If you're not looking to build API reference documentation, you can delete
-  this section by removing the api-reference folder.
-</Note>
+# Galactic Core
 
-## Welcome
+**The Programmable Commerce Platform by Tybrite Labs**
 
-There are two ways to build API documentation: [OpenAPI](https://mintlify.com/docs/api-playground/openapi/setup) and [MDX components](https://mintlify.com/docs/api-playground/mdx/configuration). For the starter kit, we are using the following OpenAPI specification.
+Galactic Core is the programmable interface layer that transforms GalacticOS into a globally accessible **Backend-as-a-Service (BaaS)** for commerce. Rather than rebuilding commerce logic from scratch, Galactic Core re-exposes the operational depth of a production-grade retail system through clean, versioned REST APIs.
 
-<Card
-  title="Plant Store Endpoints"
-  icon="leaf"
-  href="https://github.com/mintlify/starter/blob/main/api-reference/openapi.json"
->
-  View the OpenAPI specification file
-</Card>
+## Why Galactic Core?
+
+Instead of building commerce software, you are building on **commerce infrastructure**. This programmable foundation allows developers to leverage years of operational hardening through simple API calls:
+
+<CardGroup cols={2}>
+  <Card title="Operational Depth" icon="layer-group">
+    Inventory with reorder logic, automatic double-entry accounting, and order reconciliation.
+  </Card>
+  <Card title="Global Velocity" icon="bolt">
+    Edge-optimized delivery with 10-50ms response times and three-tier caching (Edge → Redis → DB).
+  </Card>
+  <Card title="Unified Logic" icon="puzzles-piece">
+    Centralized business rules—no data silos or duplicated logic across different sales channels.
+  </Card>
+  <Card title="Auditability" icon="shield-check">
+    Every state change is tracked and traceable, providing a complete audit trail of commerce operations.
+  </Card>
+</CardGroup>
+
+## Platform Pillars
+
+Our architecture is divided into five main functional pillars, accessible via our REST endpoints:
+
+<CardGroup cols={2}>
+  <Card title="Core Commerce" icon="shopping-bag">
+    High-performance products, collections, orders, and customer management.
+  </Card>
+  <Card title="Discovery" icon="magnifying-glass">
+    AI-powered semantic search and product recommendations using embeddings.
+  </Card>
+  <Card title="Checkout & Logistics" icon="truck">
+    Multi-provider payments (Stripe, M-Pesa, etc.), shipping, and dynamic pricing.
+  </Card>
+  <Card title="Experience & Support" icon="user">
+    Customer authentication, gift cards, promotions, and headless messaging.
+  </Card>
+</CardGroup>
+
+## Performance & Reliability
+
+Galactic Core is designed for high-scale, production-grade applications:
+
+- **Ultra-Low Latency**: Responses are served from the edge to ensure maximum performance globally.
+- **Idempotency**: All write operations (like order creation) support idempotency keys to prevent duplicates on retry.
+- **Field Filtering**: Most list endpoints support the `fields` parameter, allowing you to reduce payload size by up to 90%.
 
 ## Authentication
 
-All API endpoints are authenticated using Bearer tokens and picked up from the specification file.
+All API requests require an API key in the `Authorization` header. We support two distinct key types for security:
 
-```json
-"security": [
-  {
-    "bearerAuth": []
-  }
-]
+- **Publishable Keys (`pk_...`)**: Safe for client-side use in websites and mobile apps. Limited to read-only operations.
+- **Secret Keys (`sk_...`)**: For secure, backend-only environments. grants full read/write access.
+
+```bash
+Authorization: Bearer tybrite_sk_live_YOUR_KEY
 ```
+
+

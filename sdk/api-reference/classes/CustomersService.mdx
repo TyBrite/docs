@@ -1,0 +1,73 @@
+---
+title: "Customers"
+description: "Reference for the CustomersService class in the Tybrite SDK."
+---
+
+The `CustomersService` class (accessed via `client.customers`) provides administrative and logistical control over customer profiles.
+
+## Profile Management
+
+### `createCustomer`
+
+Create a new customer profile. This is ideal for bulk imports or custom CRM integrations. 
+
+<Note>
+  This method requires a **Secret Key** and should only be called from secure server-side environments.
+</Note>
+
+```typescript
+const customer = await client.customers.createCustomer({
+  requestBody: {
+    email: 'client@example.com',
+    full_name: 'John Doe',
+    phone: '254711222333',
+    customer_type: 'individual' // 'individual' or 'business'
+  }
+});
+```
+
+---
+
+### `updateCustomer`
+
+Perform partial updates on a customer record. Only the fields you provide will be modified.
+
+<Note>
+  This method requires a **Secret Key**.
+</Note>
+
+```typescript
+const updated = await client.customers.updateCustomer({
+  id: 'customer-uuid-here',
+  requestBody: {
+    status: 'active',
+    address: '123 Business Way, Nairobi',
+    full_name: 'John Updated'
+  }
+});
+```
+
+## Customer Utilities
+
+### `getCustomerGiftCards`
+
+Issue or purchase a new gift card linked to a specific customer's account.
+
+```typescript
+const giftCard = await client.customers.getCustomerGiftCards({
+  id: 'customer-uuid-here',
+  requestBody: {
+    amount: 100000, // 1000.00 in smallest unit
+    recipient_email: 'friend@example.com',
+    message: 'Enjoy your shopping!'
+  }
+});
+
+console.log(`Generated code: ${giftCard.code}`);
+```
+
+---
+
+<Tip>
+  **Segmentation Tip:** Use the `customer_type` field to distinguish between retail and wholesale (business) customers, which can then be used in the **Pricing Service** to apply different discount rules.
+</Tip>

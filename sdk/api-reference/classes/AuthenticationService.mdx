@@ -1,0 +1,139 @@
+---
+title: "Authenticated Session"
+description: "Reference for the AuthenticationService class in the Tybrite SDK."
+---
+
+The `AuthenticationService` (accessed via `client.auth`) handles customer registration, session management, and passwordless login flows.
+
+## Core Authentication
+
+### `register`
+
+Create a new customer account. Upon success, this method automatically returns session tokens so you can log the user in immediately.
+
+```typescript
+const { user, session } = await client.auth.register({
+  requestBody: {
+    email: 'newuser@example.com',
+    password: 'securePassword123', // Minimum 8 characters
+    full_name: 'Jane Doe',
+    phone: '254700111222'
+  }
+});
+
+console.log(`Access token expires at: ${session.expires_at}`);
+```
+
+---
+
+### `login`
+
+Authenticate an existing customer using their email and password.
+
+```typescript
+const { user, session } = await client.auth.login({
+  requestBody: {
+    email: 'user@example.com',
+    password: 'securePassword123'
+  }
+});
+```
+
+---
+
+### `logout`
+
+Invalidate the current session. This will revoke both the access and refresh tokens on the server.
+
+```typescript
+await client.auth.logout();
+```
+
+## Passwordless Flows (Magic Links & OTP)
+
+### `sendMagicLink`
+
+Send a passwordless authentication link or a 6-digit OTP code to the customer's email. Codes are valid for **15 minutes**.
+
+```typescript
+await client.auth.sendMagicLink({
+  requestBody: {
+    email: 'user@example.com'
+  }
+});
+```
+
+---
+
+### `verifyOtp`
+
+Verify a 6-digit OTP code sent via `sendMagicLink` to complete the authentication process.
+
+```typescript
+const { session } = await client.auth.verifyOtp({
+  requestBody: {
+    email: 'user@example.com',
+    token: '123456' // The 6-digit code from email
+  }
+});
+```
+
+## Password Management
+
+### `resetPassword`
+
+Trigger a password reset email for a customer who has forgotten their password.
+
+```typescript
+await client.auth.resetPassword({
+  requestBody: {
+    email: 'user@example.com'
+  }
+});
+```
+
+---
+
+### `updatePassword`
+
+Update the password for the currently authenticated user. Requires providing the current password for security.
+
+```typescript
+await client.auth.updatePassword({
+  requestBody: {
+    current_password: 'oldPassword123',
+    new_password: 'newSecurePassword456'
+  }
+});
+```
+
+## Session Utilities
+
+### `refreshToken`
+
+Exchange a refresh token for a fresh access token. Access tokens typically expire after **1 hour**.
+
+```typescript
+const newSession = await client.auth.refreshToken({
+  requestBody: {
+    refresh_token: 'existing-refresh-token'
+  }
+});
+```
+
+---
+
+### `getCurrentUser`
+
+Retrieve the profile details of the currently authenticated user.
+
+```typescript
+const { user } = await client.auth.getCurrentUser();
+console.log(`Logged in as: ${user.email}`);
+```
+
+---
+
+<Note>
+  **Token Lifetime:** Access tokens are valid for 1 hour. We recommend implementing an interceptor in your application to automatically call `refreshToken` before the access token expires.
+</Note>

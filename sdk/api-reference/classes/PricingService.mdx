@@ -1,0 +1,62 @@
+---
+title: "Dynamic Pricing"
+description: "Reference for the PricingService class in the Tybrite SDK."
+---
+
+The `PricingService` class (accessed via `client.pricing`) provides high-performance price calculations that account for real-time factors like customer loyalty, regional taxes, and volume-based discounts.
+
+## Methods
+
+### `getProductPrices`
+
+Retrieve resolved prices for a list of products. This method behaves similarly to the `listProducts` endpoint but returns an object optimized for pricing display, including a full breakdown of applied rules.
+
+```typescript
+const response = await client.pricing.getProductPrices({
+  categoryId: 'electronics-uuid',
+  location: 'KE', // Country code (Kenya)
+  region: 'Nairobi', // Specific region for regional pricing
+  customerId: 'cust_999', // Checks for customer-specific or segment discounts
+  quantity: 12 // Checks for volume/wholesale tiers
+});
+
+response.products.forEach(p => {
+  console.log(`Product: ${p.product_id}`);
+  console.log(`Original: ${p.base_price} | Final: ${p.resolved_price}`);
+});
+```
+
+---
+
+### `getProductPrice`
+
+Retrieve an ultra-detailed price breakdown for a single item. Use this on **Product Detail Pages (PDP)** to explain the "Value Proposition" to the customer (e.g., "You saved $20 because of your gold membership").
+
+```typescript
+const pricing = await client.pricing.getProductPrice({
+  id: 'macbook-pro-uuid',
+  customerId: 'gold_member_uuid',
+  quantity: 1
+});
+
+console.log(`Base Price: ${pricing.base_price}`);
+console.log(`Resolved Price: ${pricing.resolved_price}`);
+
+// Detailed breakdown of every rule that affected the price
+console.log(pricing.price_breakdown.discounts); 
+```
+
+## Pricing Engine Logic
+
+Tybrite calculates prices in a specific waterfall priority:
+
+1.  **Direct Overrides**: Manual price overrides set on specific product variants.
+2.  **Customer Segments**: Price rules targeting groups like "Wholesalers" or "Employee Store".
+3.  **Regional Rules**: Tax adjustments or regional price variations (e.g., different prices for USA vs UK).
+4.  **Volume Tiers**: Price reductions triggered by the `quantity` parameter.
+
+---
+
+<Note>
+  The `resolved_price` is the final, legally-compliant price the customer should pay. `base_price` is the MSRP or standard list price before any logic is applied.
+</Note>

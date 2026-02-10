@@ -1,0 +1,82 @@
+---
+title: "CMS (Blog & Lookbooks)"
+description: "Reference for the CmsService class in the Tybrite SDK."
+---
+
+The `CmsService` class (accessed via `client.cms`) provides access to content-driven features like blog posts and lookbooks, allowing you to build rich discovery experiences and content-led commerce.
+
+## Blog Posts
+
+### `listPosts`
+
+Retrieve a paginated list of blog posts. This is ideal for building a "News" or "Magazine" section on your storefront.
+
+```typescript
+const { posts, total } = await client.cms.listPosts({
+  status: 'published',
+  category: 'summer-trends',
+  limit: 10,
+  offset: 0
+});
+
+posts.forEach(post => {
+  console.log(`${post.title} - Published on ${post.published_at}`);
+});
+```
+
+**Post Metadata:**
+The listing response includes light metadata like `excerpt`, `featured_image`, and `slug`. For the full content, use `getPost`.
+
+---
+
+### `getPost`
+
+Retrieve the full content and tags for a specific blog post.
+
+```typescript
+const post = await client.cms.getPost({
+  id: 'post-uuid-or-slug'
+});
+
+// Accessing localized HTML content
+console.log(post.content); 
+```
+
+## Lookbooks
+
+Lookbooks are curated collections of lifestyle images linked to specific products, perfect for "Shop the Look" features.
+
+### `listLookbooks`
+
+Retrieve a list of available lookbooks.
+
+```typescript
+const { lookbooks } = await client.cms.listLookbooks({
+  status: 'published',
+  limit: 12
+});
+```
+
+---
+
+### `getLookbook`
+
+Retrieve the full details of a lookbook, including its image gallery and **linked products**.
+
+```typescript
+const lookbook = await client.cms.getLookbook({
+  id: 'autumn-collection-uuid'
+});
+
+// The 'products' array contains full Product models,
+// making it easy to render "Shop the Look" cards immediately.
+lookbook.products.forEach(product => {
+  console.log(`Includes: ${product.name}`);
+});
+```
+
+---
+
+<Tip>
+  **Pro Discovery Tip:** Use Lookbooks to increase Average Order Value (AOV) by encouraging customers to buy entire outfits or coordinated room sets featured in lifestyle photography.
+</Tip>

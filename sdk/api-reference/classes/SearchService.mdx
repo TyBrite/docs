@@ -1,0 +1,56 @@
+---
+title: "Smart Search"
+description: "Reference for the SearchService class in the Tybrite SDK."
+---
+
+The `SearchService` class (accessed via `client.search`) provides both traditional keyword-based search and advanced AI-powered semantic search capabilities.
+
+## Methods
+
+### `searchProducts`
+
+Fast, keyword-based search optimized for exact matches, SKUs, and product names. It uses case-insensitive partial matching to find relevant results quickly.
+
+```typescript
+const result = await client.search.searchProducts({
+  q: 'iPhone 15', // You can use 'q' or 'query'
+  limit: 10
+});
+
+console.log(`Found ${result.totalResults} results in ${result.searchTimeMs}ms`);
+```
+
+---
+
+### `semanticSearch`
+
+Leverage LLM-powered semantic search that understands intent and context. This allows customers to find products using natural language descriptions even if they don't know the exact product name.
+
+<Note>
+  This method requires a **Secret Key** as it utilizes vector embedding computation.
+</Note>
+
+```typescript
+const result = await client.search.semanticSearch({
+  requestBody: {
+    query: 'something waterproof for hiking in cold weather',
+    categoryId: 'outdoor-gear-uuid', // Optional: scoped search
+    limit: 5
+  }
+});
+```
+
+## Comparison: Text vs. Semantic
+
+| Feature | `searchProducts` (Text) | `semanticSearch` (AI) |
+| :--- | :--- | :--- |
+| **Logic** | ILIKE Pattern matching | Vector Cosine Similarity |
+| **Best For** | SKUs, Model numbers, Exact names | Natural language, Intent, "Vibes" |
+| **Example** | "MacBook Pro", "SKU-990" | "a laptop for professional video editing" |
+| **Speed** | Ultra-fast (< 50ms) | Fast (< 250ms) |
+
+---
+
+<Tip>
+  **Zero-Result Fallback:** A powerful UX pattern is to first call `searchProducts`. If `totalResults` is 0, gracefully fallback to `semanticSearch` to suggest products that might still interest the user.
+</Tip>

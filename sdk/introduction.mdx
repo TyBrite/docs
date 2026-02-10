@@ -1,0 +1,80 @@
+---
+title: "Introduction"
+description: "Get started with the Tybrite TypeScript SDK for building commerce applications."
+---
+
+The Tybrite TypeScript SDK provides a high-level, type-safe interface for interacting with the Tybrite API. It simplifies complex operations like order processing, inventory management, and customer analytics into easy-to-use methods.
+
+## Installation
+
+Install the SDK using your preferred package manager:
+
+<CodeGroup>
+
+```bash npm
+npm install @tybrite/sdk
+```
+
+```bash yarn
+yarn add @tybrite/sdk
+```
+
+```bash pnpm
+pnpm add @tybrite/sdk
+```
+
+</CodeGroup>
+
+## Quick Start
+
+To begin using the SDK, you need to initialize the `Tybrite` client with your API key.
+
+```typescript
+import { Tybrite } from '@tybrite/sdk';
+
+const client = new Tybrite({
+  apiKey: 'tybrite_pk_live_your_key_here',
+});
+```
+
+### Configuration Options
+
+The `Tybrite` constructor accepts a configuration object to customize the client behavior:
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `apiKey` | `string` | Your Tybrite API key (Publishable or Secret). |
+| `BASE` | `string` | Optional. The base URL of the API. Defaults to `https://api.tybritelabs.com`. |
+| `HEADERS` | `Record<string, string>` | Optional. Custom headers to be included in every request. |
+
+## Basic Usage
+
+Once initialized, you can access various commerce services through the client instance.
+
+```typescript
+// List products
+const response = await client.products.listProducts({
+  limit: 20
+});
+
+console.log(response.products);
+```
+
+## Next Steps
+
+Now that you have initialized the client, you can explore the available services:
+
+<CardGroup cols={2}>
+  <Card title="Products" icon="box" href="/sdk/api-reference/classes/ProductsService">
+    Manage your product catalog, categories, and inventory.
+  </Card>
+  <Card title="Orders" icon="cart-shopping" href="/sdk/api-reference/classes/OrdersService">
+    Handle the full lifecycle of commerce orders.
+  </Card>
+  <Card title="Customers" icon="users" href="/sdk/api-reference/classes/CustomersService">
+    Manage customer profiles and analytics.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/sdk/api-reference/classes/AuthenticationService">
+    Secure customer sessions and authentication flows.
+  </Card>
+</CardGroup>

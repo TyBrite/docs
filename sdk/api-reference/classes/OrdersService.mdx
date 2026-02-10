@@ -1,0 +1,86 @@
+---
+title: "Orders"
+description: "Reference for the OrdersService class in the Tybrite SDK."
+---
+
+The `OrdersService` class (accessed via `client.orders`) manages the entire commerce lifecycle, from checkout initialization to fulfillment tracking and accounting integration.
+
+## Core Operations
+
+### `createOrder`
+
+Place a new order on behalf of a customer. 
+
+**Key Security Features:**
+*   **Idempotency**: Use the `idempotencyKey` to safely retry requests without creating duplicate orders. Existing orders are returned if the same key is used within 24 hours.
+*   **HMAC Signing**: Optionally sign requests using your secret key to ensure integrity.
+
+```typescript
+const order = await client.orders.createOrder({
+  idempotencyKey: 'checkout-session-unique-id',
+  requestBody: {
+    customer_id: 'cust_123',
+    items: [
+      {
+        online_product_id: 'prod_456',
+        quantity: 1,
+        unit_price: 15000 // In smallest unit
+      }
+    ],
+    payment_method: 'card', 
+    shipping_metadata: {
+      fee: 200,
+      applied_rule: 'zone',
+      zone_name: 'Downtown'
+    }
+  }
+});
+```
+
+---
+
+### `getOrder`
+
+Retrieve complete details for a specific order.
+
+```typescript
+const order = await client.orders.getOrder({
+  id: 'order-uuid-here'
+});
+```
+
+---
+
+### `updateOrder`
+
+Perform partial updates to an order. This is a powerful endpoint used by warehouse or delivery staff.
+
+<Note>
+  This request requires a **Secret Key** and cannot be called using a publishable key.
+</Note>
+
+```typescript
+const updated = await client.orders.updateOrder({
+  id: 'order-uuid-here',
+  requestBody: {
+    payment_status: 'paid', // Triggers inventory reduction & ledger entries
+    order_status: 'shipped',
+    tracking_number: 'CARGO-123-ABC',
+    estimated_delivery: '2026-02-15T12:00:00Z'
+  }
+});
+```
+
+## Side Effects of `payment_status: 'paid'`
+
+Transitioning an order to the **paid** state is more than just a label update. In production environments, it automatically:
+1.  **Reduces Stock**: Deducts quantity for every item from live inventory.
+2.  **Accounting Entry**: Generates double-entry bookkeeping records (Ledger).
+3.  **Customer Metrics**: Updates Lifetime Value (LTV) and order counts for the customer.
+4.  **Promotions**: Marks coupon usage as "final" in the system.
+
+---
+
+<Note>
+  **Idempotency Tip:** We recommend using your storefront's internal "Checkout Session ID" as the `idempotencyKey` to prevent double-charging or duplicate orders due to network timeouts.
+</Note>

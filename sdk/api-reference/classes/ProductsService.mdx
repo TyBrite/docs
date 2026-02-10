@@ -1,0 +1,101 @@
+---
+title: "Products"
+description: "Reference for the ProductsService class in the Tybrite SDK."
+---
+
+The `ProductsService` class (accessed via `client.products`) is the core discovery engine. It provides high-performance access to your catalog with advanced filtering, field selection, and SEO metadata.
+
+## Catalog Discovery
+
+### `listProducts`
+
+Retrieve a paginated list of products. This method is highly optimized for browse-and-search experiences.
+
+**Bandwidth Optimization:**
+Use the `fields` parameter to request only the data you need (e.g., just name, price, and image). This can reduce response sizes by up to **90%**.
+
+```typescript
+const { products, total } = await client.products.listProducts({
+  search: 'iPhone', // Optional keyword search
+  categoryId: 'phones-uuid', // Filter by category
+  limit: 24,
+  offset: 0,
+  fields: 'product_id,name,price,image,product_slug' // Field selection
+});
+```
+
+**Pagination Logic:**
+Use `total`, `limit`, and `offset` to build your UI:
+*   **Total Pages**: `Math.ceil(total / limit)`
+*   **Current Page**: `Math.floor(offset / limit) + 1`
+
+---
+
+### `getProduct`
+
+Retrieve full details for a single item.
+
+<Tip>
+  This method accepts both **Product IDs** and **Variant IDs**, allowing you to fetch the main product model regardless of which ID you have from a barcode or cart item.
+</Tip>
+
+```typescript
+const product = await client.products.getProduct({
+  id: 'any-product-or-variant-uuid',
+  fields: 'name,description,price,images,attributes.*'
+});
+```
+
+---
+
+### `getProductBySlug`
+
+Retrieve a product for a **Product Detail Page (PDP)** using its SEO-friendly slug. This endpoint returns additional SEO metadata like `seo_title` and `seo_description`.
+
+```typescript
+const product = await client.products.getProductBySlug({
+  id: 'apple-macbook-pro-m3-d8cea' // format: {name}-{short-id}
+});
+
+// Update page head for SEO
+document.title = product.seo_title || product.name;
+```
+
+## Advanced Catalog Features
+
+### `getProductSpecifications`
+
+Retrieve structured technical specifications for a product (e.g., "Screen Size", "Processor").
+
+```typescript
+const specs = await client.products.getProductSpecifications({
+  id: 'product-uuid'
+});
+// Access raw versioned specification data
+console.log(specs.specification_data); 
+```
+
+---
+
+### Collections
+
+Manage curated groups of products that span multiple categories (e.g., "Best Sellers", "Summer Clearance").
+
+```typescript
+// List all active collections
+const { collections } = await client.products.listProductCollections({
+  showOnHomepage: 'true'
+});
+
+// Get items in a specific collection
+const { items } = await client.products.getProductCollectionItems({
+  id: 'flash-sale-uuid',
+  limit: 10
+});
+```
+
+---
+
+<Note>
+  **Pro API Usage:** For high-traffic category pages, always use the `fields` parameter. Fetching only `name,price,image,product_slug` instead of a full Product model (with all descriptions and variants) ensures sub-second page loads on even the slowest mobile connections.
+</Note>

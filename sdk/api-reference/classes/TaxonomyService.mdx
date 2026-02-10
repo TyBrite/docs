@@ -1,0 +1,100 @@
+---
+title: "Taxonomy (Categories)"
+description: "Reference for the TaxonomyService class in the Tybrite SDK."
+---
+
+The `TaxonomyService` class (accessed via `client.taxonomy`) allows you to browse and retrieve the hierarchical structure of your store's product catalog.
+
+## Category Management
+
+### `listCategories`
+
+Retrieve all top-level product categories. This is the starting point for building navigation menus or mega-menus.
+
+```typescript
+const { categories } = await client.taxonomy.listCategories({
+  search: 'clothes', // Optional keyword filter
+  active: true
+});
+
+categories.forEach(cat => {
+  console.log(`${cat.name} (${cat.slug})`);
+});
+```
+
+---
+
+### `getCategory`
+
+Retrieve details for a single category, including its description and metadata.
+
+```typescript
+const category = await client.taxonomy.getCategory({
+  id: 'electronics-uuid'
+});
+```
+
+## Subcategory Management
+
+Subcategories allow for more granular organization within a parent category (e.g., "Laptops" inside "Electronics").
+
+### `listSubcategories`
+
+Retrieve a paginated list of subcategories. You can scope this to a specific parent category.
+
+```typescript
+const { subcategories } = await client.taxonomy.listSubcategories({
+  categoryId: 'electronics-uuid', // Optional: filter by parent
+  active: true,
+  limit: 100
+});
+```
+
+---
+
+### `getSubcategory`
+
+Retrieve details for a specific subcategory.
+
+```typescript
+const sub = await client.taxonomy.getSubcategory({
+  id: 'macbooks-uuid'
+});
+```
+
+## Browsing Products
+
+Once you have a category or subcategory ID, you can use it to filter products using the `ProductsService`.
+
+### Filter by Category
+```typescript
+// Get products in a specific category (e.g., "Electronics")
+const products = await client.products.listProducts({
+  categoryId: 'electronics-uuid',
+  limit: 24
+});
+```
+
+### Filter by Subcategory
+```typescript
+// Get products in a specific subcategory (e.g., "Smartphones")
+const smartphones = await client.products.listProducts({
+  subcategoryId: 'smartphones-uuid'
+});
+```
+
+### Combined Hierarchical Filter
+```typescript
+// Precise filtering for nested navigation
+const results = await client.products.listProducts({
+  categoryId: 'electronics-uuid',
+  subcategoryId: 'smartphones-uuid',
+  isOnlineEnabled: true
+});
+```
+
+---
+
+<Tip>
+  **Pro Navigation Tip:** To build a high-performance navigation menu, fetch all categories and subcategories on your initial app load and cache them locally. Since taxonomy changes infrequently, this will make your store feel instantaneous.
+</Tip>

@@ -1,0 +1,100 @@
+---
+title: "AI Recommendations"
+description: "Reference for the RecommendationsService class in the Tybrite SDK."
+---
+
+The `RecommendationsService` class (accessed via `client.recommendations`) allows you to integrate AI-driven product suggestions into your storefront to increase discovery and conversion.
+
+<Note>
+  **Security Note:** All recommendation requests require a **Secret Key** because they leverage computationally intensive AI models and vector embeddings.
+</Note>
+
+## Methods
+
+### `getRecommendations`
+
+Retrieve curated product suggestions based on various AI models. Use the examples below to see how to implement different recommendation strategies.
+
+<CodeGroup>
+
+```typescript Similar Products
+// Get products similar in meaning or features to a specific item
+const { recommendations } = await client.recommendations.getRecommendations({
+  requestBody: {
+    type: 'similar',
+    productId: 'current-product-uuid',
+    limit: 4
+  }
+});
+```
+
+```typescript Also Bought
+// Frequently purchased together (co-purchase matrix)
+const { recommendations } = await client.recommendations.getRecommendations({
+  requestBody: {
+    type: 'also-bought',
+    productId: 'current-product-uuid',
+    limit: 4
+  }
+});
+```
+
+```typescript Trending
+// Currently popular products based on sales velocity
+const { recommendations } = await client.recommendations.getRecommendations({
+  requestBody: {
+    type: 'trending',
+    limit: 10
+  }
+});
+```
+
+```typescript Personalized
+// Suggestions tailored to a specific customer's preferences and history
+const { recommendations } = await client.recommendations.getRecommendations({
+  requestBody: {
+    type: 'personalized',
+    customerId: 'customer-uuid-here',
+    limit: 6
+  }
+});
+```
+
+```typescript Smart Bundles
+// Semantic + Co-purchase analysis for bundle suggestions
+const { recommendations } = await client.recommendations.getRecommendations({
+  requestBody: {
+    type: 'bundle',
+    productId: 'current-product-uuid',
+    limit: 3
+  }
+});
+```
+
+</CodeGroup>
+
+**Recommendation Types Details:**
+
+| Type | Description | Required Parameters |
+| :--- | :--- | :--- |
+| `similar` | Products with similar features/meaning (Embedding-based). | `productId` |
+| `also-bought` | Products frequently purchased together. | `productId` |
+| `trending` | Global trending products (Velocity-based). | - |
+| `personalized` | Suggestions tailored to a specific user history. | `customerId` |
+| `bundle` | Smart bundle suggestions (Semantic + Co-purchase). | `productId` |
+
+**Parameters:**
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `requestBody` | `object` | Required. The configuration for the recommendation request. |
+| `requestBody.type` | `string` | The recommendation algorithm to use. |
+| `requestBody.productId` | `string` | Required for `similar`, `also-bought`, and `bundle`. |
+| `requestBody.customerId` | `string` | Required for `personalized`. |
+| `requestBody.limit` | `number` | Optional. Maximum number of suggestions to return. |
+
+---
+
+<Note>
+  Recommendation results are often cached for high performance. The response includes a `fromCache` boolean and a `computedAt` ISO timestamp indicating when the recommendations were last generated.
+</Note>

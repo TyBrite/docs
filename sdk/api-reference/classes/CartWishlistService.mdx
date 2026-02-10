@@ -1,0 +1,129 @@
+---
+title: "Cart & Wishlist"
+description: "Reference for the CartWishlistService class in the Tybrite SDK."
+---
+
+The `CartWishlistService` class (accessed via `client.cartWishlist`) manages shopping carts for both authenticated and anonymous users, along with customer wishlists.
+
+## Cart Management
+
+### `getCart`
+
+Retrieve the current contents of a cart. This method supports both logged-in customers and anonymous guest sessions.
+
+```typescript
+const cart = await client.cartWishlist.getCart({
+  customerId: 'customer-uuid', // Optional: for logged-in users
+  xSessionId: 'guest-uuid-123'  // Optional: for tracking guest carts
+});
+
+console.log(`Cart total: ${cart.subtotal}`);
+console.log(`Items in cart: ${cart.total_items}`);
+```
+
+---
+
+### `addToCart`
+
+Add a product to the cart. If the product already exists, its quantity will be incremented.
+
+```typescript
+const response = await client.cartWishlist.addToCart({
+  requestBody: {
+    product_id: 'product-uuid',
+    quantity: 1,
+    customer_id: 'customer-uuid' // Optional
+  }
+});
+```
+
+---
+
+### `updateCartItem`
+
+Update variables for a specific item already in the cart, such as changing the quantity.
+
+```typescript
+await client.cartWishlist.updateCartItem({
+  id: 'cart-item-uuid', // The UUID of the item in the cart, not the product ID
+  requestBody: {
+    quantity: 5
+  }
+});
+```
+
+---
+
+### `clearCart`
+
+Remove all items from the cart in a single operation.
+
+```typescript
+await client.cartWishlist.clearCart({
+  customerId: 'customer-uuid'
+});
+```
+
+---
+
+### `mergeCart`
+
+Combine an anonymous guest cart with a customer's permanent cart. This is typically called immediately after a user logs in to ensure they don't lose items they added while browsing as a guest.
+
+```typescript
+await client.cartWishlist.mergeCart({
+  requestBody: {
+    session_id: 'guest-session-uuid',
+    customer_id: 'authenticated-customer-uuid'
+  }
+});
+```
+
+## Wishlist Management
+
+### `getWishlist`
+
+Retrieve a customer's saved items.
+
+```typescript
+const { items } = await client.cartWishlist.getWishlist({
+  customerId: 'customer-uuid'
+});
+```
+
+---
+
+### `addToWishlist`
+
+Save a product for later. Wishlists require an authenticated `customer_id`.
+
+```typescript
+await client.cartWishlist.addToWishlist({
+  requestBody: {
+    product_id: 'product-uuid',
+    customer_id: 'customer-uuid'
+  }
+});
+```
+
+---
+
+### `moveWishlistToCart`
+
+An atomic operation that removes an item from the wishlist and adds it to the active cart in one request.
+
+```typescript
+await client.cartWishlist.moveWishlistToCart({
+  requestBody: {
+    wishlist_item_id: 'wishlist-item-uuid',
+    customer_id: 'customer-uuid',
+    quantity: 1
+  }
+});
+```
+
+---
+
+<Note>
+  **Pro Tip:** Use `xSessionId` for guest users. Tybrite will persist this guest cart until it is either merged via `mergeCart` or cleared.
+</Note>
