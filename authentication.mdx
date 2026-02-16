@@ -1,0 +1,83 @@
+---
+title: "Authentication"
+description: "Learn how to secure your Tybrite commerce integrations using API keys and HMAC signing."
+---
+
+Tybrite uses a dual-key architecture to ensure maximum security without sacrificing developer experience. Depending on where your code runs, you will use different keys and authentication patterns.
+
+## API Key Types
+
+We support two distinct key types for every store. You can manage these in your [Dashboard](https://app.tybritelabs.com) under **Settings > API Keys**.
+
+### Publishable Keys (`tybrite_pk_...`)
+
+Publishable keys are intended for use in frontend applications, such as React websites, mobile apps, or headless storefronts.
+
+*   **Scope:** Read-only access to non-sensitive data (Products, Categories, Search).
+*   **Security:** Safe to include in client-side bundles or public repositories.
+*   **Usage:**
+    ```typescript
+    const client = new Tybrite({ apiKey: 'tybrite_pk_live_...' });
+    ```
+
+### Secret Keys (`tybrite_sk_...`)
+
+Secret keys are for server-side environments and provide full administrative access to your commerce data.
+
+*   **Scope:** Full Read/Write access (Orders, Customers, Payments, Settings).
+*   **Security:** **Must never be exposed to the client.** Keep them in environment variables (`TYBRITE_SECRET_KEY`).
+*   **Usage:**
+    ```typescript
+    const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+    ```
+
+---
+
+## Authorization Header
+
+For direct REST API calls, provide your key in the `Authorization` header using the `Bearer` scheme:
+
+```bash
+Authorization: Bearer tybrite_sk_live_YOUR_KEY
+```
+
+---
+
+## Advanced Security: HMAC Signing
+
+Sensitive operations, such as fee calculations or payment initialization, require an additional layer of security to prevent request tampering. For these requests, you must provide an `X-Tybrite-Signature` header.
+
+### Generating the Signature
+
+The signature is a **SHA-256 HMAC** hash of the request body, signed with your **Secret Key**.
+
+```typescript
+import { createHmac } from 'crypto';
+
+const body = JSON.stringify(requestData);
+const signature = createHmac('sha256', process.env.TYBRITE_SECRET_KEY)
+  .update(body)
+  .digest('hex');
+
+// Include in your headers:
+// 'X-Tybrite-Signature': signature
+```
+
+Endpoints requiring HMAC signing:
+*   `POST /v1/payments/initialize`
+*   `POST /v1/shipping/calculate`
+*   `POST /v1/orders`
+
+---
+
+## Session Management
+
+When building authenticated customer experiences (like "My Account" or "Quick Checkout"), the Tybrite SDK handles session persistence via `x-auth-token`.
+
+1.  **Login**: Call `client.auth.login()` to receive a session and user object.
+2.  **Persistence**: Store the `session.access_token` securely (e.g., HTTP-only cookies).
+3.  **Requests**: Provide the token in the `x-auth-token` header for protected endpoints.
+
+<Tip>
+  Our TypeScript SDK automatically refreshes sessions if you provide a `refreshToken` interceptor. See the [Authentication Service](/sdk/api-reference/classes/AuthenticationService) for more details.
+</Tip>
