@@ -14,15 +14,15 @@ Retrieve resolved prices for a list of products. This method behaves similarly t
 ```typescript
 const response = await client.pricing.getProductPrices({
   categoryId: 'electronics-uuid',
-  location: 'KE', // Country code (Kenya)
-  region: 'Nairobi', // Specific region for regional pricing
-  customerId: 'cust_999', // Checks for customer-specific or segment discounts
-  quantity: 12 // Checks for volume/wholesale tiers
+  placeName: 'Nairobi, Kenya', // Automatic currency detection (e.g., KES)
+  customerId: 'cust_999', // Checks for personalized/segment discounts
+  quantity: 12, // Checks for volume/wholesale tiers
+  fields: 'product_id,display_price,display_currency,currency_symbol' // Optional
 });
 
 response.products.forEach(p => {
   console.log(`Product: ${p.product_id}`);
-  console.log(`Original: ${p.base_price} | Final: ${p.resolved_price}`);
+  console.log(`Price: ${p.currency_symbol}${p.display_price} ${p.display_currency}`);
 });
 ```
 
@@ -35,14 +35,15 @@ Retrieve an ultra-detailed price breakdown for a single item. Use this on **Prod
 ```typescript
 const pricing = await client.pricing.getProductPrice({
   id: 'macbook-pro-uuid',
-  customerId: 'gold_member_uuid',
+  placeName: 'New York, USA', // Detects USD
+  customerTier: 'Gold', // VIP, Gold, Silver, Bronze
   quantity: 1
 });
 
-console.log(`Base Price: ${pricing.base_price}`);
-console.log(`Resolved Price: ${pricing.resolved_price}`);
+console.log(`Base Price: ${pricing.base_price} ${pricing.base_currency}`);
+console.log(`Target Price: ${pricing.display_price} ${pricing.display_currency}`);
 
-// Detailed breakdown of every rule that affected the price
+// Detailed breakdown of discounts (loyalty, region, etc.)
 console.log(pricing.price_breakdown.discounts); 
 ```
 
@@ -57,6 +58,13 @@ Tybrite calculates prices in a specific waterfall priority:
 
 ---
 
+## Multi-Currency & Geo-Detection
+
+The Pricing Service automatically converts prices based on the customer's location. You can trigger this by providing:
+
+*   **`placeName`**: A human-readable city or country (e.g., "London").
+*   **`latitude`/`longitude`**: Precise GPS coordinates for exact region matching.
+
 <Note>
-  The `resolved_price` is the final, legally-compliant price the customer should pay. `base_price` is the MSRP or standard list price before any logic is applied.
+  The `display_price` is the final, converted, and discounted price the customer sees. `base_price` is the original price in your store's primary currency (e.g., USD) before any adjustments.
 </Note>

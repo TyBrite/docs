@@ -13,12 +13,13 @@ Retrieve the current balance and status of a gift card code. This endpoint is pu
 
 ```typescript
 const details = await client.giftCards.checkGiftCard({
-  code: 'TYB-GIFT-123-456'
+  code: 'TYB-GIFT-123-456',
+  fields: 'balance,status,expiry_date' // Optional
 });
+```
 
 console.log(`Remaining Balance: ${details.balance}`);
 console.log(`Status: ${details.status}`); // 'active', 'redeemed', or 'expired'
-```
 
 ---
 
@@ -35,12 +36,12 @@ const result = await client.giftCards.redeemGiftCard({
   requestBody: {
     code: 'TYB-GIFT-123-456',
     amount: 5000, // Amount to deduct from the card
-    order_id: 'ord_789' // Optional: Link the redemption to an order
+    order_total: 15000 // Optional: Used for usage percentage validation
   }
 });
 
 if (result.success) {
-  console.log(`Redeemed! Remaining on card: ${result.remaining_balance}`);
+  console.log(`Redeemed! Remaining on card: ${result.gift_card.balance}`);
 }
 ```
 

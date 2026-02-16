@@ -19,10 +19,21 @@ Create a new customer profile. This is ideal for bulk imports or custom CRM inte
 const customer = await client.customers.createCustomer({
   requestBody: {
     email: 'client@example.com',
-    full_name: 'John Doe',
+    name: 'John Doe',
     phone: '254711222333',
-    customer_type: 'individual' // 'individual' or 'business'
+    address: '123 Business Way, Nairobi'
   }
+});
+```
+
+---
+
+Retrieve complete details for a specific customer, including store metrics and purchase history.
+
+```typescript
+const customer = await client.customers.getCustomer({
+  id: 'customer-uuid-here',
+  fields: 'name,email,store_metrics.total_spent' // Optional
 });
 ```
 
@@ -42,7 +53,7 @@ const updated = await client.customers.updateCustomer({
   requestBody: {
     status: 'active',
     address: '123 Business Way, Nairobi',
-    full_name: 'John Updated'
+    name: 'John Updated'
   }
 });
 ```
@@ -51,23 +62,25 @@ const updated = await client.customers.updateCustomer({
 
 ### `getCustomerGiftCards`
 
-Issue or purchase a new gift card linked to a specific customer's account.
+Retrieve all gift cards owned by a specific customer.
 
 ```typescript
-const giftCard = await client.customers.getCustomerGiftCards({
+const { gift_cards } = await client.customers.getCustomerGiftCards({
   id: 'customer-uuid-here',
-  requestBody: {
-    amount: 100000, // 1000.00 in smallest unit
-    recipient_email: 'friend@example.com',
-    message: 'Enjoy your shopping!'
-  }
+  fields: 'code,balance,status' // Optional
 });
 
-console.log(`Generated code: ${giftCard.code}`);
+gift_cards.forEach(gc => {
+  console.log(`GC: ${gc.code} | Balance: ${gc.balance}`);
+});
 ```
+
+<Tip>
+  **Pro Tip:** To issue or redeem gift cards, use the separate `GiftCardsService`.
+</Tip>
 
 ---
 
 <Tip>
-  **Segmentation Tip:** Use the `customer_type` field to distinguish between retail and wholesale (business) customers, which can then be used in the **Pricing Service** to apply different discount rules.
+  **Retention Tip:** Use `store_metrics` to identify your top 10% of customers by lifetime value (LTV) and offer them personalized discount codes via the **Promotions Service**.
 </Tip>

@@ -20,7 +20,7 @@ const { products, total } = await client.products.listProducts({
   categoryId: 'phones-uuid', // Filter by category
   limit: 24,
   offset: 0,
-  fields: 'product_id,name,price,image,product_slug' // Field selection
+  fields: 'product_id,name,price,online_images,product_slug' // Field selection
 });
 ```
 
@@ -42,7 +42,7 @@ Retrieve full details for a single item.
 ```typescript
 const product = await client.products.getProduct({
   id: 'any-product-or-variant-uuid',
-  fields: 'name,description,price,images,attributes.*'
+  fields: 'name,description,price,online_images,attributes.*'
 });
 ```
 
@@ -54,7 +54,7 @@ Retrieve a product for a **Product Detail Page (PDP)** using its SEO-friendly sl
 
 ```typescript
 const product = await client.products.getProductBySlug({
-  id: 'apple-macbook-pro-m3-d8cea' // format: {name}-{short-id}
+  slug: 'apple-macbook-pro-m3-d8cea' // format: {name}-{short-id}
 });
 
 // Update page head for SEO
@@ -97,5 +97,5 @@ const { items } = await client.products.getProductCollectionItems({
 ---
 
 <Note>
-  **Pro API Usage:** For high-traffic category pages, always use the `fields` parameter. Fetching only `name,price,image,product_slug` instead of a full Product model (with all descriptions and variants) ensures sub-second page loads on even the slowest mobile connections.
+  **Pro API Usage:** For high-traffic category pages, always use the `fields` parameter. Fetching only `name,price,online_images,product_slug` instead of a full Product model (with all descriptions and variants) ensures sub-second page loads on even the slowest mobile connections.
 </Note>

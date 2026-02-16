@@ -27,13 +27,16 @@ const order = await client.orders.createOrder({
         unit_price: 15000 // In smallest unit
       }
     ],
-    payment_method: 'card', 
+    payment_method: 'stripe', // stripe, paystack, mpesa, airtel_money, cash
     shipping_metadata: {
       fee: 200,
       applied_rule: 'zone',
       zone_name: 'Downtown'
     }
-  }
+  },
+  // Optional HMAC signing for enhanced security
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: 'computed-signature-here'
 });
 ```
 
@@ -45,7 +48,8 @@ Retrieve complete details for a specific order.
 
 ```typescript
 const order = await client.orders.getOrder({
-  id: 'order-uuid-here'
+  id: 'order-uuid-here',
+  fields: 'order_number,total_amount,order_status,items' // Optional
 });
 ```
 
@@ -67,7 +71,10 @@ const updated = await client.orders.updateOrder({
     order_status: 'shipped',
     tracking_number: 'CARGO-123-ABC',
     estimated_delivery: '2026-02-15T12:00:00Z'
-  }
+  },
+  // Optional security headers
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: '...'
 });
 ```
 

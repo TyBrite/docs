@@ -14,9 +14,9 @@ Create a new customer account. Upon success, this method automatically returns s
 ```typescript
 const { user, session } = await client.auth.register({
   requestBody: {
-    email: 'newuser@example.com',
-    password: 'securePassword123', // Minimum 8 characters
-    full_name: 'Jane Doe',
+    email: 'jane@example.com',
+    password: 'securePassword123',
+    name: 'Jane Doe',
     phone: '254700111222'
   }
 });
@@ -99,10 +99,12 @@ await client.auth.resetPassword({
 Update the password for the currently authenticated user. Requires providing the current password for security.
 
 ```typescript
+const token = 'session-access-token-from-login';
+
 await client.auth.updatePassword({
+  xAuthToken: token,
   requestBody: {
-    current_password: 'oldPassword123',
-    new_password: 'newSecurePassword456'
+    password: 'newSecurePassword456'
   }
 });
 ```
@@ -128,7 +130,12 @@ const newSession = await client.auth.refreshToken({
 Retrieve the profile details of the currently authenticated user.
 
 ```typescript
-const { user } = await client.auth.getCurrentUser();
+const token = 'session-access-token-from-login';
+
+const { user } = await client.auth.getCurrentUser({
+  xAuthToken: token
+});
+
 console.log(`Logged in as: ${user.email}`);
 ```
 

@@ -16,7 +16,7 @@ const { posts, total } = await client.cms.listPosts({
   status: 'published',
   category: 'summer-trends',
   limit: 10,
-  offset: 0
+  fields: 'id,title,slug,excerpt,featured_image' // Optional
 });
 
 posts.forEach(post => {
@@ -35,7 +35,8 @@ Retrieve the full content and tags for a specific blog post.
 
 ```typescript
 const post = await client.cms.getPost({
-  id: 'post-uuid-or-slug'
+  slug: 'sustainable-fashion-trends',
+  fields: 'title,content,author_name,published_at' // Optional
 });
 
 // Accessing localized HTML content
@@ -53,7 +54,8 @@ Retrieve a list of available lookbooks.
 ```typescript
 const { lookbooks } = await client.cms.listLookbooks({
   status: 'published',
-  limit: 12
+  limit: 12,
+  fields: 'id,title,slug,featured_image' // Optional
 });
 ```
 
@@ -65,7 +67,8 @@ Retrieve the full details of a lookbook, including its image gallery and **linke
 
 ```typescript
 const lookbook = await client.cms.getLookbook({
-  id: 'autumn-collection-uuid'
+  slug: 'autumn-collection-2025',
+  fields: 'title,description,images,collection_id' // Optional
 });
 
 // The 'products' array contains full Product models,

@@ -15,7 +15,7 @@ Retrieve a list of promotions based on their lifecycle status. This is useful fo
 const { promotions } = await client.promotions.listPromotions({
   status: 'active',
   cartTotal: '10000', // Filter for promos valid for a 100.00 cart
-  limit: 20
+  fields: 'id,name,discount_value,discount_type' // Optional
 });
 ```
 
@@ -30,7 +30,8 @@ Fetch full configuration data for a promotion, including its exact discount logi
 
 ```typescript
 const promo = await client.promotions.getPromotion({
-  id: 'promo-uuid-or-code'
+  id: 'promo-uuid-or-code',
+  fields: 'name,discount_value,discount_type,min_purchase' // Optional
 });
 
 if (promo.discount_type === 'percentage') {

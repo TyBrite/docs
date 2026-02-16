@@ -5,9 +5,7 @@ description: "Reference for the ShippingService class in the Tybrite SDK."
 
 The `ShippingService` class (accessed via `client.shipping`) handles delivery fee calculations, zone checking, and shipping configuration retrieval for your commerce storefront.
 
-<Note>
-  **Security Note:** All methods in this service require a **Secret Key** to protect your store's logistical configurations and pricing strategies from scraping.
-</Note>
+
 
 ## Methods
 
@@ -30,17 +28,6 @@ Calculate the exact delivery fee for a customer based on their location and orde
 
 <CodeGroup>
 
-```typescript Via Place Name
-// Calculate using a human-readable address or landmark
-// Tybrite internally geocodes this to find the best matching zone or tier.
-const shipping = await client.shipping.calculateShipping({
-  requestBody: {
-   place_name: "Westlands, Nairobi, Kenya",
-   order_total: 100000
-  }
-});
-```
-
 ```typescript Via Coordinates
 // Calculate using exact GPS coordinates (recommended)
 const shipping = await client.shipping.calculateShipping({
@@ -48,6 +35,16 @@ const shipping = await client.shipping.calculateShipping({
     latitude: -1.286389,
     longitude: 36.817223,
     order_total: 100000 // In smallest unit ($10.00)
+  }
+});
+```
+
+```typescript Via Coordinates (GPS)
+const shipping = await client.shipping.calculateShipping({
+  requestBody: {
+    latitude: -1.286389,
+    longitude: 36.817223,
+    order_total: 100000
   }
 });
 ```
@@ -74,5 +71,5 @@ Tybrite uses a priority-based logic to determine the shipping fee:
 ---
 
 <Tip>
-  Using `place_name` is ideal for manual address entry, while `latitude`/`longitude` provides the most accurate results for "Use My Location" features.
+  **Precision Tip:** For the best user experience, use the browser's Geolocation API to get high-precision coordinates for the `calculateShipping` method.
 </Tip>
