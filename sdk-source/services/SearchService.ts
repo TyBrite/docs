@@ -2,15 +2,15 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { SearchResult } from '../models/SearchResult';
+import type { SearchResponse } from '../models/SearchResponse';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
 export class SearchService {
     constructor(public readonly httpRequest: BaseHttpRequest) {}
     /**
      * Simple text search
-     * Fast text-based search using PostgreSQL ILIKE
-     * @returns any Success
+     * Fast text-based search using
+     * @returns SearchResponse Success
      * @throws ApiError
      */
     public searchProducts({
@@ -26,13 +26,11 @@ export class SearchService {
          * Search query (alternative to 'q' parameter)
          */
         query?: string,
+        /**
+         * Maximum number of results to return
+         */
         limit?: number,
-    }): CancelablePromise<{
-        query?: string;
-        results?: Array<SearchResult>;
-        totalResults?: number;
-        searchTimeMs?: number;
-    }> {
+    }): CancelablePromise<SearchResponse> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/search',
@@ -54,23 +52,34 @@ export class SearchService {
      * Semantic search using embeddings and cosine similarity.
      * Understands natural language queries like "wireless headphones with noise cancellation".
      *
-     * @returns any Success
+     * **✅ BOTH KEY TYPES SUPPORTED**
+     *
+     * This endpoint works with both secret keys (tybrite_sk_*) and publishable keys (tybrite_pk_*).
+     *
+     * **Note:** Despite using POST method (to support complex request bodies with parameters),
+     * this is a read-only operation. Publishable keys are allowed for client-side search functionality.
+     *
+     * @returns SearchResponse Success
      * @throws ApiError
      */
     public semanticSearch({
         requestBody,
     }: {
         requestBody: {
+            /**
+             * Natural language search query
+             */
             query: string;
+            /**
+             * Maximum number of results to return
+             */
             limit?: number;
-            categoryId?: string;
+            /**
+             * Minimum similarity score threshold (0.0 to 1.0)
+             */
+            minScore?: number;
         },
-    }): CancelablePromise<{
-        query?: string;
-        results?: Array<SearchResult>;
-        totalResults?: number;
-        searchTimeMs?: number;
-    }> {
+    }): CancelablePromise<SearchResponse> {
         return this.httpRequest.request({
             method: 'POST',
             url: '/v1/search',

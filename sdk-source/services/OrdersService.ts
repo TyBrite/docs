@@ -136,17 +136,37 @@ export class OrdersService {
      */
     public getOrder({
         id = '880e8400-e29b-41d4-a716-446655440003',
+        fields,
     }: {
         /**
          * Order UUID
          */
         id?: string,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `order_number`, `customer_id`, `customer_email`, `customer_phone`, `customer_name`
+         * - `billing_address`, `shipping_address`
+         * - `subtotal`, `tax_amount`, `shipping_amount`, `discount_amount`, `total_amount`
+         * - `payment_method`, `payment_status`, `order_status`, `payment_reference`
+         * - `notes`, `tracking_number`, `estimated_delivery`
+         * - `shipped_at`, `delivered_at`
+         * - `created_at`, `updated_at`
+         * - `shipping_metadata`
+         * - `items`
+         *
+         */
+        fields?: string,
     }): CancelablePromise<Order> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/orders/{id}',
             path: {
                 'id': id,
+            },
+            query: {
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,

@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { Message } from '../models/Message';
+import type { Thread } from '../models/Thread';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
 export class MessagingService {
@@ -13,29 +15,30 @@ export class MessagingService {
      */
     public listThreads({
         customerId,
-        status,
-        limit = 50,
+        fields,
     }: {
         customerId?: string,
-        status?: 'open' | 'closed',
-        limit?: number,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `customer_id`, `customer_name`, `customer_email`, `customer_phone`
+         * - `store_name`, `store_avatar`, `order_id`, `product_id`
+         * - `subject`, `thread_type`, `status`, `priority`
+         * - `last_message_at`, `last_message_by`, `unread_count_customer`, `unread_count_store`
+         * - `created_at`, `updated_at`
+         *
+         */
+        fields?: string,
     }): CancelablePromise<{
-        threads?: Array<{
-            id?: string;
-            customer_id?: string;
-            subject?: string;
-            status?: string;
-            unread_count?: number;
-            last_message_at?: string;
-        }>;
+        threads?: Array<Thread>;
     }> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/messaging/threads',
             query: {
                 'customer_id': customerId,
-                'status': status,
-                'limit': limit,
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -47,28 +50,35 @@ export class MessagingService {
     }
     /**
      * Get thread details
-     * @returns any Success
+     * @returns Thread Success
      * @throws ApiError
      */
     public getThread({
         id,
+        fields,
     }: {
         id: string,
-    }): CancelablePromise<{
-        id?: string;
-        customer_id?: string;
-        customer_name?: string;
-        customer_email?: string;
-        subject?: string;
-        status?: string;
-        priority?: string;
-        last_message_at?: string;
-    }> {
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `customer_id`, `customer_name`, `customer_email`, `customer_phone`
+         * - `store_name`, `store_avatar`, `order_id`, `product_id`
+         * - `subject`, `thread_type`, `status`, `priority`
+         * - `last_message_at`, `last_message_by`, `unread_count_customer`, `unread_count_store`
+         * - `created_at`, `updated_at`
+         *
+         */
+        fields?: string,
+    }): CancelablePromise<Thread> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/messaging/threads/{id}',
             path: {
                 'id': id,
+            },
+            query: {
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -86,22 +96,30 @@ export class MessagingService {
      */
     public getThreadMessages({
         id,
+        fields,
     }: {
         id: string,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `message_content`, `message_type`, `sender_type`, `sender_id`
+         * - `sender_name`, `attachments`, `metadata`, `message_status`, `read_at`
+         * - `created_at`, `updated_at`
+         *
+         */
+        fields?: string,
     }): CancelablePromise<{
-        messages?: Array<{
-            id?: string;
-            message_content?: string;
-            sender_type?: string;
-            sender_name?: string;
-            created_at?: string;
-        }>;
+        messages?: Array<Message>;
     }> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/messaging/threads/{id}/messages',
             path: {
                 'id': id,
+            },
+            query: {
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -125,7 +143,6 @@ export class MessagingService {
         id: string,
         requestBody: {
             message: string;
-            attachments?: Array<string>;
         },
     }): CancelablePromise<{
         id?: string;
@@ -161,6 +178,8 @@ export class MessagingService {
     }: {
         requestBody: {
             customer_id: string;
+            customer_name: string;
+            customer_email: string;
             subject: string;
             message: string;
         },

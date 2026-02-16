@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Recommendation } from '../models/Recommendation';
+import type { RecommendationResponse } from '../models/RecommendationResponse';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
 export class RecommendationsService {
@@ -16,7 +16,15 @@ export class RecommendationsService {
      * - **personalized**: Based on customer preferences
      * - **bundle**: Bundle suggestions (semantic + co-purchase)
      *
-     * @returns any Success
+     * **⚠️ SECRET KEY REQUIRED**
+     *
+     * This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+     *
+     * **Why Secret Key?** AI recommendation generation uses computational resources and accesses
+     * machine learning models that should be protected from unauthorized use. This prevents abuse
+     * and ensures fair resource allocation.
+     *
+     * @returns RecommendationResponse Success
      * @throws ApiError
      */
     public getRecommendations({
@@ -34,12 +42,7 @@ export class RecommendationsService {
             customerId?: string;
             limit?: number;
         },
-    }): CancelablePromise<{
-        type?: string;
-        recommendations?: Array<Recommendation>;
-        fromCache?: boolean;
-        computedAt?: string;
-    }> {
+    }): CancelablePromise<RecommendationResponse> {
         return this.httpRequest.request({
             method: 'POST',
             url: '/v1/recommendations',

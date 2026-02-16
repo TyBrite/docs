@@ -2,15 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type Category = {
+export type User = {
     id?: string;
-    name?: string;
-    description?: string;
-    /**
-     * Whether the category is active
-     */
-    active?: boolean;
+    email?: string;
+    email_confirmed?: boolean;
     created_at?: string;
-    updated_at?: string;
 };
 

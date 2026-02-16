@@ -76,12 +76,41 @@ info:
     - Sandbox: `tybrite_sk_test_*`
     - Full read/write access
     - ⚠️ Never expose in client-side code
+    - **Required for:**
+      - All write operations (POST, PUT, PATCH, DELETE)
+      - Authentication endpoints (register, login, logout, etc.)
+      - Payment verification (`POST /v1/payments/verify`)
+      - AI recommendations (`POST /v1/recommendations`)
+      - Order management
+      - Customer management
     
     **Publishable Keys** (Client-Safe)
     - Production: `tybrite_pk_live_*`
     - Sandbox: `tybrite_pk_test_*`
-    - Read-only access
+    - Read-only access (GET requests only)
     - ✅ Safe for client-side use
+    - **Allowed for:**
+      - Product browsing
+      - Search (both GET and POST semantic search)
+      - Category/taxonomy browsing
+      - CMS content retrieval
+      - Pricing queries
+      - Shipping calculations
+      - Cart viewing (read-only)
+    
+    ### Key Type Enforcement
+    
+    Attempting to use a publishable key for write operations or restricted endpoints will return:
+    ```json
+    {
+      "error": {
+        "code": "forbidden",
+        "message": "This operation requires a secret key. Publishable keys have read-only access.",
+        "hint": "Use a secret key (tybrite_sk_*) for write operations"
+      }
+    }
+    ```
+    HTTP Status: 403 Forbidden
     
     ### Obtaining API Keys
     
@@ -115,14 +144,104 @@ info:
 
     ### Endpoint-Specific Limits
 
-    - **Payment Operations**: Additional 100 requests/hour
-    - **Order Operations**: Additional 100 requests/hour
-    - **Authentication**: 10 requests/minute per IP
+    **Payment Operations** (Additional limit on top of global limits):
+    - `POST /v1/payments/initialize`: 100 requests/hour per API key
+    - Applies to both publishable and secret keys
+    - Prevents payment spam and fraud attempts
+    - Returns 429 if exceeded
+
+    **Order Operations** (Enforced via idempotency):
+    - `POST /v1/orders`: Requires `Idempotency-Key` header
+    - Duplicate keys return existing order (not counted against rate limit)
+    - Prevents accidental duplicate orders
+
+    **Authentication Operations**:
+    - All auth endpoints: 10 requests/minute per IP address
+    - Prevents brute force attacks
+    - Applies to login, register, password reset, etc.
 
     Rate limit headers are included in responses:
     - `X-RateLimit-Limit`: Maximum requests allowed
     - `X-RateLimit-Remaining`: Requests remaining
     - `X-RateLimit-Reset`: Unix timestamp when limit resets
+
+    When rate limits are exceeded, the API returns HTTP 429 with error details:
+    ```json
+    {
+      "error": {
+        "code": "rate_limit_exceeded",
+        "message": "Too many requests. Please try again later.",
+        "limit": 100,
+        "remaining": 0,
+        "reset": 1739750400
+      }
+    }
+    ```
+
+    ## Special Headers
+
+    ### Idempotency-Key (Required for Order Creation)
+
+    **Endpoints:** `POST /v1/orders`
+
+    Prevents duplicate order creation on network retries. If you retry a request with the same 
+    idempotency key, the API returns the existing order instead of creating a duplicate.
+
+    ```
+    POST /v1/orders
+    Idempotency-Key: order-2026-02-16-abc123
+    ```
+
+    **Requirements:**
+    - Must be unique per order
+    - Recommended format: `order-{date}-{unique-id}`
+    - Stored for 24 hours
+    - Returns existing order if key matches
+
+    ### x-auth-token (Required for Customer Authentication)
+
+    **Endpoints:**
+    - `GET /v1/auth/me` - Get current authenticated customer
+    - `POST /v1/auth/update-password` - Update customer password
+
+    Contains the authentication token obtained from login/register endpoints.
+
+    ```
+    GET /v1/auth/me
+    Authorization: Bearer tybrite_sk_live_YOUR_API_KEY
+    x-auth-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    ```
+
+    **Flow:**
+    1. Customer logs in via `POST /v1/auth/login`
+    2. Response includes `access_token`
+    3. Use `access_token` as `x-auth-token` header value
+    4. Token expires after session timeout (default 1 hour)
+
+    ### X-Session-Id (Optional for Anonymous Carts)
+
+    **Endpoints:** All cart endpoints (`/v1/cart/*`)
+
+    Enables anonymous cart functionality before customer authentication. Generate a unique 
+    session ID on the client and include it in cart requests.
+
+    ```
+    POST /v1/cart/items
+    Authorization: Bearer tybrite_pk_live_YOUR_API_KEY
+    X-Session-Id: session-abc123-xyz789
+    ```
+
+    **Behavior:**
+    - If `X-Session-Id` provided: Cart associated with session (anonymous)
+    - If `customer_id` provided: Cart associated with customer account
+    - If both provided: `customer_id` takes precedence
+    - If neither provided: Returns 400 error
+
+    **Session Management:**
+    - Generate UUID or random string on client
+    - Store in localStorage/sessionStorage
+    - Persist across page reloads
+    - When customer logs in, migrate cart using `customer_id`
 
     ## Caching & Performance
 
@@ -233,25 +352,101 @@ tags:
   - name: System
     description: API information and health checks
   - name: Authentication
-    description: Customer authentication and sessions
+    description: |
+      Customer authentication and session management.
+      
+      **⚠️ SECRET KEY REQUIRED**: All authentication endpoints require a secret key (tybrite_sk_*).
+      Publishable keys will return 403 Forbidden.
+      
+      These endpoints manage customer accounts, login sessions, password resets, and OTP verification.
+      Use these to build customer-facing authentication flows in your storefront.
+      
+      **Special Headers:**
+      - `x-auth-token`: Required for `GET /v1/auth/me` and `POST /v1/auth/update-password`
+      - Contains the authentication token from login/register response
+      - Token expires after session timeout (default 1 hour)
+      
+      **Rate Limiting:**
+      - All authentication endpoints: 10 requests/minute per IP address
+      - Prevents brute force attacks on customer accounts
   - name: Products
     description: Product catalog management
   - name: Orders
-    description: Order lifecycle management
+    description: |
+      Order lifecycle management with automatic inventory sync and accounting.
+      
+      **Special Headers:**
+      - `Idempotency-Key`: **REQUIRED** for `POST /v1/orders`
+      - Prevents duplicate order creation on network retries
+      - Recommended format: `order-{date}-{unique-id}`
+      - Stored for 24 hours
+      - Retrying with same key returns existing order (not counted against rate limit)
+      
+      **Automatic Processing:**
+      - Inventory automatically decremented on order creation
+      - Double-entry accounting journal entries created automatically
+      - Payment status tracked and updated via webhooks
   - name: Customers
     description: Customer profile management
   - name: Cart & Wishlist
-    description: Shopping cart and wishlist operations
+    description: |
+      Shopping cart and wishlist operations with anonymous session support.
+      
+      **Special Headers:**
+      - `X-Session-Id`: Optional header for anonymous cart functionality
+      - Generate a unique session ID on the client (UUID or random string)
+      - Store in localStorage/sessionStorage for persistence
+      - When customer logs in, migrate cart by providing `customer_id` instead
+      
+      **Cart Association:**
+      - If `X-Session-Id` provided: Cart associated with session (anonymous)
+      - If `customer_id` provided: Cart associated with customer account
+      - If both provided: `customer_id` takes precedence
+      - If neither provided: Returns 400 error
+      
+      **Use Cases:**
+      - Anonymous browsing: Use `X-Session-Id` before customer authentication
+      - Logged-in customers: Use `customer_id` parameter
+      - Cart migration: Switch from session to customer_id after login
   - name: Search
-    description: Semantic search with AI embeddings
+    description: |
+      Semantic search with AI embeddings and simple text search.
+      
+      **Key Type Support:**
+      - `GET /v1/search` (simple text search): Both secret and publishable keys allowed
+      - `POST /v1/search` (semantic search): Both secret and publishable keys allowed
+      
+      Note: Despite using POST method, semantic search is a read-only operation and works
+      with publishable keys. The POST method is used to support complex request bodies.
   - name: Recommendations
-    description: AI-powered product recommendations
+    description: |
+      AI-powered product recommendations using semantic embeddings and collaborative filtering.
+      
+      **⚠️ SECRET KEY REQUIRED**: Recommendation generation requires a secret key (tybrite_sk_*).
+      Publishable keys will return 403 Forbidden.
+      
+      This restriction protects the computational resources and AI model access used for
+      generating personalized recommendations.
   - name: Taxonomy
     description: Categories and subcategories
   - name: CMS
     description: Content management (posts, lookbooks)
   - name: Payments
-    description: Multi-provider payment processing
+    description: |
+      Multi-provider payment processing (Stripe, Paystack, M-Pesa, Airtel Money).
+      
+      **Key Type Requirements:**
+      - `GET /v1/payments/methods`: Both secret and publishable keys allowed
+      - `POST /v1/payments/initialize`: Secret key required
+      - `POST /v1/payments/verify`: **SECRET KEY REQUIRED** (read operation but sensitive)
+      
+      Payment verification requires a secret key because it accesses sensitive payment status
+      information that should not be exposed to client-side code.
+      
+      **Rate Limiting:**
+      - Payment initialization has an additional rate limit of 100 requests/hour per API key
+      - This is on top of the global rate limits (1,000/hour for publishable keys, 10,000/hour for secret keys)
+      - Prevents payment spam and fraud attempts
   - name: Shipping
     description: Shipping zones and delivery cost calculation
   - name: Pricing
@@ -271,8 +466,36 @@ components:
       scheme: bearer
       bearerFormat: API Key
       description: |
+        **API Key Authentication**
+        
         Use your API key in the Authorization header:
-        `Authorization: Bearer tybrite_sk_live_YOUR_KEY`
+        ```
+        Authorization: Bearer tybrite_sk_live_YOUR_KEY
+        ```
+        
+        **Key Types:**
+        
+        **Secret Keys (Server-Side Only):**
+        - Format: `tybrite_sk_live_*` (production) or `tybrite_sk_test_*` (sandbox)
+        - Full read/write access to all endpoints
+        - ⚠️ NEVER expose in client-side code or public repositories
+        - Required for: write operations, authentication, payment verification, AI recommendations
+        
+        **Publishable Keys (Client-Safe):**
+        - Format: `tybrite_pk_live_*` (production) or `tybrite_pk_test_*` (sandbox)
+        - Read-only access (GET requests only, plus POST semantic search)
+        - ✅ Safe for client-side JavaScript, mobile apps, and public code
+        - Allowed for: browsing products, search, CMS content, pricing queries
+        
+        **Endpoint-Specific Requirements:**
+        - **Authentication endpoints** (`/v1/auth/*`): Secret key required
+        - **Payment verification** (`POST /v1/payments/verify`): Secret key required
+        - **AI Recommendations** (`POST /v1/recommendations`): Secret key required
+        - **Semantic Search** (`POST /v1/search`): Both key types allowed (read-only operation)
+        - **All write operations**: Secret key required
+        - **All read operations**: Both key types allowed
+        
+        Using a publishable key for restricted operations returns 403 Forbidden.
   schemas:
     Error:
       type: object
@@ -296,48 +519,105 @@ components:
               example: The 'email' field is required
     Product:
       type: object
+      description: Represents a product in the catalog with both physical and online attributes.
       properties:
         product_id:
           type: string
           format: uuid
           example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
-        id:
-          type: string
-          format: uuid
-          description: Alias for product_id
         variant_id:
           type: string
           format: uuid
+          nullable: true
           example: cc35d16b-fca5-4faa-8699-d3d5d3521bca
         name:
           type: string
           example: Apple MacBook Pro
-        description:
+        online_name:
           type: string
-          example: 13-inch MacBook Pro with M2 chip
-        brand:
-          type: string
-          example: Apple
+          nullable: true
+          description: Name used for online display if different from internal name
+          example: MacBook Pro 13" M2
         sku:
           type: string
           example: APP-MBP-13
+        description:
+          type: string
+          example: 13-inch MacBook Pro with M2 chip
+        online_description:
+          type: string
+          nullable: true
+          description: Rich text description for online store
         price:
           type: number
-          example: 189999
-        selling_price:
+          description: Base price
+          example: 1899.99
+        online_price:
           type: number
-          example: 189999
+          nullable: true
+          description: Price displayed online
+          example: 1899.99
+        online_sale_price:
+          type: number
+          nullable: true
+          description: Discounted price for online store
+          example: 1799.99
+        compare_at_price:
+          type: number
+          nullable: true
+          description: Original price for comparison (strikethrough price)
         stock:
           type: integer
+          description: Physical stock count
           example: 39
-        threshold:
+        online_stock:
           type: integer
+          description: Stock available for online sales
           example: 30
         image:
           type: string
           format: uri
-          description: Primary product image URL
+          description: Primary product image URL (legacy/POS)
           example: https://images.unsplash.com/photo-1517336714731-489689fd1ca8
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Array of image URLs (legacy)
+        online_images:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Array of image URLs for online store
+        product_slug:
+          type: string
+          example: apple-macbook-pro-d8cea
+        is_online_enabled:
+          type: boolean
+          example: true
+        is_active:
+          type: boolean
+          example: true
+        has_variants:
+          type: boolean
+          example: false
+        tracking_mode:
+          type: string
+          enum: [quantity, status, none]
+          example: quantity
+        threshold:
+          type: integer
+          description: Low stock threshold
+          example: 5
+        brand:
+          type: string
+          example: Apple
+        barcode:
+          type: string
+        barcode_type:
+          type: string
         category_id:
           type: string
           format: uuid
@@ -349,46 +629,34 @@ components:
           format: uuid
         subcategory_name:
           type: string
-        product_slug:
+        online_category:
           type: string
-          example: apple-macbook-pro-d8cea
-        is_active:
-          type: boolean
-          example: true
-        has_variants:
-          type: boolean
-          example: false
-        is_default:
-          type: boolean
-          example: true
-        tracking_mode:
-          type: string
-          example: quantity
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        online_product_id:
-          type: string
-          format: uuid
-        online_name:
-          type: string
-        online_description:
-          type: string
-        online_images:
+          description: Merged category/subcategory string
+        tags:
           type: array
           items:
             type: string
-            format: uri
-        online_price:
-          type: number
-        online_sale_price:
-          type: number
-        is_online_enabled:
-          type: boolean
-          example: true
+          example: ["laptop", "apple", "m2"]
+        attributes:
+          type: object
+          additionalProperties: true
+          description: Key-value pairs of product attributes
+          example: { "color": "Space Gray", "memory": "16GB" }
+        variant_attributes:
+          type: object
+          nullable: true
+          description: Specific attributes for this variant
+        shipping_info:
+          type: object
+          properties:
+            weight:
+              type: number
+            dimensions:
+              type: object
+              properties:
+                length: { type: number }
+                width: { type: number }
+                height: { type: number }
         seo_title:
           type: string
         seo_description:
@@ -401,25 +669,58 @@ components:
           type: boolean
         featured_order:
           type: integer
-        tags:
-          type: array
-          items:
-            type: string
-        attributes:
-          type: object
-          additionalProperties: true
-        shipping_info:
-          type: object
-          additionalProperties: true
-        variant_name:
+        created_at:
           type: string
-        variant_attributes:
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        display_currency:
+          type: string
+          description: Store's default currency code
+          example: USD
+        currency_symbol:
+          type: string
+          description: Currency symbol
+          example: $
+        base_price:
+          type: number
+          description: Calculated base price from pricing engine
+        resolved_price:
+          type: number
+          description: Final calculated price including discounts/rules
+        price_breakdown:
           type: object
-          additionalProperties: true
-        barcode:
+          description: Detailed breakdown of price calculation rules
+    ProductCollection:
+      type: object
+      properties:
+        id:
           type: string
-        barcode_type:
+          format: uuid
+        name:
           type: string
+          example: Summer Sale
+        slug:
+          type: string
+          example: summer-sale
+        description:
+          type: string
+        collection_type:
+          type: string
+          enum: [manual, automated, smart]
+        is_active:
+          type: boolean
+        show_on_homepage:
+          type: boolean
+        display_priority:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     Category:
       type: object
       properties:
@@ -431,14 +732,9 @@ components:
           example: Electronics
         description:
           type: string
-        is_active:
+        active:
           type: boolean
-        product_count:
-          type: integer
-          example: 234
-        subcategory_count:
-          type: integer
-          example: 12
+          description: Whether the category is active
         created_at:
           type: string
           format: date-time
@@ -459,11 +755,9 @@ components:
           example: Smartphones
         description:
           type: string
-        is_active:
+        active:
           type: boolean
-        product_count:
-          type: integer
-          example: 89
+          description: Whether the subcategory is active
         created_at:
           type: string
           format: date-time
@@ -508,7 +802,15 @@ components:
           example: pending
         payment_method:
           type: string
-          example: card
+          enum:
+            - stripe
+            - paystack
+            - mpesa
+            - airtel
+            - cash
+            - bank_transfer
+          description: Method used for payment
+          example: stripe
         payment_reference:
           type: string
         subtotal:
@@ -717,79 +1019,47 @@ components:
         id:
           type: string
           format: uuid
+        name:
+          type: string
         email:
           type: string
           format: email
         phone:
           type: string
-        full_name:
+        address:
           type: string
-        customer_type:
+        status:
           type: string
-          enum:
-            - individual
-            - business
-        loyalty_points:
+          enum: [active, inactive]
+        join_date:
+          type: string
+          format: date
+        total_purchases:
           type: integer
+        last_purchase:
+          type: string
+          format: date-time
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
-    CartItem:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        product_id:
-          type: string
-          format: uuid
-        product_name:
-          type: string
-        product_sku:
-          type: string
-        product_image:
-          type: string
-          format: uri
-        quantity:
-          type: integer
-          example: 2
-        unit_price:
-          type: number
-          format: float
-          example: 89999
-        total_price:
-          type: number
-          format: float
-          example: 179998
-    Recommendation:
-      type: object
-      properties:
-        productId:
-          type: string
-          format: uuid
-        score:
-          type: number
-          format: float
-          example: 0.93
-        reason:
-          type: string
-          example: Similar product based on description and attributes
-    SearchResult:
-      type: object
-      properties:
-        productId:
-          type: string
-          format: uuid
-        score:
-          type: number
-          format: float
-          example: 0.93
-        matchReason:
-          type: string
-          example: Semantic match
+        store_metrics:
+          type: object
+          properties:
+            total_purchases:
+              type: integer
+            total_spent:
+              type: number
+            first_purchase_date:
+              type: string
+            last_purchase_date:
+              type: string
+            status:
+              type: string
+            preferred_store:
+              type: string
     DeliveryPricingTier:
       type: object
       description: Distance-based delivery pricing tier
@@ -918,6 +1188,415 @@ components:
               format: double
               example: 37.013954
               description: Customer longitude
+    SearchResult:
+      type: object
+      properties:
+        productId:
+          type: string
+          format: uuid
+        score:
+          type: number
+          format: float
+          example: 0.93
+        matchReason:
+          type: string
+          example: Semantic match
+    SearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResult"
+        totalResults:
+          type: integer
+        searchTimeMs:
+          type: integer
+        message:
+          type: string
+    Recommendation:
+      type: object
+      properties:
+        productId:
+          type: string
+          format: uuid
+        score:
+          type: number
+          format: float
+          example: 0.93
+        reason:
+          type: string
+          example: Similar product based on description and attributes
+    RecommendationResponse:
+      type: object
+      properties:
+        type:
+          type: string
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Recommendation"
+        fromCache:
+          type: boolean
+        computedAt:
+          type: string
+          format: date-time
+        fallbackUsed:
+          type: string
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        email_confirmed:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    Session:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+        expires_at:
+          type: integer
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        slug:
+          type: string
+        excerpt:
+          type: string
+        content:
+          type: string
+        featured_image:
+          type: string
+        category_id:
+          type: string
+          format: uuid
+        category_name:
+          type: string
+        category_slug:
+          type: string
+        category_icon:
+          type: string
+        author_name:
+          type: string
+        author_avatar:
+          type: string
+        status:
+          type: string
+          enum: [published, draft, archived]
+        published_at:
+          type: string
+          format: date-time
+        view_count:
+          type: integer
+        product_count:
+          type: integer
+        seo_title:
+          type: string
+        seo_description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        products:
+          type: array
+          items:
+            type: object
+        lookbooks:
+          type: array
+          items:
+            type: object
+    Lookbook:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        featured_image:
+          type: string
+        collection_id:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        images:
+          type: array
+          items:
+            type: object
+    CartItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        product_name:
+          type: string
+        product_sku:
+          type: string
+        product_image:
+          type: string
+          format: uri
+          nullable: true
+        quantity:
+          type: integer
+          example: 2
+        unit_price:
+          type: number
+          format: float
+          example: 89999
+        total_price:
+          type: number
+          format: float
+          example: 179998
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WishlistItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        product_name:
+          type: string
+        product_sku:
+          type: string
+        product_price:
+          type: number
+        product_image:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Thread:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+        customer_name:
+          type: string
+        customer_email:
+          type: string
+        customer_phone:
+          type: string
+        store_name:
+          type: string
+        store_avatar:
+          type: string
+        order_id:
+          type: string
+        product_id:
+          type: string
+        subject:
+          type: string
+        thread_type:
+          type: string
+        status:
+          type: string
+          enum: [active, closed, archived]
+        priority:
+          type: string
+          enum: [normal, high, urgent]
+        last_message_at:
+          type: string
+          format: date-time
+        last_message_by:
+          type: string
+          enum: [customer, store, system]
+        unread_count_customer:
+          type: integer
+        unread_count_store:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        message_content:
+          type: string
+        message_type:
+          type: string
+          enum: [text, image, file]
+        sender_type:
+          type: string
+          enum: [customer, store, system]
+        sender_id:
+          type: string
+        sender_name:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+        message_status:
+          type: string
+          enum: [sent, delivered, read]
+        read_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    GiftCard:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        balance:
+          type: number
+        initial_balance:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [active, full_redeemed, inactive]
+        expiry_date:
+          type: string
+          format: date
+        customer_id:
+          type: string
+          format: uuid
+        issued_date:
+          type: string
+          format: date
+        last_used_date:
+          type: string
+          format: date-time
+        maximum_usage_percentage:
+          type: number
+        redemption_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Promotion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [fixed, discount, bundle, bogo]
+        display_type:
+          type: string
+        description:
+          type: string
+        discount_value:
+          type: number
+        discount_type:
+          type: string
+          enum: [percentage, fixed]
+        min_purchase:
+          type: number
+        max_discount:
+          type: number
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, inactive, scheduled, expired]
+        usage_limit:
+          type: integer
+        usage_per_customer:
+          type: integer
+        bundle_products:
+          type: array
+          items:
+            type: object
+        bogo_required_products:
+          type: array
+          items:
+            type: object
+        bogo_free_products:
+          type: array
+          items:
+            type: object
+        free_products:
+          type: array
+          items:
+            type: object
+        applicable_categories:
+          type: array
+          items:
+            type: string
+        applicable_products:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
   parameters:
     LimitParam:
       name: limit
@@ -1112,7 +1791,11 @@ paths:
       tags:
         - Products
       summary: List products with filtering and pagination
-      description: Retrieve a paginated list of products with support for filtering, search, and field selection.
+      description: |
+        Retrieve a paginated list of products with support for filtering, search, and field selection.
+        
+        **Currency:** All prices returned in store's default currency. For multi-currency support with 
+        geographic detection, use the `/v1/prices/products` endpoint instead.
         
       security:
         - BearerAuth: []
@@ -1195,57 +1878,8 @@ paths:
             type: string
             format: uuid
           example: 86c9cb06-615c-4ca1-a863-32db101d1f58
-        - name: is_online_enabled
-          in: query
-          description: |
-            Filter products by online availability status.
-            
-            **Values:**
-            - `true` - Only show products enabled for online sales
-            - `false` - Only show products disabled for online sales
-            - Omit parameter - Show all products regardless of online status
-            
-            **Use Case:** Filter products that are available for e-commerce vs. in-store only.
-            
-            **Example:**
-            ```typescript
-            // Get only products available for online purchase
-            const onlineProducts = await client.products.listProducts({
-              is_online_enabled: true
-            });
-            ```
-          schema:
-            type: boolean
-          example: true
-        - name: featured
-          in: query
-          description: |
-            Filter to show only featured products (typically displayed on homepage or promotional sections).
-            
-            **Values:**
-            - `true` - Only show featured products
-            - `false` - Only show non-featured products
-            - Omit parameter - Show all products
-            
-            **Use Cases:**
-            - Homepage featured product sections
-            - Promotional banners
-            - "Editor's Picks" sections
-            
-            **Sorting:** Featured products can be manually ordered using the `featured_order` field.
-            
-            **Example:**
-            ```typescript
-            // Get featured products for homepage
-            const featured = await client.products.listProducts({
-              featured: true,
-              limit: 8,
-              fields: 'product_id,name,price,image,featured_order'
-            });
-            ```
-          schema:
-            type: boolean
-          example: true
+
+
         - name: limit
           in: query
           description: |
@@ -1330,7 +1964,7 @@ paths:
             
             **Allowed Fields:**
             - **Core:** `product_id`, `variant_id`, `name`, `sku`, `description`
-            - **Pricing:** `price`, `selling_price`, `online_price`, `online_sale_price`
+            - **Pricing:** `price`, `selling_price`, `online_price`, `online_sale_price`, `display_currency`, `currency_symbol`
             - **Inventory:** `stock`, `threshold`, `last_restocked`
             - **Media:** `images`, `online_images`
             - **SEO:** `product_slug`, `seo_title`, `seo_description`, `seo_keywords`
@@ -1495,7 +2129,11 @@ paths:
       tags:
         - Products
       summary: Get product by ID or variant ID
-      description: Retrieve complete details for a single product using either its product ID or variant ID.
+      description: |
+        Retrieve complete details for a single product using either its product ID or variant ID.
+        
+        **Currency:** Prices returned in store's default currency. For multi-currency support with 
+        geographic detection, use the `/v1/prices/products/{id}` endpoint instead.
         
       security:
         - BearerAuth: []
@@ -1664,18 +2302,22 @@ paths:
           $ref: "#/components/responses/RateLimitError"
         "500":
           $ref: "#/components/responses/ServerError"
-  /v1/products/by-slug/{id}:
+  /v1/products/by-slug/{slug}:
     get:
       operationId: getProductBySlug
       tags:
         - Products
       summary: Get product by SEO-friendly slug
-      description: Retrieve product information using a human-readable, SEO-friendly slug.
+      description: |
+        Retrieve product information using a human-readable, SEO-friendly slug.
+        
+        **Currency:** Prices returned in store's default currency. For multi-currency support with 
+        geographic detection, use the `/v1/prices/products/{id}` endpoint instead.
         
       security:
         - BearerAuth: []
       parameters:
-        - name: id
+        - name: slug
           in: path
           required: true
           description: |
@@ -2136,6 +2778,12 @@ paths:
           schema:
             type: boolean
           description: Filter by active status
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of fields to include in the response.
+          example: id,name
       responses:
         "200":
           description: Success
@@ -2171,6 +2819,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of fields to include in the response.
+          example: id,name
       responses:
         "200":
           description: Success
@@ -2221,6 +2875,12 @@ paths:
           schema:
             type: integer
             default: 0
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of fields to include in the response.
+          example: id,name
       responses:
         "200":
           description: Success
@@ -2256,6 +2916,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of fields to include in the response.
+          example: id,name
       responses:
         "200":
           description: Success
@@ -2475,6 +3141,24 @@ paths:
             format: uuid
             default: 880e8400-e29b-41d4-a716-446655440003
           example: 880e8400-e29b-41d4-a716-446655440003
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `order_number`, `customer_id`, `customer_email`, `customer_phone`, `customer_name`
+            - `billing_address`, `shipping_address`
+            - `subtotal`, `tax_amount`, `shipping_amount`, `discount_amount`, `total_amount`
+            - `payment_method`, `payment_status`, `order_status`, `payment_reference`
+            - `notes`, `tracking_number`, `estimated_delivery`
+            - `shipped_at`, `delivered_at`
+            - `created_at`, `updated_at`
+            - `shipping_metadata`
+            - `items`
+          example: order_number,order_status,total_amount
       responses:
         "200":
           description: Successfully retrieved order
@@ -2712,6 +3396,19 @@ paths:
         **Key Type Support:**
         - ✅ Secret keys (full access)
         - ✅ Publishable keys (read-only)
+      parameters:
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `provider`, `display_name`, `type`
+            - `supported_currencies`
+            - `environment`, `is_configured`
+          example: provider,display_name,type
       security:
         - BearerAuth: []
       responses:
@@ -3101,6 +3798,14 @@ paths:
       description: |
         Verify the status of a payment transaction using the payment reference.
         This endpoint queries the payment provider's API to get the current status.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        
+        **Why Secret Key?** Payment verification accesses sensitive transaction data and provider APIs
+        that should only be called from secure server-side environments. This prevents unauthorized
+        access to payment status information.
 
         **Provider-Specific Verification:**
 
@@ -3124,11 +3829,8 @@ paths:
         - Returns transaction status and details
         - Includes Airtel transaction ID if successful
 
-        **Key Type Support:**
-        - ✅ Secret keys (full access)
-        - ✅ Publishable keys (read-only verification)
-
-        **Note:** This is a read operation even though it uses POST method.
+        **Note:** Despite using POST method (for request body), this is a read operation that
+        queries external payment provider APIs.
       security:
         - BearerAuth: []
       requestBody:
@@ -3311,20 +4013,43 @@ paths:
       tags:
         - Cart & Wishlist
       summary: Get cart
-      description: Retrieve cart contents for customer or session
+      description: |
+        Retrieve cart contents for customer or session.
+        
+        **Cart Association:**
+        - Provide `X-Session-Id` header for anonymous carts (before customer login)
+        - Provide `customer_id` query parameter for authenticated customer carts
+        - If both provided, `customer_id` takes precedence
+        - If neither provided, returns 400 error
+        
+        **Anonymous Cart Flow:**
+        ```
+        GET /v1/cart
+        Authorization: Bearer tybrite_pk_live_YOUR_API_KEY
+        X-Session-Id: session-abc123-xyz789
+        ```
+        
+        **Authenticated Cart Flow:**
+        ```
+        GET /v1/cart?customer_id=550e8400-e29b-41d4-a716-446655440000
+        Authorization: Bearer tybrite_pk_live_YOUR_API_KEY
+        ```
       security:
         - BearerAuth: []
       parameters:
         - name: customer_id
           in: query
+          description: Customer UUID for authenticated carts
           schema:
             type: string
             format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
         - name: X-Session-Id
           in: header
-          description: Session ID for anonymous carts
+          description: Session ID for anonymous carts (UUID or random string stored in localStorage)
           schema:
             type: string
+          example: session-abc123-xyz789
       responses:
         "200":
           description: Success
@@ -3394,8 +4119,49 @@ paths:
       tags:
         - Cart & Wishlist
       summary: Add to cart
+      description: |
+        Add item to cart with automatic stock checking.
+        
+        **Cart Association:**
+        - Provide `X-Session-Id` header for anonymous carts (before customer login)
+        - Provide `customer_id` in request body for authenticated customer carts
+        - If both provided, `customer_id` takes precedence
+        - If neither provided, returns 400 error
+        
+        **Anonymous Cart Example:**
+        ```
+        POST /v1/cart/items
+        Authorization: Bearer tybrite_pk_live_YOUR_API_KEY
+        X-Session-Id: session-abc123-xyz789
+        Content-Type: application/json
+        
+        {
+          "product_id": "550e8400-e29b-41d4-a716-446655440000",
+          "quantity": 2
+        }
+        ```
+        
+        **Authenticated Cart Example:**
+        ```
+        POST /v1/cart/items
+        Authorization: Bearer tybrite_sk_live_YOUR_API_KEY
+        Content-Type: application/json
+        
+        {
+          "product_id": "550e8400-e29b-41d4-a716-446655440000",
+          "quantity": 2,
+          "customer_id": "650e8400-e29b-41d4-a716-446655440000"
+        }
+        ```
       security:
         - BearerAuth: []
+      parameters:
+        - name: X-Session-Id
+          in: header
+          description: Session ID for anonymous carts (UUID or random string stored in localStorage)
+          schema:
+            type: string
+          example: session-abc123-xyz789
       requestBody:
         required: true
         content:
@@ -3483,6 +4249,62 @@ paths:
           $ref: "#/components/responses/RateLimitError"
         "500":
           $ref: "#/components/responses/ServerError"
+    delete:
+      operationId: removeCartItem
+      tags:
+        - Cart & Wishlist
+      summary: Remove cart item
+      description: |
+        Remove a specific item from the cart by its cart item ID.
+        
+        **Key Type Support:**
+        - ✅ Secret keys (full access)
+        - ❌ Publishable keys (forbidden - returns 403)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Cart item UUID
+          schema:
+            type: string
+            format: uuid
+          example: 990e8400-e29b-41d4-a716-446655440004
+      responses:
+        "200":
+          description: Item removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Cart item removed successfully
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          description: Cart item not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: not_found
+                  message: Cart item not found
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
   /v1/cart/merge:
     post:
       operationId: mergeCart
@@ -3546,25 +4368,7 @@ paths:
                   items:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        product_id:
-                          type: string
-                          format: uuid
-                        product_name:
-                          type: string
-                        product_sku:
-                          type: string
-                        product_price:
-                          type: number
-                        product_image:
-                          type: string
-                        created_at:
-                          type: string
-                          format: date-time
+                      $ref: "#/components/schemas/WishlistItem"
                   total_items:
                     type: integer
                   customer_id:
@@ -3703,6 +4507,14 @@ paths:
         - **trending**: Currently trending products (velocity-based)
         - **personalized**: Based on customer preferences
         - **bundle**: Bundle suggestions (semantic + co-purchase)
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        
+        **Why Secret Key?** AI recommendation generation uses computational resources and accesses
+        machine learning models that should be protected from unauthorized use. This prevents abuse
+        and ensures fair resource allocation.
       security:
         - BearerAuth: []
       requestBody:
@@ -3760,19 +4572,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  type:
-                    type: string
-                  recommendations:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Recommendation"
-                  fromCache:
-                    type: boolean
-                  computedAt:
-                    type: string
-                    format: date-time
+                $ref: "#/components/schemas/RecommendationResponse"
               example:
                 type: similar
                 recommendations:
@@ -3800,7 +4600,7 @@ paths:
       tags:
         - Search
       summary: Simple text search
-      description: Fast text-based search using PostgreSQL ILIKE
+      description: Fast text-based search using 
       security:
         - BearerAuth: []
       parameters:
@@ -3820,24 +4620,15 @@ paths:
             type: integer
             default: 20
             maximum: 100
+            minimum: 1
+          description: Maximum number of results to return
       responses:
         "200":
           description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  query:
-                    type: string
-                  results:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/SearchResult"
-                  totalResults:
-                    type: integer
-                  searchTimeMs:
-                    type: integer
+                $ref: "#/components/schemas/SearchResponse"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -3854,6 +4645,13 @@ paths:
       description: |
         Semantic search using embeddings and cosine similarity.
         Understands natural language queries like "wireless headphones with noise cancellation".
+        
+        **✅ BOTH KEY TYPES SUPPORTED**
+        
+        This endpoint works with both secret keys (tybrite_sk_*) and publishable keys (tybrite_pk_*).
+        
+        **Note:** Despite using POST method (to support complex request bodies with parameters),
+        this is a read-only operation. Publishable keys are allowed for client-side search functionality.
       security:
         - BearerAuth: []
       requestBody:
@@ -3867,34 +4665,31 @@ paths:
               properties:
                 query:
                   type: string
+                  description: Natural language search query
                 limit:
                   type: integer
                   default: 20
                   maximum: 100
-                categoryId:
-                  type: string
-                  format: uuid
+                  minimum: 1
+                  description: Maximum number of results to return
+                minScore:
+                  type: number
+                  format: float
+                  default: 0.3
+                  minimum: 0
+                  maximum: 1
+                  description: Minimum similarity score threshold (0.0 to 1.0)
             example:
               query: wireless headphones with noise cancellation
               limit: 10
+              minScore: 0.5
       responses:
         "200":
           description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  query:
-                    type: string
-                  results:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/SearchResult"
-                  totalResults:
-                    type: integer
-                  searchTimeMs:
-                    type: integer
+                $ref: "#/components/schemas/SearchResponse"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -3914,6 +4709,13 @@ paths:
       description: |
         Create a new customer account with email and password.
         Returns user details and authentication tokens upon successful registration.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        
+        **Why Secret Key?** Authentication endpoints create and manage user sessions, which should
+        only be performed from secure server-side environments.
       security:
         - BearerAuth: []
       requestBody:
@@ -3936,7 +4738,7 @@ paths:
                   minLength: 8
                   description: Password (minimum 8 characters)
                   example: SecurePassword123!
-                full_name:
+                name:
                   type: string
                   description: Customer full name
                   example: Jane Doe
@@ -3947,7 +4749,7 @@ paths:
             example:
               email: jane.doe@example.com
               password: SecurePassword123!
-              full_name: Jane Doe
+              name: Jane Doe
               phone: "+1234567890"
       responses:
         "200":
@@ -3958,30 +4760,11 @@ paths:
                 type: object
                 properties:
                   user:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                        format: uuid
-                        example: 550e8400-e29b-41d4-a716-446655440000
-                      email:
-                        type: string
-                        example: jane.doe@example.com
+                    $ref: "#/components/schemas/User"
+                  customer:
+                    $ref: "#/components/schemas/Customer"
                   session:
-                    type: object
-                    properties:
-                      access_token:
-                        type: string
-                        description: JWT access token (valid for 1 hour)
-                        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-                      refresh_token:
-                        type: string
-                        description: Refresh token for obtaining new access tokens
-                        example: v1.MjAyNi0wMi0wM1QxMDozMDowMFo...
-                      expires_at:
-                        type: integer
-                        description: Unix timestamp when access token expires
-                        example: 1706922000
+                    $ref: "#/components/schemas/Session"
         "400":
           description: Invalid request (email already exists, weak password, etc.)
         "401":
@@ -4001,6 +4784,10 @@ paths:
       description: |
         Authenticate using email and password credentials.
         Returns user details and session tokens upon successful authentication.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
       security:
         - BearerAuth: []
       requestBody:
@@ -4034,27 +4821,11 @@ paths:
                 type: object
                 properties:
                   user:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                        format: uuid
-                        example: 550e8400-e29b-41d4-a716-446655440000
-                      email:
-                        type: string
-                        example: jane.doe@example.com
+                    $ref: "#/components/schemas/User"
+                  customer:
+                    $ref: "#/components/schemas/Customer"
                   session:
-                    type: object
-                    properties:
-                      access_token:
-                        type: string
-                        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-                      refresh_token:
-                        type: string
-                        example: v1.MjAyNi0wMi0wM1QxMDozMDowMFo...
-                      expires_at:
-                        type: integer
-                        example: 1706922000
+                    $ref: "#/components/schemas/Session"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -4071,7 +4842,12 @@ paths:
       tags:
         - Authentication
       summary: Logout current session
-      description: Invalidate the current access and refresh tokens
+      description: |
+        Invalidate the current access and refresh tokens.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
       security:
         - BearerAuth: []
       responses:
@@ -4104,6 +4880,10 @@ paths:
       description: |
         Send a passwordless authentication link or OTP code to the customer's email.
         The link/code is valid for 15 minutes.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
       security:
         - BearerAuth: []
       requestBody:
@@ -4149,7 +4929,12 @@ paths:
       tags:
         - Authentication
       summary: Verify OTP code
-      description: Verify the OTP code sent via email and complete authentication
+      description: |
+        Verify the OTP code sent via email and complete authentication.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
       security:
         - BearerAuth: []
       requestBody:
@@ -4183,9 +4968,11 @@ paths:
                 type: object
                 properties:
                   user:
-                    type: object
+                    $ref: "#/components/schemas/User"
+                  customer:
+                    $ref: "#/components/schemas/Customer"
                   session:
-                    type: object
+                    $ref: "#/components/schemas/Session"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -4202,7 +4989,12 @@ paths:
       tags:
         - Authentication
       summary: Request password reset
-      description: Send a password reset link to the customer's email
+      description: |
+        Send a password reset link to the customer's email.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
       security:
         - BearerAuth: []
       requestBody:
@@ -4236,9 +5028,37 @@ paths:
       tags:
         - Authentication
       summary: Update password
-      description: Update user password (requires authentication)
+      description: |
+        Update user password (requires authentication).
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        
+        **Special Headers:**
+        - `x-auth-token`: **REQUIRED** - Authentication token from login/register response
+        
+        **Usage:**
+        ```
+        POST /v1/auth/update-password
+        Authorization: Bearer tybrite_sk_live_YOUR_API_KEY
+        x-auth-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        Content-Type: application/json
+        
+        {
+          "password": "newSecurePassword123"
+        }
+        ```
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          description: Authentication token obtained from login/register endpoints
+          schema:
+            type: string
+            example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
       requestBody:
         required: true
         content:
@@ -4246,12 +5066,9 @@ paths:
             schema:
               type: object
               required:
-                - current_password
-                - new_password
+                - password
               properties:
-                current_password:
-                  type: string
-                new_password:
+                password:
                   type: string
                   minLength: 8
       responses:
@@ -4273,7 +5090,12 @@ paths:
       tags:
         - Authentication
       summary: Refresh access token
-      description: Get new access token using refresh token
+      description: |
+        Get new access token using refresh token.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
       security:
         - BearerAuth: []
       requestBody:
@@ -4299,6 +5121,8 @@ paths:
                     type: string
                   refresh_token:
                     type: string
+                  expires_in:
+                    type: integer
                   expires_at:
                     type: integer
         "400":
@@ -4317,8 +5141,32 @@ paths:
       tags:
         - Authentication
       summary: Get current user
+      description: |
+        Get current authenticated user details.
+        
+        **⚠️ SECRET KEY REQUIRED**
+        
+        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        
+        **Special Headers:**
+        - `x-auth-token`: **REQUIRED** - Authentication token from login/register response
+        
+        **Usage:**
+        ```
+        GET /v1/auth/me
+        Authorization: Bearer tybrite_sk_live_YOUR_API_KEY
+        x-auth-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        ```
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          description: Authentication token obtained from login/register endpoints
+          schema:
+            type: string
+            example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
       responses:
         "200":
           description: Success
@@ -4328,12 +5176,9 @@ paths:
                 type: object
                 properties:
                   user:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      email:
-                        type: string
+                    $ref: "#/components/schemas/User"
+                  customer:
+                    $ref: "#/components/schemas/Customer"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -4363,15 +5208,20 @@ paths:
                 email:
                   type: string
                   format: email
+                name:
+                  type: string
+                  description: Customer full name
                 phone:
                   type: string
-                full_name:
+                address:
                   type: string
-                customer_type:
+                status:
                   type: string
-                  enum:
-                    - individual
-                    - business
+                  enum: [active, inactive]
+                  default: active
+                join_date:
+                  type: string
+                  format: date
       responses:
         "200":
           description: Customer created
@@ -4390,6 +5240,50 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
   /v1/customers/{id}:
+    get:
+      operationId: getCustomer
+      tags:
+        - Customers
+      summary: Get customer details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `name`, `email`, `phone`, `address`, `status`
+            - `join_date`, `total_purchases`, `last_purchase`
+            - `created_at`, `updated_at`
+            - `store_metrics`, `store_metrics.*`
+          example: name,email,total_purchases
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
     patch:
       operationId: updateCustomer
       tags:
@@ -4415,8 +5309,6 @@ paths:
                   type: string
                   format: email
                 phone:
-                  type: string
-                full_name:
                   type: string
                 name:
                   type: string
@@ -4447,12 +5339,12 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
   /v1/customers/{id}/gift-cards:
-    post:
+    get:
       operationId: getCustomerGiftCards
       tags:
         - Customers
-      summary: Purchase gift card for customer
-      description: Create a gift card purchase for a customer
+      summary: Get customer gift cards
+      description: Retrieve gift cards belonging to a customer
       security:
         - BearerAuth: []
       parameters:
@@ -4462,6 +5354,107 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `code`, `balance`, `initial_balance`, `currency`, `status`
+            - `expiry_date`, `customer_id`, `issued_date`, `last_used_date`
+            - `created_at`, `updated_at`
+          example: code,balance,expiry_date
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gift_cards:
+                    type: array
+                    items:
+                      type: object
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /v1/gift-cards/check:
+    get:
+      operationId: checkGiftCard
+      tags:
+        - Gift Cards
+      summary: Check gift card balance
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `code`, `balance`, `initial_balance`, `currency`, `status`
+            - `expiry_date`, `customer_id`, `issued_date`, `last_used_date`
+            - `created_at`, `updated_at`
+          example: code,balance,expiry_date
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  balance:
+                    type: number
+                  status:
+                    type: string
+                  expiry_date:
+                    type: string
+                    format: date
+                  maximum_usage_percentage:
+                    type: number
+                  gift_card:
+                    $ref: "#/components/schemas/GiftCard"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /v1/gift-cards/redeem:
+    post:
+      operationId: redeemGiftCard
+      tags:
+        - Gift Cards
+      summary: Redeem gift card
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -4469,37 +5462,33 @@ paths:
             schema:
               type: object
               required:
+                - code
                 - amount
               properties:
+                code:
+                  type: string
                 amount:
                   type: number
-                  format: float
-                  minimum: 0.01
-                recipient_email:
-                  type: string
-                  format: email
-                message:
-                  type: string
+                order_total:
+                  type: number
       responses:
         "200":
-          description: Gift card created
+          description: Success
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  code:
-                    type: string
-                  amount:
+                  success:
+                    type: boolean
+                  amount_redeemed:
                     type: number
-                  balance:
-                    type: number
+                  gift_card:
+                    $ref: "#/components/schemas/GiftCard"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
           $ref: "#/components/responses/UnauthorizedError"
-        "403":
-          $ref: "#/components/responses/ForbiddenError"
         "404":
           $ref: "#/components/responses/NotFoundError"
         "429":
@@ -4530,16 +5519,22 @@ paths:
           schema:
             type: string
           description: Filter promotions by minimum cart total requirement (numeric string)
-        - name: limit
+        - name: fields
           in: query
           schema:
-            type: integer
-            default: 50
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `name`, `type`, `display_type`, `description`
+            - `discount_value`, `discount_type`, `min_purchase`, `max_discount`
+            - `start_date`, `end_date`, `status`
+            - `usage_limit`, `usage_per_customer`
+            - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
+            - `applicable_categories`, `applicable_products`
+            - `created_at`, `updated_at`
+          example: name,type,discount_value
       responses:
         "200":
           description: Success
@@ -4551,30 +5546,7 @@ paths:
                   promotions:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        name:
-                          type: string
-                        code:
-                          type: string
-                        discount_type:
-                          type: string
-                          enum:
-                            - percentage
-                            - fixed
-                        discount_value:
-                          type: number
-                        start_date:
-                          type: string
-                          format: date-time
-                        end_date:
-                          type: string
-                          format: date-time
-                        status:
-                          type: string
+                      $ref: "#/components/schemas/Promotion"
                   total:
                     type: integer
         "400":
@@ -4600,56 +5572,29 @@ paths:
           schema:
             type: string
             format: uuid
-      responses:
-        "200":
-          description: Success
-        "400":
-          $ref: "#/components/responses/BadRequestError"
-        "401":
-          $ref: "#/components/responses/UnauthorizedError"
-        "404":
-          $ref: "#/components/responses/NotFoundError"
-        "429":
-          $ref: "#/components/responses/RateLimitError"
-        "500":
-          $ref: "#/components/responses/ServerError"
-  /v1/gift-cards/check:
-    get:
-      operationId: checkGiftCard
-      tags:
-        - Gift Cards
-      summary: Check gift card details
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: code
+        - name: fields
           in: query
-          required: true
           schema:
             type: string
+          description: |
+             Comma-separated list of fields to include in the response.
+             
+             **Allowed Fields:**
+             - `id`, `name`, `type`, `display_type`, `description`
+             - `discount_value`, `discount_type`, `min_purchase`, `max_discount`
+             - `start_date`, `end_date`, `status`
+             - `usage_limit`, `usage_per_customer`
+             - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
+             - `applicable_categories`, `applicable_products`
+             - `created_at`, `updated_at`
+          example: name,type,discount_value
       responses:
         "200":
           description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  code:
-                    type: string
-                  balance:
-                    type: number
-                  original_amount:
-                    type: number
-                  status:
-                    type: string
-                    enum:
-                      - active
-                      - redeemed
-                      - expired
-                  expires_at:
-                    type: string
-                    format: date-time
+                $ref: "#/components/schemas/Promotion"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -4660,55 +5605,7 @@ paths:
           $ref: "#/components/responses/RateLimitError"
         "500":
           $ref: "#/components/responses/ServerError"
-  /v1/gift-cards/redeem:
-    post:
-      operationId: redeemGiftCard
-      tags:
-        - Gift Cards
-      summary: Redeem gift card
-      description: Requires secret key
-      security:
-        - BearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - code
-                - amount
-              properties:
-                code:
-                  type: string
-                amount:
-                  type: number
-                  minimum: 0.01
-                order_id:
-                  type: string
-                  format: uuid
-      responses:
-        "200":
-          description: Gift card redeemed
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  remaining_balance:
-                    type: number
-        "400":
-          description: Insufficient balance or invalid card
-        "401":
-          $ref: "#/components/responses/UnauthorizedError"
-        "403":
-          $ref: "#/components/responses/ForbiddenError"
-        "429":
-          $ref: "#/components/responses/RateLimitError"
-        "500":
-          $ref: "#/components/responses/ServerError"
+
   /v1/posts:
     get:
       operationId: listPosts
@@ -4733,10 +5630,20 @@ paths:
           in: query
           schema:
             type: integer
-        - name: offset
+        - name: fields
           in: query
           schema:
-            type: integer
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `title`, `slug`, `excerpt`, `content`, `featured_image`
+            - `category_id`, `category_name`, `category_slug`, `category_icon`
+            - `author_name`, `author_avatar`, `status`, `published_at`
+            - `view_count`, `product_count`, `seo_title`, `seo_description`
+            - `created_at`, `updated_at`, `products`, `lookbooks`
+          example: title,slug,excerpt,published_at
       responses:
         "200":
           description: Success
@@ -4748,24 +5655,7 @@ paths:
                   posts:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        title:
-                          type: string
-                        slug:
-                          type: string
-                        excerpt:
-                          type: string
-                        featured_image:
-                          type: string
-                        published_at:
-                          type: string
-                          format: date-time
-                        author:
-                          type: string
+                      $ref: "#/components/schemas/Post"
                   total:
                     type: integer
         "400":
@@ -4776,50 +5666,41 @@ paths:
           $ref: "#/components/responses/RateLimitError"
         "500":
           $ref: "#/components/responses/ServerError"
-  /v1/posts/{id}:
+  /v1/posts/{slug}:
     get:
       operationId: getPost
       tags:
         - CMS
-      summary: Get blog post by ID
+      summary: Get blog post by slug
       security:
         - BearerAuth: []
       parameters:
-        - name: id
+        - name: slug
           in: path
           required: true
           schema:
             type: string
-            format: uuid
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `title`, `slug`, `excerpt`, `content`, `featured_image`
+            - `category_id`, `category_name`, `category_slug`, `category_icon`
+            - `author_name`, `author_avatar`, `status`, `published_at`
+            - `view_count`, `product_count`, `seo_title`, `seo_description`
+            - `created_at`, `updated_at`, `products`, `lookbooks`
+          example: title,slug,content,products
       responses:
         "200":
           description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  title:
-                    type: string
-                  slug:
-                    type: string
-                  content:
-                    type: string
-                  excerpt:
-                    type: string
-                  featured_image:
-                    type: string
-                  published_at:
-                    type: string
-                    format: date-time
-                  author:
-                    type: string
-                  tags:
-                    type: array
-                    items:
-                      type: string
+                $ref: "#/components/schemas/Post"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -4851,11 +5732,17 @@ paths:
           schema:
             type: integer
             default: 50
-        - name: offset
+        - name: fields
           in: query
           schema:
-            type: integer
-            default: 0
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `title`, `slug`, `description`, `featured_image`
+            - `collection_id`, `published_at`, `created_at`, `images`
+          example: title,slug,featured_image
       responses:
         "200":
           description: Success
@@ -4867,20 +5754,7 @@ paths:
                   lookbooks:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        title:
-                          type: string
-                        description:
-                          type: string
-                        cover_image:
-                          type: string
-                        published_at:
-                          type: string
-                          format: date-time
+                      $ref: "#/components/schemas/Lookbook"
                   total:
                     type: integer
         "400":
@@ -4891,48 +5765,38 @@ paths:
           $ref: "#/components/responses/RateLimitError"
         "500":
           $ref: "#/components/responses/ServerError"
-  /v1/lookbooks/{id}:
+  /v1/lookbooks/{slug}:
     get:
       operationId: getLookbook
       tags:
         - CMS
-      summary: Get lookbook details
+      summary: Get lookbook details by slug
       security:
         - BearerAuth: []
       parameters:
-        - name: id
+        - name: slug
           in: path
           required: true
           schema:
             type: string
-            format: uuid
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `title`, `slug`, `description`, `featured_image`
+            - `collection_id`, `published_at`, `created_at`, `images`
+          example: title,description,images
       responses:
         "200":
           description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  title:
-                    type: string
-                  description:
-                    type: string
-                  cover_image:
-                    type: string
-                  images:
-                    type: array
-                    items:
-                      type: string
-                  products:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Product"
-                  published_at:
-                    type: string
-                    format: date-time
+                $ref: "#/components/schemas/Lookbook"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -4948,8 +5812,26 @@ paths:
       operationId: getProductPrices
       tags:
         - Pricing
-      summary: Get prices for multiple products with dynamic pricing
-      description: Calculate dynamic prices for products based on customer segment, location, volume, etc.
+      summary: Get prices for multiple products with dynamic pricing and multi-currency support
+      description: |
+        Calculate dynamic prices for products based on customer segment, location, volume, and geographic currency detection.
+        
+        **Multi-Currency Support:**
+        - Automatically detects currency based on customer location (coordinates or place name)
+        - Converts prices from store's base currency to detected currency
+        - Falls back to store's default currency if no location provided
+        
+        **Dynamic Pricing:**
+        - Customer segment-based pricing (RFM segmentation)
+        - Customer tier-based pricing (Gold, Silver, Bronze)
+        - Volume/quantity-based discounts
+        - Region-specific pricing rules
+        - Time-based promotions
+        
+        **Field Filtering:**
+        - Use `fields` parameter to reduce bandwidth by 50-90%
+        - Supports nested fields with dot notation
+        - Example: `fields=name,display_price,display_currency,price_breakdown.base_price`
       security:
         - BearerAuth: []
       parameters:
@@ -4963,44 +5845,138 @@ paths:
           schema:
             type: string
             format: uuid
+          description: Filter by category UUID
         - name: subcategory_id
           in: query
           schema:
             type: string
             format: uuid
+          description: Filter by subcategory UUID
         - name: limit
           in: query
           schema:
             type: integer
             default: 50
+            minimum: 1
+            maximum: 200
+          description: Maximum number of products to return (1-200)
         - name: offset
           in: query
           schema:
             type: integer
             default: 0
+            minimum: 0
+          description: Number of products to skip for pagination
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to return (reduces bandwidth by 50-90%).
+            
+            **Allowed fields:** product_id, variant_id, name, sku, description, price, online_price, 
+            stock, image, category_name, base_price, display_price, display_currency, currency_symbol, 
+            exchange_rate, price_breakdown, price_breakdown.*, pricing_context, pricing_context.*
+            
+            **Example:** `fields=name,display_price,display_currency,currency_symbol`
+          example: name,display_price,display_currency,currency_symbol
+        - name: place_name
+          in: query
+          schema:
+            type: string
+          description: |
+            City or region name for geographic currency detection (e.g., "New York, USA", "London, UK", "Nairobi, Kenya").
+            
+            **How it works:**
+            1. Geocodes place name to coordinates 
+            2. Matches coordinates to currency regions
+            3. Returns prices in detected currency
+            
+            **Examples:**
+            - `place_name=New York` → USD
+            - `place_name=London` → GBP
+            - `place_name=Nairobi, Kenya` → KES
+          example: "New York, USA"
+        - name: latitude
+          in: query
+          schema:
+            type: number
+            format: double
+          description: |
+            Customer latitude for precise geographic currency detection.
+            
+            **Priority:** Coordinates take priority over place_name if both provided.
+            
+            **Accuracy:** Uses PostGIS boundary matching for accurate region detection.
+            
+            **Example:** `latitude=40.7128&longitude=-74.0060` (New York) → USD
+          example: 40.7128
+        - name: longitude
+          in: query
+          schema:
+            type: number
+            format: double
+          description: |
+            Customer longitude for precise geographic currency detection.
+            
+            **Must be used with latitude parameter.**
+            
+            **Example:** `latitude=51.5074&longitude=-0.1278` (London) → GBP
+          example: -74.0060
         - name: location
           in: query
           schema:
             type: string
-          description: Location/country for location-based pricing
+          description: |
+            **DEPRECATED:** Use `place_name` instead for better geocoding support.
+            
+            Location/country for location-based pricing rules.
+          deprecated: true
         - name: region
           in: query
           schema:
             type: string
-          description: Region for regional pricing
+          description: Manual region override for pricing rules (bypasses automatic detection)
         - name: customer_id
           in: query
           schema:
             type: string
             format: uuid
+          description: Customer UUID for personalized pricing (segment/tier-based)
+        - name: customer_segment
+          in: query
+          schema:
+            type: string
+          description: |
+            RFM customer segment for segment-based pricing.
+            
+            **Segments:** Champions, Loyal, Potential, New, At Risk, Hibernating, Lost
+          example: Champions
+        - name: customer_tier
+          in: query
+          schema:
+            type: string
+          description: |
+            Customer tier for tier-based pricing.
+            
+            **Tiers:** Gold, Silver, Bronze, VIP
+          example: Gold
         - name: quantity
           in: query
           schema:
             type: integer
-          description: Quantity for volume-based pricing
+            minimum: 1
+          description: Quantity for volume-based pricing discounts
       responses:
         "200":
-          description: Success
+          description: |
+            Successfully retrieved products with dynamic pricing and currency conversion.
+            
+            **Response includes:**
+            - Products with converted prices in detected/default currency
+            - Price breakdown showing base price, discounts, and final price
+            - Pricing context with currency info and detection method
+            - Pagination metadata
           content:
             application/json:
               schema:
@@ -5013,27 +5989,174 @@ paths:
                       properties:
                         product_id:
                           type: string
+                          format: uuid
+                        name:
+                          type: string
+                        sku:
+                          type: string
                         base_price:
                           type: number
-                        resolved_price:
+                          description: Price in store's base currency (before conversion)
+                        base_currency:
+                          type: string
+                          description: Store's base currency code (e.g., EUR, USD)
+                          example: EUR
+                        display_price:
                           type: number
+                          description: Price in customer's currency (after conversion and discounts)
+                          example: 225451.29
+                        display_currency:
+                          type: string
+                          description: Customer's currency code
+                          example: USD
+                        currency_symbol:
+                          type: string
+                          description: Currency symbol for display
+                          example: $
+                        exchange_rate:
+                          type: number
+                          format: float
+                          description: Exchange rate applied (1.0 if same currency)
+                          example: 1.19
                         price_breakdown:
                           type: object
+                          description: Detailed price calculation breakdown
                           properties:
                             base_price:
                               type: number
+                              description: Original price before discounts
                             discounts:
                               type: array
+                              description: Applied discount rules
+                              items:
+                                type: object
+                                properties:
+                                  rule_id:
+                                    type: string
+                                  rule_name:
+                                    type: string
+                                  type:
+                                    type: string
+                                    enum: [percentage, fixed_amount, fixed_price, markup]
+                                  value:
+                                    type: number
+                                  amount:
+                                    type: number
                             final_price:
                               type: number
+                              description: Final price after all discounts
+                        pricing_context:
+                          type: object
+                          description: Context used for pricing calculation
+                          properties:
+                            currency:
+                              type: string
+                              example: USD
+                            region:
+                              type: string
+                              nullable: true
+                              example: United States
+                            customer_segment:
+                              type: string
+                              nullable: true
+                            customer_tier:
+                              type: string
+                              nullable: true
+                            quantity:
+                              type: integer
+                              nullable: true
                   total:
                     type: integer
+                    description: Total number of products matching filters
                   limit:
                     type: integer
+                    description: Number of products per page
                   offset:
                     type: integer
+                    description: Number of products skipped
                   pricing_context:
                     type: object
+                    description: Global pricing context for the request
+                    properties:
+                      location:
+                        type: string
+                        nullable: true
+                      region:
+                        type: string
+                        nullable: true
+                        description: Detected or specified region
+                        example: United States
+                      customer_segment:
+                        type: string
+                        nullable: true
+                      customer_tier:
+                        type: string
+                        nullable: true
+                      quantity:
+                        type: integer
+                        nullable: true
+                      currency:
+                        type: string
+                        description: Detected or default currency
+                        example: USD
+                      exchange_rate:
+                        type: number
+                        format: float
+                        description: Applied exchange rate
+                        example: 1.19
+              examples:
+                with_currency_detection:
+                  summary: Products with currency detection (New York → USD)
+                  value:
+                    products:
+                      - product_id: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                        name: Apple MacBook Pro
+                        sku: APP-MBP-13
+                        base_price: 189999
+                        base_currency: EUR
+                        display_price: 225451.29
+                        display_currency: USD
+                        currency_symbol: $
+                        exchange_rate: 1.19
+                        price_breakdown:
+                          base_price: 189999
+                          discounts: []
+                          final_price: 189999
+                        pricing_context:
+                          currency: USD
+                          region: United States
+                          customer_segment: null
+                          customer_tier: null
+                          quantity: null
+                    total: 12
+                    limit: 50
+                    offset: 0
+                    pricing_context:
+                      location: null
+                      region: United States
+                      customer_segment: null
+                      customer_tier: null
+                      quantity: null
+                      currency: USD
+                      exchange_rate: 1.19
+                filtered_fields:
+                  summary: Filtered response (50-90% bandwidth reduction)
+                  value:
+                    products:
+                      - name: Apple MacBook Pro
+                        display_price: 225451.29
+                        display_currency: USD
+                        currency_symbol: $
+                      - name: Apple Watch Series 9
+                        display_price: 54598.81
+                        display_currency: USD
+                        currency_symbol: $
+                    total: 12
+                    limit: 50
+                    offset: 0
+                    pricing_context:
+                      currency: USD
+                      region: United States
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -5047,7 +6170,24 @@ paths:
       operationId: getProductPrice
       tags:
         - Pricing
-      summary: Get product pricing with dynamic pricing
+      summary: Get single product pricing with dynamic pricing and multi-currency support
+      description: |
+        Calculate dynamic price for a single product with geographic currency detection.
+        
+        **Multi-Currency Support:**
+        - Automatically detects currency based on customer location
+        - Converts price from store's base currency to detected currency
+        - Falls back to store's default currency if no location provided
+        
+        **Dynamic Pricing:**
+        - Customer segment/tier-based pricing
+        - Volume/quantity-based discounts
+        - Region-specific pricing rules
+        - Time-based promotions
+        
+        **Field Filtering:**
+        - Use `fields` parameter to reduce bandwidth
+        - Example: `fields=name,display_price,display_currency,price_breakdown`
       security:
         - BearerAuth: []
       parameters:
@@ -5057,29 +6197,89 @@ paths:
           schema:
             type: string
             format: uuid
+          description: Product UUID or variant UUID
+          example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to return (reduces bandwidth).
+            
+            **Example:** `fields=name,display_price,display_currency,currency_symbol,price_breakdown`
+          example: name,display_price,display_currency,currency_symbol
+        - name: place_name
+          in: query
+          schema:
+            type: string
+          description: |
+            City or region name for geographic currency detection.
+            
+            **Examples:**
+            - `place_name=New York` → USD
+            - `place_name=London, UK` → GBP
+            - `place_name=Nairobi, Kenya` → KES
+          example: "London, UK"
+        - name: latitude
+          in: query
+          schema:
+            type: number
+            format: double
+          description: Customer latitude for precise currency detection (use with longitude)
+          example: 51.5074
+        - name: longitude
+          in: query
+          schema:
+            type: number
+            format: double
+          description: Customer longitude for precise currency detection (use with latitude)
+          example: -0.1278
         - name: location
           in: query
           schema:
             type: string
-          description: Location/country for location-based pricing
+          description: |
+            **DEPRECATED:** Use `place_name` instead.
+            
+            Location/country for location-based pricing
+          deprecated: true
         - name: region
           in: query
           schema:
             type: string
-          description: Region for regional pricing
+          description: Manual region override for pricing rules
         - name: customer_id
           in: query
           schema:
             type: string
             format: uuid
+          description: Customer UUID for personalized pricing
+        - name: customer_segment
+          in: query
+          schema:
+            type: string
+          description: RFM customer segment (Champions, Loyal, etc.)
+        - name: customer_tier
+          in: query
+          schema:
+            type: string
+          description: Customer tier (Gold, Silver, Bronze, VIP)
         - name: quantity
           in: query
           schema:
             type: integer
             default: 1
+            minimum: 1
+          description: Quantity for volume-based pricing
       responses:
         "200":
-          description: Success
+          description: |
+            Successfully retrieved product with dynamic pricing and currency conversion.
+            
+            **Response includes:**
+            - Product details with converted price
+            - Price breakdown showing discounts
+            - Pricing context with currency and region info
           content:
             application/json:
               schema:
@@ -5087,14 +6287,141 @@ paths:
                 properties:
                   product_id:
                     type: string
+                    format: uuid
+                  name:
+                    type: string
+                  sku:
+                    type: string
+                  description:
+                    type: string
                   base_price:
                     type: number
-                  resolved_price:
+                    description: Price in store's base currency
+                  base_currency:
+                    type: string
+                    description: Store's base currency code
+                    example: EUR
+                  display_price:
                     type: number
+                    description: Price in customer's currency (after conversion and discounts)
+                    example: 152105.09
+                  display_currency:
+                    type: string
+                    description: Customer's currency code
+                    example: GBP
+                  currency_symbol:
+                    type: string
+                    description: Currency symbol for display
+                    example: £
+                  exchange_rate:
+                    type: number
+                    format: float
+                    description: Exchange rate applied
+                    example: 0.87
                   price_breakdown:
                     type: object
+                    description: Detailed price calculation
+                    properties:
+                      base_price:
+                        type: number
+                      discounts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            rule_id:
+                              type: string
+                            rule_name:
+                              type: string
+                            type:
+                              type: string
+                            value:
+                              type: number
+                            amount:
+                              type: number
+                      final_price:
+                        type: number
                   pricing_context:
                     type: object
+                    description: Context used for pricing
+                    properties:
+                      currency:
+                        type: string
+                        example: GBP
+                      region:
+                        type: string
+                        nullable: true
+                        example: United Kingdom
+                      customer_segment:
+                        type: string
+                        nullable: true
+                      customer_tier:
+                        type: string
+                        nullable: true
+                      quantity:
+                        type: integer
+              examples:
+                london_gbp:
+                  summary: Product pricing in London (GBP)
+                  value:
+                    product_id: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                    name: Apple MacBook Pro
+                    sku: APP-MBP-13
+                    description: 13-inch MacBook Pro with M2 chip
+                    base_price: 189999
+                    base_currency: EUR
+                    display_price: 152105.09
+                    display_currency: GBP
+                    currency_symbol: £
+                    exchange_rate: 0.87
+                    price_breakdown:
+                      base_price: 189999
+                      discounts: []
+                      final_price: 189999
+                    pricing_context:
+                      currency: GBP
+                      region: United Kingdom
+                      customer_segment: null
+                      customer_tier: null
+                      quantity: 1
+                nairobi_kes:
+                  summary: Product pricing in Nairobi (KES)
+                  value:
+                    product_id: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                    name: Apple MacBook Pro
+                    display_price: 29102623.35
+                    display_currency: KES
+                    currency_symbol: Sh
+                    exchange_rate: 153.17
+                    pricing_context:
+                      currency: KES
+                      region: Kenya
+                with_discount:
+                  summary: Product with VIP discount
+                  value:
+                    product_id: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                    name: Apple MacBook Pro
+                    base_price: 189999
+                    base_currency: EUR
+                    display_price: 170999.1
+                    display_currency: EUR
+                    currency_symbol: €
+                    exchange_rate: 1.0
+                    price_breakdown:
+                      base_price: 189999
+                      discounts:
+                        - rule_id: abc-123
+                          rule_name: VIP Discount
+                          type: percentage
+                          value: 10
+                          amount: 18999.9
+                      final_price: 170999.1
+                    pricing_context:
+                      currency: EUR
+                      region: null
+                      customer_segment: null
+                      customer_tier: VIP
+                      quantity: 1
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -5119,18 +6446,21 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: status
+
+        - name: fields
           in: query
           schema:
             type: string
-            enum:
-              - open
-              - closed
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `customer_id`, `customer_name`, `customer_email`, `customer_phone`
+            - `store_name`, `store_avatar`, `order_id`, `product_id`
+            - `subject`, `thread_type`, `status`, `priority`
+            - `last_message_at`, `last_message_by`, `unread_count_customer`, `unread_count_store`
+            - `created_at`, `updated_at`
+          example: subject,status,last_message_at
       responses:
         "200":
           description: Success
@@ -5142,22 +6472,7 @@ paths:
                   threads:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        customer_id:
-                          type: string
-                        subject:
-                          type: string
-                        status:
-                          type: string
-                        unread_count:
-                          type: integer
-                        last_message_at:
-                          type: string
-                          format: date-time
+                      $ref: "#/components/schemas/Thread"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -5181,32 +6496,27 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `customer_id`, `customer_name`, `customer_email`, `customer_phone`
+            - `store_name`, `store_avatar`, `order_id`, `product_id`
+            - `subject`, `thread_type`, `status`, `priority`
+            - `last_message_at`, `last_message_by`, `unread_count_customer`, `unread_count_store`
+            - `created_at`, `updated_at`
+          example: subject,status,customer_name
       responses:
         "200":
           description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    format: uuid
-                  customer_id:
-                    type: string
-                  customer_name:
-                    type: string
-                  customer_email:
-                    type: string
-                  subject:
-                    type: string
-                  status:
-                    type: string
-                  priority:
-                    type: string
-                  last_message_at:
-                    type: string
-                    format: date-time
+                $ref: "#/components/schemas/Thread"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -5232,6 +6542,18 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            Comma-separated list of fields to include in the response.
+            
+            **Allowed Fields:**
+            - `id`, `message_content`, `message_type`, `sender_type`, `sender_id`
+            - `sender_name`, `attachments`, `metadata`, `message_status`, `read_at`
+            - `created_at`, `updated_at`
+          example: message_content,sender_name,created_at
       responses:
         "200":
           description: Success
@@ -5243,20 +6565,7 @@ paths:
                   messages:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        message_content:
-                          type: string
-                        sender_type:
-                          type: string
-                        sender_name:
-                          type: string
-                        created_at:
-                          type: string
-                          format: date-time
+                      $ref: "#/components/schemas/Message"
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -5293,10 +6602,6 @@ paths:
               properties:
                 message:
                   type: string
-                attachments:
-                  type: array
-                  items:
-                    type: string
       responses:
         "200":
           description: Message sent
@@ -5341,12 +6646,19 @@ paths:
               type: object
               required:
                 - customer_id
+                - customer_name
+                - customer_email
                 - subject
                 - message
               properties:
                 customer_id:
                   type: string
                   format: uuid
+                customer_name:
+                  type: string
+                customer_email:
+                  type: string
+                  format: email
                 subject:
                   type: string
                 message:

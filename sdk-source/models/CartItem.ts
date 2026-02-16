@@ -7,9 +7,11 @@ export type CartItem = {
     product_id?: string;
     product_name?: string;
     product_sku?: string;
-    product_image?: string;
+    product_image?: string | null;
     quantity?: number;
     unit_price?: number;
     total_price?: number;
+    created_at?: string;
+    updated_at?: string;
 };
 

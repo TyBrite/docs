@@ -2,16 +2,15 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type Subcategory = {
+export type Lookbook = {
     id?: string;
-    category_id?: string;
-    name?: string;
+    title?: string;
+    slug?: string;
     description?: string;
-    /**
-     * Whether the subcategory is active
-     */
-    active?: boolean;
+    featured_image?: string;
+    collection_id?: string;
+    published_at?: string;
     created_at?: string;
-    updated_at?: string;
+    images?: Array<Record<string, any>>;
 };
 

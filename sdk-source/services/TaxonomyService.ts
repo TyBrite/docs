@@ -17,12 +17,17 @@ export class TaxonomyService {
     public listCategories({
         search,
         active,
+        fields,
     }: {
         search?: string,
         /**
          * Filter by active status
          */
         active?: boolean,
+        /**
+         * Comma-separated list of fields to include in the response.
+         */
+        fields?: string,
     }): CancelablePromise<{
         categories?: Array<Category>;
     }> {
@@ -32,6 +37,7 @@ export class TaxonomyService {
             query: {
                 'search': search,
                 'active': active,
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -48,14 +54,22 @@ export class TaxonomyService {
      */
     public getCategory({
         id,
+        fields,
     }: {
         id: string,
+        /**
+         * Comma-separated list of fields to include in the response.
+         */
+        fields?: string,
     }): CancelablePromise<Category> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/categories/{id}',
             path: {
                 'id': id,
+            },
+            query: {
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -77,6 +91,7 @@ export class TaxonomyService {
         active,
         limit = 100,
         offset,
+        fields,
     }: {
         categoryId?: string,
         search?: string,
@@ -86,6 +101,10 @@ export class TaxonomyService {
         active?: boolean,
         limit?: number,
         offset?: number,
+        /**
+         * Comma-separated list of fields to include in the response.
+         */
+        fields?: string,
     }): CancelablePromise<{
         subcategories?: Array<Subcategory>;
     }> {
@@ -98,6 +117,7 @@ export class TaxonomyService {
                 'active': active,
                 'limit': limit,
                 'offset': offset,
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -114,14 +134,22 @@ export class TaxonomyService {
      */
     public getSubcategory({
         id,
+        fields,
     }: {
         id: string,
+        /**
+         * Comma-separated list of fields to include in the response.
+         */
+        fields?: string,
     }): CancelablePromise<Subcategory> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/subcategories/{id}',
             path: {
                 'id': id,
+            },
+            query: {
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,

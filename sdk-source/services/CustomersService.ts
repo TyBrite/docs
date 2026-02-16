@@ -18,9 +18,14 @@ export class CustomersService {
     }: {
         requestBody: {
             email: string;
+            /**
+             * Customer full name
+             */
+            name?: string;
             phone?: string;
-            full_name?: string;
-            customer_type?: 'individual' | 'business';
+            address?: string;
+            status?: 'active' | 'inactive';
+            join_date?: string;
         },
     }): CancelablePromise<Customer> {
         return this.httpRequest.request({
@@ -32,6 +37,46 @@ export class CustomersService {
                 400: `Invalid request - malformed data or missing required fields`,
                 401: `Authentication failed - invalid or missing API key`,
                 403: `Insufficient permissions - operation requires secret key`,
+                429: `Rate limit exceeded`,
+                500: `Internal server error`,
+            },
+        });
+    }
+    /**
+     * Get customer details
+     * @returns Customer Success
+     * @throws ApiError
+     */
+    public getCustomer({
+        id,
+        fields,
+    }: {
+        id: string,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `name`, `email`, `phone`, `address`, `status`
+         * - `join_date`, `total_purchases`, `last_purchase`
+         * - `created_at`, `updated_at`
+         * - `store_metrics`, `store_metrics.*`
+         *
+         */
+        fields?: string,
+    }): CancelablePromise<Customer> {
+        return this.httpRequest.request({
+            method: 'GET',
+            url: '/v1/customers/{id}',
+            path: {
+                'id': id,
+            },
+            query: {
+                'fields': fields,
+            },
+            errors: {
+                400: `Invalid request - malformed data or missing required fields`,
+                401: `Authentication failed - invalid or missing API key`,
+                404: `Resource not found`,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,
             },
@@ -51,7 +96,6 @@ export class CustomersService {
         requestBody?: {
             email?: string;
             phone?: string;
-            full_name?: string;
             name?: string;
             address?: string;
             status?: 'active' | 'inactive';
@@ -76,34 +120,38 @@ export class CustomersService {
         });
     }
     /**
-     * Purchase gift card for customer
-     * Create a gift card purchase for a customer
-     * @returns any Gift card created
+     * Get customer gift cards
+     * Retrieve gift cards belonging to a customer
+     * @returns any Success
      * @throws ApiError
      */
     public getCustomerGiftCards({
         id,
-        requestBody,
+        fields,
     }: {
         id: string,
-        requestBody: {
-            amount: number;
-            recipient_email?: string;
-            message?: string;
-        },
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `code`, `balance`, `initial_balance`, `currency`, `status`
+         * - `expiry_date`, `customer_id`, `issued_date`, `last_used_date`
+         * - `created_at`, `updated_at`
+         *
+         */
+        fields?: string,
     }): CancelablePromise<{
-        code?: string;
-        amount?: number;
-        balance?: number;
+        gift_cards?: Array<Record<string, any>>;
     }> {
         return this.httpRequest.request({
-            method: 'POST',
+            method: 'GET',
             url: '/v1/customers/{id}/gift-cards',
             path: {
                 'id': id,
             },
-            body: requestBody,
-            mediaType: 'application/json',
+            query: {
+                'fields': fields,
+            },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
                 401: `Authentication failed - invalid or missing API key`,
