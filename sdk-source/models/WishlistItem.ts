@@ -2,15 +2,13 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type Category = {
+export type WishlistItem = {
     id?: string;
-    name?: string;
-    description?: string;
-    /**
-     * Whether the category is active
-     */
-    active?: boolean;
+    product_id?: string;
+    product_name?: string;
+    product_sku?: string;
+    product_price?: number;
+    product_image?: string;
     created_at?: string;
-    updated_at?: string;
 };
 

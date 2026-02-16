@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Product } from '../models/Product';
+import type { Lookbook } from '../models/Lookbook';
+import type { Post } from '../models/Post';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
 export class CmsService {
@@ -16,22 +17,25 @@ export class CmsService {
         status,
         category,
         limit,
-        offset,
+        fields,
     }: {
         status?: 'published' | 'draft',
         category?: string,
         limit?: number,
-        offset?: number,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `title`, `slug`, `excerpt`, `content`, `featured_image`
+         * - `category_id`, `category_name`, `category_slug`, `category_icon`
+         * - `author_name`, `author_avatar`, `status`, `published_at`
+         * - `view_count`, `product_count`, `seo_title`, `seo_description`
+         * - `created_at`, `updated_at`, `products`, `lookbooks`
+         *
+         */
+        fields?: string,
     }): CancelablePromise<{
-        posts?: Array<{
-            id?: string;
-            title?: string;
-            slug?: string;
-            excerpt?: string;
-            featured_image?: string;
-            published_at?: string;
-            author?: string;
-        }>;
+        posts?: Array<Post>;
         total?: number;
     }> {
         return this.httpRequest.request({
@@ -41,7 +45,7 @@ export class CmsService {
                 'status': status,
                 'category': category,
                 'limit': limit,
-                'offset': offset,
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -52,30 +56,36 @@ export class CmsService {
         });
     }
     /**
-     * Get blog post by ID
-     * @returns any Success
+     * Get blog post by slug
+     * @returns Post Success
      * @throws ApiError
      */
     public getPost({
-        id,
+        slug,
+        fields,
     }: {
-        id: string,
-    }): CancelablePromise<{
-        id?: string;
-        title?: string;
-        slug?: string;
-        content?: string;
-        excerpt?: string;
-        featured_image?: string;
-        published_at?: string;
-        author?: string;
-        tags?: Array<string>;
-    }> {
+        slug: string,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `title`, `slug`, `excerpt`, `content`, `featured_image`
+         * - `category_id`, `category_name`, `category_slug`, `category_icon`
+         * - `author_name`, `author_avatar`, `status`, `published_at`
+         * - `view_count`, `product_count`, `seo_title`, `seo_description`
+         * - `created_at`, `updated_at`, `products`, `lookbooks`
+         *
+         */
+        fields?: string,
+    }): CancelablePromise<Post> {
         return this.httpRequest.request({
             method: 'GET',
-            url: '/v1/posts/{id}',
+            url: '/v1/posts/{slug}',
             path: {
-                'id': id,
+                'slug': slug,
+            },
+            query: {
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -94,19 +104,21 @@ export class CmsService {
     public listLookbooks({
         status,
         limit = 50,
-        offset,
+        fields,
     }: {
         status?: 'published' | 'draft',
         limit?: number,
-        offset?: number,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `title`, `slug`, `description`, `featured_image`
+         * - `collection_id`, `published_at`, `created_at`, `images`
+         *
+         */
+        fields?: string,
     }): CancelablePromise<{
-        lookbooks?: Array<{
-            id?: string;
-            title?: string;
-            description?: string;
-            cover_image?: string;
-            published_at?: string;
-        }>;
+        lookbooks?: Array<Lookbook>;
         total?: number;
     }> {
         return this.httpRequest.request({
@@ -115,7 +127,7 @@ export class CmsService {
             query: {
                 'status': status,
                 'limit': limit,
-                'offset': offset,
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -126,28 +138,33 @@ export class CmsService {
         });
     }
     /**
-     * Get lookbook details
-     * @returns any Success
+     * Get lookbook details by slug
+     * @returns Lookbook Success
      * @throws ApiError
      */
     public getLookbook({
-        id,
+        slug,
+        fields,
     }: {
-        id: string,
-    }): CancelablePromise<{
-        id?: string;
-        title?: string;
-        description?: string;
-        cover_image?: string;
-        images?: Array<string>;
-        products?: Array<Product>;
-        published_at?: string;
-    }> {
+        slug: string,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `title`, `slug`, `description`, `featured_image`
+         * - `collection_id`, `published_at`, `created_at`, `images`
+         *
+         */
+        fields?: string,
+    }): CancelablePromise<Lookbook> {
         return this.httpRequest.request({
             method: 'GET',
-            url: '/v1/lookbooks/{id}',
+            url: '/v1/lookbooks/{slug}',
             path: {
-                'id': id,
+                'slug': slug,
+            },
+            query: {
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,

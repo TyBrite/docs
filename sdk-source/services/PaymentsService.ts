@@ -28,12 +28,28 @@ export class PaymentsService {
      * @returns any Successfully retrieved payment methods
      * @throws ApiError
      */
-    public getPaymentMethods(): CancelablePromise<{
+    public getPaymentMethods({
+        fields,
+    }: {
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `provider`, `display_name`, `type`
+         * - `supported_currencies`
+         * - `environment`, `is_configured`
+         *
+         */
+        fields?: string,
+    }): CancelablePromise<{
         methods?: Array<PaymentMethod>;
     }> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/payments/methods',
+            query: {
+                'fields': fields,
+            },
             errors: {
                 401: `Authentication failed - invalid or missing API key`,
                 429: `Rate limit exceeded`,
@@ -189,6 +205,14 @@ export class PaymentsService {
      * Verify the status of a payment transaction using the payment reference.
      * This endpoint queries the payment provider's API to get the current status.
      *
+     * **⚠️ SECRET KEY REQUIRED**
+     *
+     * This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+     *
+     * **Why Secret Key?** Payment verification accesses sensitive transaction data and provider APIs
+     * that should only be called from secure server-side environments. This prevents unauthorized
+     * access to payment status information.
+     *
      * **Provider-Specific Verification:**
      *
      * **Stripe:**
@@ -211,11 +235,8 @@ export class PaymentsService {
      * - Returns transaction status and details
      * - Includes Airtel transaction ID if successful
      *
-     * **Key Type Support:**
-     * - ✅ Secret keys (full access)
-     * - ✅ Publishable keys (read-only verification)
-     *
-     * **Note:** This is a read operation even though it uses POST method.
+     * **Note:** Despite using POST method (for request body), this is a read operation that
+     * queries external payment provider APIs.
      *
      * @returns any Payment verification successful
      * @throws ApiError

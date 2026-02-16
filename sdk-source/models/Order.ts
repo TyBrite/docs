@@ -13,7 +13,10 @@ export type Order = {
     customer_name?: string;
     order_status?: Order.order_status;
     payment_status?: Order.payment_status;
-    payment_method?: string;
+    /**
+     * Method used for payment
+     */
+    payment_method?: Order.payment_method;
     payment_reference?: string;
     subtotal?: number;
     tax_amount?: number;
@@ -77,6 +80,17 @@ export namespace Order {
         PAID = 'paid',
         FAILED = 'failed',
         REFUNDED = 'refunded',
+    }
+    /**
+     * Method used for payment
+     */
+    export enum payment_method {
+        STRIPE = 'stripe',
+        PAYSTACK = 'paystack',
+        MPESA = 'mpesa',
+        AIRTEL = 'airtel',
+        CASH = 'cash',
+        BANK_TRANSFER = 'bank_transfer',
     }
     /**
      * Which pricing system was applied

@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { Promotion } from '../models/Promotion';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
 export class PromotionsService {
@@ -15,27 +16,29 @@ export class PromotionsService {
     public listPromotions({
         status,
         cartTotal,
-        limit = 50,
-        offset,
+        fields,
     }: {
         status?: 'active' | 'inactive' | 'scheduled' | 'expired',
         /**
          * Filter promotions by minimum cart total requirement (numeric string)
          */
         cartTotal?: string,
-        limit?: number,
-        offset?: number,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `name`, `type`, `display_type`, `description`
+         * - `discount_value`, `discount_type`, `min_purchase`, `max_discount`
+         * - `start_date`, `end_date`, `status`
+         * - `usage_limit`, `usage_per_customer`
+         * - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
+         * - `applicable_categories`, `applicable_products`
+         * - `created_at`, `updated_at`
+         *
+         */
+        fields?: string,
     }): CancelablePromise<{
-        promotions?: Array<{
-            id?: string;
-            name?: string;
-            code?: string;
-            discount_type?: 'percentage' | 'fixed';
-            discount_value?: number;
-            start_date?: string;
-            end_date?: string;
-            status?: string;
-        }>;
+        promotions?: Array<Promotion>;
         total?: number;
     }> {
         return this.httpRequest.request({
@@ -44,8 +47,7 @@ export class PromotionsService {
             query: {
                 'status': status,
                 'cart_total': cartTotal,
-                'limit': limit,
-                'offset': offset,
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -57,19 +59,37 @@ export class PromotionsService {
     }
     /**
      * Get promotion details
-     * @returns any Success
+     * @returns Promotion Success
      * @throws ApiError
      */
     public getPromotion({
         id,
+        fields,
     }: {
         id: string,
-    }): CancelablePromise<any> {
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `name`, `type`, `display_type`, `description`
+         * - `discount_value`, `discount_type`, `min_purchase`, `max_discount`
+         * - `start_date`, `end_date`, `status`
+         * - `usage_limit`, `usage_per_customer`
+         * - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
+         * - `applicable_categories`, `applicable_products`
+         * - `created_at`, `updated_at`
+         *
+         */
+        fields?: string,
+    }): CancelablePromise<Promotion> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/promotions/{id}',
             path: {
                 'id': id,
+            },
+            query: {
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,

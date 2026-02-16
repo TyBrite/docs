@@ -4,18 +4,29 @@
 /* eslint-disable */
 export type Customer = {
     id?: string;
+    name?: string;
     email?: string;
     phone?: string;
-    full_name?: string;
-    customer_type?: Customer.customer_type;
-    loyalty_points?: number;
+    address?: string;
+    status?: Customer.status;
+    join_date?: string;
+    total_purchases?: number;
+    last_purchase?: string;
     created_at?: string;
     updated_at?: string;
+    store_metrics?: {
+        total_purchases?: number;
+        total_spent?: number;
+        first_purchase_date?: string;
+        last_purchase_date?: string;
+        status?: string;
+        preferred_store?: string;
+    };
 };
 export namespace Customer {
-    export enum customer_type {
-        INDIVIDUAL = 'individual',
-        BUSINESS = 'business',
+    export enum status {
+        ACTIVE = 'active',
+        INACTIVE = 'inactive',
     }
 }
 

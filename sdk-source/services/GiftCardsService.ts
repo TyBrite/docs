@@ -2,31 +2,45 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { GiftCard } from '../models/GiftCard';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
 export class GiftCardsService {
     constructor(public readonly httpRequest: BaseHttpRequest) {}
     /**
-     * Check gift card details
+     * Check gift card balance
      * @returns any Success
      * @throws ApiError
      */
     public checkGiftCard({
         code,
+        fields,
     }: {
         code: string,
+        /**
+         * Comma-separated list of fields to include in the response.
+         *
+         * **Allowed Fields:**
+         * - `id`, `code`, `balance`, `initial_balance`, `currency`, `status`
+         * - `expiry_date`, `customer_id`, `issued_date`, `last_used_date`
+         * - `created_at`, `updated_at`
+         *
+         */
+        fields?: string,
     }): CancelablePromise<{
-        code?: string;
+        valid?: boolean;
         balance?: number;
-        original_amount?: number;
-        status?: 'active' | 'redeemed' | 'expired';
-        expires_at?: string;
+        status?: string;
+        expiry_date?: string;
+        maximum_usage_percentage?: number;
+        gift_card?: GiftCard;
     }> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/gift-cards/check',
             query: {
                 'code': code,
+                'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
@@ -39,8 +53,7 @@ export class GiftCardsService {
     }
     /**
      * Redeem gift card
-     * Requires secret key
-     * @returns any Gift card redeemed
+     * @returns any Success
      * @throws ApiError
      */
     public redeemGiftCard({
@@ -49,11 +62,12 @@ export class GiftCardsService {
         requestBody: {
             code: string;
             amount: number;
-            order_id?: string;
+            order_total?: number;
         },
     }): CancelablePromise<{
         success?: boolean;
-        remaining_balance?: number;
+        amount_redeemed?: number;
+        gift_card?: GiftCard;
     }> {
         return this.httpRequest.request({
             method: 'POST',
@@ -61,9 +75,9 @@ export class GiftCardsService {
             body: requestBody,
             mediaType: 'application/json',
             errors: {
-                400: `Insufficient balance or invalid card`,
+                400: `Invalid request - malformed data or missing required fields`,
                 401: `Authentication failed - invalid or missing API key`,
-                403: `Insufficient permissions - operation requires secret key`,
+                404: `Resource not found`,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,
             },
