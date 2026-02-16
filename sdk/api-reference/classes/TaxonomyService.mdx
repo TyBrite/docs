@@ -14,7 +14,8 @@ Retrieve all top-level product categories. This is the starting point for buildi
 ```typescript
 const { categories } = await client.taxonomy.listCategories({
   search: 'clothes', // Optional keyword filter
-  active: true
+  active: true,      // Optional: Filter by active status
+  fields: 'id,name,slug' // Optional: Bandwidth optimization
 });
 
 categories.forEach(cat => {
@@ -30,7 +31,8 @@ Retrieve details for a single category, including its description and metadata.
 
 ```typescript
 const category = await client.taxonomy.getCategory({
-  id: 'electronics-uuid'
+  id: 'electronics-uuid',
+  fields: 'name,description,metadata' // Optional
 });
 ```
 
@@ -46,7 +48,10 @@ Retrieve a paginated list of subcategories. You can scope this to a specific par
 const { subcategories } = await client.taxonomy.listSubcategories({
   categoryId: 'electronics-uuid', // Optional: filter by parent
   active: true,
-  limit: 100
+  search: 'laptops', // Optional
+  limit: 24,          // Optional: Items per page
+  offset: 0,          // Optional: Items to skip
+  fields: 'id,name,parent_id' // Optional
 });
 ```
 
@@ -58,7 +63,8 @@ Retrieve details for a specific subcategory.
 
 ```typescript
 const sub = await client.taxonomy.getSubcategory({
-  id: 'macbooks-uuid'
+  id: 'macbooks-uuid',
+  fields: 'name,description' // Optional
 });
 ```
 

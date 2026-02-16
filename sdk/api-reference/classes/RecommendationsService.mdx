@@ -96,5 +96,5 @@ const { recommendations } = await client.recommendations.getRecommendations({
 ---
 
 <Note>
-  Recommendation results are often cached for high performance. The response includes a `fromCache` boolean and a `computedAt` ISO timestamp indicating when the recommendations were last generated.
+  Recommendation results are often cached for high performance. The response includes a `fromCache` boolean, a `computedAt` ISO timestamp, and an optional `fallbackUsed` string indicating if the system had to use a simpler algorithm due to data scarcity.
 </Note>

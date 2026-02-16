@@ -9,13 +9,15 @@ The `PaymentsService` class (accessed via `client.payments`) handles the core in
 
 ### `getPaymentMethods`
 
-Retrieve all active payment methods configured in your Tybrite Admin Panel. 
+Retrieve all active payment methods configured in your Tybrite Admin Panel.
 
 ```typescript
-const { methods } = await client.payments.getPaymentMethods();
+const { methods } = await client.payments.getPaymentMethods({
+  fields: 'provider,display_name,supported_currencies' // Optional
+});
 
 methods.forEach(method => {
-  console.log(`Provider: ${method.provider} | Type: ${method.integration_type}`);
+  console.log(`Provider: ${method.provider} | Currencies: ${method.supported_currencies.join(', ')}`);
 });
 ```
 
@@ -39,11 +41,12 @@ const response = await client.payments.initializePayment({
     currency: 'USD',
     email: 'customer@email.com',
     success_url: 'https://store.com/thanks',
-    cancel_url: 'https://store.com/checkout'
+    cancel_url: 'https://store.com/checkout',
+    idempotency_key: 'unique-session-id' // Recommended
   }
 });
 // Redirect to Stripe Checkout
-window.location.href = response.checkout_url;
+window.location.href = (response as any).checkout_url;
 ```
 
 ```typescript M-Pesa (Mobile Money)

@@ -14,8 +14,7 @@ Retrieve all message threads for the store. You can filter by customer or curren
 ```typescript
 const { threads } = await client.messaging.listThreads({
   customerId: 'cust_123', // Optional
-  status: 'open',
-  limit: 50
+  fields: 'id,subject,status,unread_count_customer' // Optional
 });
 ```
 
@@ -27,7 +26,8 @@ Retrieve the high-level metadata for a thread, including the subject and current
 
 ```typescript
 const thread = await client.messaging.getThread({
-  id: 'thread-uuid-123'
+  id: 'thread-uuid-123',
+  fields: 'subject,priority,status' // Optional
 });
 ```
 
@@ -39,7 +39,8 @@ Fetch the full chat history of a specific thread.
 
 ```typescript
 const { messages } = await client.messaging.getThreadMessages({
-  id: 'thread-uuid-123'
+  id: 'thread-uuid-123',
+  fields: 'message_content,sender_type,created_at' // Optional
 });
 
 messages.forEach(msg => {
@@ -62,10 +63,7 @@ Reply to an existing conversation.
 await client.messaging.sendMessage({
   id: 'thread-uuid-123',
   requestBody: {
-    message: "Thank you for the update. Here is my receipt.",
-    attachments: [
-      "https://cdn.mystore.com/uploads/receipt.pdf"
-    ]
+    message: "Thank you for the update. I'll check my account."
   }
 });
 ```
@@ -84,6 +82,8 @@ Initiate a brand new support ticket or conversation for a customer.
 const thread = await client.messaging.createConversation({
   requestBody: {
     customer_id: 'cust_456',
+    customer_name: 'Jane Doe',
+    customer_email: 'jane@example.com',
     subject: "Return Request - Order #555",
     message: "I would like to initiate a return for my order."
   }
@@ -95,5 +95,5 @@ console.log(`Started new thread: ${thread.id}`);
 ---
 
 <Tip>
-  **Pro UX Tip:** Use the `unread_count` field from `listThreads` to display a badge on your "Support" icon to notify customers of agent replies.
+  **Pro UX Tip:** Use the `unread_count_customer` field from `listThreads` to display a badge on your "Support" icon to notify customers of agent replies.
 </Tip>

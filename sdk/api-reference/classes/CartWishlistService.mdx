@@ -28,11 +28,21 @@ console.log(`Items in cart: ${cart.total_items}`);
 Add a product to the cart. If the product already exists, its quantity will be incremented.
 
 ```typescript
-const response = await client.cartWishlist.addToCart({
+// Anonymous Cart (requires session ID)
+await client.cartWishlist.addToCart({
+  xSessionId: 'guest-uuid-123',
+  requestBody: {
+    product_id: 'product-uuid',
+    quantity: 1
+  }
+});
+
+// Authenticated Cart (requires customer ID)
+await client.cartWishlist.addToCart({
   requestBody: {
     product_id: 'product-uuid',
     quantity: 1,
-    customer_id: 'customer-uuid' // Optional
+    customer_id: 'customer-uuid'
   }
 });
 ```
@@ -62,6 +72,19 @@ Remove all items from the cart in a single operation.
 await client.cartWishlist.clearCart({
   customerId: 'customer-uuid'
 });
+```
+
+---
+
+### `removeCartItem`
+
+Remove a specific item from the cart.
+
+```typescript
+await client.cartWishlist.removeCartItem({
+  id: 'cart-item-uuid'
+});
+```
 ```
 
 ---
@@ -104,6 +127,20 @@ await client.cartWishlist.addToWishlist({
     customer_id: 'customer-uuid'
   }
 });
+```
+
+---
+
+### `removeFromWishlist`
+
+Remove an item from the customer's wishlist.
+
+```typescript
+await client.cartWishlist.removeFromWishlist({
+  id: 'wishlist-item-uuid',
+  customerId: 'customer-uuid'
+});
+```
 ```
 
 ---

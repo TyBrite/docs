@@ -27,15 +27,15 @@ console.log(`Found ${result.totalResults} results in ${result.searchTimeMs}ms`);
 Leverage LLM-powered semantic search that understands intent and context. This allows customers to find products using natural language descriptions even if they don't know the exact product name.
 
 <Note>
-  This method requires a **Secret Key** as it utilizes vector embedding computation.
+  **Key Support:** Both **Secret Keys** and **Publishable Keys** are supported for semantic search, allowing you to implement AI-powered search directly in your frontend.
 </Note>
 
 ```typescript
 const result = await client.search.semanticSearch({
   requestBody: {
     query: 'something waterproof for hiking in cold weather',
-    categoryId: 'outdoor-gear-uuid', // Optional: scoped search
-    limit: 5
+    limit: 5,
+    minScore: 0.7 // Optional: tune relevance threshold
   }
 });
 ```
