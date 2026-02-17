@@ -11,8 +11,18 @@ export class ProductsService {
      * List products with filtering and pagination
      * Retrieve a paginated list of products with support for filtering, search, and field selection.
      *
+     * **Response Structure:**
+     * Returns flat structure with default variant data only (no variants array). This keeps payloads
+     * small for fast catalog browsing. Use the `has_variants` flag to determine if a detail fetch
+     * is needed to show variant options.
+     *
      * **Currency:** All prices returned in store's default currency. For multi-currency support with
      * geographic detection, use the `/v1/prices/products` endpoint instead.
+     *
+     * **Performance:**
+     * - Default variant data included at root level (price, stock, sku)
+     * - No variants array (50-70% smaller than detail endpoints)
+     * - Perfect for product listing pages and search results
      *
      * @returns any Successfully retrieved products with pagination metadata.
      *
@@ -190,14 +200,15 @@ export class ProductsService {
                                      *
                                      * **Allowed Fields:**
                                      * - **Core:** `product_id`, `variant_id`, `name`, `sku`, `description`
-                                     * - **Pricing:** `price`, `selling_price`, `online_price`, `online_sale_price`, `display_currency`, `currency_symbol`
+                                     * - **Pricing:** `price`, `selling_price`, `sale_price`, `display_currency`, `currency_symbol`
                                      * - **Inventory:** `stock`, `threshold`, `last_restocked`
-                                     * - **Media:** `images`, `online_images`
+                                     * - **Media:** `images`
                                      * - **SEO:** `product_slug`, `seo_title`, `seo_description`, `seo_keywords`
                                      * - **Taxonomy:** `category_id`, `category_name`, `subcategory_id`, `subcategory_name`
-                                     * - **Metadata:** `brand`, `featured`, `featured_order`, `tags`, `is_active`, `is_online_enabled`
-                                     * - **Nested:** `attributes.*`, `shipping_info.*`
+                                     * - **Metadata:** `brand`, `featured`, `featured_order`, `tags`, `is_active`, `online_category`
+                                     * - **Nested:** `attributes.*`, `shipping_info.*`, `variant_attributes.*`
                                      * - **Timestamps:** `created_at`, `updated_at`
+                                     * - **Flags:** `has_variants`, `is_default`
                                      *
                                      * **Bandwidth Savings:**
                                      * - Full product: ~2-5KB per product
@@ -207,7 +218,7 @@ export class ProductsService {
                                      * **Examples:**
                                      * - `fields=name,price,stock` - Minimal product card
                                      * - `fields=product_id,name,sku,price,category_name` - Product grid
-                                     * - `fields=name,description,price,online_images,attributes.*` - Product detail page
+                                     * - `fields=name,description,price,images,attributes.*` - Product detail page
                                      *
                                      * **Nested Fields:**
                                      * ```typescript
@@ -267,452 +278,547 @@ export class ProductsService {
                                      * Get product by ID or variant ID
                                      * Retrieve complete details for a single product using either its product ID or variant ID.
                                      *
+                                     * **Response Structure:**
+                                     * - **Simple products (no variants):** Flat structure with all data at root level
+                                     * - **Multi-variant products:** Hierarchical structure with:
+                                     * - Product-level data at root (name, description, brand, images, etc.)
+                                     * - Aggregate data (total_stock, price_range using selling_price)
+                                     * - Clean variants array with only variant-specific fields (no redundancy)
+                                     *
+                                     * **Field Filtering:**
+                                     * Supports both root-level and nested variant filtering:
+                                     * - Root filtering: ~ 38% bandwidth reduction
+                                     * - Nested filtering: ~ 52% bandwidth reduction
+                                     * - Example: `fields=name,price_range,variants.sku,variants.selling_price,variants.stock`
+                                     *
                                      * **Currency:** Prices returned in store's default currency. For multi-currency support with
                                      * geographic detection, use the `/v1/prices/products/{id}` endpoint instead.
                                      *
                                      * @returns Product Successfully retrieved product with complete details.
                                      *
                                      * **Response Structure:**
-                                     * Returns a single product object with all requested fields. If no fields parameter is specified, returns all available fields.
                                      *
-                                     * **Field Descriptions:**
-                                     * - `product_id`: Main product identifier (UUID)
-                                     * - `variant_id`: Variant identifier (UUID)
-                                     * - `name`: Product name
-                                     * - `description`: Product description
-                                     * - `sku`: Stock Keeping Unit
-                                     * - `price`: Price in cents (e.g., 189999 = $1,899.99)
-                                     * - `stock`: Available quantity
-                                     * - `image`: Primary product image URL
-                                     * - `brand`: Product brand name
-                                     * - `category_name`: Category name
-                                     * - `is_active`: Whether product is active
+                                     * **For Simple Products (has_variants=false):**
+                                     * Returns flat structure with all data at root level:
+                                     * - All product fields (name, description, brand, images, etc.)
+                                     * - All variant fields (variant_id, sku, price, stock, etc.)
+                                     * - No variants array
+                                     *
+                                     * **For Multi-Variant Products (has_variants=true):**
+                                     * Returns hierarchical structure:
+                                     * - Product-level fields at root (name, description, brand, images, etc.)
+                                     * - Aggregate data: total_stock, price_range (using selling_price)
+                                     * - Flags: has_variants=true, variant_count
+                                     * - Clean variants array with only variant-specific fields:
+                                     * - variant_id, sku, price, sale_price, selling_price
+                                     * - stock, threshold, last_restocked
+                                     * - variant_attributes (color, size, etc.)
+                                     * - variant_name, is_default
+                                     *
+                                     * **Field Filtering:**
+                                     * - Root-level: Exclude unnecessary fields (~ 38% reduction)
+                                     * - Nested: Filter variant fields using dot notation (~ 52% reduction)
+                                     * - Example: `fields=name,price_range,variants.sku,variants.selling_price,variants.stock`
                                      *
                                      * **SDK Usage:**
                                      * ```typescript
                                      * const product = await client.products.getProduct(productId);
                                      *
-                                     * console.log(`${product.name} - $${product.price / 100}`);
-                                     * console.log(`In stock: ${product.stock > 0 ? 'Yes' : 'No'}`);
-                                     * ```
-                                     *
-                                     * @throws ApiError
-                                     */
-                                    public getProduct({
-                                        id = 'd8cea277-9bb6-4942-b9e9-2f2ac351509f',
-                                        fields,
-                                    }: {
-                                        /**
-                                         * Product ID or Variant ID. This endpoint accepts both types of IDs, providing flexible product retrieval.
-                                         *
-                                         * **Accepted ID Types:**
-                                         * - **Product ID**: The main product identifier (e.g., `d8cea277-9bb6-4942-b9e9-2f2ac351509f`)
-                                         * - **Variant ID**: A specific variant identifier (e.g., `cc35d16b-fca5-4faa-8699-d3d5d3521bca`)
-                                         *
-                                         * **Why This Matters:**
-                                         * - Simplifies API usage - no need to know if you have a product or variant ID
-                                         * - Useful for barcode scanning where you might have variant IDs
-                                         * - Consistent behavior regardless of ID type
-                                         *
-                                         * **Validation:**
-                                         * - Must be a valid UUID format
-                                         * - Must exist in your store's product catalog
-                                         * - Returns 404 if product/variant not found
-                                         *
-                                         * **SDK Usage:**
-                                         * ```typescript
-                                         * // Works with product ID
-                                         * const product1 = await client.products.getProduct(
-                                             * 'd8cea277-9bb6-4942-b9e9-2f2ac351509f'
-                                             * );
+                                     * if (product.has_variants) {
+                                         * console.log(`Price range: ${product.price_range.min} - ${product.price_range.max}`);
+                                         * console.log(`Total stock: ${product.total_stock}`);
+                                         * console.log(`Variants: ${product.variants.length}`);
+                                         * } else {
+                                             * console.log(`Price: ${product.selling_price}`);
+                                             * console.log(`Stock: ${product.stock}`);
+                                             * }
+                                             * ```
                                              *
-                                             * // Also works with variant ID
-                                             * const product2 = await client.products.getProduct(
-                                                 * 'cc35d16b-fca5-4faa-8699-d3d5d3521bca'
-                                                 * );
-                                                 * ```
-                                                 *
-                                                 */
-                                                id?: string,
+                                             * @throws ApiError
+                                             */
+                                            public getProduct({
+                                                id = 'd8cea277-9bb6-4942-b9e9-2f2ac351509f',
+                                                fields,
+                                            }: {
                                                 /**
-                                                 * Comma-separated list of fields to include in the response. Use this to reduce bandwidth by requesting only the fields you need.
+                                                 * Product ID or Variant ID. This endpoint accepts both types of IDs, providing flexible product retrieval.
                                                  *
-                                                 * **Allowed Fields:** Same as `GET /v1/products` endpoint
-                                                 * - Core: `product_id`, `variant_id`, `name`, `sku`, `description`
-                                                 * - Pricing: `price`, `selling_price`, `online_price`, `online_sale_price`
-                                                 * - Inventory: `stock`, `threshold`, `last_restocked`
-                                                 * - Media: `images`, `online_images`
-                                                 * - Metadata: `brand`, `category_name`, `subcategory_name`, `attributes.*`
+                                                 * **Accepted ID Types:**
+                                                 * - **Product ID**: The main product identifier (e.g., `d8cea277-9bb6-4942-b9e9-2f2ac351509f`)
+                                                 * - **Variant ID**: A specific variant identifier (e.g., `cc35d16b-fca5-4faa-8699-d3d5d3521bca`)
                                                  *
-                                                 * **Bandwidth Savings:**
-                                                 * - Full product: ~2-5KB
-                                                 * - Filtered (name,price,stock,sku): ~500 bytes-1KB
-                                                 * - **Reduction: 50-80% bandwidth savings**
+                                                 * **Why This Matters:**
+                                                 * - Simplifies API usage - no need to know if you have a product or variant ID
+                                                 * - Useful for barcode scanning where you might have variant IDs
+                                                 * - Consistent behavior regardless of ID type
                                                  *
-                                                 * **Examples:**
-                                                 * - `fields=name,price,stock` - Minimal product info
-                                                 * - `fields=product_id,name,description,price,online_images` - PDP essentials
-                                                 * - `fields=name,sku,stock,price,category_name` - Cart display
+                                                 * **Validation:**
+                                                 * - Must be a valid UUID format
+                                                 * - Must exist in your store's product catalog
+                                                 * - Returns 404 if product/variant not found
                                                  *
                                                  * **SDK Usage:**
                                                  * ```typescript
-                                                 * const product = await client.products.getProduct(productId, {
-                                                     * fields: 'name,price,stock,sku'
-                                                     * });
-                                                     * ```
+                                                 * // Works with product ID
+                                                 * const product1 = await client.products.getProduct(
+                                                     * 'd8cea277-9bb6-4942-b9e9-2f2ac351509f'
+                                                     * );
                                                      *
-                                                     */
-                                                    fields?: string,
-                                                }): CancelablePromise<Product> {
-                                                    return this.httpRequest.request({
-                                                        method: 'GET',
-                                                        url: '/v1/products/{id}',
-                                                        path: {
-                                                            'id': id,
-                                                        },
-                                                        query: {
-                                                            'fields': fields,
-                                                        },
-                                                        errors: {
-                                                            400: `Invalid request - malformed data or missing required fields`,
-                                                            401: `Authentication failed - invalid or missing API key`,
-                                                            404: `Product or variant not found for the given ID.
-                                                             **Common Causes:**
-                                                            - Invalid product/variant ID
-                                                            - Product belongs to a different store
-                                                            - Product has been deleted
-                                                             **SDK Error Handling:**
-                                                            \`\`\`typescript
-                                                            try {
-                                                                const product = await client.products.getProduct(productId);
-                                                            } catch (error) {
-                                                                if (error.status === 404) {
-                                                                    console.error('Product not found');
-                                                                    // Redirect to product listing or show error message
-                                                                }
-                                                            }
-                                                            \`\`\`
-                                                            `,
-                                                            429: `Rate limit exceeded`,
-                                                            500: `Internal server error`,
-                                                        },
-                                                    });
-                                                }
-                                                /**
-                                                 * Get product by SEO-friendly slug
-                                                 * Retrieve product information using a human-readable, SEO-friendly slug.
-                                                 *
-                                                 * **Currency:** Prices returned in store's default currency. For multi-currency support with
-                                                 * geographic detection, use the `/v1/prices/products/{id}` endpoint instead.
-                                                 *
-                                                 * @returns Product Successfully retrieved product by slug with complete details including SEO metadata.
-                                                 *
-                                                 * **Response Structure:**
-                                                 * Returns a single product object with all requested fields. This endpoint includes additional SEO-specific fields not always present in other endpoints:
-                                                 * - `product_slug`: The SEO-friendly slug used in the request
-                                                 * - `seo_title`: Optimized title for search engines
-                                                 * - `seo_description`: Optimized description for search engines
-                                                 * - `seo_keywords`: Keywords for SEO (optional)
-                                                 * - `online_product_id`: Online store product identifier
-                                                 * - `online_name`: Display name for online store
-                                                 * - `online_description`: Description for online store
-                                                 * - `online_images`: Array of image URLs for online display
-                                                 * - `featured`: Whether product is featured
-                                                 * - `featured_order`: Display order for featured products
-                                                 *
-                                                 * **SDK Usage:**
-                                                 * ```typescript
-                                                 * const product = await client.products.getProductBySlug(slug);
-                                                 *
-                                                 * // Use SEO fields for page metadata
-                                                 * document.title = product.seo_title || product.name;
-                                                 * document.querySelector('meta[name="description"]').content =
-                                                 * product.seo_description || product.description;
-                                                 * ```
-                                                 *
-                                                 * @throws ApiError
-                                                 */
-                                                public getProductBySlug({
-                                                    slug = 'apple-macbook-pro-d8cea',
-                                                    fields,
-                                                }: {
-                                                    /**
-                                                     * SEO-friendly product slug in the format `{product-name}-{short-id}`.
-                                                     *
-                                                     * **Slug Format:**
-                                                     * - Lowercase product name with hyphens
-                                                     * - Short unique identifier appended
-                                                     * - Example: `apple-macbook-pro-d8cea`
-                                                     *
-                                                     * **Where to Get Slugs:**
-                                                     * - From `product_slug` field in product list responses
-                                                     * - From product URLs in your e-commerce site
-                                                     * - Generated automatically when products are created
-                                                     *
-                                                     * **Validation:**
-                                                     * - Must match an existing product slug
-                                                     * - Case-sensitive (use lowercase)
-                                                     * - Returns 404 if slug not found
-                                                     *
-                                                     * **SDK Usage:**
-                                                     * ```typescript
-                                                     * // Use slug from product listing
-                                                     * const products = await client.products.listProducts({ limit: 10 });
-                                                     * const firstProductSlug = products.products[0].product_slug;
-                                                     *
-                                                     * // Get full product details by slug
-                                                     * const product = await client.products.getProductBySlug(firstProductSlug);
-                                                     * ```
-                                                     *
-                                                     * **SEO Benefits:**
-                                                     * - Readable URLs: `/products/apple-macbook-pro-d8cea` vs `/products/d8cea277-9bb6-4942-b9e9-2f2ac351509f`
-                                                     * - Better click-through rates in search results
-                                                     * - Improved social media sharing
-                                                     * - Enhanced user trust and memorability
-                                                     *
-                                                     */
-                                                    slug?: string,
-                                                    /**
-                                                     * Comma-separated list of fields to include in the response. Use this to reduce bandwidth by requesting only the fields you need.
-                                                     *
-                                                     * **Recommended Fields for PDPs:**
-                                                     * - SEO: `seo_title`, `seo_description`, `seo_keywords`, `product_slug`
-                                                     * - Core: `product_id`, `name`, `description`
-                                                     * - Pricing: `price`, `online_price`, `online_sale_price`
-                                                     * - Media: `online_images`, `images`
-                                                     * - Metadata: `brand`, `category_name`, `attributes`, `tags`
-                                                     * - Inventory: `stock`, `is_online_enabled`
-                                                     *
-                                                     * **Example:**
-                                                     * ```typescript
-                                                     * const product = await client.products.getProductBySlug(slug, {
-                                                         * fields: 'product_id,name,description,price,online_images,seo_title,seo_description,stock,brand'
-                                                         * });
+                                                     * // Also works with variant ID
+                                                     * const product2 = await client.products.getProduct(
+                                                         * 'cc35d16b-fca5-4faa-8699-d3d5d3521bca'
+                                                         * );
                                                          * ```
                                                          *
                                                          */
-                                                        fields?: string,
-                                                    }): CancelablePromise<Product> {
-                                                        return this.httpRequest.request({
-                                                            method: 'GET',
-                                                            url: '/v1/products/by-slug/{slug}',
-                                                            path: {
-                                                                'slug': slug,
-                                                            },
-                                                            query: {
-                                                                'fields': fields,
-                                                            },
-                                                            errors: {
-                                                                400: `Invalid request - malformed data or missing required fields`,
-                                                                401: `Authentication failed - invalid or missing API key`,
-                                                                404: `Product not found for the given slug.
-                                                                 **Common Causes:**
-                                                                - Invalid or non-existent slug
-                                                                - Product belongs to a different store
-                                                                - Product has been deleted or deactivated
-                                                                - Slug format is incorrect (check for typos)
-                                                                 **SDK Error Handling:**
-                                                                \`\`\`typescript
-                                                                try {
-                                                                    const product = await client.products.getProductBySlug(slug);
-                                                                } catch (error) {
-                                                                    if (error.status === 404) {
-                                                                        console.error('Product not found for slug:', slug);
-                                                                        // Redirect to product listing or 404 page
-                                                                        window.location.href = '/products';
+                                                        id?: string,
+                                                        /**
+                                                         * Comma-separated list of fields to include in the response. Supports both root-level and nested variant filtering for maximum bandwidth optimization.
+                                                         *
+                                                         * **Root-Level Fields:**
+                                                         * - **Core:** `product_id`, `variant_id`, `name`, `sku`, `description`
+                                                         * - **Pricing:** `price`, `selling_price`, `sale_price`, `price_range`, `display_currency`, `currency_symbol`
+                                                         * - **Inventory:** `stock`, `total_stock`, `threshold`, `last_restocked`
+                                                         * - **Media:** `images`
+                                                         * - **Metadata:** `brand`, `category_name`, `subcategory_name`, `attributes.*`
+                                                         * - **Flags:** `has_variants`, `variant_count`, `is_default`
+                                                         * - **Variants:** `variants` (includes all variant fields)
+                                                         *
+                                                         * **Nested Variant Filtering (52% bandwidth reduction):**
+                                                         * Use dot notation to filter specific fields within the variants array:
+                                                         * - `variants.variant_id` - Variant identifier
+                                                         * - `variants.sku` - Variant SKU
+                                                         * - `variants.selling_price` - Customer-facing price
+                                                         * - `variants.stock` - Stock quantity
+                                                         * - `variants.variant_attributes` - Variant attributes (color, size, etc.)
+                                                         * - `variants.variant_name` - Variant display name
+                                                         * - `variants.is_default` - Default variant flag
+                                                         * - `variants.*` - All variant fields (same as just `variants`)
+                                                         *
+                                                         * **Bandwidth Savings:**
+                                                         * - Full product: ~1720 bytes (baseline)
+                                                         * - Root filtering: ~1060 bytes (~ 38% reduction)
+                                                         * - Nested filtering: ~830 bytes (~ 52% reduction)
+                                                         *
+                                                         * **Examples:**
+                                                         *
+                                                         * Root-level filtering (~ 38% reduction):
+                                                         * ```
+                                                         * fields=product_id,name,brand,total_stock,price_range,variants
+                                                         * ```
+                                                         *
+                                                         * Nested variant filtering (~ 52% reduction):
+                                                         * ```
+                                                         * fields=product_id,name,brand,total_stock,price_range,
+                                                         * variants.variant_id,variants.sku,variants.selling_price,
+                                                         * variants.stock,variants.variant_attributes
+                                                         * ```
+                                                         *
+                                                         * Minimal cart validation:
+                                                         * ```
+                                                         * fields=product_id,total_stock,variants.variant_id,variants.stock
+                                                         * ```
+                                                         *
+                                                         * **SDK Usage:**
+                                                         * ```typescript
+                                                         * // Root-level filtering
+                                                         * const product = await client.products.getProduct(productId, {
+                                                             * fields: 'name,price_range,total_stock,variants'
+                                                             * });
+                                                             *
+                                                             * // Nested variant filtering (maximum optimization)
+                                                             * const product = await client.products.getProduct(productId, {
+                                                                 * fields: 'name,brand,price_range,variants.sku,variants.selling_price,variants.stock'
+                                                                 * });
+                                                                 * ```
+                                                                 *
+                                                                 * **Performance Impact:**
+                                                                 * - Nested filtering excludes internal fields (threshold, last_restocked)
+                                                                 * - Perfect for mobile apps and bandwidth-constrained environments
+                                                                 * - Recommended for product cards and listing pages
+                                                                 *
+                                                                 */
+                                                                fields?: string,
+                                                            }): CancelablePromise<Product> {
+                                                                return this.httpRequest.request({
+                                                                    method: 'GET',
+                                                                    url: '/v1/products/{id}',
+                                                                    path: {
+                                                                        'id': id,
+                                                                    },
+                                                                    query: {
+                                                                        'fields': fields,
+                                                                    },
+                                                                    errors: {
+                                                                        400: `Invalid request - malformed data or missing required fields`,
+                                                                        401: `Authentication failed - invalid or missing API key`,
+                                                                        404: `Product or variant not found for the given ID.
+                                                                         **Common Causes:**
+                                                                        - Invalid product/variant ID
+                                                                        - Product belongs to a different store
+                                                                        - Product has been deleted
+                                                                         **SDK Error Handling:**
+                                                                        \`\`\`typescript
+                                                                        try {
+                                                                            const product = await client.products.getProduct(productId);
+                                                                        } catch (error) {
+                                                                            if (error.status === 404) {
+                                                                                console.error('Product not found');
+                                                                                // Redirect to product listing or show error message
+                                                                            }
+                                                                        }
+                                                                        \`\`\`
+                                                                        `,
+                                                                        429: `Rate limit exceeded`,
+                                                                        500: `Internal server error`,
+                                                                    },
+                                                                });
+                                                            }
+                                                            /**
+                                                             * Get product by SEO-friendly slug
+                                                             * Retrieve product information using a human-readable, SEO-friendly slug.
+                                                             *
+                                                             * **Response Structure:**
+                                                             * Same as GET /v1/products/{id}:
+                                                             * - **Simple products:** Flat structure with all data at root
+                                                             * - **Multi-variant products:** Hierarchical structure with product-level data + variants array
+                                                             *
+                                                             * **Field Filtering:**
+                                                             * Supports root-level and nested variant filtering for bandwidth optimization.
+                                                             *
+                                                             * **Currency:** Prices returned in store's default currency. For multi-currency support with
+                                                             * geographic detection, use the `/v1/prices/products/{id}` endpoint instead.
+                                                             *
+                                                             * @returns Product Successfully retrieved product by slug with complete details including SEO metadata.
+                                                             *
+                                                             * **Response Structure:**
+                                                             * Same as GET /v1/products/{id}:
+                                                             *
+                                                             * **For Simple Products:**
+                                                             * Flat structure with all data at root level including SEO fields.
+                                                             *
+                                                             * **For Multi-Variant Products:**
+                                                             * Hierarchical structure with:
+                                                             * - Product-level data at root (including SEO fields)
+                                                             * - Aggregate data (total_stock, price_range)
+                                                             * - Clean variants array with only variant-specific fields
+                                                             *
+                                                             * **SEO Fields Included:**
+                                                             * - `product_slug`: The SEO-friendly slug used in the request
+                                                             * - `seo_title`: Optimized title for search engines
+                                                             * - `seo_description`: Optimized description for search engines
+                                                             * - `seo_keywords`: Keywords for SEO
+                                                             * - `featured`: Whether product is featured
+                                                             * - `featured_order`: Display order for featured products
+                                                             *
+                                                             * **SDK Usage:**
+                                                             * ```typescript
+                                                             * const product = await client.products.getProductBySlug(slug);
+                                                             *
+                                                             * // Use SEO fields for page metadata
+                                                             * document.title = product.seo_title || product.name;
+                                                             * document.querySelector('meta[name="description"]').content =
+                                                             * product.seo_description || product.description;
+                                                             *
+                                                             * // Handle variants
+                                                             * if (product.has_variants) {
+                                                                 * console.log(`${product.variant_count} variants available`);
+                                                                 * console.log(`Price range: €${product.price_range.min/100} - €${product.price_range.max/100}`);
+                                                                 * }
+                                                                 * ```
+                                                                 *
+                                                                 * @throws ApiError
+                                                                 */
+                                                                public getProductBySlug({
+                                                                    slug = 'apple-macbook-pro-d8cea',
+                                                                    fields,
+                                                                }: {
+                                                                    /**
+                                                                     * SEO-friendly product slug in the format `{product-name}-{short-id}`.
+                                                                     *
+                                                                     * **Slug Format:**
+                                                                     * - Lowercase product name with hyphens
+                                                                     * - Short unique identifier appended
+                                                                     * - Example: `apple-macbook-pro-d8cea`
+                                                                     *
+                                                                     * **Where to Get Slugs:**
+                                                                     * - From `product_slug` field in product list responses
+                                                                     * - From product URLs in your e-commerce site
+                                                                     * - Generated automatically when products are created
+                                                                     *
+                                                                     * **Validation:**
+                                                                     * - Must match an existing product slug
+                                                                     * - Case-sensitive (use lowercase)
+                                                                     * - Returns 404 if slug not found
+                                                                     *
+                                                                     * **SDK Usage:**
+                                                                     * ```typescript
+                                                                     * // Use slug from product listing
+                                                                     * const products = await client.products.listProducts({ limit: 10 });
+                                                                     * const firstProductSlug = products.products[0].product_slug;
+                                                                     *
+                                                                     * // Get full product details by slug
+                                                                     * const product = await client.products.getProductBySlug(firstProductSlug);
+                                                                     * ```
+                                                                     *
+                                                                     * **SEO Benefits:**
+                                                                     * - Readable URLs: `/products/apple-macbook-pro-d8cea` vs `/products/d8cea277-9bb6-4942-b9e9-2f2ac351509f`
+                                                                     * - Better click-through rates in search results
+                                                                     * - Improved social media sharing
+                                                                     * - Enhanced user trust and memorability
+                                                                     *
+                                                                     */
+                                                                    slug?: string,
+                                                                    /**
+                                                                     * Comma-separated list of fields to include in the response. Supports both root-level and nested variant filtering.
+                                                                     *
+                                                                     * **Recommended Fields for PDPs:**
+                                                                     * - SEO: `seo_title`, `seo_description`, `seo_keywords`, `product_slug`
+                                                                     * - Core: `product_id`, `name`, `description`
+                                                                     * - Pricing: `price`, `selling_price`, `price_range` (for multi-variant)
+                                                                     * - Media: `images`
+                                                                     * - Metadata: `brand`, `category_name`, `attributes`, `tags`
+                                                                     * - Inventory: `stock`, `total_stock` (for multi-variant)
+                                                                     * - Variants: `variants` or nested filtering (e.g., `variants.sku,variants.selling_price`)
+                                                                     *
+                                                                     * **Nested Variant Filtering:**
+                                                                     * For multi-variant products, use dot notation to filter variant fields:
+                                                                     * ```
+                                                                     * fields=product_id,name,description,price_range,
+                                                                     * variants.variant_id,variants.sku,variants.selling_price,
+                                                                     * variants.stock,variants.variant_attributes
+                                                                     * ```
+                                                                     *
+                                                                     * **Example:**
+                                                                     * ```typescript
+                                                                     * const product = await client.products.getProductBySlug(slug, {
+                                                                         * fields: 'product_id,name,description,price_range,images,seo_title,seo_description,variants.sku,variants.selling_price,variants.stock'
+                                                                         * });
+                                                                         * ```
+                                                                         *
+                                                                         */
+                                                                        fields?: string,
+                                                                    }): CancelablePromise<Product> {
+                                                                        return this.httpRequest.request({
+                                                                            method: 'GET',
+                                                                            url: '/v1/products/by-slug/{slug}',
+                                                                            path: {
+                                                                                'slug': slug,
+                                                                            },
+                                                                            query: {
+                                                                                'fields': fields,
+                                                                            },
+                                                                            errors: {
+                                                                                400: `Invalid request - malformed data or missing required fields`,
+                                                                                401: `Authentication failed - invalid or missing API key`,
+                                                                                404: `Product not found for the given slug.
+                                                                                 **Common Causes:**
+                                                                                - Invalid or non-existent slug
+                                                                                - Product belongs to a different store
+                                                                                - Product has been deleted or deactivated
+                                                                                - Slug format is incorrect (check for typos)
+                                                                                 **SDK Error Handling:**
+                                                                                \`\`\`typescript
+                                                                                try {
+                                                                                    const product = await client.products.getProductBySlug(slug);
+                                                                                } catch (error) {
+                                                                                    if (error.status === 404) {
+                                                                                        console.error('Product not found for slug:', slug);
+                                                                                        // Redirect to product listing or 404 page
+                                                                                        window.location.href = '/products';
+                                                                                    }
+                                                                                }
+                                                                                \`\`\`
+                                                                                 **Debugging Tips:**
+                                                                                - Verify slug format matches \`{name}-{short-id}\` pattern
+                                                                                - Check that slug is lowercase
+                                                                                - Ensure product exists in your store
+                                                                                - Try listing products to see available slugs
+                                                                                `,
+                                                                                429: `Rate limit exceeded`,
+                                                                                500: `Internal server error`,
+                                                                            },
+                                                                        });
+                                                                    }
+                                                                    /**
+                                                                     * Get product specifications
+                                                                     * Retrieves the latest specification version for a specific product
+                                                                     * @returns any Successfully retrieved product specification
+                                                                     * @throws ApiError
+                                                                     */
+                                                                    public getProductSpecifications({
+                                                                        id,
+                                                                    }: {
+                                                                        /**
+                                                                         * Product UUID
+                                                                         */
+                                                                        id: string,
+                                                                    }): CancelablePromise<{
+                                                                        id?: string;
+                                                                        product_id?: string;
+                                                                        template_id?: string;
+                                                                        specification_data?: Record<string, any>;
+                                                                        status?: string;
+                                                                        version?: number;
+                                                                        created_at?: string;
+                                                                        updated_at?: string;
+                                                                    }> {
+                                                                        return this.httpRequest.request({
+                                                                            method: 'GET',
+                                                                            url: '/v1/products/{id}/specifications',
+                                                                            path: {
+                                                                                'id': id,
+                                                                            },
+                                                                            errors: {
+                                                                                400: `Invalid request - malformed data or missing required fields`,
+                                                                                401: `Authentication failed - invalid or missing API key`,
+                                                                                404: `No specifications found for this product`,
+                                                                                429: `Rate limit exceeded`,
+                                                                                500: `Internal server error`,
+                                                                            },
+                                                                        });
+                                                                    }
+                                                                    /**
+                                                                     * List product specifications
+                                                                     * @returns any Success
+                                                                     * @throws ApiError
+                                                                     */
+                                                                    public listProductSpecifications({
+                                                                        productId,
+                                                                        status,
+                                                                        limit = 50,
+                                                                        offset,
+                                                                    }: {
+                                                                        productId?: string,
+                                                                        status?: string,
+                                                                        limit?: number,
+                                                                        offset?: number,
+                                                                    }): CancelablePromise<{
+                                                                        specifications?: Array<Record<string, any>>;
+                                                                    }> {
+                                                                        return this.httpRequest.request({
+                                                                            method: 'GET',
+                                                                            url: '/v1/product-specifications',
+                                                                            query: {
+                                                                                'product_id': productId,
+                                                                                'status': status,
+                                                                                'limit': limit,
+                                                                                'offset': offset,
+                                                                            },
+                                                                            errors: {
+                                                                                400: `Invalid request - malformed data or missing required fields`,
+                                                                                401: `Authentication failed - invalid or missing API key`,
+                                                                                429: `Rate limit exceeded`,
+                                                                                500: `Internal server error`,
+                                                                            },
+                                                                        });
+                                                                    }
+                                                                    /**
+                                                                     * List product collections
+                                                                     * @returns any Success
+                                                                     * @throws ApiError
+                                                                     */
+                                                                    public listProductCollections({
+                                                                        type,
+                                                                        showOnHomepage,
+                                                                        limit = 50,
+                                                                        offset,
+                                                                    }: {
+                                                                        type?: string,
+                                                                        /**
+                                                                         * Filter by homepage visibility (accepts string 'true' or 'false')
+                                                                         */
+                                                                        showOnHomepage?: 'true' | 'false',
+                                                                        limit?: number,
+                                                                        offset?: number,
+                                                                    }): CancelablePromise<{
+                                                                        collections?: Array<{
+                                                                            id?: string;
+                                                                            name?: string;
+                                                                            slug?: string;
+                                                                            description?: string;
+                                                                        }>;
+                                                                    }> {
+                                                                        return this.httpRequest.request({
+                                                                            method: 'GET',
+                                                                            url: '/v1/product-collections',
+                                                                            query: {
+                                                                                'type': type,
+                                                                                'show_on_homepage': showOnHomepage,
+                                                                                'limit': limit,
+                                                                                'offset': offset,
+                                                                            },
+                                                                            errors: {
+                                                                                400: `Invalid request - malformed data or missing required fields`,
+                                                                                401: `Authentication failed - invalid or missing API key`,
+                                                                                429: `Rate limit exceeded`,
+                                                                                500: `Internal server error`,
+                                                                            },
+                                                                        });
+                                                                    }
+                                                                    /**
+                                                                     * Get product collection by ID
+                                                                     * @returns any Success
+                                                                     * @throws ApiError
+                                                                     */
+                                                                    public getProductCollection({
+                                                                        id,
+                                                                    }: {
+                                                                        id: string,
+                                                                    }): CancelablePromise<{
+                                                                        id?: string;
+                                                                        name?: string;
+                                                                        slug?: string;
+                                                                        description?: string;
+                                                                    }> {
+                                                                        return this.httpRequest.request({
+                                                                            method: 'GET',
+                                                                            url: '/v1/product-collections/{id}',
+                                                                            path: {
+                                                                                'id': id,
+                                                                            },
+                                                                            errors: {
+                                                                                400: `Invalid request - malformed data or missing required fields`,
+                                                                                401: `Authentication failed - invalid or missing API key`,
+                                                                                404: `Resource not found`,
+                                                                                429: `Rate limit exceeded`,
+                                                                                500: `Internal server error`,
+                                                                            },
+                                                                        });
+                                                                    }
+                                                                    /**
+                                                                     * Get items in a product collection
+                                                                     * @returns any Success
+                                                                     * @throws ApiError
+                                                                     */
+                                                                    public getProductCollectionItems({
+                                                                        id,
+                                                                        limit = 50,
+                                                                        offset,
+                                                                    }: {
+                                                                        id: string,
+                                                                        limit?: number,
+                                                                        offset?: number,
+                                                                    }): CancelablePromise<{
+                                                                        items?: Array<Product>;
+                                                                    }> {
+                                                                        return this.httpRequest.request({
+                                                                            method: 'GET',
+                                                                            url: '/v1/product-collections/{id}/items',
+                                                                            path: {
+                                                                                'id': id,
+                                                                            },
+                                                                            query: {
+                                                                                'limit': limit,
+                                                                                'offset': offset,
+                                                                            },
+                                                                            errors: {
+                                                                                400: `Invalid request - malformed data or missing required fields`,
+                                                                                401: `Authentication failed - invalid or missing API key`,
+                                                                                404: `Resource not found`,
+                                                                                429: `Rate limit exceeded`,
+                                                                                500: `Internal server error`,
+                                                                            },
+                                                                        });
                                                                     }
                                                                 }
-                                                                \`\`\`
-                                                                 **Debugging Tips:**
-                                                                - Verify slug format matches \`{name}-{short-id}\` pattern
-                                                                - Check that slug is lowercase
-                                                                - Ensure product exists in your store
-                                                                - Try listing products to see available slugs
-                                                                `,
-                                                                429: `Rate limit exceeded`,
-                                                                500: `Internal server error`,
-                                                            },
-                                                        });
-                                                    }
-                                                    /**
-                                                     * Get product specifications
-                                                     * Retrieves the latest specification version for a specific product
-                                                     * @returns any Successfully retrieved product specification
-                                                     * @throws ApiError
-                                                     */
-                                                    public getProductSpecifications({
-                                                        id,
-                                                    }: {
-                                                        /**
-                                                         * Product UUID
-                                                         */
-                                                        id: string,
-                                                    }): CancelablePromise<{
-                                                        id?: string;
-                                                        product_id?: string;
-                                                        template_id?: string;
-                                                        specification_data?: Record<string, any>;
-                                                        status?: string;
-                                                        version?: number;
-                                                        created_at?: string;
-                                                        updated_at?: string;
-                                                    }> {
-                                                        return this.httpRequest.request({
-                                                            method: 'GET',
-                                                            url: '/v1/products/{id}/specifications',
-                                                            path: {
-                                                                'id': id,
-                                                            },
-                                                            errors: {
-                                                                400: `Invalid request - malformed data or missing required fields`,
-                                                                401: `Authentication failed - invalid or missing API key`,
-                                                                404: `No specifications found for this product`,
-                                                                429: `Rate limit exceeded`,
-                                                                500: `Internal server error`,
-                                                            },
-                                                        });
-                                                    }
-                                                    /**
-                                                     * List product specifications
-                                                     * @returns any Success
-                                                     * @throws ApiError
-                                                     */
-                                                    public listProductSpecifications({
-                                                        productId,
-                                                        status,
-                                                        limit = 50,
-                                                        offset,
-                                                    }: {
-                                                        productId?: string,
-                                                        status?: string,
-                                                        limit?: number,
-                                                        offset?: number,
-                                                    }): CancelablePromise<{
-                                                        specifications?: Array<Record<string, any>>;
-                                                    }> {
-                                                        return this.httpRequest.request({
-                                                            method: 'GET',
-                                                            url: '/v1/product-specifications',
-                                                            query: {
-                                                                'product_id': productId,
-                                                                'status': status,
-                                                                'limit': limit,
-                                                                'offset': offset,
-                                                            },
-                                                            errors: {
-                                                                400: `Invalid request - malformed data or missing required fields`,
-                                                                401: `Authentication failed - invalid or missing API key`,
-                                                                429: `Rate limit exceeded`,
-                                                                500: `Internal server error`,
-                                                            },
-                                                        });
-                                                    }
-                                                    /**
-                                                     * List product collections
-                                                     * @returns any Success
-                                                     * @throws ApiError
-                                                     */
-                                                    public listProductCollections({
-                                                        type,
-                                                        showOnHomepage,
-                                                        limit = 50,
-                                                        offset,
-                                                    }: {
-                                                        type?: string,
-                                                        /**
-                                                         * Filter by homepage visibility (accepts string 'true' or 'false')
-                                                         */
-                                                        showOnHomepage?: 'true' | 'false',
-                                                        limit?: number,
-                                                        offset?: number,
-                                                    }): CancelablePromise<{
-                                                        collections?: Array<{
-                                                            id?: string;
-                                                            name?: string;
-                                                            slug?: string;
-                                                            description?: string;
-                                                        }>;
-                                                    }> {
-                                                        return this.httpRequest.request({
-                                                            method: 'GET',
-                                                            url: '/v1/product-collections',
-                                                            query: {
-                                                                'type': type,
-                                                                'show_on_homepage': showOnHomepage,
-                                                                'limit': limit,
-                                                                'offset': offset,
-                                                            },
-                                                            errors: {
-                                                                400: `Invalid request - malformed data or missing required fields`,
-                                                                401: `Authentication failed - invalid or missing API key`,
-                                                                429: `Rate limit exceeded`,
-                                                                500: `Internal server error`,
-                                                            },
-                                                        });
-                                                    }
-                                                    /**
-                                                     * Get product collection by ID
-                                                     * @returns any Success
-                                                     * @throws ApiError
-                                                     */
-                                                    public getProductCollection({
-                                                        id,
-                                                    }: {
-                                                        id: string,
-                                                    }): CancelablePromise<{
-                                                        id?: string;
-                                                        name?: string;
-                                                        slug?: string;
-                                                        description?: string;
-                                                    }> {
-                                                        return this.httpRequest.request({
-                                                            method: 'GET',
-                                                            url: '/v1/product-collections/{id}',
-                                                            path: {
-                                                                'id': id,
-                                                            },
-                                                            errors: {
-                                                                400: `Invalid request - malformed data or missing required fields`,
-                                                                401: `Authentication failed - invalid or missing API key`,
-                                                                404: `Resource not found`,
-                                                                429: `Rate limit exceeded`,
-                                                                500: `Internal server error`,
-                                                            },
-                                                        });
-                                                    }
-                                                    /**
-                                                     * Get items in a product collection
-                                                     * @returns any Success
-                                                     * @throws ApiError
-                                                     */
-                                                    public getProductCollectionItems({
-                                                        id,
-                                                        limit = 50,
-                                                        offset,
-                                                    }: {
-                                                        id: string,
-                                                        limit?: number,
-                                                        offset?: number,
-                                                    }): CancelablePromise<{
-                                                        items?: Array<Product>;
-                                                    }> {
-                                                        return this.httpRequest.request({
-                                                            method: 'GET',
-                                                            url: '/v1/product-collections/{id}/items',
-                                                            path: {
-                                                                'id': id,
-                                                            },
-                                                            query: {
-                                                                'limit': limit,
-                                                                'offset': offset,
-                                                            },
-                                                            errors: {
-                                                                400: `Invalid request - malformed data or missing required fields`,
-                                                                401: `Authentication failed - invalid or missing API key`,
-                                                                404: `Resource not found`,
-                                                                429: `Rate limit exceeded`,
-                                                                500: `Internal server error`,
-                                                            },
-                                                        });
-                                                    }
-                                                }

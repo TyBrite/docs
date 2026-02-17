@@ -28,6 +28,17 @@ Calculate the exact delivery fee for a customer based on their location and orde
 
 <CodeGroup>
 
+```typescript Via Place Name
+// Calculate using a human-readable address or landmark
+// Tybrite internally geocodes this to find the best matching zone or tier.
+const shipping = await client.shipping.calculateShipping({
+  requestBody: {
+   place_name: "Westlands, Nairobi, Kenya",
+   order_total: 100000
+  }
+});
+```
+
 ```typescript Via Coordinates
 // Calculate using exact GPS coordinates (recommended)
 const shipping = await client.shipping.calculateShipping({
@@ -35,16 +46,6 @@ const shipping = await client.shipping.calculateShipping({
     latitude: -1.286389,
     longitude: 36.817223,
     order_total: 100000 // In smallest unit ($10.00)
-  }
-});
-```
-
-```typescript Via Coordinates (GPS)
-const shipping = await client.shipping.calculateShipping({
-  requestBody: {
-    latitude: -1.286389,
-    longitude: 36.817223,
-    order_total: 100000
   }
 });
 ```
