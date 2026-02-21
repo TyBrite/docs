@@ -20,15 +20,16 @@ The `PricingService` class (accessed via `client.pricing`) provides high-perform
 Retrieve resolved prices for a list of products. Optimized for catalog browsing, this returns a **flat structure** using the default variant for each product.
 
 ```typescript
-const response = await client.pricing.getProductPrices({
+const { products, pagination, pricing_context } = await client.pricing.getProductPrices({
   categoryId: 'electronics-uuid',
-  placeName: 'London, UK', // Detects GBP (£)
+  placeName: 'London, UK',
+  limit: 20,
   fields: 'name,display_price,display_currency,currency_symbol,has_variants'
 });
 
 // Access global pricing context
-console.log(`Region: ${response.pricing_context.region}`); // "United Kingdom"
-console.log(`Rate: ${response.pricing_context.exchange_rate}`); // e.g., 0.87
+console.log(`Region: ${pricing_context.region}`);
+console.log(`Has more: ${pagination.has_more}`);
 ```
 
 ---

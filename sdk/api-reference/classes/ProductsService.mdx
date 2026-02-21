@@ -26,14 +26,22 @@ Retrieve a paginated list of products. This method returns **flat structures** (
 *   **⚡ Performance**: 50-70% smaller than detail endpoints.
 *   **🛒 Quick Add**: Includes default variant data (`price`, `stock`, `sku`) at root level.
 *   **🔍 Intelligence**: Use the `has_variants` flag to determine if the UI should show "View Options".
+*   **⏩ Pagination**: Uses cursor-based navigation for stable, high-performance scrolling.
 
 ```typescript
-const { products, total } = await client.products.listProducts({
+const { products, pagination } = await client.products.listProducts({
   search: 'Sony',
-  categoryId: 'headphone-uuid',
   limit: 20,
-  fields: 'name,price,stock,has_variants,product_slug' // Root-level fields
+  fields: 'name,price,stock,has_variants,product_slug'
 });
+
+// For subsequent pages, pass the cursor from the previous response:
+// const next = await client.products.listProducts({ limit: 20, cursor: pagination.next_cursor });
+
+console.log(`Has more: ${pagination.has_more}`);
+if (pagination.next_cursor) {
+  // Use pagination.next_cursor for the subsequent request
+}
 ```
 
 ---
@@ -104,7 +112,9 @@ fields=name,variants.sku,variants.selling_price,variants.stock,variants.variant_
 Retrieve structured technical specifications.
 
 ```typescript
-const specs = await client.products.getProductSpecifications({ id: 'product-uuid' });
+const { specifications, pagination } = await client.products.listProductSpecifications({ 
+  limit: 50
+});
 ```
 
 ---
@@ -115,9 +125,15 @@ Manage curated groups of products.
 
 ```typescript
 // List all active collections
-const { collections } = await client.products.listProductCollections({ showOnHomepage: 'true' });
+const { collections, pagination } = await client.products.listProductCollections({ 
+  showOnHomepage: 'true',
+  limit: 20
+});
 
 // Get items in a specific collection
-const { items } = await client.products.getProductCollectionItems({ id: 'flash-sale-uuid' });
+const { items, pagination: itemPagination } = await client.products.getProductCollectionItems({ 
+  id: 'flash-sale-uuid',
+  limit: 10
+});
 ```
 

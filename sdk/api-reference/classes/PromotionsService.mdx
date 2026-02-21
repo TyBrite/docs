@@ -12,11 +12,14 @@ The `PromotionsService` class (accessed via `client.promotions`) handles active 
 Retrieve a list of promotions based on their lifecycle status. This is useful for building a "Deals" or "Coupons" page on your storefront.
 
 ```typescript
-const { promotions } = await client.promotions.listPromotions({
+const { promotions, pagination } = await client.promotions.listPromotions({
   status: 'active',
-  cartTotal: '10000', // Filter for promos valid for a 100.00 cart
-  fields: 'id,name,discount_value,discount_type' // Optional
+  cartTotal: '10000',
+  limit: 50,
+  fields: 'id,name,discount_value,discount_type'
 });
+
+console.log(`Available promotions: ${promotions.length}`);
 ```
 
 **Filter: `cartTotal`**

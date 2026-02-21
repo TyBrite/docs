@@ -12,10 +12,13 @@ The `MessagingService` class (accessed via `client.messaging`) enables localized
 Retrieve all message threads for the store. You can filter by customer or current status (open/closed).
 
 ```typescript
-const { threads } = await client.messaging.listThreads({
-  customerId: 'cust_123', // Optional
-  fields: 'id,subject,status,unread_count_customer' // Optional
+const { threads, pagination } = await client.messaging.listThreads({
+  customerId: 'cust_123', 
+  limit: 20,
+  fields: 'id,subject,status,unread_count_customer'
 });
+
+console.log(`Threads found: ${threads.length}`);
 ```
 
 ---

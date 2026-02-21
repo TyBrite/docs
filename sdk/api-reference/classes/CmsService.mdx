@@ -12,11 +12,11 @@ The `CmsService` class (accessed via `client.cms`) provides access to content-dr
 Retrieve a paginated list of blog posts. This is ideal for building a "News" or "Magazine" section on your storefront.
 
 ```typescript
-const { posts, total } = await client.cms.listPosts({
+const { posts, pagination } = await client.cms.listPosts({
   status: 'published',
   category: 'summer-trends',
   limit: 10,
-  fields: 'id,title,slug,excerpt,featured_image' // Optional
+  fields: 'id,title,slug,excerpt,featured_image'
 });
 
 posts.forEach(post => {
@@ -52,10 +52,10 @@ Lookbooks are curated collections of lifestyle images linked to specific product
 Retrieve a list of available lookbooks.
 
 ```typescript
-const { lookbooks } = await client.cms.listLookbooks({
+const { lookbooks, pagination } = await client.cms.listLookbooks({
   status: 'published',
   limit: 12,
-  fields: 'id,title,slug,featured_image' // Optional
+  fields: 'id,title,slug,featured_image'
 });
 ```
 
