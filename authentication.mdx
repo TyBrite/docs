@@ -45,28 +45,48 @@ Authorization: Bearer tybrite_sk_live_YOUR_KEY
 
 ## Advanced Security: HMAC Signing
 
-Sensitive operations, such as fee calculations or payment initialization, require an additional layer of security to prevent request tampering. For these requests, you must provide an `X-Tybrite-Signature` header.
+Sensitive operations, such as order creation or payment initialization, require an additional layer of security to prevent request tampering and replay attacks. For these requests, you must provide verified headers.
 
 ### Generating the Signature
 
-The signature is a **SHA-256 HMAC** hash of the request body, signed with your **Secret Key**.
+The signature is a **SHA-256 HMAC** hash of the payload, where the payload is the current Unix timestamp concatenated with the JSON request body.
 
 ```typescript
 import { createHmac } from 'crypto';
 
+// 1. Prepare Payload
+const timestamp = Math.floor(Date.now() / 1000);
 const body = JSON.stringify(requestData);
-const signature = createHmac('sha256', process.env.TYBRITE_SECRET_KEY)
-  .update(body)
-  .digest('hex');
+const payload = `${timestamp}.${body}`;
 
-// Include in your headers:
-// 'X-Tybrite-Signature': signature
+// 2. Generate Signature
+const signature = createHmac('sha256', process.env.TYBRITE_HMAC_SECRET)
+  .update(payload)
+  .digest('base64');
+
+// 3. Include in your request:
+// xTimestamp: timestamp
+// xSignature: signature
 ```
 
 Endpoints requiring HMAC signing:
 *   `POST /v1/payments/initialize`
-*   `POST /v1/shipping/calculate`
 *   `POST /v1/orders`
+*   `PATCH /v1/orders/:id`
+
+---
+
+## 🔄 Idempotency Protection
+
+To prevent duplicate charges and orders—especially during network retries—all state-changing financial operations require a mandatory `Idempotency-Key` header.
+
+*   **Mechanism**: The server tracks these keys. If a request is retried with the same key, the server returns the original response with an `idempotent: true` flag.
+*   **Best Practice**: Generate a unique UUID or a hash of the transaction details (e.g., `payment-order_123-ts_456`).
+
+Endpoints requiring an Idempotency Key:
+*   `POST /v1/payments/initialize`
+*   `POST /v1/orders`
+*   `PATCH /v1/orders/:id`
 
 ---
 

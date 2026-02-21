@@ -3,40 +3,84 @@ title: "Orders"
 description: "Reference for the OrdersService class in the Tybrite SDK."
 ---
 
-The `OrdersService` class (accessed via `client.orders`) manages the entire commerce lifecycle, from checkout initialization to fulfillment tracking and accounting integration.
+The `OrdersService` class (accessed via `client.orders`) manages the entire commerce lifecycle. All order write operations require mandatory **HMAC Security** to ensure complete data integrity.
+
+## 🔐 Security & Signing (HMAC)
+
+To prevent tampering, replay attacks, and duplicate processing of updates, `createOrder` and `updateOrder` require both an HMAC-SHA256 signature and a mandatory Idempotency Key.
+
+### Signing Process
+1.  **Generate Timestamp**: Get the current Unix timestamp in seconds.
+2.  **Prepare Payload**: Concatenate the timestamp and the JSON request body with a dot: `timestamp + "." + JSON_body`.
+3.  **Generate Signature**: Compute an HMAC-SHA256 signature of the payload using your **HMAC Secret** (found in Settings → Integration Settings).
+4.  **Base64 Encode**: The resulting signature must be Base64 encoded.
+
+### Code Implementation (TypeScript/Node.js)
+
+```typescript
+import crypto from 'crypto';
+
+// 1. Define Signing Helper
+function generateHmacSignature(payload: string, secret: string): string {
+  return crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('base64');
+}
+
+// 2. Prepare Data & Sign
+const timestamp = Math.floor(Date.now() / 1000);
+const body = JSON.stringify(orderData);
+const payload = `${timestamp}.${body}`;
+const signature = generateHmacSignature(payload, hmacSecret);
+
+// 3. Execute request with headers
+const order = await client.orders.createOrder({
+  idempotencyKey: `order-${timestamp}`,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: orderData
+});
+```
+
+<Warning>
+  **NEVER expose your HMAC Secret client-side.** Signing should always occur on a secure backend server. Requests with missing or invalid signatures will return `401 Unauthorized`.
+</Warning>
+
+---
 
 ## Core Operations
 
 ### `createOrder`
 
-Place a new order on behalf of a customer. 
+Place a new order. Requires verified signatures and idempotency protection.
 
-**Key Security Features:**
-*   **Idempotency**: Use the `idempotencyKey` to safely retry requests without creating duplicate orders. Existing orders are returned if the same key is used within 24 hours.
-*   **HMAC Signing**: Optionally sign requests using your secret key to ensure integrity.
+*   **Identifiers**: Uses `product_id` and optional `variant_id` (defaults to the product's primary variant).
+*   **Mandatory Fields**: Both `billing_address` and `shipping_address` are now required for tax and logistics.
+*   **Replay Protection**: The `X-Timestamp` must be within **5 minutes** of the server time.
 
 ```typescript
 const order = await client.orders.createOrder({
-  idempotencyKey: 'checkout-session-unique-id',
+  idempotencyKey: 'checkout-session-123',
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: 'IqdgKXgloLzL5akDgFEwPaK6wviozf...',
   requestBody: {
     customer_id: 'cust_123',
+    billing_address: { street: 'Main St', city: 'Nairobi', country: 'KE' },
+    shipping_address: { street: 'Main St', city: 'Nairobi', country: 'KE' },
     items: [
       {
-        online_product_id: 'prod_456',
+        product_id: 'prod_456',
+        variant_id: 'var_789', // Optional
         quantity: 1,
-        unit_price: 15000 // In smallest unit
+        unit_price: 15000,
+        total_price: 15000,
+        product_name: 'Sony Headphones',
+        product_sku: 'SNY-WH1000'
       }
     ],
-    payment_method: 'stripe', // stripe, paystack, mpesa, airtel_money, cash
-    shipping_metadata: {
-      fee: 200,
-      applied_rule: 'zone',
-      zone_name: 'Downtown'
-    }
-  },
-  // Optional HMAC signing for enhanced security
-  xTimestamp: Math.floor(Date.now() / 1000),
-  xSignature: 'computed-signature-here'
+    total_amount: 15200 // Including shipping/tax
+  }
 });
 ```
 
@@ -47,47 +91,46 @@ const order = await client.orders.createOrder({
 Retrieve complete details for a specific order.
 
 ```typescript
-const order = await client.orders.getOrder({
-  id: 'order-uuid-here',
-  fields: 'order_number,total_amount,order_status,items' // Optional
-});
+const order = await client.orders.getOrder({ id: 'order-uuid-here' });
 ```
 
 ---
 
 ### `updateOrder`
 
-Perform partial updates to an order. This is a powerful endpoint used by warehouse or delivery staff.
+Update fulfillment or payment status. **Requires HMAC signature and Idempotency Key.**
 
-<Note>
-  This request requires a **Secret Key** and cannot be called using a publishable key.
-</Note>
+*   **Idempotency**: Use a unique key for each distinct update (e.g., `update-payment-{order_id}-{timestamp}`).
+*   **Protection**: This prevents double-triggering side effects like accounting entries or inventory reduction on network retries.
 
 ```typescript
 const updated = await client.orders.updateOrder({
   id: 'order-uuid-here',
-  requestBody: {
-    payment_status: 'paid', // Triggers inventory reduction & ledger entries
-    order_status: 'shipped',
-    tracking_number: 'CARGO-123-ABC',
-    estimated_delivery: '2026-02-15T12:00:00Z'
-  },
-  // Optional security headers
+  idempotencyKey: `update-status-${orderId}-${Date.now()}`,
   xTimestamp: Math.floor(Date.now() / 1000),
-  xSignature: '...'
+  xSignature: '...',
+  requestBody: {
+    payment_status: 'paid', // Triggers auto-accounting & inventory reduction
+    order_status: 'shipped',
+    tracking_number: 'CARGO-123-ABC'
+  }
 });
 ```
 
+## Security & Error Handling
+
+| Error Code | Meaning | Resolution |
+| :--- | :--- | :--- |
+| `401 Unauthorized` | Invalid HMAC signature | Verify your secret key and payload concatenation. |
+| `401 Unauthorized` | Missing X-Timestamp | Ensure the `X-Timestamp` header is sent. |
+| `401 Unauthorized` | Expired Timestamp | Ensure your server clock is synced (5-min window). |
+| `403 Forbidden` | Publishable Key Used | Create orders using a **Secret Key** only. |
+
 ## Side Effects of `payment_status: 'paid'`
 
-Transitioning an order to the **paid** state is more than just a label update. In production environments, it automatically:
-1.  **Reduces Stock**: Deducts quantity for every item from live inventory.
-2.  **Accounting Entry**: Generates double-entry bookkeeping records (Ledger).
-3.  **Customer Metrics**: Updates Lifetime Value (LTV) and order counts for the customer.
-4.  **Promotions**: Marks coupon usage as "final" in the system.
+Transitioning an order to the **paid** state automatically triggers:
+1.  **Inventory Sync**: Live stock reduction across variants.
+2.  **Accounting Engine**: Double-entry bookkeeping entry creation.
+3.  **LTV Update**: Increments customer lifetime value and purchase counts.
+4.  **Promoter Logic**: Marks loyalty points and promotion usage as finalized.
 
----
-
-<Note>
-  **Idempotency Tip:** We recommend using your storefront's internal "Checkout Session ID" as the `idempotencyKey` to prevent double-charging or duplicate orders due to network timeouts.
-</Note>

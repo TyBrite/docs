@@ -5,6 +5,53 @@ description: "Reference for the PaymentsService class in the Tybrite SDK."
 
 The `PaymentsService` class (accessed via `client.payments`) handles the core initialization and status verification for diverse payment providers including Stripe, Paystack, M-Pesa, and Airtel Money.
 
+## 🔐 Security & Signing (HMAC & Idempotency)
+
+To prevent unauthorized payment initiation and duplicate charges, `initializePayment` requires both an HMAC-SHA256 signature and a mandatory **Idempotency Key**.
+
+### Signing & Idempotency Process
+1.  **Generate ID**: Create a unique key for the transaction (e.g., `payment-{order_id}-{timestamp}`).
+2.  **Generate Timestamp**: Get the current Unix timestamp in seconds.
+3.  **Prepare Payload**: Concatenate timestamp and JSON body: `timestamp + "." + JSON_body`.
+4.  **Generate Signature**: Compute HMAC-SHA256 signature using your **HMAC Secret**.
+5.  **Base64 Encode**: The signature must be Base64 encoded.
+
+### Code Implementation (TypeScript)
+```typescript
+import crypto from 'crypto';
+
+// 1. Define Signing Helper
+function generateHmacSignature(payload: string, secret: string): string {
+  return crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('base64');
+}
+
+// 2. Prepare Data & Sign
+const idempotencyKey = `payment-${orderId}-${Date.now()}`;
+const timestamp = Math.floor(Date.now() / 1000);
+const body = JSON.stringify(paymentData);
+const payload = `${timestamp}.${body}`;
+const signature = generateHmacSignature(payload, hmacSecret);
+
+// 3. Initialize Payment
+const response = await client.payments.initializePayment({
+  idempotencyKey: idempotencyKey,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: paymentData
+});
+
+// If response.idempotent is true, this was a duplicate request
+```
+
+<Warning>
+  **Financial Integrity:** Payment initialization triggers money movement. The `Idempotency-Key` prevents duplicate sessions and charges. Requests missing this header will return `400 missing_idempotency_key`.
+</Warning>
+
+---
+
 ## Methods
 
 ### `getPaymentMethods`
@@ -13,11 +60,7 @@ Retrieve all active payment methods configured in your Tybrite Admin Panel.
 
 ```typescript
 const { methods } = await client.payments.getPaymentMethods({
-  fields: 'provider,display_name,supported_currencies' // Optional
-});
-
-methods.forEach(method => {
-  console.log(`Provider: ${method.provider} | Currencies: ${method.supported_currencies.join(', ')}`);
+  fields: 'provider,display_name,supported_currencies'
 });
 ```
 
@@ -25,49 +68,69 @@ methods.forEach(method => {
 
 ### `initializePayment`
 
-Create a payment intent with your chosen provider. This method returns the specific data needed (URLs, references, or keys) to finalize the transaction in the UI.
-
-<Note>
-  This method requires a **Secret Key** and has a specific rate limit of **100 requests per hour** per store.
-</Note>
+Create a payment intent with your chosen provider. Requires verified signatures and a mandatory **Idempotency-Key**.
 
 <CodeGroup>
 
 ```typescript Stripe (International)
+const paymentData = {
+  provider: 'stripe',
+  amount: 5000, 
+  currency: 'USD',
+  email: 'customer@email.com',
+  success_url: 'https://store.com/thanks',
+  cancel_url: 'https://store.com/checkout'
+};
+
+const timestamp = Math.floor(Date.now() / 1000);
+const idempotencyKey = `pay-stripe-${Date.now()}`;
+const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(paymentData)}`, hmacSecret);
+
 const response = await client.payments.initializePayment({
-  requestBody: {
-    provider: 'stripe',
-    amount: 5000, 
-    currency: 'USD',
-    email: 'customer@email.com',
-    success_url: 'https://store.com/thanks',
-    cancel_url: 'https://store.com/checkout',
-    idempotency_key: 'unique-session-id' // Recommended
-  }
+  idempotencyKey: idempotencyKey,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: paymentData
 });
+
 // Redirect to Stripe Checkout
 window.location.href = (response as any).checkout_url;
 ```
 
 ```typescript M-Pesa (Mobile Money)
-const response = await client.payments.initializePayment({
-  requestBody: {
-    provider: 'mpesa',
-    amount: 1500,
-    phone: '254700111222' // Format: 254XXXXXXXXX
-  }
-});
-// Customer receives an STK Push instantly
-```
+const paymentData = {
+  provider: 'mpesa',
+  amount: 1500,
+  phone: '254700111222'
+};
 
-```typescript Airtel Money (Mobile Money)
+const timestamp = Math.floor(Date.now() / 1000);
+const idempotencyKey = `pay-mpesa-${Date.now()}`;
+const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(paymentData)}`, hmacSecret);
+
 const response = await client.payments.initializePayment({
-  requestBody: {
-    provider: 'airtel',
-    amount: 1200,
-    phone: '254733444555',
-    country: 'KE' // Supports KE, UG, TZ, RW
-  }
+  idempotencyKey: idempotencyKey,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: paymentData
+});
+```typescript Airtel Money (Mobile Money)
+const paymentData = {
+  provider: 'airtel',
+  amount: 1200,
+  phone: '254733444555',
+  country: 'KE'
+};
+
+const timestamp = Math.floor(Date.now() / 1000);
+const idempotencyKey = `pay-airtel-${Date.now()}`;
+const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(paymentData)}`, hmacSecret);
+
+const response = await client.payments.initializePayment({
+  idempotencyKey: idempotencyKey,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: paymentData
 });
 ```
 
@@ -77,7 +140,7 @@ const response = await client.payments.initializePayment({
 
 ### `verifyPayment`
 
-Retrieve the absolute source of truth for a transaction from the provider. You should call this after a customer is redirected back to your site or after an STK Push is completed.
+Retrieve the absolute source of truth for a transaction. This is a read operation and does not require HMAC signing.
 
 ```typescript
 const result = await client.payments.verifyPayment({
@@ -86,10 +149,6 @@ const result = await client.payments.verifyPayment({
     reference: 'PAYMENT_REFERENCE_UUID'
   }
 });
-
-if (result.status === 'paid') {
-  console.log(`Success! M-Pesa Receipt: ${result.provider_reference}`);
-}
 ```
 
 ## Provider Support Matrix
@@ -106,3 +165,4 @@ if (result.status === 'paid') {
 <Note>
   **Formatting Tip:** For African mobile money (M-Pesa/Airtel), always provide the phone number in international format without the `+` prefix (e.g., `2547...`).
 </Note>
+
