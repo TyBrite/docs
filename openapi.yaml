@@ -548,6 +548,271 @@ components:
             details:
               type: string
               example: The 'email' field is required
+    StoreInfoResponse:
+      type: object
+      required:
+        - store
+      properties:
+        store:
+          type: object
+          description: Basic store information (always included)
+          required:
+            - store_id
+            - name
+            - default_currency
+            - currencies
+            - timezone
+            - created_at
+          properties:
+            store_id:
+              type: string
+              format: uuid
+              description: Unique store identifier
+            name:
+              type: string
+              description: Store display name
+            default_currency:
+              type: string
+              description: Store's default currency code (ISO 4217)
+            currencies:
+              type: array
+              description: List of active currency codes supported by the store
+              items:
+                type: string
+            timezone:
+              type: string
+              description: Store timezone (IANA timezone identifier)
+            created_at:
+              type: string
+              format: date-time
+              description: Store creation timestamp
+        catalog:
+          type: object
+          description: Catalog overview (optional, included when requested)
+          properties:
+            products:
+              type: object
+              properties:
+                total:
+                  type: integer
+                has_variants:
+                  type: integer
+                simple_products:
+                  type: integer
+                active:
+                  type: integer
+                inactive:
+                  type: integer
+                featured:
+                  type: integer
+                with_images:
+                  type: integer
+                low_stock:
+                  type: integer
+            collections:
+              type: object
+              properties:
+                total:
+                  type: integer
+                names:
+                  type: array
+                  items:
+                    type: string
+            taxonomy:
+              type: object
+              properties:
+                categories:
+                  type: object
+                  properties:
+                    total:
+                      type: integer
+                    list:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                            format: uuid
+                          name:
+                            type: string
+                          product_count:
+                            type: integer
+                subcategories:
+                  type: object
+                  properties:
+                    total:
+                      type: integer
+                    list:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                            format: uuid
+                          name:
+                            type: string
+                          category:
+                            type: string
+                          product_count:
+                            type: integer
+            specifications:
+              type: object
+              properties:
+                total:
+                  type: integer
+                types:
+                  type: array
+                  items:
+                    type: string
+            brands:
+              type: object
+              properties:
+                total:
+                  type: integer
+                list:
+                  type: array
+                  items:
+                    type: string
+        pricing:
+          type: object
+          description: Pricing configuration (optional, included when requested)
+          properties:
+            has_dynamic_pricing:
+              type: boolean
+            features:
+              type: object
+              properties:
+                customer_tiers:
+                  type: boolean
+                customer_segments:
+                  type: boolean
+                volume_discounts:
+                  type: boolean
+                location_based:
+                  type: boolean
+                time_based:
+                  type: boolean
+            customer_tiers:
+              type: array
+              items:
+                type: string
+            pricing_rules:
+              type: object
+              properties:
+                total:
+                  type: integer
+                active:
+                  type: integer
+        promotions:
+          type: object
+          description: Promotions overview (optional, included when requested)
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            types:
+              type: object
+              properties:
+                percentage_discount:
+                  type: integer
+                fixed_discount:
+                  type: integer
+                bogo:
+                  type: integer
+                bundle:
+                  type: integer
+                free_shipping:
+                  type: integer
+        payments:
+          type: object
+          description: Payment configuration (optional, included when requested)
+          properties:
+            providers:
+              type: array
+              items:
+                type: string
+            methods:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  display_name:
+                    type: string
+                  type:
+                    type: string
+                    enum: [manual, redirect, popup, stk_push]
+        shipping:
+          type: object
+          description: Shipping configuration (optional, included when requested)
+          properties:
+            zones:
+              type: object
+              properties:
+                total:
+                  type: integer
+                list:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      delivery_fee:
+                        type: number
+                      free_threshold:
+                        type: number
+                        nullable: true
+            has_free_shipping_threshold:
+              type: boolean
+        cms:
+          type: object
+          description: CMS content overview (optional, included when requested)
+          properties:
+            posts:
+              type: object
+              properties:
+                total:
+                  type: integer
+                published:
+                  type: integer
+                draft:
+                  type: integer
+            lookbooks:
+              type: object
+              properties:
+                total:
+                  type: integer
+                published:
+                  type: integer
+        features:
+          type: object
+          description: Feature flags (optional, included when requested)
+          properties:
+            ai_recommendations:
+              type: boolean
+            semantic_search:
+              type: boolean
+            multi_currency:
+              type: boolean
+            dynamic_pricing:
+              type: boolean
+            gift_cards:
+              type: boolean
+            promotions:
+              type: boolean
+            cms:
+              type: boolean
+            messaging:
+              type: boolean
+            specifications:
+              type: boolean
+            collections:
+              type: boolean
     Product:
       type: object
       description: |
@@ -1939,6 +2204,319 @@ paths:
                   service:
                     type: string
                     example: tybrite-api-gateway
+  /v1/store/info:
+    get:
+      operationId: getStoreInfo
+      tags:
+        - System
+      summary: Get comprehensive store information
+      description: |
+        Returns comprehensive store metadata and configuration in a single API call. Designed for 
+        LLMs and AI agents to quickly understand store context without making multiple API calls.
+        
+        **Purpose:**
+        This endpoint consolidates store metadata that would normally require 10+ separate API calls:
+        - Store basic info (name, currencies, timezone)
+        - Catalog overview (products, categories, collections, brands, specifications)
+        - Pricing configuration (dynamic pricing, customer tiers, rules)
+        - Active promotions (types, counts)
+        - Payment methods (providers, configurations)
+        - Shipping zones (delivery fees, free thresholds)
+        - CMS content (posts, lookbooks)
+        - Feature flags (enabled capabilities)
+        
+        **Use Cases:**
+        - AI agents understanding store capabilities before making recommendations
+        - Admin dashboards showing store overview
+        - Integration setup wizards checking store configuration
+        - Mobile apps caching store metadata on startup
+        - Third-party tools discovering available features
+        
+        **Performance:**
+        - Cached for 5 minutes (300 seconds)
+        - Parallel data fetching for all sections
+        - Optional section filtering to reduce payload size
+        - Typical response time: 50-150ms (cached: 10-20ms)
+        
+        **Selective Loading:**
+        Use the `sections` parameter to request only specific data sections, reducing payload size 
+        by 50-80% when you don't need all information.
+        
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sections
+          in: query
+          description: |
+            Comma-separated list of sections to include in the response. Omit to return all sections.
+            
+            **Available Sections:**
+            - `catalog` - Products, categories, collections, brands, specifications
+            - `pricing` - Dynamic pricing configuration and rules
+            - `promotions` - Active promotions and types
+            - `payments` - Payment providers and methods
+            - `shipping` - Delivery zones and fees
+            - `cms` - CMS posts and lookbooks
+            - `features` - Feature flags and capabilities
+            
+            **Note:** The `store` section is always included regardless of this parameter.
+            
+            **Examples:**
+            - `sections=catalog,features` - Only catalog and features
+            - `sections=payments,shipping` - Only payment and shipping info
+            - Omit parameter - All sections included
+            
+            **Payload Size Reduction:**
+            - Full response: ~15-25KB
+            - `catalog` only: ~8-12KB (50% reduction)
+            - `features,payments`: ~2-3KB (85% reduction)
+            
+            **SDK Usage:**
+            ```typescript
+            // Get full response object (all sections)
+            const fullInfo = await client.store.getStoreInfo();
+            console.log(fullInfo.store.name);
+            console.log(fullInfo.catalog.products.total);
+            
+            // Get filtered response (specific sections only)
+            const catalogInfo = await client.store.getStoreInfo({
+              sections: ['catalog', 'features']
+            });
+            
+            // Destructure to extract specific section directly
+            // (JavaScript destructuring - extracts 'features' property from response)
+            const { features } = await client.store.getStoreInfo({
+              sections: ['features']
+            });
+            if (features.multi_currency) {
+              // Use currency-aware endpoints
+            }
+            ```
+          schema:
+            type: string
+            example: catalog,features
+        - name: cache
+          in: query
+          description: |
+            Control cache behavior. Set to `false` to bypass cache and fetch fresh data.
+            
+            **Default:** `true` (use cache if available)
+            
+            **Cache Duration:** 5 minutes (300 seconds)
+            
+            **When to Bypass Cache:**
+            - After updating store configuration
+            - After adding/removing products or categories
+            - After changing payment or shipping settings
+            - When you need real-time data
+            
+            **Cache Headers:**
+            - `X-Cache: HIT` - Response served from cache
+            - `X-Cache: MISS` - Response fetched from database
+            - `Cache-Control: public, max-age=300` - Browser/CDN caching
+            
+            **SDK Usage:**
+            ```typescript
+            // Use cache (default)
+            const cached = await client.store.getStoreInfo();
+            
+            // Bypass cache for fresh data
+            const fresh = await client.store.getStoreInfo({ cache: false });
+            ```
+          schema:
+            type: boolean
+            default: true
+          example: true
+      responses:
+        "200":
+          description: Store information retrieved successfully
+          headers:
+            X-Cache:
+              description: Cache status (HIT or MISS)
+              schema:
+                type: string
+                enum: [HIT, MISS]
+            Cache-Control:
+              description: Cache control directives
+              schema:
+                type: string
+                example: public, max-age=300
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreInfoResponse"
+              examples:
+                full_response:
+                  summary: Full store information (all sections)
+                  value:
+                    store:
+                      store_id: 086e8d7f-b84d-41bc-8acd-3f5740ea61dc
+                      name: Galactic Core Store
+                      default_currency: EUR
+                      currencies: [EUR, KES, CNY, GBP, USD]
+                      timezone: Africa/Nairobi
+                      created_at: "2025-12-16T07:20:56.276495+00:00"
+                    catalog:
+                      products:
+                        total: 12
+                        has_variants: 3
+                        simple_products: 9
+                        active: 12
+                        inactive: 0
+                        featured: 2
+                        with_images: 12
+                        low_stock: 0
+                      collections:
+                        total: 3
+                        names: [Featured, New Arrivals, Christmas Exclusives]
+                      taxonomy:
+                        categories:
+                          total: 12
+                          list:
+                            - id: 90ed1bf0-6c3f-4ad8-8b17-bf0b63bd3d45
+                              name: Laptops
+                              product_count: 4
+                        subcategories:
+                          total: 3
+                          list:
+                            - id: 86c9cb06-615c-4ca1-a863-32db101d1f58
+                              name: Smart Watches
+                              category: General
+                              product_count: 2
+                      specifications:
+                        total: 1
+                        types: [brand, color, model, product_type, storage_type]
+                      brands:
+                        total: 4
+                        list: [Apple, Samsung, Dell, Sony]
+                    pricing:
+                      has_dynamic_pricing: true
+                      features:
+                        customer_tiers: false
+                        customer_segments: false
+                        volume_discounts: false
+                        location_based: false
+                        time_based: false
+                      customer_tiers: [Gold, Silver, Bronze]
+                      pricing_rules:
+                        total: 5
+                        active: 2
+                    promotions:
+                      total: 1
+                      active: 1
+                      types:
+                        percentage_discount: 1
+                        fixed_discount: 0
+                        bogo: 0
+                        bundle: 0
+                        free_shipping: 0
+                    payments:
+                      providers: [cash, stripe, paystack]
+                      methods:
+                        - name: cash
+                          display_name: Cash
+                          type: manual
+                        - name: stripe
+                          display_name: Card (Stripe)
+                          type: redirect
+                        - name: paystack
+                          display_name: Card (Paystack)
+                          type: popup
+                    shipping:
+                      zones:
+                        total: 4
+                        list:
+                          - name: USA
+                            delivery_fee: 1500
+                            free_threshold: 100000
+                          - name: United Kingdom
+                            delivery_fee: 2500
+                            free_threshold: 100000
+                          - name: Kenya
+                            delivery_fee: 250
+                            free_threshold: 10000
+                      has_free_shipping_threshold: true
+                    cms:
+                      posts:
+                        total: 2
+                        published: 2
+                        draft: 0
+                      lookbooks:
+                        total: 2
+                        published: 2
+                    features:
+                      ai_recommendations: false
+                      semantic_search: false
+                      multi_currency: true
+                      dynamic_pricing: true
+                      gift_cards: true
+                      promotions: true
+                      cms: true
+                      messaging: false
+                      specifications: true
+                      collections: true
+                filtered_response:
+                  summary: Filtered sections (catalog and features only)
+                  value:
+                    store:
+                      store_id: 086e8d7f-b84d-41bc-8acd-3f5740ea61dc
+                      name: Galactic Core Store
+                      default_currency: EUR
+                      currencies: [EUR, KES, CNY, GBP, USD]
+                      timezone: Africa/Nairobi
+                      created_at: "2025-12-16T07:20:56.276495+00:00"
+                    catalog:
+                      products:
+                        total: 12
+                        has_variants: 3
+                        simple_products: 9
+                        active: 12
+                        inactive: 0
+                        featured: 2
+                        with_images: 12
+                        low_stock: 0
+                      collections:
+                        total: 3
+                        names: [Featured, New Arrivals, Christmas Exclusives]
+                      taxonomy:
+                        categories:
+                          total: 12
+                          list:
+                            - id: 90ed1bf0-6c3f-4ad8-8b17-bf0b63bd3d45
+                              name: Laptops
+                              product_count: 4
+                        subcategories:
+                          total: 3
+                          list:
+                            - id: 86c9cb06-615c-4ca1-a863-32db101d1f58
+                              name: Smart Watches
+                              category: General
+                              product_count: 2
+                      specifications:
+                        total: 1
+                        types: [brand, color, model, product_type, storage_type]
+                      brands:
+                        total: 4
+                        list: [Apple, Samsung, Dell, Sony]
+                    features:
+                      ai_recommendations: false
+                      semantic_search: false
+                      multi_currency: true
+                      dynamic_pricing: true
+                      gift_cards: true
+                      promotions: true
+                      cms: true
+                      messaging: false
+                      specifications: true
+                      collections: true
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "500":
+          $ref: "#/components/responses/ServerError"
   /v1/products:
     get:
       operationId: listProducts
