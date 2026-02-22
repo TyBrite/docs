@@ -40,6 +40,7 @@ export type { SearchParam } from './models/SearchParam';
 export type { SearchResponse } from './models/SearchResponse';
 export type { SearchResult } from './models/SearchResult';
 export type { Session } from './models/Session';
+export type { StoreInfoResponse } from './models/StoreInfoResponse';
 export type { Subcategory } from './models/Subcategory';
 export type { SubcategoryIdParam } from './models/SubcategoryIdParam';
 export { Thread } from './models/Thread';

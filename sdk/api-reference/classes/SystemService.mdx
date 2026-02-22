@@ -7,7 +7,49 @@ The `SystemService` class provides health checks and basic metadata about the Ty
 
 Access this service via `client.system`.
 
-## Methods
+### `getStoreInfo`
+
+Retrieve comprehensive store metadata, configuration, and catalog statistics in a single API call. This endpoint is specifically optimized for initial data synchronizations, AI agent context setting, and dashboard overviews.
+
+*   **Caching**: Responses are cached for 5 minutes by default.
+*   **Selective Loading**: Use the `sections` parameter to tailor the response and reduce payload size by up to 80%.
+
+```typescript
+// 1. Get full store configuration (all sections)
+const fullInfo = await client.system.getStoreInfo();
+console.log(`Connected to: ${fullInfo.store.name}`);
+console.log(`Currencies supported: ${fullInfo.store.currencies.join(', ')}`);
+
+// 2. Optimized request for AI/Agent context
+const { features, catalog } = await client.system.getStoreInfo({
+  sections: 'features,catalog'
+});
+
+if (features.ai_recommendations) {
+  console.log(`AI enabled. Total active products: ${catalog.products.active}`);
+}
+
+// 3. Bypass cache for fresh settings
+const freshData = await client.system.getStoreInfo({ cache: false });
+```
+
+**Available Sections:**
+
+| Section | Description |
+| :--- | :--- |
+| `catalog` | Products, categories, collections, and brand counts. |
+| `pricing` | Dynamic pricing flags and customer tier configurations. |
+| `promotions` | Active discounts and campaign summaries. |
+| `payments` | Merchant's active payment providers and methods. |
+| `shipping` | Delivery zones and fee thresholds. |
+| `cms` | Number of published posts and lookbooks. |
+| `features` | Platform capability flags (AI, Currency, etc.). |
+
+<Note>
+  The `store` section (ID, Name, Timezone, Currencies) is **always included** regardless of the filtered sections.
+</Note>
+
+---
 
 ### `getApiInfo`
 
