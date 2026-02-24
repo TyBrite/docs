@@ -59,9 +59,10 @@ const order = await client.orders.createOrder({
   xSignature: signature,
   requestBody: {
     // ...other order details...
-    gift_cards: [
-      { code: 'TYB-GIFT-123-456', amount: 5000 }
-    ]
+    gift_card_redemption: { 
+      code: 'TYB-GIFT-123-456', 
+      amount: 5000 
+    }
   }
 });
 ```
@@ -79,5 +80,5 @@ Gift cards in Tybrite move through three states:
 ---
 
 <Tip>
-  To let customers pay for partial orders with gift cards, use `checkGiftCard` to see the available balance first, then include it in the `gift_cards` array when calling `createOrder`.
+  To let customers pay for partial orders with gift cards, use `checkGiftCard` to see the available balance first, then include it in the `gift_card_redemption` object when calling `createOrder`.
 </Tip>

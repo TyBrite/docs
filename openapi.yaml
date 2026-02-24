@@ -4286,6 +4286,18 @@ paths:
                       type: string
                       enum: [zone, distance, default]
                       example: distance
+                gift_card_redemption:
+                  type: object
+                  nullable: true
+                  description: Optional gift card to redeem towards this order
+                  properties:
+                    code:
+                      type: string
+                      example: "V5G6-4N7H-9P2R-8W1S"
+                    amount:
+                      type: number
+                      format: float
+                      example: 1000
             example:
               customer_id: c320094c-eb65-4879-804c-83d2e1dd7f99
               customer_email: john.doe@example.com
@@ -4318,6 +4330,9 @@ paths:
               discount_amount: 0
               total_amount: 2520
               notes: Gift wrap requested
+              gift_card_redemption: # Optional
+                code: "V5G6-4N7H-9P2R-8W1S"
+                amount: 1000
       responses:
         "200":
           description: Order created successfully (or existing order returned if idempotency key matches)

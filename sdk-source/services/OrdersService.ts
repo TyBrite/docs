@@ -191,6 +191,13 @@ export class OrdersService {
                 reason?: string;
                 applied_rule?: 'zone' | 'distance' | 'default';
             } | null;
+            /**
+             * Optional gift card to redeem towards this order
+             */
+            gift_card_redemption?: {
+                code?: string;
+                amount?: number;
+            } | null;
         },
     }): CancelablePromise<Order> {
         return this.httpRequest.request({
