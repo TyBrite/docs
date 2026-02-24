@@ -60,6 +60,33 @@ const response = await client.products.listProducts({
 console.log(response.products);
 ```
 
+## Cursor-Based Pagination
+
+For high-performance, stable scrolling through large datasets, Tybrite uses cursor-based pagination. This ensures consistent results even if data changes between requests.
+
+When a query supports cursor pagination, it will return a `pagination` object along with the results. You can pass the `next_cursor` property to subsequent requests to fetch the next page:
+
+```typescript
+// 1. Fetch the first page
+const page1 = await client.products.listProducts({ limit: 20 });
+
+// 2. Check if there's more data
+if (page1.pagination.has_more) {
+  // 3. Fetch the next page using the cursor
+  const page2 = await client.products.listProducts({
+    limit: 20,
+    cursor: page1.pagination.next_cursor
+  });
+}
+```
+
+The following services currently support cursor-based pagination:
+- [Products](/sdk/api-reference/classes/ProductsService)
+- [Taxonomy](/sdk/api-reference/classes/TaxonomyService)
+- [Promotions](/sdk/api-reference/classes/PromotionsService)
+- [CMS](/sdk/api-reference/classes/CmsService)
+- [Messaging](/sdk/api-reference/classes/MessagingService)
+
 ## Next Steps
 
 Now that you have initialized the client, you can explore the available services:

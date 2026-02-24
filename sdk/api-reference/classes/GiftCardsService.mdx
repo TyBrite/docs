@@ -7,43 +7,66 @@ The `GiftCardsService` class (accessed via `client.giftCards`) manages the check
 
 ## Methods
 
+### `listGiftCards`
+
+Retrieve all gift cards owned by a specific customer. This is used for displaying a user's digital wallet in their account dashboard.
+
+<Note>
+  `customerId` is **strictly required** for this endpoint to identify which wallet to retrieve.
+</Note>
+
+```typescript
+const { gift_cards } = await client.giftCards.listGiftCards({
+  customerId: 'customer-uuid-here',
+  fields: 'code,balance,status,expiry_date' // Optional field filtering
+});
+
+gift_cards.forEach(gc => {
+  console.log(`GC: ${gc.code} | Balance: ${gc.balance}`);
+});
+```
+
+---
+
 ### `checkGiftCard`
 
-Retrieve the current balance and status of a gift card code. This endpoint is public-safe and can be used in your "Check Balance" UI.
+Retrieve the current balance and status of a gift card using its code. Because gift cards operate as **bearer instruments** (like cash), this endpoint deliberately does *not* require a customer ID.
+
+This allows both registered users and **guest checkout** users to check balances.
 
 ```typescript
 const details = await client.giftCards.checkGiftCard({
   code: 'TYB-GIFT-123-456',
   fields: 'balance,status,expiry_date' // Optional
 });
-```
 
 console.log(`Remaining Balance: ${details.balance}`);
 console.log(`Status: ${details.status}`); // 'active', 'redeemed', or 'expired'
+```
 
 ---
 
-### `redeemGiftCard`
+## 🛡️ Secure Redemption Architecture
 
-Apply a gift card amount to an order. 
+Tybrite does **not** expose a standalone redemption endpoint for gift cards. This architectural decision prevents financial race conditions (double-spending) and ensures that all gift card deductions are natively tied to a unified accounting ledger and order generated during checkout.
 
-<Note>
-  This is a sensitive operation that requires a **Secret Key**. It should be called from your backend during the checkout finalization process.
-</Note>
+To redeem a gift card, pass the code and amount during the **order creation** process:
 
 ```typescript
-const result = await client.giftCards.redeemGiftCard({
+const order = await client.orders.createOrder({
+  idempotencyKey: 'checkout-123',
+  xTimestamp: timestamp,
+  xSignature: signature,
   requestBody: {
-    code: 'TYB-GIFT-123-456',
-    amount: 5000, // Amount to deduct from the card
-    order_total: 15000 // Optional: Used for usage percentage validation
+    // ...other order details...
+    gift_cards: [
+      { code: 'TYB-GIFT-123-456', amount: 5000 }
+    ]
   }
 });
-
-if (result.success) {
-  console.log(`Redeemed! Remaining on card: ${result.gift_card.balance}`);
-}
 ```
+
+This ensures the gift card balance is only deducted if the main order succeeds.
 
 ## Card Lifecycle
 
@@ -56,5 +79,5 @@ Gift cards in Tybrite move through three states:
 ---
 
 <Tip>
-  To let customers pay for partial orders with gift cards, use `checkGiftCard` to see the available balance first, then call `redeemGiftCard` for either the full order amount or the maximum available card balance.
+  To let customers pay for partial orders with gift cards, use `checkGiftCard` to see the available balance first, then include it in the `gift_cards` array when calling `createOrder`.
 </Tip>

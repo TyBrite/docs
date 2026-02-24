@@ -58,28 +58,8 @@ const updated = await client.customers.updateCustomer({
 });
 ```
 
+
 ## Customer Utilities
-
-### `getCustomerGiftCards`
-
-Retrieve all gift cards owned by a specific customer.
-
-```typescript
-const { gift_cards } = await client.customers.getCustomerGiftCards({
-  id: 'customer-uuid-here',
-  fields: 'code,balance,status' // Optional
-});
-
-gift_cards.forEach(gc => {
-  console.log(`GC: ${gc.code} | Balance: ${gc.balance}`);
-});
-```
-
-<Tip>
-  **Pro Tip:** To issue or redeem gift cards, use the separate `GiftCardsService`.
-</Tip>
-
----
 
 <Tip>
   **Retention Tip:** Use `store_metrics` to identify your top 10% of customers by lifetime value (LTV) and offer them personalized discount codes via the **Promotions Service**.
