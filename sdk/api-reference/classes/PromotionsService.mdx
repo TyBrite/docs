@@ -3,7 +3,7 @@ title: "Promotions"
 description: "Reference for the PromotionsService class in the Tybrite SDK."
 ---
 
-The `PromotionsService` class (accessed via `client.promotions`) handles active store discounts, marketing campaigns, and coupon validation logic.
+The `PromotionsService` class (accessed via `client.promotions`) handles active store discounts, marketing campaigns, and coupon validation logic. Promotions support an `image` field for displaying visual banners and campaign assets.
 
 ## Methods
 
@@ -16,7 +16,7 @@ const { promotions, pagination } = await client.promotions.listPromotions({
   status: 'active',
   cartTotal: '10000',
   limit: 50,
-  fields: 'id,name,discount_value,discount_type'
+  fields: 'id,name,discount_value,discount_type,image'
 });
 
 console.log(`Available promotions: ${promotions.length}`);
@@ -34,25 +34,30 @@ Fetch full configuration data for a promotion, including its exact discount logi
 ```typescript
 const promo = await client.promotions.getPromotion({
   id: 'promo-uuid-or-code',
-  fields: 'name,discount_value,discount_type,min_purchase' // Optional
+  fields: 'name,discount_value,discount_type,min_purchase,image' // Optional
 });
 
-if (promo.discount_type === 'percentage') {
-  console.log(`Discount: ${promo.discount_value}% OFF`);
-} else {
-  console.log(`Discount: SAVE ${promo.discount_value}`);
+if (promo.image) {
+  console.log(`Promotion Banner: ${promo.image}`);
 }
 ```
 
-## Discount Types
+---
 
-Tybrite supports two primary promotion types out of the box:
+## Data Schema
 
-*   **Percentage**: Deducts a relative percentage (e.g., 15%) from the order subtotal.
-*   **Fixed**: Deducts a specific amount (e.g., $10) from the order subtotal.
+### `Promotion` Structure
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `uuid` | Unique promotion identifier. |
+| `name` | `string` | Promotion display name. |
+| `type` | `enum` | `fixed`, `discount`, `bundle`, `bogo`. |
+| `image`| `string`| URL of the promotion banner. |
+| `discount_value`| `number`| The numerical value of the discount. |
+| `discount_type`| `enum` | `percentage`, `fixed`. |
 
 ---
 
 <Tip>
-  **Pro Marketing Tip:** Use the `scheduled` status filter to build a "Coming Soon" deals section to build anticipation for Black Friday or seasonal sales.
+  **Pro Marketing Tip:** Use the `image` field to build high-impact promotional carousels. By associating visual assets directly with your discount logic, you can ensure that your marketing banners always reflect the current campaign status and validity.
 </Tip>

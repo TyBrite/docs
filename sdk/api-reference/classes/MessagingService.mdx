@@ -3,100 +3,190 @@ title: "Messaging & Support"
 description: "Reference for the MessagingService class in the Tybrite SDK."
 ---
 
-The `MessagingService` class (accessed via `client.messaging`) enables localized customer support and direct messaging between your storefront and its users.
+The `MessagingService` class (accessed via `client.messaging`) handles real-time customer ↔ store communication. It manages threaded conversations, message delivery, read state, and full thread lifecycle management.
 
-## Thread Management
+## Thread Discovery & Filtering
 
 ### `listThreads`
 
-Retrieve all message threads for the store. You can filter by customer or current status (open/closed).
+Retrieve message threads with advanced server-side filtering. Pinned threads are automatically returned at the top of the result set.
 
 ```typescript
 const { threads, pagination } = await client.messaging.listThreads({
   customerId: 'cust_123', 
+  status: 'active',           // active | resolved | closed | escalated | pending
+  priority: 'high',           // low | normal | high | urgent
+  archived: false,            // Filter by archive state
+  unread: true,               // Only show threads with unread messages
   limit: 20,
-  fields: 'id,subject,status,unread_count_customer'
+  fields: 'id,subject,status,is_pinned,unread_count_store'
 });
+```
 
-console.log(`Threads found: ${threads.length}`);
+---
+
+### `getThreadUnreadCount`
+
+Returns the total unread count across all non-archived threads for the store. Useful for global sidebar badges.
+
+```typescript
+const { unread_count } = await client.messaging.getThreadUnreadCount();
+console.log(`Total messages waiting: ${unread_count}`);
 ```
 
 ---
 
 ### `getThread`
 
-Retrieve the high-level metadata for a thread, including the subject and current priority.
+Retrieve high-level metadata for a single thread.
 
 ```typescript
 const thread = await client.messaging.getThread({
   id: 'thread-uuid-123',
-  fields: 'subject,priority,status' // Optional
-});
-```
-
-## Messaging Operations
-
-### `getThreadMessages`
-
-Fetch the full chat history of a specific thread.
-
-```typescript
-const { messages } = await client.messaging.getThreadMessages({
-  id: 'thread-uuid-123',
-  fields: 'message_content,sender_type,created_at' // Optional
-});
-
-messages.forEach(msg => {
-  // sender_type is either 'customer' or 'agent'
-  console.log(`[${msg.sender_type}] ${msg.message_content}`);
+  fields: 'subject,priority,status,is_muted,is_archived'
 });
 ```
 
 ---
 
-### `sendMessage`
+### `updateThread` 🔒
+
+Update thread state including status, priority, or lifecycle flags.
+
+<Note>Requires a **Secret Key**.</Note>
+
+```typescript
+await client.messaging.updateThread({
+  id: 'thread-uuid-123',
+  requestBody: {
+    status: 'resolved',
+    priority: 'normal',
+    archived: true,
+    pinned: false,
+    muted: true
+  }
+});
+```
+
+---
+
+### `markThreadRead` 🔒
+
+Marks all customer messages in the thread as `read` and resets the store unread count to 0.
+
+```typescript
+await client.messaging.markThreadRead({ id: 'thread-uuid-123' });
+```
+
+---
+
+## Message Operations
+
+### `getThreadMessages`
+
+Fetch paginated history for a thread. Deleted messages are automatically excluded.
+
+| Param | Type | Description |
+| :--- | :--- | :--- |
+| `limit` | `number` | Max messages per page (default 50). |
+| `cursor` | `string` | Base64-encoded `created_at` for next page. |
+| `order` | `string` | `asc` (oldest first) or `desc` (newest first). |
+
+```typescript
+const { messages, pagination } = await client.messaging.getThreadMessages({
+  id: 'thread-uuid-123',
+  limit: 50,
+  order: 'desc' // Get newest first
+});
+```
+
+---
+
+### `sendMessage` 🔒
 
 Reply to an existing conversation.
-
-<Note>
-  This method requires a **Secret Key** and should be used from your backend or a secure server-side action.
-</Note>
 
 ```typescript
 await client.messaging.sendMessage({
   id: 'thread-uuid-123',
   requestBody: {
-    message: "Thank you for the update. I'll check my account."
+    message: "We've received your request and are looking into it."
   }
 });
 ```
 
 ---
 
-### `createConversation`
+### `editMessage` 🔒
 
-Initiate a brand new support ticket or conversation for a customer.
-
-<Note>
-  This method requires a **Secret Key**.
-</Note>
+Update the content of an existing message. Sets `is_edited: true`.
 
 ```typescript
-const thread = await client.messaging.createConversation({
+await client.messaging.editMessage({
+  id: 'msg-uuid-456',
   requestBody: {
-    customer_id: 'cust_456',
-    customer_name: 'Jane Doe',
-    customer_email: 'jane@example.com',
-    subject: "Return Request - Order #555",
-    message: "I would like to initiate a return for my order."
+    message_content: "Correction: The delivery will arrive by 5 PM today."
   }
 });
-
-console.log(`Started new thread: ${thread.id}`);
 ```
+
+---
+
+### `deleteMessage` 🔒
+
+Soft-deletes a message. The message is hidden from list responses but retained for audit trails.
+
+```typescript
+await client.messaging.deleteMessage({ id: 'msg-uuid-456' });
+```
+
+---
+
+### `createConversation` 🔒
+
+Initiate a new support ticket with an initial message.
+
+```typescript
+const { thread, message } = await client.messaging.createConversation({
+  requestBody: {
+    customer_name: 'Jane Doe',
+    customer_email: 'jane@example.com',
+    subject: "Missing Item - Order #8821",
+    message: "My package arrived but the headphones were missing.",
+    priority: 'high',
+    thread_type: 'order_inquiry',
+    order_id: 'order-uuid-abc' // Optional context
+  }
+});
+```
+
+---
+
+## Data Schemas
+
+### `Thread` Structure
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `uuid` | Unique thread identifier. |
+| `subject` | `string` | Thread title/topic. |
+| `status` | `enum` | `active`, `resolved`, `closed`, `escalated`, `pending`. |
+| `priority`| `enum` | `low`, `normal`, `high`, `urgent`. |
+| `is_archived`| `boolean`| Hidden from main list. |
+| `is_muted`| `boolean`| Notifications disabled. |
+| `is_pinned`| `boolean`| Always at top of list. |
+| `unread_count_store`| `number`| Messages awaiting store reply. |
+
+### `Message` Structure
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `uuid` | Unique message identifier. |
+| `message_content`| `string`| The text body. |
+| `sender_type`| `enum` | `customer`, `store`, `system`. |
+| `is_edited`| `boolean`| Whether content was changed. |
+| `is_deleted`| `boolean`| Whether message is soft-deleted. |
 
 ---
 
 <Tip>
-  **Pro UX Tip:** Use the `unread_count_customer` field from `listThreads` to display a badge on your "Support" icon to notify customers of agent replies.
+  **Performance Tip:** When building a chat UI, use `getThreadMessages` with `order: 'desc'` to load the most recent activity first, then use the `next_cursor` to load history as the user scrolls up.
 </Tip>

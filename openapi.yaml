@@ -871,13 +871,34 @@ components:
           nullable: true
           description: Product brand
           example: Sony
-        images:
+        thumbnail_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Primary image URL for list views
+          example: "https://pub-...r2.dev/stores/.../primary-123.jpg"
+        media:
           type: array
+          description: Array of product media objects including images and videos
           items:
-            type: string
-            format: uri
-          description: Array of product image URLs (mapped from online_images or image)
-          example: ["https://images.unsplash.com/photo-1234567890"]
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              url:
+                type: string
+                format: uri
+              type:
+                type: string
+                example: "image"
+              position:
+                type: integer
+              alt_text:
+                type: string
+                nullable: true
+              is_primary:
+                type: boolean
         product_slug:
           type: string
           nullable: true
@@ -1111,6 +1132,28 @@ components:
           type: boolean
           description: Whether this is the default variant
           example: false
+        media:
+          type: array
+          description: Array of media objects specific to this variant
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              url:
+                type: string
+                format: uri
+              type:
+                type: string
+                example: "image"
+              position:
+                type: integer
+              alt_text:
+                type: string
+                nullable: true
+              is_primary:
+                type: boolean
     ProductCollection:
       type: object
       properties:
@@ -1151,6 +1194,11 @@ components:
           example: Electronics
         description:
           type: string
+        image:
+          type: string
+          format: uri
+          nullable: true
+          description: URL of the category image
         active:
           type: boolean
           description: Whether the category is active
@@ -1174,6 +1222,11 @@ components:
           example: Smartphones
         description:
           type: string
+        image:
+          type: string
+          format: uri
+          nullable: true
+          description: URL of the subcategory image
         active:
           type: boolean
           description: Whether the subcategory is active
@@ -1834,30 +1887,36 @@ components:
           format: uuid
         customer_id:
           type: string
+          nullable: true
         customer_name:
           type: string
         customer_email:
           type: string
         customer_phone:
           type: string
+          nullable: true
         store_name:
           type: string
         store_avatar:
           type: string
+          nullable: true
         order_id:
           type: string
+          nullable: true
         product_id:
           type: string
+          nullable: true
         subject:
           type: string
         thread_type:
           type: string
+          enum: [general, order_inquiry, product_inquiry, support, complaint, delivery, return, refund, technical]
         status:
           type: string
-          enum: [active, closed, archived]
+          enum: [active, resolved, closed, escalated, pending]
         priority:
           type: string
-          enum: [normal, high, urgent]
+          enum: [low, normal, high, urgent]
         last_message_at:
           type: string
           format: date-time
@@ -1868,6 +1927,12 @@ components:
           type: integer
         unread_count_store:
           type: integer
+        is_archived:
+          type: boolean
+        is_muted:
+          type: boolean
+        is_pinned:
+          type: boolean
         created_at:
           type: string
           format: date-time
@@ -1884,14 +1949,16 @@ components:
           type: string
         message_type:
           type: string
-          enum: [text, image, file]
+          enum: [text, image, file, product_link, order_update, system_notification]
         sender_type:
           type: string
           enum: [customer, store, system]
         sender_id:
           type: string
+          nullable: true
         sender_name:
           type: string
+          nullable: true
         attachments:
           type: array
           items:
@@ -1900,10 +1967,23 @@ components:
           type: object
         message_status:
           type: string
-          enum: [sent, delivered, read]
+          enum: [sent, delivered, read, failed]
         read_at:
           type: string
           format: date-time
+          nullable: true
+        is_edited:
+          type: boolean
+        is_deleted:
+          type: boolean
+        edited_at:
+          type: string
+          format: date-time
+          nullable: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -1964,6 +2044,11 @@ components:
           type: string
         description:
           type: string
+        image:
+          type: string
+          format: uri
+          nullable: true
+          description: URL of the promotion image
         discount_value:
           type: number
         discount_type:
@@ -6214,6 +6299,12 @@ paths:
         Create a new customer account with email and password.
         Returns user details and authentication tokens upon successful registration.
         
+        **Multi-Store Support:**
+        - If the email is already registered at another store, a new customer record
+          is created for this store (linked to the existing auth.users record)
+        - Response includes `is_multi_store_customer: true` when linking to existing account
+        - Customers can have accounts at multiple stores with the same email/password
+        
         **⚠️ SECRET KEY REQUIRED**
         
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
@@ -6263,14 +6354,26 @@ paths:
               schema:
                 type: object
                 properties:
+                  message:
+                    type: string
+                    description: Success message
+                    example: "Registration successful"
                   user:
                     $ref: "#/components/schemas/User"
                   customer:
                     $ref: "#/components/schemas/Customer"
                   session:
                     $ref: "#/components/schemas/Session"
+                  is_multi_store_customer:
+                    type: boolean
+                    description: |
+                      Indicates if this customer already had an account at another store.
+                      When true, the customer's auth.users record already existed, and a new
+                      customers record was created for this store. When false or omitted,
+                      this is the customer's first store registration.
+                    example: false
         "400":
-          description: Invalid request (email already exists, weak password, etc.)
+          description: Invalid request (email already exists at this store, weak password, etc.)
         "401":
           $ref: "#/components/responses/UnauthorizedError"
         "403":
@@ -7560,6 +7663,30 @@ paths:
                           type: string
                           description: Currency symbol for display
                           example: $
+                        thumbnail_url:
+                          type: string
+                          nullable: true
+                          description: Primary image URL for list views
+                        media:
+                          type: array
+                          description: Array of product media objects
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                              url:
+                                type: string
+                              type:
+                                type: string
+                              position:
+                                type: integer
+                              alt_text:
+                                type: string
+                                nullable: true
+                              is_primary:
+                                type: boolean
                         exchange_rate:
                           type: number
                           format: float
@@ -7878,6 +8005,30 @@ paths:
                   product_slug:
                     type: string
                     nullable: true
+                  thumbnail_url:
+                    type: string
+                    nullable: true
+                    description: Primary image URL for list views
+                  media:
+                    type: array
+                    description: Array of product media objects
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        url:
+                          type: string
+                        type:
+                          type: string
+                        position:
+                          type: integer
+                        alt_text:
+                          type: string
+                          nullable: true
+                        is_primary:
+                          type: boolean
                   
                   # ========== SIMPLE PRODUCT FIELDS (only for simple products) ==========
                   variant_id:
@@ -7987,6 +8138,26 @@ paths:
                           nullable: true
                         is_default:
                           type: boolean
+                        media:
+                          type: array
+                          description: Array of variant-specific media objects
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                              url:
+                                type: string
+                              type:
+                                type: string
+                              position:
+                                type: integer
+                              alt_text:
+                                type: string
+                                nullable: true
+                              is_primary:
+                                type: boolean
                         base_price:
                           type: number
                           description: Price in store's base currency
@@ -8471,6 +8642,30 @@ paths:
                   product_slug:
                     type: string
                     nullable: true
+                  thumbnail_url:
+                    type: string
+                    nullable: true
+                    description: Primary image URL for list views
+                  media:
+                    type: array
+                    description: Array of product media objects
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        url:
+                          type: string
+                        type:
+                          type: string
+                        position:
+                          type: integer
+                        alt_text:
+                          type: string
+                          nullable: true
+                        is_primary:
+                          type: boolean
                   
                   # ========== SIMPLE PRODUCT FIELDS (only for simple products) ==========
                   variant_id:
@@ -8580,6 +8775,26 @@ paths:
                           nullable: true
                         is_default:
                           type: boolean
+                        media:
+                          type: array
+                          description: Array of variant-specific media objects
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                              url:
+                                type: string
+                              type:
+                                type: string
+                              position:
+                                type: integer
+                              alt_text:
+                                type: string
+                                nullable: true
+                              is_primary:
+                                type: boolean
                         base_price:
                           type: number
                           description: Price in store's base currency
@@ -8828,14 +9043,53 @@ paths:
       tags:
         - Messaging
       summary: List message threads
+      description: |
+        Returns messaging threads filtered by customer. Supports cursor-based pagination, field
+        filtering, and server-side status/priority/archived/unread filtering. Pinned threads are
+        returned first in the result set.
       security:
         - BearerAuth: []
       parameters:
         - name: customer_id
           in: query
+          required: true
           schema:
             type: string
             format: uuid
+          description: Customer UUID to filter threads by
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, resolved, closed, escalated, pending]
+          description: Filter threads by status
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [urgent, high, normal, low]
+          description: Filter by priority level
+        - name: thread_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [general, order_inquiry, product_inquiry, support, complaint, delivery, return, refund, technical]
+          description: Filter by thread type
+        - name: archived
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: "true = archived threads only, false = non-archived only, omit = no filter"
+        - name: unread
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: "Set to true to return only threads with unread_count_store > 0"
         - name: limit
           in: query
           schema:
@@ -8845,7 +9099,7 @@ paths:
             maximum: 200
         - name: cursor
           in: query
-          description: Cursor for pagination (base64-encoded)
+          description: Cursor for pagination (base64-encoded last_message_at value)
           schema:
             type: string
         - name: fields
@@ -8860,8 +9114,9 @@ paths:
             - `store_name`, `store_avatar`, `order_id`, `product_id`
             - `subject`, `thread_type`, `status`, `priority`
             - `last_message_at`, `last_message_by`, `unread_count_customer`, `unread_count_store`
+            - `is_archived`, `is_muted`, `is_pinned`
             - `created_at`, `updated_at`
-          example: subject,status,last_message_at
+          example: subject,status,last_message_at,is_pinned
       responses:
         "200":
           description: Success
@@ -8919,8 +9174,9 @@ paths:
             - `store_name`, `store_avatar`, `order_id`, `product_id`
             - `subject`, `thread_type`, `status`, `priority`
             - `last_message_at`, `last_message_by`, `unread_count_customer`, `unread_count_store`
+            - `is_archived`, `is_muted`, `is_pinned`
             - `created_at`, `updated_at`
-          example: subject,status,customer_name
+          example: subject,status,customer_name,is_pinned
       responses:
         "200":
           description: Success
@@ -8938,12 +9194,14 @@ paths:
           $ref: "#/components/responses/RateLimitError"
         "500":
           $ref: "#/components/responses/ServerError"
-  /v1/messaging/threads/{id}/messages:
-    get:
-      operationId: getThreadMessages
+    patch:
+      operationId: updateThread
       tags:
         - Messaging
-      summary: Get messages in a thread
+      summary: Update thread
+      description: |
+        Update thread status, priority, or toggle the archived/muted/pinned state.
+        Requires a secret key.
       security:
         - BearerAuth: []
       parameters:
@@ -8953,6 +9211,104 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [active, resolved, closed, escalated, pending]
+                priority:
+                  type: string
+                  enum: [urgent, high, normal, low]
+                archived:
+                  type: boolean
+                  description: Set to true to archive, false to unarchive
+                muted:
+                  type: boolean
+                  description: Set to true to mute, false to unmute
+                pinned:
+                  type: boolean
+                  description: Set to true to pin, false to unpin
+      responses:
+        "200":
+          description: Thread updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thread:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                      priority:
+                        type: string
+                      is_archived:
+                        type: boolean
+                      is_muted:
+                        type: boolean
+                      is_pinned:
+                        type: boolean
+                      updated_at:
+                        type: string
+                        format: date-time
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /v1/messaging/threads/{id}/messages:
+    get:
+      operationId: getThreadMessages
+      tags:
+        - Messaging
+      summary: Get messages in a thread
+      description: |
+        Returns messages in a thread. Soft-deleted messages are excluded by default.
+        Supports cursor-based pagination and sort order (default: oldest first).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: cursor
+          in: query
+          description: Cursor for pagination (base64-encoded created_at value)
+          schema:
+            type: string
+        - name: order
+          in: query
+          description: Sort order — asc (oldest first, default) or desc (newest first)
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
         - name: fields
           in: query
           schema:
@@ -8963,8 +9319,9 @@ paths:
             **Allowed Fields:**
             - `id`, `message_content`, `message_type`, `sender_type`, `sender_id`
             - `sender_name`, `attachments`, `metadata`, `message_status`, `read_at`
+            - `is_edited`, `is_deleted`
             - `created_at`, `updated_at`
-          example: message_content,sender_name,created_at
+          example: message_content,sender_name,created_at,is_edited
       responses:
         "200":
           description: Success
@@ -8977,6 +9334,16 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Message"
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                      next_cursor:
+                        type: string
+                        nullable: true
+                      has_more:
+                        type: boolean
         "400":
           $ref: "#/components/responses/BadRequestError"
         "401":
@@ -9046,7 +9413,7 @@ paths:
       tags:
         - Messaging
       summary: Create new conversation
-      description: Start a new message conversation
+      description: Start a new message thread with an initial customer message. Requires a secret key.
       security:
         - BearerAuth: []
       requestBody:
@@ -9056,7 +9423,6 @@ paths:
             schema:
               type: object
               required:
-                - customer_id
                 - customer_name
                 - customer_email
                 - subject
@@ -9065,15 +9431,36 @@ paths:
                 customer_id:
                   type: string
                   format: uuid
+                  description: Optional — links thread to an existing customer record
                 customer_name:
                   type: string
+                  example: Jane Wanjiku
                 customer_email:
                   type: string
                   format: email
+                  example: jane@example.com
+                customer_phone:
+                  type: string
+                  example: "+254701234567"
                 subject:
                   type: string
+                  example: Question about my order
                 message:
                   type: string
+                  example: Hi, I placed an order yesterday — when will it ship?
+                order_id:
+                  type: string
+                  format: uuid
+                product_id:
+                  type: string
+                  format: uuid
+                priority:
+                  type: string
+                  enum: [urgent, high, normal, low]
+                  default: normal
+                thread_type:
+                  type: string
+                  enum: [general, order_inquiry, product_inquiry, support, complaint, delivery, return, refund, technical]
       responses:
         "200":
           description: Conversation created
@@ -9082,14 +9469,205 @@ paths:
               schema:
                 type: object
                 properties:
-                  id:
+                  thread:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      subject:
+                        type: string
+                      status:
+                        type: string
+                      priority:
+                        type: string
+                  message:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      created_at:
+                        type: string
+                        format: date-time
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /v1/messaging/threads/{id}/read:
+    post:
+      operationId: markThreadRead
+      tags:
+        - Messaging
+      summary: Mark thread as read
+      description: |
+        Resets `unread_count_store` to 0 and marks all customer messages in the thread as `read`.
+        Requires a secret key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Thread marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  thread_id:
                     type: string
                     format: uuid
-                  customer_id:
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /v1/messaging/threads/unread-count:
+    get:
+      operationId: getThreadUnreadCount
+      tags:
+        - Messaging
+      summary: Get total unread count
+      description: Returns the aggregate unread message count across all non-archived threads for the authenticated store.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unread_count:
+                    type: integer
+                    description: Total number of unread messages across all non-archived threads
+                    example: 14
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+  /v1/messaging/messages/{id}:
+    patch:
+      operationId: editMessage
+      tags:
+        - Messaging
+      summary: Edit message
+      description: |
+        Edits the content of an existing message. Sets `is_edited = true` and records `edited_at`.
+        Cannot edit a soft-deleted message. Requires a secret key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message_content
+              properties:
+                message_content:
+                  type: string
+                  minLength: 1
+                  example: Updated content for this message.
+      responses:
+        "200":
+          description: Message updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      message_content:
+                        type: string
+                      is_edited:
+                        type: boolean
+                        example: true
+                      edited_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      operationId: deleteMessage
+      tags:
+        - Messaging
+      summary: Delete message
+      description: |
+        Deletes a message. Requires a secret key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Message soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message_id:
                     type: string
-                  subject:
-                    type: string
-                  created_at:
+                    format: uuid
+                  deleted_at:
                     type: string
                     format: date-time
         "400":
@@ -9098,6 +9676,8 @@ paths:
           $ref: "#/components/responses/UnauthorizedError"
         "403":
           $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
         "429":
           $ref: "#/components/responses/RateLimitError"
         "500":
