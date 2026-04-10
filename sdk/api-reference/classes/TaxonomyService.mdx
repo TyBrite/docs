@@ -3,7 +3,7 @@ title: "Taxonomy (Categories)"
 description: "Reference for the TaxonomyService class in the Tybrite SDK."
 ---
 
-The `TaxonomyService` class (accessed via `client.taxonomy`) allows you to browse and retrieve the hierarchical structure of your store's product catalog.
+The `TaxonomyService` class (accessed via `client.taxonomy`) allows you to browse and retrieve the hierarchical structure of your store's product catalog. Each resource supports an `image` field for building visual navigation menus and category-based landing pages.
 
 ## Category Management
 
@@ -16,7 +16,7 @@ const { categories, pagination } = await client.taxonomy.listCategories({
   search: 'clothes',
   active: true,
   limit: 50,
-  fields: 'id,name,slug'
+  fields: 'id,name,image'
 });
 
 console.log(`Has more categories: ${pagination.has_more}`);
@@ -31,8 +31,10 @@ Retrieve details for a single category, including its description and metadata.
 ```typescript
 const category = await client.taxonomy.getCategory({
   id: 'electronics-uuid',
-  fields: 'name,description,metadata' // Optional
+  fields: 'name,description,image' // Optional
 });
+
+console.log(`Category Banner: ${category.image}`);
 ```
 
 ## Subcategory Management
@@ -41,7 +43,7 @@ Subcategories allow for more granular organization within a parent category (e.g
 
 ### `listSubcategories`
 
-Retrieve a paginated list of subcategories. You can scope this to a specific parent category.
+Retrieve a paginated list of subcategories. You can scope this to a specific parent category and include images for each.
 
 ```typescript
 const { subcategories, pagination } = await client.taxonomy.listSubcategories({
@@ -49,7 +51,7 @@ const { subcategories, pagination } = await client.taxonomy.listSubcategories({
   active: true,
   search: 'laptops',
   limit: 24,
-  fields: 'id,name,parent_id'
+  fields: 'id,name,category_id,image'
 });
 ```
 
@@ -62,7 +64,7 @@ Retrieve details for a specific subcategory.
 ```typescript
 const sub = await client.taxonomy.getSubcategory({
   id: 'macbooks-uuid',
-  fields: 'name,description' // Optional
+  fields: 'name,description,image' // Optional
 });
 ```
 
@@ -99,5 +101,5 @@ const results = await client.products.listProducts({
 ---
 
 <Tip>
-  **Pro Navigation Tip:** To build a high-performance navigation menu, fetch all categories and subcategories on your initial app load and cache them locally. Since taxonomy changes infrequently, this will make your store feel instantaneous.
+  **Pro Navigation Tip:** Use the `image` field to build high-performance visual navigation. By fetching categories with their images on initial app load, you can create immersive "Category Grids" or dynamic sidebars that make your store feel modern and alive.
 </Tip>

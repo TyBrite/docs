@@ -3,7 +3,7 @@ title: "Products"
 description: "Reference for the ProductsService class in the Tybrite SDK."
 ---
 
-The `ProductsService` class (accessed via `client.products`) is the core discovery engine. It provides high-performance access to your catalog with advanced filtering, **hierarchical variant structures**, and intelligent field selection.
+The `ProductsService` class (accessed via `client.products`) is the core discovery engine. It provides high-performance access to your catalog with advanced filtering, **hierarchical variant structures**, and a unified **media gallery system**.
 
 ## Response Structure Tiers
 
@@ -24,6 +24,7 @@ To optimize performance across different device types, the service implements th
 Retrieve a paginated list of products. This method returns **flat structures** (no `variants` array) to keep payloads small.
 
 *   **⚡ Performance**: 50-70% smaller than detail endpoints.
+*   **🖼️ Thumbnails**: Use `thumbnail_url` for fast rendering in lists without iterating arrays.
 *   **🛒 Quick Add**: Includes default variant data (`price`, `stock`, `sku`) at root level.
 *   **🔍 Intelligence**: Use the `has_variants` flag to determine if the UI should show "View Options".
 *   **⏩ Pagination**: Uses cursor-based navigation for stable, high-performance scrolling.
@@ -32,7 +33,7 @@ Retrieve a paginated list of products. This method returns **flat structures** (
 const { products, pagination } = await client.products.listProducts({
   search: 'Sony',
   limit: 20,
-  fields: 'name,price,stock,has_variants,product_slug'
+  fields: 'name,price,stock,has_variants,product_slug,thumbnail_url'
 });
 
 // For subsequent pages, pass the cursor from the previous response:
@@ -48,21 +49,25 @@ if (pagination.next_cursor) {
 
 ### `getProduct`
 
-Retrieve complete details for a single item. This method handles **Multi-Variant** products by returning a hierarchical structure that eliminates data redundancy.
+Retrieve complete details for a single item. This method handles **Multi-Variant** products by returning a hierarchical structure that eliminates data redundancy and supports **variant-aware media**.
 
-*   **Product-Level**: Shared metadata at the root (name, brand, images).
+*   **Product-Level**: Shared metadata at the root (name, brand, media gallery).
 *   **Aggregate Data**: `total_stock` (sum of all variants) and `price_range` (`min`/`max` using `selling_price`).
-*   **Variants Array**: Clean array containing only variant-specific attributes (color, size, SKU).
+*   **Variants Array**: Clean array containing variant-specific attributes (color, size, SKU) and **isolated media** for that specific variation.
 
 ```typescript
 const product = await client.products.getProduct({
   id: 'sony-wh-1000xm4-uuid',
-  fields: 'name,price_range,total_stock,variants.sku,variants.selling_price,variants.stock'
+  fields: 'name,thumbnail_url,media,price_range,total_stock,variants.sku,variants.media'
 });
 
 if (product.has_variants) {
   console.log(`Variants available: ${product.variant_count}`);
   console.log(`Price Range: ${product.price_range.min} - ${product.price_range.max}`);
+  
+  // Access variant-specific media (e.g., if user selects 'Grey' color)
+  const greyVariant = product.variants.find(v => v.variant_attributes.color === 'Grey');
+  console.log(`Grey variation images: ${greyVariant.media.length}`);
 }
 ```
 
@@ -75,33 +80,57 @@ Retrieve a product using its SEO-friendly slug. Identical to `getProduct` in res
 ```typescript
 const product = await client.products.getProductBySlug({
   slug: 'sony-wh-1000xm4-a089d',
-  fields: 'seo_title,seo_description,price_range,variants.*'
+  fields: 'seo_title,seo_description,thumbnail_url,media,price_range,variants.*'
 });
 ```
 
 ---
 
+## 📸 Media Gallery System
+
+The media system supports a fully-functional, variant-aware gallery.
+
+### Root-Level Media
+- `thumbnail_url`: Represents the primary image for the product. Perfect for simple grids.
+- `media`: An array of objects containing all base-level images and videos.
+
+### Variant Media
+Each variant in the `variants[]` array can have its own `media` array. This allows you to show specific images when a user selects a particular variation (e.g., rotating the gallery to show the "Midnight Blue" model).
+
+**Media Object Structure:**
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `uuid` | Unique identifier for the media item. |
+| `url` | `string` | Full CDN URL for the asset. |
+| `type` | `string` | `image` or `video`. |
+| `position` | `number` | Explicit sort order (starting from 0). |
+| `alt_text` | `string` | Accessibility text. |
+| `is_primary`| `boolean`| Whether this is the main image (used for `thumbnail_url`). |
+
+---
+
 ## 🎨 Advanced Field Filtering
 
-Tybrite supports powerful field selection to minimize bandwidth, which is critical for mobile applications.
+Tybrite supports powerful field selection to minimize bandwidth.
 
 ### Root-Level Filtering
-Exclude large metadata objects (SEO keywords, internal timestamps) by selecting only top-level fields.
+Exclude large metadata objects by selecting only top-level fields.
 ```bash
-fields=product_id,name,brand,total_stock,price_range,variants
+fields=product_id,name,brand,thumbnail_url,total_stock,price_range,variants
 ```
 
 ### Nested Array Filtering
-Use dot notation to select specific fields **within** nested arrays. This is the most powerful optimization for variant-heavy catalogs.
+Use dot notation to select specific fields **within** nested arrays.
 ```bash
-fields=name,variants.sku,variants.selling_price,variants.stock,variants.variant_attributes
+# Get only the SKU and specific media for each variant
+fields=name,variants.sku,variants.media,variants.variant_attributes
 ```
 
-**Supported Nested Fields:**
-*   `variants.variant_id`, `variants.sku`
-*   `variants.selling_price` (Actual customer-facing price)
-*   `variants.stock`, `variants.variant_attributes`
-*   `variants.variant_name`, `variants.is_default`
+**Supported Fields for Filtering:**
+*   **Core:** `product_id`, `name`, `sku`, `description`, `thumbnail_url`, `media`
+*   **Pricing:** `price`, `selling_price`, `sale_price`, `price_range`
+*   **Inventory:** `stock`, `total_stock`, `threshold`
+*   **Variants:** `variants.sku`, `variants.selling_price`, `variants.media`, `variants.variant_attributes`
 
 ---
 
@@ -112,8 +141,8 @@ fields=name,variants.sku,variants.selling_price,variants.stock,variants.variant_
 Retrieve structured technical specifications.
 
 ```typescript
-const { specifications, pagination } = await client.products.listProductSpecifications({ 
-  limit: 50
+const { id, specification_data } = await client.products.getProductSpecifications({ 
+  id: 'product-uuid'
 });
 ```
 
@@ -125,7 +154,7 @@ Manage curated groups of products.
 
 ```typescript
 // List all active collections
-const { collections, pagination } = await client.products.listProductCollections({ 
+const { collections } = await client.products.listProductCollections({ 
   showOnHomepage: 'true',
   limit: 20
 });

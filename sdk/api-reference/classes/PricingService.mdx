@@ -7,7 +7,8 @@ The `PricingService` class (accessed via `client.pricing`) provides high-perform
 
 ## Integration Highlights
 
-*   **Service Binding**: Leverages the Products Worker directly for consistent data structures.
+*   **Service Binding**: Leverages the Products API directly for consistent data structures.
+*   **Media Integration**: Automatically proxies and whitelists `thumbnail_url` and `media` (including variant-level media) from the Products API.
 *   **Multi-Variant Support**: Automatically calculates prices, discounts, and breakdowns for every variant in a product.
 *   **Geographic Detection**: Accurate currency retrieval using PostGIS boundary matching with a 100% success rate across global locations.
 
@@ -17,14 +18,14 @@ The `PricingService` class (accessed via `client.pricing`) provides high-perform
 
 ### `getProductPrices`
 
-Retrieve resolved prices for a list of products. Optimized for catalog browsing, this returns a **flat structure** using the default variant for each product.
+Retrieve resolved prices for a list of products. Optimized for catalog browsing, this returns a **flat structure** using the default variant for each product. Includes `thumbnail_url` for fast rendering.
 
 ```typescript
 const { products, pagination, pricing_context } = await client.pricing.getProductPrices({
   categoryId: 'electronics-uuid',
   placeName: 'London, UK',
   limit: 20,
-  fields: 'name,display_price,display_currency,currency_symbol,has_variants'
+  fields: 'name,display_price,display_currency,currency_symbol,has_variants,thumbnail_url'
 });
 
 // Access global pricing context
@@ -36,24 +37,26 @@ console.log(`Has more: ${pagination.has_more}`);
 
 ### `getProductPrice`
 
-Retrieve an ultra-detailed price breakdown for a single item. Handles both simple and **multi-variant** products with hierarchical responses.
+Retrieve an ultra-detailed price breakdown for a single item. Handles both simple and **multi-variant** products with hierarchical responses. Each priced product already includes **media gallery** arrays.
 
 *   **Aggregate Pricing**: For products with variants, it provides an accurate `price_range` (min/max) in the customer's currency.
 *   **Per-Variant Breakdown**: Each item in the `variants` array contains its own `base_price`, `resolved_price`, and `display_price`.
+*   **Media Resolution**: Includes both root-level gallery `media` and variant-specific media proxies.
 
 ```typescript
 const pricing = await client.pricing.getProductPrice({
   id: 'sony-wh-1000xm4-uuid',
   placeName: 'Paris, France', // Detects EUR (€)
-  fields: 'name,price_range,variants.sku,variants.display_price,variants.price_breakdown'
+  fields: 'name,thumbnail_url,media,price_range,variants.sku,variants.display_price,variants.media'
 });
 
 if (pricing.has_variants) {
   console.log(`Range: €${pricing.price_range.min} - €${pricing.price_range.max}`);
   
-  // Access specific variant discount
+  // Access specific variant's isolated media and price
   const v1 = pricing.variants[0];
-  console.log(`Discount Applied: ${v1.price_breakdown.discounts[0].rule_name}`);
+  console.log(`Sku: ${v1.sku} | Price: €${v1.display_price}`);
+  console.log(`Images for this variant: ${v1.media.length}`);
 }
 ```
 
@@ -75,11 +78,11 @@ const pricing = await client.pricing.getProductPriceBySlug({
 
 ## 🎨 Advanced Field Filtering
 
-The Pricing Service supports dot notation for filtering variant pricing data, enabling up to **87% bandwidth savings** for complex product pages.
+The Pricing Service supports dot notation for filtering variant pricing data, enabling significant bandwidth savings for complex product pages.
 
 ```bash
-# Optimized variant pricing request
-fields=name,price_range,variants.sku,variants.display_price,variants.stock
+# Optimized variant pricing request including media
+fields=name,thumbnail_url,price_range,variants.sku,variants.display_price,variants.stock,variants.media
 ```
 
 ---
