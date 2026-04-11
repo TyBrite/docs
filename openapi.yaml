@@ -1831,28 +1831,88 @@ components:
         id:
           type: string
           format: uuid
+          description: Cart item UUID
         product_id:
           type: string
           format: uuid
+          description: Online product UUID (parent product)
+        variant_id:
+          type: string
+          format: uuid
+          description: Specific product variant UUID
         product_name:
           type: string
+          description: Product name
+          example: Sony WH-1000XM4
+        variant_name:
+          type: string
+          nullable: true
+          description: Variant display name
+          example: Black
+        variant_attributes:
+          type: object
+          additionalProperties: true
+          description: Variant-specific attributes (color, size, etc.)
+          example:
+            color: Black
         product_sku:
           type: string
-        product_image:
+          description: Variant-specific SKU
+          example: SNY-WH1002
+        thumbnail_url:
           type: string
           format: uri
           nullable: true
+          description: Primary image URL for quick display
+          example: https://pub-41977a...r2.dev/.../primary-image.jpg
+        media:
+          type: array
+          description: Full media gallery (variant-specific or product-level)
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              url:
+                type: string
+                format: uri
+              type:
+                type: string
+                enum: [image, video]
+              position:
+                type: integer
+              alt_text:
+                type: string
+                nullable: true
+              is_primary:
+                type: boolean
         quantity:
           type: integer
           example: 2
         unit_price:
           type: number
           format: float
-          example: 89999
+          description: Price per unit
+          example: 34999
+        selling_price:
+          type: number
+          format: float
+          description: Actual customer-facing price (includes sale price if applicable)
+          example: 34999
         total_price:
           type: number
           format: float
-          example: 179998
+          description: unit_price × quantity
+          example: 69998
+        stock_available:
+          type: integer
+          nullable: true
+          description: Variant-specific stock count
+          example: 10
+        has_variants:
+          type: boolean
+          description: Whether the product has multiple variants
         created_at:
           type: string
           format: date-time
@@ -1865,17 +1925,75 @@ components:
         id:
           type: string
           format: uuid
+          description: Wishlist item UUID
         product_id:
           type: string
           format: uuid
+          description: Online product UUID (parent product)
+        variant_id:
+          type: string
+          format: uuid
+          description: Specific product variant UUID
         product_name:
           type: string
+          description: Product name
+          example: Sony WH-1000XM4
+        variant_name:
+          type: string
+          nullable: true
+          description: Variant display name
+          example: Blue
+        variant_attributes:
+          type: object
+          additionalProperties: true
+          description: Variant-specific attributes (color, size, etc.)
+          example:
+            color: Blue
         product_sku:
           type: string
+          description: Variant-specific SKU
+          example: SNY-WH1001
         product_price:
           type: number
-        product_image:
+          format: float
+          description: Variant selling price
+          example: 36999
+        thumbnail_url:
           type: string
+          format: uri
+          nullable: true
+          description: Primary image URL for quick display
+          example: https://pub-41977a...r2.dev/.../primary-image.jpg
+        media:
+          type: array
+          description: Full media gallery (variant-specific or product-level)
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              url:
+                type: string
+                format: uri
+              type:
+                type: string
+                enum: [image, video]
+              position:
+                type: integer
+              alt_text:
+                type: string
+                nullable: true
+              is_primary:
+                type: boolean
+        stock_available:
+          type: integer
+          nullable: true
+          description: Variant-specific stock count
+          example: 35
+        has_variants:
+          type: boolean
+          description: Whether the product has multiple variants
         created_at:
           type: string
           format: date-time
@@ -5711,6 +5829,11 @@ paths:
       description: |
         Add item to cart with automatic stock checking.
         
+        **Variant Selection:**
+        - `variant_id` is required to specify which variant to add (e.g., Black vs Blue color)
+        - For simple products (no variants), use the default variant's ID
+        - Stock validation is performed against the specific variant
+        
         **Cart Association:**
         - Provide `X-Session-Id` header for anonymous carts (before customer login)
         - Provide `customer_id` in request body for authenticated customer carts
@@ -5725,7 +5848,7 @@ paths:
         Content-Type: application/json
         
         {
-          "product_id": "550e8400-e29b-41d4-a716-446655440000",
+          "variant_id": "83b6a47e-4f5c-4090-b8d3-4b606b78f1b4",
           "quantity": 2
         }
         ```
@@ -5737,7 +5860,7 @@ paths:
         Content-Type: application/json
         
         {
-          "product_id": "550e8400-e29b-41d4-a716-446655440000",
+          "variant_id": "83b6a47e-4f5c-4090-b8d3-4b606b78f1b4",
           "quantity": 2,
           "customer_id": "650e8400-e29b-41d4-a716-446655440000"
         }
@@ -5758,18 +5881,24 @@ paths:
             schema:
               type: object
               required:
-                - product_id
+                - variant_id
                 - quantity
               properties:
-                product_id:
+                variant_id:
                   type: string
                   format: uuid
+                  description: Specific product variant UUID (required for multi-variant products)
+                  example: 83b6a47e-4f5c-4090-b8d3-4b606b78f1b4
                 quantity:
                   type: integer
                   minimum: 1
+                  description: Quantity to add
+                  example: 2
                 customer_id:
                   type: string
                   format: uuid
+                  description: Customer UUID for authenticated carts (optional if using X-Session-Id)
+                  example: 650e8400-e29b-41d4-a716-446655440000
       responses:
         "200":
           description: Item added
@@ -5984,15 +6113,19 @@ paths:
             schema:
               type: object
               required:
-                - product_id
+                - variant_id
                 - customer_id
               properties:
-                product_id:
+                variant_id:
                   type: string
                   format: uuid
+                  description: Specific product variant UUID
+                  example: 83b6a47e-4f5c-4090-b8d3-4b606b78f1b4
                 customer_id:
                   type: string
                   format: uuid
+                  description: Customer UUID
+                  example: 650e8400-e29b-41d4-a716-446655440000
       responses:
         "200":
           description: Item added
