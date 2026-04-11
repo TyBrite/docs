@@ -5,6 +5,10 @@ description: "Reference for the CartWishlistService class in the Tybrite SDK."
 
 The `CartWishlistService` class (accessed via `client.cartWishlist`) manages shopping carts for both authenticated and anonymous users, along with customer wishlists.
 
+## Overview
+
+The cart and wishlist APIs support full variant tracking and a unified media gallery system. This enables customers to save specific product selections (color, size, etc.) with accurate pricing, real-time stock levels, and variant-specific images.
+
 ## Cart Management
 
 ### `getCart`
@@ -17,22 +21,25 @@ const cart = await client.cartWishlist.getCart({
   xSessionId: 'guest-uuid-123'  // Optional: for tracking guest carts
 });
 
-console.log(`Cart total: ${cart.subtotal}`);
-console.log(`Items in cart: ${cart.total_items}`);
+const firstItem = cart.items[0];
+console.log(`Item: ${firstItem.product_name} (${firstItem.variant_name})`);
+console.log(`Thumbnail: ${firstItem.thumbnail_url}`);
 ```
-
----
 
 ### `addToCart`
 
-Add a product to the cart. If the product already exists, its quantity will be incremented.
+Add a specific product variant to the cart. If the same variant already exists, its quantity will be incremented.
+
+<Note>
+  `variant_id` is required to specify the exact product selection. For products without variants, use the default variant ID.
+</Note>
 
 ```typescript
 // Anonymous Cart (requires session ID)
 await client.cartWishlist.addToCart({
   xSessionId: 'guest-uuid-123',
   requestBody: {
-    product_id: 'product-uuid',
+    variant_id: 'variant-uuid',
     quantity: 1
   }
 });
@@ -40,14 +47,12 @@ await client.cartWishlist.addToCart({
 // Authenticated Cart (requires customer ID)
 await client.cartWishlist.addToCart({
   requestBody: {
-    product_id: 'product-uuid',
+    variant_id: 'variant-uuid',
     quantity: 1,
     customer_id: 'customer-uuid'
   }
 });
 ```
-
----
 
 ### `updateCartItem`
 
@@ -55,14 +60,12 @@ Update variables for a specific item already in the cart, such as changing the q
 
 ```typescript
 await client.cartWishlist.updateCartItem({
-  id: 'cart-item-uuid', // The UUID of the item in the cart, not the product ID
+  id: 'cart-item-uuid', // The UUID of the item in the cart
   requestBody: {
     quantity: 5
   }
 });
 ```
-
----
 
 ### `clearCart`
 
@@ -74,24 +77,19 @@ await client.cartWishlist.clearCart({
 });
 ```
 
----
-
 ### `removeCartItem`
 
 Remove a specific item from the cart.
 
 ```typescript
 await client.cartWishlist.removeCartItem({
-  id: 'cart-item-uuid'
+  id: 'id'
 });
 ```
-```
-
----
 
 ### `mergeCart`
 
-Combine an anonymous guest cart with a customer's permanent cart. This is typically called immediately after a user logs in to ensure they don't lose items they added while browsing as a guest.
+Combine an anonymous guest cart with a customer's permanent cart. Carts are matched by both `product_id` and `variant_id` to prevent merging different variants of the same product.
 
 ```typescript
 await client.cartWishlist.mergeCart({
@@ -106,7 +104,7 @@ await client.cartWishlist.mergeCart({
 
 ### `getWishlist`
 
-Retrieve a customer's saved items.
+Retrieve a customer's saved items, including variant and media details.
 
 ```typescript
 const { items } = await client.cartWishlist.getWishlist({
@@ -114,22 +112,18 @@ const { items } = await client.cartWishlist.getWishlist({
 });
 ```
 
----
-
 ### `addToWishlist`
 
-Save a product for later. Wishlists require an authenticated `customer_id`.
+Save a specific product variant for later. Wishlists require an authenticated `customer_id`.
 
 ```typescript
 await client.cartWishlist.addToWishlist({
   requestBody: {
-    product_id: 'product-uuid',
+    variant_id: 'variant-uuid',
     customer_id: 'customer-uuid'
   }
 });
 ```
-
----
 
 ### `removeFromWishlist`
 
@@ -141,13 +135,10 @@ await client.cartWishlist.removeFromWishlist({
   customerId: 'customer-uuid'
 });
 ```
-```
-
----
 
 ### `moveWishlistToCart`
 
-An atomic operation that removes an item from the wishlist and adds it to the active cart in one request.
+An atomic operation that removes an item from the wishlist and adds it to the active cart. This operation preserves the `variant_id` and performs stock validation.
 
 ```typescript
 await client.cartWishlist.moveWishlistToCart({
@@ -161,6 +152,130 @@ await client.cartWishlist.moveWishlistToCart({
 
 ---
 
+## Response Objects
+
+### `CartItem` & `WishlistItem`
+
+Both cart and wishlist items include structured data for optimized frontend rendering.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `uuid` | Item UUID in the cart or wishlist. |
+| `product_id` | `uuid` | The parent product identifier. |
+| `variant_id` | `uuid` | The specific identifier for the selected variation. |
+| `product_name` | `string` | Name of the product. |
+| `variant_name` | `string` | Display name for the variant (e.g., "Space Gray"). |
+| `variant_attributes`| `object` | JSON attributes like color or size. |
+| `product_sku` | `string` | SKU for the specific variant. |
+| `thumbnail_url` | `string` | Primary image URL, prioritizing variant media. |
+| `media` | `array` | Full gallery of variant-aware images and videos. |
+| `quantity` | `number` | **(Cart only)** Number of items added. |
+| `unit_price` | `number` | **(Cart only)** Base price per unit. |
+| `selling_price` | `number` | **(Cart only)** Actual price including active sales. |
+| `total_price` | `number` | **(Cart only)** `unit_price × quantity`. |
+| `product_price` | `number` | **(Wishlist only)** Current price of the variant. |
+| `stock_available` | `number` | Real-time stock count for the variant. |
+| `has_variants` | `boolean` | Whether the product supports variation selection. |
+| `created_at` | `string` | Timestamp of when the item was added. |
+
+<CodeGroup>
+
+```json CartItem Example
+{
+    "id": "d1de278b-d260-42da-ae4a-8bb5d34477c3",
+    "product_id": "b016b91e-8403-44be-80ca-77a2d55e7b2d",
+    "variant_id": "6be67ee4-6657-4998-b728-3e99c075c01b",
+    "product_name": "Samsung Galaxy S21",
+    "variant_name": "Default",
+    "variant_attributes": {},
+    "product_sku": "SMG-S21-BLK",
+    "thumbnail_url": "https://pub-41977a1f3228456da0137b210f2ece66.r2.dev/stores/.../primary-1774785162626.jpg",
+    "media": [
+        {
+            "id": "cb00d540-692d-432e-9661-7757ac998f75",
+            "url": "https://pub-41977a1f3228456da0137b210f2ece66.r2.dev/stores/.../primary-1774785162626.jpg",
+            "type": "image",
+            "alt_text": "Samsung Galaxy S21",
+            "position": 0,
+            "is_primary": true
+        }
+    ],
+    "quantity": 2,
+    "unit_price": 99999,
+    "selling_price": 99999,
+    "total_price": 199998,
+    "stock_available": 49,
+    "has_variants": false,
+    "created_at": "2026-04-11T10:54:23Z",
+    "updated_at": "2026-04-11T10:54:23Z"
+}
+```
+
+```json WishlistItem Example
+{
+    "id": "38578dcd-67a7-4adc-9b64-3896d1bd638d",
+    "product_id": "b016b91e-8403-44be-80ca-77a2d55e7b2d",
+    "variant_id": "6be67ee4-6657-4998-b728-3e99c075c01b",
+    "product_name": "Samsung Galaxy S21",
+    "variant_name": "Default",
+    "variant_attributes": {},
+    "product_sku": "SMG-S21-BLK",
+    "product_price": 99999,
+    "thumbnail_url": "https://pub-41977a1f3228456da0137b210f2ece66.r2.dev/stores/.../primary-1774785162626.jpg",
+    "media": [
+        {
+            "id": "cb00d540-692d-432e-9661-7757ac998f75",
+            "url": "https://pub-41977a1f3228456da0137b210f2ece66.r2.dev/stores/.../primary-1774785162626.jpg",
+            "type": "image",
+            "alt_text": "Samsung Galaxy S21",
+            "position": 0,
+            "is_primary": true
+        }
+    ],
+    "stock_available": 49,
+    "has_variants": false,
+    "created_at": "2026-04-11T10:52:09Z"
+}
+```
+
+</CodeGroup>
+
+---
+
+## Core Logic
+
+### Stock Validation
+Stock checks are enforced against the specific variant during all cart operations. If the requested quantity exceeds `stock_available`, the API returns an `insufficient_stock` error code along with the current available count.
+
+### Pricing Logic
+Prices are calculated at the variant level using the `selling_price` field. This ensures that different variations (e.g., larger sizes or premium colors) are priced accurately and that active promotions are automatically applied.
+
+---
+
+## Frontend Patterns
+
+### Variant Selection & Add to Cart
+When a user selects a variant and adds it to their cart:
+
+```typescript
+const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
+  try {
+    await client.cartWishlist.addToCart({
+      xSessionId: sessionId,
+      requestBody: {
+        variant_id: selectedVariant.variant_id,
+        quantity: quantity
+      }
+    });
+  } catch (error) {
+    if (error.code === 'insufficient_stock') {
+      alert(`Only ${error.available_stock} items available`);
+    }
+  }
+};
+```
+
 <Note>
   **Pro Tip:** Use `xSessionId` for guest users. Tybrite will persist this guest cart until it is either merged via `mergeCart` or cleared.
 </Note>
+
