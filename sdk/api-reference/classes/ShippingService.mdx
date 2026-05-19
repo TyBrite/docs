@@ -74,3 +74,37 @@ Tybrite uses a priority-based logic to determine the shipping fee:
 <Tip>
   **Precision Tip:** For the best user experience, use the browser's Geolocation API to get high-precision coordinates for the `calculateShipping` method.
 </Tip>
+
+---
+
+<Note>
+  **Input Flexibility:** `calculateShipping` accepts **either** `{ latitude, longitude, order_total }` **or** `{ place_name, country_code?, order_total }`. When `place_name` is supplied, the worker geocodes via Nominatim. The response shape is identical regardless of input mode: `{ fee, zone_name, tier_name, distance_meters, is_free, reason, applied_rule, coordinates }`.
+</Note>
+
+## Response Codes
+
+Both methods accept **publishable** and **secret** keys. `calculateShipping` uses `POST` purely to carry a structured request body — it is read-only.
+
+### `getShippingZones` (`GET /v1/shipping/zones`)
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Zones and pricing tiers returned. |
+| `401` | Invalid or missing API key. |
+| `403` | Forbidden (e.g., key disabled or store suspended). |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |
+
+This method has no `400` because it takes no input to validate.
+
+### `calculateShipping` (`POST /v1/shipping/calculate`)
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Fee calculated and returned. |
+| `400` | Invalid coordinates (out-of-range lat/lng), missing `order_total`, or `geocoding_failed` when a `place_name` could not be resolved. |
+| `401` | Invalid or missing API key. |
+| `403` | Forbidden (e.g., key disabled or store suspended). |
+| `404` | Store has no shipping configuration (no zones and no distance tiers). |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error — including upstream Nominatim or PostGIS failure. |

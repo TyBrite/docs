@@ -28,12 +28,19 @@ const customer = await client.customers.createCustomer({
 
 ---
 
+### `getCustomer`
+
 Retrieve complete details for a specific customer, including store metrics and purchase history.
+
+<Note>
+  This method requires both a **Publishable/Secret Key** (in client constructor) AND the customer's session token (`xAuthToken`). The token resolves to a customer whose id must match the `id` parameter — otherwise 403 is returned. This prevents enumeration of other customers' profiles.
+</Note>
 
 ```typescript
 const customer = await client.customers.getCustomer({
   id: 'customer-uuid-here',
-  fields: 'name,email,store_metrics.total_spent' // Optional
+  xAuthToken: customerSession.access_token, // Required customer JWT
+  fields: 'name,email,store_metrics.total_spent'
 });
 ```
 
@@ -44,12 +51,13 @@ const customer = await client.customers.getCustomer({
 Perform partial updates on a customer record. Only the fields you provide will be modified.
 
 <Note>
-  This method requires a **Secret Key**.
+  Customers may only update **their own** record. The `xAuthToken` (session JWT) must resolve to a customer whose id matches the `id` parameter, or the server returns 403.
 </Note>
 
 ```typescript
 const updated = await client.customers.updateCustomer({
   id: 'customer-uuid-here',
+  xAuthToken: customerSession.access_token, // Required customer JWT
   requestBody: {
     status: 'active',
     address: '123 Business Way, Nairobi',
@@ -64,3 +72,39 @@ const updated = await client.customers.updateCustomer({
 <Tip>
   **Retention Tip:** Use `store_metrics` to identify your top 10% of customers by lifetime value (LTV) and offer them personalized discount codes via the **Promotions Service**.
 </Tip>
+
+## Authentication Flow
+
+The `getCustomer` and `updateCustomer` methods require a customer session JWT (`xAuthToken`) in addition to your API key. Obtain the token via the `AuthenticationService` — either through `login` or `verifyOtp`.
+
+<Warning>
+  Never expose **Secret Keys** in client-side code. For browser-based customer portals, use a **Publishable Key** in combination with the customer's `xAuthToken`.
+</Warning>
+
+```typescript
+// 1. Customer logs in via AuthenticationService
+const session = await client.authentication.login({
+  requestBody: { email: 'jane@example.com', password: '...' }
+});
+
+// 2. Use the returned access_token for subsequent customer-scoped calls
+const profile = await client.customers.getCustomer({
+  id: session.customer.id,
+  xAuthToken: session.session.access_token
+});
+```
+
+<Note>
+  `createCustomer` is intentionally **Secret Key only** — it is an admin/CRM operation (e.g. bulk imports) and does not involve customer authentication. No `xAuthToken` is required or accepted.
+</Note>
+
+### Response Codes
+
+| Code | Meaning |
+|------|---------|
+| `201` | Customer created successfully (`createCustomer`) |
+| `400` | Invalid request — malformed body or missing required fields |
+| `401` | Invalid API key, or missing/invalid `xAuthToken` |
+| `403` | Forbidden — the customer token does not match the `customer_id` in the path |
+| `404` | Customer not found |
+| `409` | Duplicate email at this store (on `createCustomer`) |

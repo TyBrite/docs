@@ -5,6 +5,10 @@ description: "Reference for the PricingService class in the Tybrite SDK."
 
 The `PricingService` class (accessed via `client.pricing`) provides high-performance price calculations using a **Service Binding Architecture**. It acts as a single source of truth, enriching product data with real-time regional discounts, tax adjustments, and multi-currency conversion.
 
+<Note>
+  **Customer Segment & Tier are server-derived.** `customer_segment` and `customer_tier` are **not** accepted as request parameters — they are resolved server-side from `customer_id` using internal RFM/loyalty data. Sending them as parameters has no effect. To apply segment-specific pricing, pass `customerId` only.
+</Note>
+
 ## Integration Highlights
 
 *   **Service Binding**: Leverages the Products API directly for consistent data structures.
@@ -99,4 +103,19 @@ Tybrite calculates prices in a specific waterfall priority:
 <Note>
   **Pro Tip**: Always use `display_price` for the final price shown to the user. This field has already been processed through the pricing engine, converted to the detected currency, and rounded according to currency rules.
 </Note>
+
+---
+
+## Response Codes
+
+All pricing endpoints are `GET` and accept both **publishable** and **secret** keys.
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success. |
+| `400` | Invalid request — bad UUID, invalid coordinates, unknown `placeName`, or invalid `fields` selector. |
+| `401` | Invalid or missing API key. |
+| `404` | Product or variant not found (single-resource endpoints only). List endpoints return `200` with an empty array. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error — including upstream currency-resolution failures. |
 

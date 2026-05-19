@@ -3,74 +3,137 @@ title: "Authenticated Session"
 description: "Reference for the AuthenticationService class in the Tybrite SDK."
 ---
 
-The `AuthenticationService` (accessed via `client.auth`) handles customer registration, session management, and passwordless login flows.
+The `AuthenticationService` (accessed via `client.auth`) is the **gateway to obtaining customer session tokens**. It handles customer registration, login, passwordless flows, password management, and session refresh.
+
+Every customer-scoped operation across the SDK — on `client.customers`, `client.cartWishlist`, `client.giftCards`, and `client.messaging` — requires the `access_token` minted here to be passed as the `xAuthToken` header.
+
+## The Customer Session Lifecycle
+
+```
+1. Customer authenticates (login | verifyOtp | register)
+   ↓
+2. Backend returns session.access_token (JWT) + refresh_token
+   ↓
+3. Storefront stores access_token (localStorage / httpOnly cookie)
+   ↓
+4. Every customer-scoped API call (cart, wishlist, customers, messaging, gift-cards)
+   passes the access_token as xAuthToken
+   ↓
+5. When token nears expiry → refreshToken → swap stored access_token
+   ↓
+6. Customer logs out → clear stored tokens
+```
+
+<Note>
+  Access tokens are JWTs valid for **1 hour**. Refresh tokens are long-lived but single-use — each `refreshToken` call returns a brand-new refresh token that supersedes the previous one.
+</Note>
+
+---
 
 ## Core Authentication
 
 ### `register`
 
-Create a new customer account. Upon success, this method automatically returns session tokens so you can log the user in immediately.
+Create a new customer account. On success, returns **`201 Created`** along with session tokens so you can log the user in immediately.
 
 ```typescript
-const { user, session } = await client.auth.register({
+const { user, customer, session, is_multi_store_customer } = await client.auth.register({
   requestBody: {
     email: 'jane@example.com',
     password: 'securePassword123',
-    name: 'Jane Doe',
-    phone: '254700111222'
+    name: 'Jane Doe',     // optional
+    phone: '254700111222' // optional
   }
 });
 
-console.log(`Access token expires at: ${session.expires_at}`);
+if (is_multi_store_customer) {
+  console.log('Linked existing Tybrite identity to this store');
+} else {
+  console.log('Created a brand-new auth.users record');
+}
 ```
+
+**Response shape:**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `user` | `object` | The `auth.users` record (id, email, metadata). |
+| `customer` | `object` | The store-scoped customer profile row. |
+| `session` | `object` | `{ access_token, refresh_token, expires_in, expires_at }` |
+| `is_multi_store_customer` | `boolean` | `true` when an existing Tybrite identity (from another store) was linked rather than newly created. |
+
+<Warning>
+  If an account already exists **for this store** with the given email, `register` returns **`409 Conflict`** — distinct from a generic `400` validation error. Surface this to your UI so you can route the user to `/login` instead.
+</Warning>
 
 ---
 
 ### `login`
 
-Authenticate an existing customer using their email and password.
+Authenticate an existing customer using their email and password. Returns **`200 OK`**.
 
 ```typescript
-const { user, session } = await client.auth.login({
+const { message, user, customer, session } = await client.auth.login({
   requestBody: {
     email: 'user@example.com',
     password: 'securePassword123'
   }
 });
+
+// Persist for subsequent customer-scoped calls
+localStorage.setItem('tybrite_access_token', session.access_token);
+localStorage.setItem('tybrite_refresh_token', session.refresh_token);
+```
+
+**Session object:**
+
+```json
+{
+  "access_token": "eyJhbGciOi...",
+  "refresh_token": "v1.MROK...",
+  "expires_in": 3600,
+  "expires_at": 1747700000
+}
 ```
 
 ---
 
 ### `logout`
 
-Invalidate the current session. This will revoke both the access and refresh tokens on the server.
+Invalidate the current session. Revokes both the access and refresh tokens on the server. Returns **`200 OK`**.
 
 ```typescript
 await client.auth.logout();
+// Then clear local storage
+localStorage.removeItem('tybrite_access_token');
+localStorage.removeItem('tybrite_refresh_token');
 ```
+
+---
 
 ## Passwordless Flows (Magic Links & OTP)
 
 ### `sendMagicLink`
 
-Send a passwordless authentication link or a 6-digit OTP code to the customer's email. Codes are valid for **15 minutes**.
+Send a passwordless authentication link **and** a 6-digit OTP code to the customer's email. Codes are valid for **15 minutes**. Returns **`200 OK`** with a hint to check email.
 
 ```typescript
-await client.auth.sendMagicLink({
+const { message } = await client.auth.sendMagicLink({
   requestBody: {
     email: 'user@example.com'
   }
 });
+// message → "Check your email for the magic link / OTP"
 ```
 
 ---
 
 ### `verifyOtp`
 
-Verify a 6-digit OTP code sent via `sendMagicLink` to complete the authentication process.
+Verify the 6-digit OTP code emitted by `sendMagicLink` to complete authentication. Returns **`200 OK`** with the **same response shape as `login`** (`message`, `user`, `customer`, `session`).
 
 ```typescript
-const { session } = await client.auth.verifyOtp({
+const { user, customer, session } = await client.auth.verifyOtp({
   requestBody: {
     email: 'user@example.com',
     token: '123456' // The 6-digit code from email
@@ -78,16 +141,19 @@ const { session } = await client.auth.verifyOtp({
 });
 ```
 
+---
+
 ## Password Management
 
 ### `resetPassword`
 
-Trigger a password reset email for a customer who has forgotten their password.
+Trigger a password reset email for a customer who has forgotten their password. Returns **`200 OK`**.
 
 ```typescript
 await client.auth.resetPassword({
   requestBody: {
-    email: 'user@example.com'
+    email: 'user@example.com',
+    redirect_to: 'https://shop.example.com/reset-callback' // optional
   }
 });
 ```
@@ -96,10 +162,14 @@ await client.auth.resetPassword({
 
 ### `updatePassword`
 
-Update the password for the currently authenticated user. Requires providing the current password for security.
+Update the password for the currently authenticated user. Returns **`200 OK`**.
+
+<Warning>
+  `xAuthToken` is **mandatory** here and must be the customer's **own** session JWT (the `access_token` returned from `login` / `verifyOtp` / `register`). Server keys cannot stand in — this endpoint mutates `auth.users` and requires per-customer authorization.
+</Warning>
 
 ```typescript
-const token = 'session-access-token-from-login';
+const token = localStorage.getItem('tybrite_access_token')!;
 
 await client.auth.updatePassword({
   xAuthToken: token,
@@ -109,37 +179,113 @@ await client.auth.updatePassword({
 });
 ```
 
+---
+
 ## Session Utilities
 
 ### `refreshToken`
 
-Exchange a refresh token for a fresh access token. Access tokens typically expire after **1 hour**.
+Exchange a refresh token for a fresh access token. Returns **`200 OK`** with a brand-new session object (including a rotated `refresh_token`).
 
 ```typescript
-const newSession = await client.auth.refreshToken({
+const { session } = await client.auth.refreshToken({
   requestBody: {
-    refresh_token: 'existing-refresh-token'
+    refresh_token: localStorage.getItem('tybrite_refresh_token')!
   }
 });
+
+localStorage.setItem('tybrite_access_token', session.access_token);
+localStorage.setItem('tybrite_refresh_token', session.refresh_token);
 ```
+
+<Tip>
+  Schedule the refresh ~60 seconds before `expires_at` rather than waiting for a `401` on a customer-scoped call. This avoids cart/wishlist write failures during checkout.
+</Tip>
 
 ---
 
 ### `getCurrentUser`
 
-Retrieve the profile details of the currently authenticated user.
+Retrieve the profile of the currently authenticated user. Also routed as `GET /v1/auth/me`. Returns **`200 OK`** with `{ user, customer }`.
+
+<Warning>
+  `xAuthToken` is **mandatory** and must be the customer's **own** session JWT. This endpoint resolves "who am I?" from the JWT alone — passing the wrong token returns a different customer's record (or `401`).
+</Warning>
 
 ```typescript
-const token = 'session-access-token-from-login';
+const token = localStorage.getItem('tybrite_access_token')!;
 
-const { user } = await client.auth.getCurrentUser({
+const { user, customer } = await client.auth.getCurrentUser({
   xAuthToken: token
 });
 
-console.log(`Logged in as: ${user.email}`);
+console.log(`Logged in as: ${user.email} (customer id: ${customer.id})`);
 ```
 
 ---
+
+## Full Lifecycle Example
+
+This walks the customer from sign-in, through a cart mutation and checkout, to logout — showing where `xAuthToken` flows.
+
+```typescript
+import { Tybrite } from '@tybrite/sdk';
+
+const client = new Tybrite({ apiKey: process.env.TYBRITE_PUBLISHABLE_KEY });
+
+// 1. LOGIN — mint the session
+const { customer, session } = await client.auth.login({
+  requestBody: {
+    email: 'jane@example.com',
+    password: 'securePassword123'
+  }
+});
+
+const token = session.access_token;
+
+// 2. CART — customer-scoped operations carry xAuthToken
+await client.cartWishlist.addToCart({
+  xAuthToken: token,
+  requestBody: {
+    customer_id: customer.id,
+    product_id: 'prod_abc123',
+    quantity: 2
+  }
+});
+
+// 3. CHECKOUT — order creation is sk-only + idempotent + HMAC-signed
+//    (uses your server-side secret key, not the customer JWT)
+const order = await serverClient.orders.createOrder({
+  idempotencyKey: crypto.randomUUID(),
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: { customer_id: customer.id, items: [...] }
+});
+
+// 4. REFRESH — if the access_token is near expiry
+const { session: refreshed } = await client.auth.refreshToken({
+  requestBody: { refresh_token: session.refresh_token }
+});
+
+// 5. LOGOUT — revoke tokens server-side
+await client.auth.logout();
+```
+
+---
+
+### Response Codes
+
+| Method | Success | Notable Errors |
+| --- | --- | --- |
+| `register` | **201 Created** | `400` validation, **`409 Conflict`** account already exists at this store |
+| `login` | **200 OK** | `401` invalid credentials |
+| `logout` | **200 OK** | — |
+| `sendMagicLink` | **200 OK** | `400` invalid email |
+| `verifyOtp` | **200 OK** | `400` invalid/expired code |
+| `resetPassword` | **200 OK** | `400` invalid email |
+| `updatePassword` | **200 OK** | `401` missing or invalid `xAuthToken` |
+| `refreshToken` | **200 OK** | `401` invalid/revoked refresh token |
+| `getCurrentUser` | **200 OK** | `401` missing or invalid `xAuthToken` |
 
 <Note>
   **Token Lifetime:** Access tokens are valid for 1 hour. We recommend implementing an interceptor in your application to automatically call `refreshToken` before the access token expires.

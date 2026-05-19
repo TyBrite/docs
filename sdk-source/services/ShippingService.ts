@@ -74,20 +74,7 @@ export class ShippingService {
     public calculateShipping({
         requestBody,
     }: {
-        requestBody: {
-            /**
-             * Customer latitude (WGS84)
-             */
-            latitude?: number;
-            /**
-             * Customer longitude (WGS84)
-             */
-            longitude?: number;
-            /**
-             * Total order amount (used for free delivery threshold check)
-             */
-            order_total?: number;
-        },
+        requestBody: ,
     }): CancelablePromise<DeliveryFeeCalculation> {
         return this.httpRequest.request({
             method: 'POST',

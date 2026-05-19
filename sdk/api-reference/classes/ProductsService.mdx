@@ -5,6 +5,10 @@ description: "Reference for the ProductsService class in the Tybrite SDK."
 
 The `ProductsService` class (accessed via `client.products`) is the core discovery engine. It provides high-performance access to your catalog with advanced filtering, **hierarchical variant structures**, and a unified **media gallery system**.
 
+<Note>
+  **Validation & Rate Limits:** Product IDs are validated as UUIDs at the gateway router — malformed IDs return `400` immediately without hitting downstream workers. All endpoints are rate-limited (publishable key: 1,000 req/hr per IP; secret key: 10,000 req/hr per key).
+</Note>
+
 ## Response Structure Tiers
 
 To optimize performance across different device types, the service implements three response tiers:
@@ -165,4 +169,19 @@ const { items, pagination: itemPagination } = await client.products.getProductCo
   limit: 10
 });
 ```
+
+---
+
+## Response Codes
+
+All product endpoints are `GET` and accept both **publishable** and **secret** keys.
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success. |
+| `400` | Invalid request — malformed UUID, invalid slug, or unrecognized field in the `fields` parameter. |
+| `401` | Invalid or missing API key. |
+| `404` | Product, collection, or specification not found (single-resource endpoints only). List endpoints return `200` with an empty array. |
+| `429` | Rate limit exceeded (1,000/hr per IP for `pk_`; 10,000/hr per key for `sk_`). |
+| `500` | Internal server error. |
 

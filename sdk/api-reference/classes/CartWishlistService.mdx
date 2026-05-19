@@ -9,6 +9,14 @@ The `CartWishlistService` class (accessed via `client.cartWishlist`) manages sho
 
 The cart and wishlist APIs support full variant tracking and a unified media gallery system. This enables customers to save specific product selections (color, size, etc.) with accurate pricing, real-time stock levels, and variant-specific images.
 
+## Security Model
+
+Cart and wishlist endpoints accept **publishable keys** (storefronts run in browsers), so a leaked publishable key alone is not enough to access another customer's cart. When the request claims a `customer_id` (query or body), the gateway requires an `xAuthToken` header — the customer's session JWT from `client.authentication.login` or `verifyOtp`. The resolved customer must match the claimed `customer_id`, otherwise the gateway returns `403 forbidden`. Anonymous (session-only) carts skip this check and rely on the secrecy of `X-Session-Id`.
+
+<Note>
+  All wishlist endpoints (and `mergeCart`) always require `xAuthToken` because they are inherently customer-scoped. Only cart reads/writes that omit `customer_id` and rely solely on `xSessionId` may proceed unauthenticated.
+</Note>
+
 ## Cart Management
 
 ### `getCart`
@@ -16,9 +24,15 @@ The cart and wishlist APIs support full variant tracking and a unified media gal
 Retrieve the current contents of a cart. This method supports both logged-in customers and anonymous guest sessions.
 
 ```typescript
+// Anonymous (no auth token needed)
+const guestCart = await client.cartWishlist.getCart({
+  xSessionId: 'guest-uuid-123'
+});
+
+// Authenticated (token required — JWT must resolve to customerId)
 const cart = await client.cartWishlist.getCart({
-  customerId: 'customer-uuid', // Optional: for logged-in users
-  xSessionId: 'guest-uuid-123'  // Optional: for tracking guest carts
+  xAuthToken: customerSession.access_token,
+  customerId: 'customer-uuid'
 });
 
 const firstItem = cart.items[0];
@@ -35,7 +49,7 @@ Add a specific product variant to the cart. If the same variant already exists, 
 </Note>
 
 ```typescript
-// Anonymous Cart (requires session ID)
+// Anonymous Cart (no auth token needed)
 await client.cartWishlist.addToCart({
   xSessionId: 'guest-uuid-123',
   requestBody: {
@@ -44,8 +58,9 @@ await client.cartWishlist.addToCart({
   }
 });
 
-// Authenticated Cart (requires customer ID)
+// Authenticated Cart (token required)
 await client.cartWishlist.addToCart({
+  xAuthToken: customerSession.access_token,
   requestBody: {
     variant_id: 'variant-uuid',
     quantity: 1,
@@ -59,10 +74,22 @@ await client.cartWishlist.addToCart({
 Update variables for a specific item already in the cart, such as changing the quantity.
 
 ```typescript
+// Anonymous (no auth token needed)
 await client.cartWishlist.updateCartItem({
-  id: 'cart-item-uuid', // The UUID of the item in the cart
+  id: 'cart-item-uuid',
+  xSessionId: 'guest-uuid-123',
   requestBody: {
     quantity: 5
+  }
+});
+
+// Authenticated (token required)
+await client.cartWishlist.updateCartItem({
+  id: 'cart-item-uuid', // The UUID of the item in the cart
+  xAuthToken: customerSession.access_token,
+  requestBody: {
+    quantity: 5,
+    customer_id: 'customer-uuid'
   }
 });
 ```
@@ -72,7 +99,14 @@ await client.cartWishlist.updateCartItem({
 Remove all items from the cart in a single operation.
 
 ```typescript
+// Anonymous (no auth token needed)
 await client.cartWishlist.clearCart({
+  xSessionId: 'guest-uuid-123'
+});
+
+// Authenticated (token required)
+await client.cartWishlist.clearCart({
+  xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
 ```
@@ -82,8 +116,17 @@ await client.cartWishlist.clearCart({
 Remove a specific item from the cart.
 
 ```typescript
+// Anonymous (no auth token needed)
 await client.cartWishlist.removeCartItem({
-  id: 'id'
+  id: 'cart-item-uuid',
+  xSessionId: 'guest-uuid-123'
+});
+
+// Authenticated (token required)
+await client.cartWishlist.removeCartItem({
+  id: 'cart-item-uuid',
+  xAuthToken: customerSession.access_token,
+  customerId: 'customer-uuid'
 });
 ```
 
@@ -91,8 +134,13 @@ await client.cartWishlist.removeCartItem({
 
 Combine an anonymous guest cart with a customer's permanent cart. Carts are matched by both `product_id` and `variant_id` to prevent merging different variants of the same product.
 
+<Note>
+  `mergeCart` always requires `xAuthToken` — it links a guest session to a customer record, so the gateway must verify the caller actually owns that customer.
+</Note>
+
 ```typescript
 await client.cartWishlist.mergeCart({
+  xAuthToken: customerSession.access_token,
   requestBody: {
     session_id: 'guest-session-uuid',
     customer_id: 'authenticated-customer-uuid'
@@ -102,12 +150,17 @@ await client.cartWishlist.mergeCart({
 
 ## Wishlist Management
 
+<Note>
+  All wishlist endpoints require `xAuthToken`. Wishlists are inherently customer-scoped — there is no anonymous mode. The JWT must resolve to the same customer referenced by `customer_id`.
+</Note>
+
 ### `getWishlist`
 
 Retrieve a customer's saved items, including variant and media details.
 
 ```typescript
 const { items } = await client.cartWishlist.getWishlist({
+  xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
 ```
@@ -118,6 +171,7 @@ Save a specific product variant for later. Wishlists require an authenticated `c
 
 ```typescript
 await client.cartWishlist.addToWishlist({
+  xAuthToken: customerSession.access_token,
   requestBody: {
     variant_id: 'variant-uuid',
     customer_id: 'customer-uuid'
@@ -132,6 +186,7 @@ Remove an item from the customer's wishlist.
 ```typescript
 await client.cartWishlist.removeFromWishlist({
   id: 'wishlist-item-uuid',
+  xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
 ```
@@ -142,6 +197,7 @@ An atomic operation that removes an item from the wishlist and adds it to the ac
 
 ```typescript
 await client.cartWishlist.moveWishlistToCart({
+  xAuthToken: customerSession.access_token,
   requestBody: {
     wishlist_item_id: 'wishlist-item-uuid',
     customer_id: 'customer-uuid',
@@ -255,18 +311,34 @@ Prices are calculated at the variant level using the `selling_price` field. This
 ## Frontend Patterns
 
 ### Variant Selection & Add to Cart
-When a user selects a variant and adds it to their cart:
+When a user selects a variant and adds it to their cart, branch on whether you have a stored customer session:
 
 ```typescript
+// Read the stored session — set by client.authentication.login / verifyOtp
+const customerSession = JSON.parse(localStorage.getItem('tybrite_session') ?? 'null');
+
 const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
   try {
-    await client.cartWishlist.addToCart({
-      xSessionId: sessionId,
-      requestBody: {
-        variant_id: selectedVariant.variant_id,
-        quantity: quantity
-      }
-    });
+    if (customerSession?.access_token) {
+      // Authenticated path — JWT must resolve to customer_id
+      await client.cartWishlist.addToCart({
+        xAuthToken: customerSession.access_token,
+        requestBody: {
+          variant_id: selectedVariant.variant_id,
+          quantity,
+          customer_id: customerSession.customer_id
+        }
+      });
+    } else {
+      // Anonymous path — session-only cart
+      await client.cartWishlist.addToCart({
+        xSessionId: sessionId,
+        requestBody: {
+          variant_id: selectedVariant.variant_id,
+          quantity
+        }
+      });
+    }
   } catch (error) {
     if (error.code === 'insufficient_stock') {
       alert(`Only ${error.available_stock} items available`);
@@ -276,6 +348,24 @@ const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
 ```
 
 <Note>
-  **Pro Tip:** Use `xSessionId` for guest users. Tybrite will persist this guest cart until it is either merged via `mergeCart` or cleared.
+  **Pro Tip:** Use `xSessionId` for guest users. Tybrite will persist this guest cart until it is either merged via `mergeCart` (which requires `xAuthToken`) or cleared.
 </Note>
+
+<Tip>
+  When a guest logs in, call `mergeCart` with the freshly minted `xAuthToken` to fold their guest cart into their customer cart before clearing `X-Session-Id`.
+</Tip>
+
+---
+
+### Response Codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success on reads, updates, `clearCart`, and `mergeCart`. |
+| `201` | Success on `addToWishlist` — a new wishlist item was created. |
+| `400` | `insufficient_stock`, missing required fields, or invalid body. |
+| `401` | Missing or invalid `xAuthToken`. |
+| `403` | The customer token does not match the `customer_id` in the request. |
+| `404` | Variant, wishlist item, or cart item not found. |
+| `409` | Item already in wishlist (on `addToWishlist`). |
 

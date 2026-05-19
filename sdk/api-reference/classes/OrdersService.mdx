@@ -53,40 +53,87 @@ const order = await client.orders.createOrder({
 
 ### `createOrder`
 
-Place a new order. Requires verified signatures and idempotency protection.
+Place a new order. Returns **`201 Created`** (semantic create) with the new order resource. Requires verified signatures and idempotency protection.
 
-*   **Identifiers**: Uses `product_id` and optional `variant_id` (defaults to the product's primary variant).
-*   **Mandatory Fields**: Both `billing_address` and `shipping_address` are now required for tax and logistics.
+*   **Required body fields**: `total_amount`, `payment_method`, and a non-empty `items` array. Each item requires `product_id`.
+*   **Optional**: `customer_id` (guest checkout is supported), `billing_address`, `shipping_address` (both nullable), `variant_id` per item (defaults to the product's primary variant), and `gift_card_redemption`.
 *   **Replay Protection**: The `X-Timestamp` must be within **5 minutes** of the server time.
+*   **Post-processing**: When `payment_status: "paid"` is set, the worker runs gift card redemption, stock reduction, and customer metrics updates. See [Post-Processing Warnings](#post-processing-warnings) below — the response may include a `post_processing_warnings` array that clients **must** check.
 
 ```typescript
 const order = await client.orders.createOrder({
-  idempotencyKey: 'checkout-session-123',
+  idempotencyKey: `order-${Date.now()}-abc123`,
   xTimestamp: Math.floor(Date.now() / 1000),
-  xSignature: 'IqdgKXgloLzL5akDgFEwPaK6wviozf...',
+  xSignature: hmacSignature, // base64 HMAC-SHA256 of `${timestamp}.${body}`
   requestBody: {
-    customer_id: 'cust_123',
-    billing_address: { street: 'Main St', city: 'Nairobi', country: 'KE' },
-    shipping_address: { street: 'Main St', city: 'Nairobi', country: 'KE' },
+    total_amount: 5000,
+    payment_method: 'card',
+    customer_id: 'optional-customer-uuid',
     items: [
-      {
-        product_id: 'prod_456',
-        variant_id: 'var_789', // Optional
-        quantity: 1,
-        unit_price: 15000,
-        total_price: 15000,
-        product_name: 'Sony Headphones',
-        product_sku: 'SNY-WH1000'
-      }
+      { product_id: 'product-uuid', quantity: 2, unit_price: 2500 }
     ],
-    gift_card_redemption: { 
-      code: 'V5G6-4N7H-9P2R-8W1S', 
-      amount: 1000 
-    }, // Optional
-    total_amount: 15200 // Including shipping/tax
+    payment_status: 'paid' // triggers inventory + accounting + metrics
   }
 });
+// order.id is the new order UUID
+// order.post_processing_warnings is undefined OR present with details
 ```
+
+---
+
+## Post-Processing Warnings
+
+When an order is created with `payment_status: "paid"`, the worker runs post-processing in this order:
+
+1.  **Gift card redemption** (if `gift_card_redemption` provided)
+2.  **Stock reduction** per item via atomic RPC
+3.  **Customer metrics** update via atomic RPC (no lost-update races)
+
+If any step fails, the order is still recorded — but the response includes a `post_processing_warnings` array AND the order's `notes` field is stamped with a tag (`[GIFT_CARD_REDEMPTION_FAILED]` or `[STOCK_REDUCTION_PARTIAL]`). **Clients MUST check this array** and route failures to a support or retry flow.
+
+### Response shape
+
+```typescript
+{
+  id: 'order-uuid',
+  // ... full order fields
+  post_processing_warnings: [
+    {
+      stage: 'gift_card_redemption',
+      message: 'Gift card redemption failed: insufficient balance. The order was created but no gift card credit was applied. Please contact support.'
+    }
+    // OR
+    {
+      stage: 'stock_reduction',
+      message: 'Some inventory updates failed. Order is recorded; an operator will reconcile stock manually.'
+    }
+  ]
+}
+```
+
+### Handling pattern
+
+```typescript
+const order = await client.orders.createOrder({ /* ... */ });
+
+if (order.post_processing_warnings?.length) {
+  for (const warning of order.post_processing_warnings) {
+    if (warning.stage === 'gift_card_redemption') {
+      // Alert the customer + create a support ticket
+      // The customer paid full price but the gift card credit was not applied
+      await flagForRetry(order.id, warning);
+    }
+    if (warning.stage === 'stock_reduction') {
+      // Notify ops; inventory needs manual reconciliation
+      console.warn('Stock reconciliation needed for order', order.id);
+    }
+  }
+}
+```
+
+<Note>
+  Customer metrics (`total_purchases`, lifetime value) are incremented via the atomic `increment_customer_purchase_stats` RPC. This eliminates lost-update races under concurrent order load, so purchase counts remain correct at high throughput. This is transparent to clients.
+</Note>
 
 ---
 
@@ -94,8 +141,13 @@ const order = await client.orders.createOrder({
 
 Retrieve complete details for a specific order.
 
+<Warning>
+  Reading orders requires a **Secret Key**. Publishable keys receive `403 Forbidden`. Order data contains customer PII, addresses, and payment status — it must not be exposed to browsers.
+</Warning>
+
 ```typescript
-const order = await client.orders.getOrder({ id: 'order-uuid-here' });
+const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+const order = await client.orders.getOrder({ id: 'order-uuid' });
 ```
 
 ---
@@ -135,6 +187,22 @@ const updated = await client.orders.updateOrder({
 Transitioning an order to the **paid** state automatically triggers:
 1.  **Inventory Sync**: Live stock reduction across variants.
 2.  **Accounting Engine**: Double-entry bookkeeping entry creation.
-3.  **LTV Update**: Increments customer lifetime value and purchase counts.
+3.  **LTV Update**: Increments customer lifetime value and purchase counts (via atomic RPC — safe under concurrent load).
 4.  **Promoter Logic**: Marks loyalty points and promotion usage as finalized.
+
+---
+
+### Response Codes
+
+| Code | Endpoint | Meaning |
+| :--- | :--- | :--- |
+| `201` | `POST /v1/orders` | Order created. Response includes `post_processing_warnings?` if any post-paid step failed. |
+| `200` | `GET /v1/orders/{id}`, `PATCH /v1/orders/{id}` | Success. `PATCH` returns the updated order. |
+| `400` | All | Invalid request body — missing `total_amount` / `payment_method` / `items`, per-item missing `product_id`, or invalid tax/subtotal for a tax-exclusive store. |
+| `401` | All | Invalid API key, or invalid / expired HMAC signature. |
+| `403` | Read & write | Publishable key used on an order endpoint. Orders are secret-key only. |
+| `404` | All | Order not found, or a `product_id` referenced in `items` not found. |
+| `409` | `POST /v1/orders` | Idempotency key reused with a different payload. |
+| `429` | `POST` / `PATCH` | Rate limit exceeded (100/hr per key). |
+| `500` | All | Server error. |
 

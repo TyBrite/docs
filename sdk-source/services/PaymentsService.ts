@@ -51,6 +51,7 @@ export class PaymentsService {
                 'fields': fields,
             },
             errors: {
+                400: `Invalid request (invalid field names in \`fields\` query parameter)`,
                 401: `Authentication failed - invalid or missing API key`,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,
@@ -249,6 +250,7 @@ export class PaymentsService {
                 400: `Invalid request (missing required fields, invalid provider, unsupported currency, etc.)`,
                 401: `Unauthorized - Invalid or missing authentication credentials, or HMAC signature verification failed`,
                 403: `Insufficient permissions - operation requires secret key`,
+                404: `Resource not found`,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,
             },
@@ -292,6 +294,10 @@ export class PaymentsService {
      * **Note:** Despite using POST method (for request body), this is a read operation that
      * queries external payment provider APIs.
      *
+     * **Key Type Support:**
+     * - ✅ Secret keys (full access)
+     * - ❌ Publishable keys (forbidden - returns 403)
+     *
      * @returns any Payment verification successful
      * @throws ApiError
      */
@@ -308,32 +314,89 @@ export class PaymentsService {
              */
             reference: string;
         },
-    }): CancelablePromise<{
-        success?: boolean;
+    }): CancelablePromise<({
         provider?: string;
-        reference?: string;
-        status?: 'pending' | 'paid' | 'failed' | 'cancelled';
-        amount?: number;
-        currency?: string;
-        payment_method?: string;
         /**
-         * Provider-specific transaction ID
+         * Stripe Checkout Session ID
          */
-        provider_reference?: string;
-        paid_at?: string | null;
+        reference?: string;
         /**
-         * Provider-specific metadata
+         * Normalized status. Returns `success` when Stripe `payment_status === 'paid'`,
+         * otherwise the raw Stripe payment_status (e.g., `unpaid`, `no_payment_required`).
+         *
+         */
+        status?: string;
+        /**
+         * Amount in major currency units (converted from Stripe's minor units)
+         */
+        amount?: number | null;
+        currency?: string;
+        customer_email?: string | null;
+        /**
+         * Stripe Payment Intent ID
+         */
+        payment_intent?: string | null;
+        /**
+         * Stripe session metadata (with `store_id` stripped)
          */
         metadata?: Record<string, any>;
-    }> {
+    } | {
+        provider?: string;
+        reference?: string;
+        /**
+         * Normalized status (`success` when Paystack `status === 'success'`)
+         */
+        status?: string;
+        /**
+         * Amount in major currency units (converted from kobo)
+         */
+        amount?: number | null;
+        currency?: string;
+        channel?: string;
+        customer_email?: string | null;
+        paid_at?: string | null;
+        /**
+         * Paystack metadata (with `store_id` stripped)
+         */
+        metadata?: Record<string, any>;
+    } | {
+        provider?: string;
+        /**
+         * CheckoutRequestID supplied at verification time
+         */
+        reference?: string;
+        status?: 'pending' | 'success' | 'cancelled' | 'failed';
+        result_code?: (string | number);
+        result_description?: string;
+        merchant_request_id?: string;
+    } | {
+        provider?: string;
+        reference?: string;
+        /**
+         * Status from the most recent payment_transaction_logs row.
+         * `not_found` is returned if no matching log exists.
+         *
+         */
+        status?: string;
+        /**
+         * Raw response_payload captured at initialization
+         */
+        response?: Record<string, any>;
+        created_at?: string;
+        /**
+         * Present only when status is `not_found`
+         */
+        message?: string;
+    })> {
         return this.httpRequest.request({
             method: 'POST',
             url: '/v1/payments/verify',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
-                400: `Invalid request (missing required fields, invalid provider)`,
+                400: `Invalid request (missing required fields, invalid provider, provider misconfigured, or upstream provider rejected verification)`,
                 401: `Authentication failed - invalid or missing API key`,
+                403: `Forbidden - Publishable keys cannot verify payments. Use a secret key (tybrite_sk_*).`,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,
             },

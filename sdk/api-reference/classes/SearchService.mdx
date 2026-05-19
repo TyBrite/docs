@@ -54,3 +54,21 @@ const result = await client.search.semanticSearch({
 <Tip>
   **Zero-Result Fallback:** A powerful UX pattern is to first call `searchProducts`. If `totalResults` is 0, gracefully fallback to `semanticSearch` to suggest products that might still interest the user.
 </Tip>
+
+---
+
+<Note>
+  **Why is `semanticSearch` a `POST`?** `POST /v1/search` is intentionally accessible to publishable keys despite using the `POST` verb. It is a read-only operation — `POST` is used purely to support complex JSON request bodies (query, `minScore`, filters). No state is mutated and no `403` is returned for publishable keys.
+</Note>
+
+## Response Codes
+
+Both methods accept **publishable** and **secret** keys. `searchProducts` is `GET`; `semanticSearch` is `POST` (read-only).
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Search results returned (may be empty — check `totalResults`). |
+| `400` | Missing `query`/`q` parameter, invalid `limit`, or malformed request body. |
+| `401` | Invalid or missing API key. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error or upstream Gemini embedding failure (semantic search only). |
