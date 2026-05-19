@@ -103,3 +103,18 @@ const results = await client.products.listProducts({
 <Tip>
   **Pro Navigation Tip:** Use the `image` field to build high-performance visual navigation. By fetching categories with their images on initial app load, you can create immersive "Category Grids" or dynamic sidebars that make your store feel modern and alive.
 </Tip>
+
+---
+
+## Response Codes
+
+All taxonomy endpoints are `GET` and accept both **publishable** and **secret** keys.
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success. |
+| `400` | Invalid request — malformed UUID, bad query parameters, or invalid `fields` selector. |
+| `401` | Invalid or missing API key. |
+| `404` | Category or subcategory not found (single-resource endpoints only). List endpoints return `200` with an empty array. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |

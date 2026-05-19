@@ -83,3 +83,18 @@ lookbook.products.forEach(product => {
 <Tip>
   **Pro Discovery Tip:** Use Lookbooks to increase Average Order Value (AOV) by encouraging customers to buy entire outfits or coordinated room sets featured in lifestyle photography.
 </Tip>
+
+---
+
+## Response Codes
+
+All CMS endpoints are `GET` and accept both **publishable** and **secret** keys. Slug validation is enforced — empty or whitespace-only slugs return `400` without hitting the database.
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success. |
+| `400` | Empty slug, invalid slug format, or malformed query parameters. |
+| `401` | Invalid or missing API key. |
+| `404` | Post or lookbook not found. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |

@@ -7,7 +7,7 @@ The Tybrite TypeScript SDK provides a high-level, type-safe interface for intera
 
 ## Installation
 
-Install the SDK using your preferred package manager:
+Install the SDK using your preferred package manager. npm will always resolve to the latest published version.
 
 <CodeGroup>
 
@@ -47,6 +47,50 @@ The `Tybrite` constructor accepts a configuration object to customize the client
 | `BASE` | `string` | Optional. The base URL of the API. Defaults to `https://api.tybritelabs.com`. |
 | `HEADERS` | `Record<string, string>` | Optional. Custom headers to be included in every request. |
 
+## Two-Token Security Model
+
+The Tybrite API uses two parallel authentication mechanisms. Most endpoints need only the API key, but customer-scoped operations require **both** a publishable API key (to identify your store) and a customer session token (to identify the shopper).
+
+1. **API key** (`Authorization` header) — authenticates your application
+   - Publishable keys (`tybrite_pk_*`) — safe for browsers; read-only for sensitive data
+   - Secret keys (`tybrite_sk_*`) — server-side only; full read/write access
+
+2. **Customer session token** (`xAuthToken` parameter) — authenticates an end customer
+   - Obtained from `client.authentication.login`, `verifyOtp`, or `register`
+   - Required for customer-scoped operations (cart, wishlist, profile, gift cards, messaging)
+   - The resolved customer **must** match the `customer_id` in the request, otherwise the API returns `403`
+
+<Tip>
+  Customer write operations on cart and wishlist intentionally accept publishable keys, so browser code can call them directly. The `xAuthToken` is what proves the request belongs to a specific shopper.
+</Tip>
+
+### Combining both tokens
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+// 1. Initialize with API key
+const client = new Tybrite({ apiKey: 'tybrite_pk_live_...' });
+
+// 2. Authenticate the customer (returns a session token)
+const { session } = await client.authentication.login({
+  requestBody: { email: 'jane@example.com', password: '...' }
+});
+
+// 3. Use the session token for customer-scoped calls
+const cart = await client.cartWishlist.getCart({
+  customerId: session.customer.id,
+  xAuthToken: session.access_token,  // <-- customer JWT
+});
+
+// 4. Anonymous operations don't need xAuthToken
+const products = await client.products.listProducts();
+```
+
+<Warning>
+  Never embed secret keys (`tybrite_sk_*`) in browser bundles, mobile apps, or any client-side environment. Use publishable keys in clients and reserve secret keys for trusted server-side processes.
+</Warning>
+
 ## Basic Usage
 
 Once initialized, you can access various commerce services through the client instance.
@@ -58,6 +102,68 @@ const response = await client.products.listProducts({
 });
 
 console.log(response.products);
+```
+
+## Response Codes
+
+Every service in the SDK follows the same response-code contract, so you can centralize your error handling:
+
+| Code | When |
+| :--- | :--- |
+| `200` | Successful `GET`, `PATCH`, or `DELETE` |
+| `201` | `POST` that creates a new resource (orders, customers, register, addToWishlist, payment init, messaging threads/messages) |
+| `400` | Invalid request body, missing required field, invalid UUID/slug, or invalid query parameter |
+| `401` | Missing or invalid API key or customer JWT |
+| `403` | Valid auth but wrong key type for the operation, OR customer JWT does not match the `customer_id` in the request |
+| `404` | Resource not found by id/slug, OR a referenced resource (e.g. `product_id` on an order) is missing |
+| `409` | Uniqueness conflict (duplicate email on register/customer, duplicate wishlist item, idempotency key reused with a different body) |
+| `429` | Rate limit exceeded |
+| `500` | Server error |
+
+All errors share a single response shape:
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "details": "optional string"
+  }
+}
+```
+
+The SDK surfaces these as a typed `ApiError` you can `catch`:
+
+```typescript
+import { ApiError } from '@tybrite-labs/sdk';
+
+try {
+  await client.orders.createOrder({ requestBody: order });
+} catch (err) {
+  if (err instanceof ApiError && err.status === 409) {
+    // Idempotency replay with a different body, or duplicate resource
+  }
+  throw err;
+}
+```
+
+## Post-Processing Warnings on Orders
+
+<Note>
+  Order creation may include a `post_processing_warnings` array in the response when gift card redemption or stock reduction partially fails. The order is **still recorded** — clients should check this array and surface warnings to customers or operators. See the [OrdersService docs](/sdk/api-reference/classes/OrdersService) for details.
+</Note>
+
+```typescript
+const result = await client.orders.createOrder({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: order,
+});
+
+if (result.post_processing_warnings?.length) {
+  for (const warning of result.post_processing_warnings) {
+    console.warn('[order warning]', warning);
+  }
+}
 ```
 
 ## Cursor-Based Pagination
@@ -87,9 +193,32 @@ The following services currently support cursor-based pagination:
 - [CMS](/sdk/api-reference/classes/CmsService)
 - [Messaging](/sdk/api-reference/classes/MessagingService)
 
+## Service Overview
+
+The SDK exposes 16 services, each accessible as a property on the `Tybrite` client. The "Customer auth?" column indicates whether the customer session token (`xAuthToken`) is required for at least some methods.
+
+| Service | Access via | Customer auth? | Purpose |
+| :--- | :--- | :--- | :--- |
+| `authentication` | `client.authentication` | Issues tokens | Customer login, OTP, registration, password reset |
+| `products` | `client.products` | No | Product catalog, variants, specifications, collections |
+| `taxonomy` | `client.taxonomy` | No | Categories and subcategories |
+| `pricing` | `client.pricing` | No | Dynamic pricing engine and quotes |
+| `cartWishlist` | `client.cartWishlist` | Yes (when `customer_id` provided) | Persistent cart and wishlist for sessions or customers |
+| `customers` | `client.customers` | Yes (on get/update) | Customer profile create, read, update |
+| `orders` | `client.orders` | No (secret-key only) | Order lifecycle, status transitions, idempotent creation |
+| `payments` | `client.payments` | No (secret-key writes) | Stripe, Paystack, M-Pesa, Airtel — init and confirm |
+| `giftCards` | `client.giftCards` | Yes (when listing for a customer) | Issue, redeem, and look up gift card balances |
+| `promotions` | `client.promotions` | No | Discount rules and usage tracking |
+| `messaging` | `client.messaging` | Yes (all customer-scoped routes) | Customer-to-store conversation threads and messages |
+| `cms` | `client.cms` | No | Blog posts and shoppable lookbooks |
+| `shipping` | `client.shipping` | No | Delivery zones and distance-based rate quotes |
+| `recommendations` | `client.recommendations` | No | Hybrid AI: Gemini embeddings + collaborative filtering |
+| `search` | `client.search` | No | Semantic search with text fallback |
+| `system` | `client.system` | No | Health checks and store metadata |
+
 ## Next Steps
 
-Now that you have initialized the client, you can explore the available services:
+Now that you have initialized the client, explore the most commonly used services:
 
 <CardGroup cols={2}>
   <Card title="Products" icon="box" href="/sdk/api-reference/classes/ProductsService">
@@ -104,7 +233,10 @@ Now that you have initialized the client, you can explore the available services
   <Card title="Authentication" icon="lock" href="/sdk/api-reference/classes/AuthenticationService">
     Secure customer sessions and authentication flows.
   </Card>
-  <Card title="System & Store" icon="guage" href="/sdk/api-reference/classes/SystemService">
+  <Card title="Cart & Wishlist" icon="bag-shopping" href="/sdk/api-reference/classes/CartWishlistService">
+    Persistent cart and wishlist tied to customer sessions.
+  </Card>
+  <Card title="System & Store" icon="gauge" href="/sdk/api-reference/classes/SystemService">
     Monitor health status and retrieve comprehensive store metadata.
   </Card>
 </CardGroup>

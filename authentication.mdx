@@ -90,14 +90,68 @@ Endpoints requiring an Idempotency Key:
 
 ---
 
-## Session Management
+## Customer Session Tokens (`xAuthToken`)
 
-When building authenticated customer experiences (like "My Account" or "Quick Checkout"), the Tybrite SDK handles session persistence via `x-auth-token`.
+While API keys authenticate **your application** to Galactic Core, **customer session tokens** authenticate **end customers** to their own data within your store. They are required *on top of* an API key for endpoints that access or modify a specific customer's records (cart, wishlist, profile, gift cards, messaging).
 
-1.  **Login**: Call `client.auth.login()` to receive a session and user object.
-2.  **Persistence**: Store the `session.access_token` securely (e.g., HTTP-only cookies).
-3.  **Requests**: Provide the token in the `x-auth-token` header for protected endpoints.
+**Why both?** A leaked publishable key alone gives an attacker no way to read or modify any specific customer's data — they would also need that customer's JWT, which only the [AuthenticationService](/sdk/api-reference/classes/AuthenticationService) can issue, and only after a successful login / OTP verification / magic link redemption.
+
+### Affected endpoints
+
+| Endpoint | `xAuthToken` requirement |
+| --- | --- |
+| `GET` / `PATCH /v1/customers/{id}` | **Required.** Token's subject must match path `id`. |
+| `GET` / `POST` / `PATCH` / `DELETE /v1/cart/*` | **Required** when `customer_id` is supplied (anonymous session carts omit it). |
+| `GET` / `POST` / `DELETE /v1/wishlist/*` | **Required** — wishlist always requires `customer_id`. |
+| `GET /v1/gift-cards?customer_id=...` | **Required** when `customer_id` is supplied. |
+| `GET` / `POST` / `PATCH /v1/messaging/*` | **Required**, gated by thread or message ownership. |
+
+### Example flow
+
+```typescript
+// 1. Customer logs in — mint the session JWT
+const { customer, session } = await client.auth.login({
+  requestBody: { email: 'user@example.com', password: '...' }
+});
+
+const token = session.access_token;
+
+// 2. Pass it on every customer-scoped call
+await client.cartWishlist.addToCart({
+  xAuthToken: token,
+  requestBody: { customer_id: customer.id, product_id: 'prod_123', quantity: 1 }
+});
+
+await client.customers.getCustomer({
+  xAuthToken: token,
+  id: customer.id
+});
+
+// 3. Refresh before expiry (~1 hour)
+const { session: fresh } = await client.auth.refreshToken({
+  requestBody: { refresh_token: session.refresh_token }
+});
+```
 
 <Tip>
-  Our TypeScript SDK automatically refreshes sessions if you provide a `refreshToken` interceptor. See the [Authentication Service](/sdk/api-reference/classes/AuthenticationService) for more details.
+  **Recommended storage:** prefer **httpOnly, Secure, SameSite=Lax cookies** over `localStorage`. Cookies are immune to XSS-based token theft and the browser handles attachment automatically. Reach for `localStorage` only when your storefront is a native mobile WebView or a same-origin SPA without a backing server, and pair it with a strict CSP.
+</Tip>
+
+<Warning>
+  Never log, persist server-side, or share customer access tokens between sessions. Each token is bound to a single customer and grants direct read/write access to their cart, wishlist, profile, and messages.
+</Warning>
+
+---
+
+## Session Management
+
+When building authenticated customer experiences (like "My Account" or "Quick Checkout"), the Tybrite SDK handles session persistence via `xAuthToken`.
+
+1.  **Login**: Call `client.auth.login()` to receive a session and user object.
+2.  **Persistence**: Store the `session.access_token` securely (httpOnly cookies preferred).
+3.  **Requests**: Provide the token via the `xAuthToken` SDK parameter (or `x-auth-token` header for raw REST) on protected endpoints.
+4.  **Refresh**: Call `client.auth.refreshToken()` ~60s before `expires_at` to rotate to a fresh session.
+
+<Tip>
+  Our TypeScript SDK exposes `refreshToken` so you can wire up a scheduled rotation. See the [Authentication Service](/sdk/api-reference/classes/AuthenticationService) for the full method reference and lifecycle diagram.
 </Tip>

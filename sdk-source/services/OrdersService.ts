@@ -48,7 +48,7 @@ export class OrdersService {
      * - Requests with invalid/missing signatures return 401 Unauthorized
      * - Timestamps older than 5 minutes are rejected to prevent replay attacks
      *
-     * @returns Order Order created successfully (or existing order returned if idempotency key matches)
+     * @returns any Order created successfully (or existing order returned if idempotency key matches)
      * @throws ApiError
      */
     public createOrder({
@@ -75,9 +75,9 @@ export class OrdersService {
         xSignature: string,
         requestBody: {
             /**
-             * Customer UUID
+             * Customer UUID (optional - guest checkout supported)
              */
-            customer_id: string;
+            customer_id?: string;
             /**
              * Customer email address
              */
@@ -91,27 +91,27 @@ export class OrdersService {
              */
             customer_phone?: string;
             /**
-             * Billing address (required)
+             * Billing address (optional)
              */
             billing_address?: {
-                street: string;
-                city: string;
+                street?: string;
+                city?: string;
                 state?: string;
                 zip?: string;
-                country: string;
+                country?: string;
             };
             /**
-             * Shipping address (required)
+             * Shipping address (optional)
              */
             shipping_address?: {
-                street: string;
-                city: string;
+                street?: string;
+                city?: string;
                 state?: string;
                 zip?: string;
-                country: string;
+                country?: string;
             };
             /**
-             * Order line items
+             * Order line items (at least one required)
              */
             items: Array<{
                 /**
@@ -125,36 +125,40 @@ export class OrdersService {
                 /**
                  * Product name at time of order
                  */
-                product_name: string;
+                product_name?: string;
                 /**
                  * Product SKU
                  */
-                product_sku: string;
+                product_sku?: string;
                 /**
                  * Quantity to order
                  */
-                quantity: number;
+                quantity?: number;
                 /**
                  * Price per unit at time of order
                  */
-                unit_price: number;
+                unit_price?: number;
                 /**
                  * Total price for this line item (quantity × unit_price)
                  */
-                total_price: number;
+                total_price?: number;
                 /**
                  * Product variant options (e.g., color, size)
                  */
                 product_options?: Record<string, any> | null;
             }>;
             /**
-             * Payment method identifier
+             * Payment method identifier (required)
              */
-            payment_method?: 'card' | 'stripe' | 'paystack' | 'mpesa' | 'airtel_money' | 'cash';
+            payment_method: 'card' | 'stripe' | 'paystack' | 'mpesa' | 'airtel_money' | 'cash';
             /**
              * Payment status (defaults to pending)
              */
             payment_status?: 'pending' | 'paid' | 'failed' | 'refunded';
+            /**
+             * Order fulfillment status (defaults to pending)
+             */
+            order_status?: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
             /**
              * Subtotal before tax and shipping
              */
@@ -174,11 +178,23 @@ export class OrdersService {
             /**
              * Total order amount (required)
              */
-            total_amount?: number;
+            total_amount: number;
             /**
              * Additional order notes
              */
             notes?: string;
+            /**
+             * Shipping tracking number (optional, usually set on PATCH)
+             */
+            tracking_number?: string;
+            /**
+             * Estimated delivery date and time (optional)
+             */
+            estimated_delivery?: string;
+            /**
+             * External payment reference (e.g., Stripe charge ID, M-Pesa receipt)
+             */
+            payment_reference?: string;
             /**
              * Shipping calculation details from /v1/shipping/calculate for audit trail
              */
@@ -195,11 +211,49 @@ export class OrdersService {
              * Optional gift card to redeem towards this order
              */
             gift_card_redemption?: {
-                code?: string;
-                amount?: number;
+                /**
+                 * Gift card code to redeem
+                 */
+                code: string;
+                /**
+                 * Amount to redeem from the gift card
+                 */
+                amount: number;
             } | null;
+            /**
+             * Promotion usages applied to this order (tracked when payment_status is paid)
+             */
+            promotion_usages?: Array<{
+                /**
+                 * Promotion ID that was applied
+                 */
+                promotion_id: number;
+                /**
+                 * Discount amount attributed to this promotion
+                 */
+                discount_amount: number;
+            }> | null;
         },
-    }): CancelablePromise<Order> {
+    }): CancelablePromise<(Order & {
+        /**
+         * Optional. Present only when one or more post-order processing
+         * steps (gift card redemption, stock reduction, etc.) failed.
+         * The order itself was created successfully, but a downstream
+         * side effect needs human follow-up. Each warning indicates the
+         * stage that failed and a human-readable message.
+         *
+         */
+        post_processing_warnings?: Array<{
+            /**
+             * The post-processing stage that emitted the warning
+             */
+            stage: string;
+            /**
+             * Human-readable description of the failure
+             */
+            message: string;
+        }>;
+    })> {
         return this.httpRequest.request({
             method: 'POST',
             url: '/v1/orders',
@@ -214,6 +268,13 @@ export class OrdersService {
                 400: `Invalid request (missing required fields, invalid data)`,
                 401: `Unauthorized - Invalid or missing authentication credentials, or HMAC signature verification failed`,
                 403: `Insufficient permissions - operation requires secret key`,
+                404: `Resource not found`,
+                409: `Conflict — the request could not be completed because it conflicts with the current state of a resource.
+                Common causes:
+                - Email already registered to another customer at this store
+                - Item already exists in wishlist
+                - Idempotency-Key reused with a different request body
+                `,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,
             },
@@ -284,6 +345,7 @@ export class OrdersService {
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
                 401: `Authentication failed - invalid or missing API key`,
+                403: `Insufficient permissions - operation requires secret key`,
                 404: `Resource not found`,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,

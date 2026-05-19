@@ -59,8 +59,6 @@ export class PricingService {
         location,
         region,
         customerId,
-        customerSegment,
-        customerTier,
         quantity,
     }: {
         /**
@@ -145,23 +143,14 @@ export class PricingService {
          */
         region?: string,
         /**
-         * Customer UUID for personalized pricing (segment/tier-based)
+         * Customer UUID for personalized pricing.
+         *
+         * When provided, the worker resolves the customer's RFM segment and tier
+         * server-side (from the customers + customer_stores tables) and feeds them
+         * into pricing rule evaluation. There is no need to pass segment/tier directly.
+         *
          */
         customerId?: string,
-        /**
-         * RFM customer segment for segment-based pricing.
-         *
-         * **Segments:** Champions, Loyal, Potential, New, At Risk, Hibernating, Lost
-         *
-         */
-        customerSegment?: string,
-        /**
-         * Customer tier for tier-based pricing.
-         *
-         * **Tiers:** Gold, Silver, Bronze, VIP
-         *
-         */
-        customerTier?: string,
         /**
          * Quantity for volume-based pricing discounts
          */
@@ -264,7 +253,10 @@ export class PricingService {
          */
         offset?: number;
         /**
-         * Global pricing context for the request
+         * Global pricing context for the request. `customer_segment` and
+         * `customer_tier` are resolved server-side from `customer_id`
+         * (they are not request parameters).
+         *
          */
         pricing_context?: {
             location?: string | null;
@@ -272,7 +264,13 @@ export class PricingService {
              * Detected or specified region
              */
             region?: string | null;
+            /**
+             * Resolved RFM segment for the supplied customer_id
+             */
             customer_segment?: string | null;
+            /**
+             * Resolved customer tier for the supplied customer_id
+             */
             customer_tier?: string | null;
             quantity?: number | null;
             /**
@@ -301,8 +299,6 @@ export class PricingService {
                 'location': location,
                 'region': region,
                 'customer_id': customerId,
-                'customer_segment': customerSegment,
-                'customer_tier': customerTier,
                 'quantity': quantity,
             },
             errors: {
@@ -363,9 +359,7 @@ export class PricingService {
         location,
         region,
         customerId,
-        customerSegment,
-        customerTier,
-        quantity = 1,
+        quantity,
     }: {
         /**
          * Product UUID or variant UUID
@@ -422,17 +416,14 @@ export class PricingService {
          */
         region?: string,
         /**
-         * Customer UUID for personalized pricing
+         * Customer UUID for personalized pricing.
+         *
+         * When provided, the worker resolves the customer's RFM segment and tier
+         * server-side (from the customers + customer_stores tables) and feeds them
+         * into pricing rule evaluation. There is no need to pass segment/tier directly.
+         *
          */
         customerId?: string,
-        /**
-         * RFM customer segment (Champions, Loyal, etc.)
-         */
-        customerSegment?: string,
-        /**
-         * Customer tier (Gold, Silver, Bronze, VIP)
-         */
-        customerTier?: string,
         /**
          * Quantity for volume-based pricing
          */
@@ -600,14 +591,26 @@ export class PricingService {
          */
         exchange_rate?: number;
         /**
-         * Global context used for pricing
+         * Global context used for pricing rule evaluation. `customer_segment`
+         * and `customer_tier` are resolved server-side from `customer_id`
+         * (they are not request parameters).
+         *
          */
         pricing_context?: {
             location?: string | null;
             region?: string | null;
+            /**
+             * Resolved RFM segment for the supplied customer_id
+             */
             customer_segment?: string | null;
+            /**
+             * Resolved customer tier for the supplied customer_id
+             */
             customer_tier?: string | null;
-            quantity?: number;
+            quantity?: number | null;
+            /**
+             * Detected display currency code
+             */
             currency?: string;
             exchange_rate?: number;
         };
@@ -626,8 +629,6 @@ export class PricingService {
                 'location': location,
                 'region': region,
                 'customer_id': customerId,
-                'customer_segment': customerSegment,
-                'customer_tier': customerTier,
                 'quantity': quantity,
             },
             errors: {
@@ -694,9 +695,7 @@ export class PricingService {
         location,
         region,
         customerId,
-        customerSegment,
-        customerTier,
-        quantity = 1,
+        quantity,
     }: {
         /**
          * Product slug (SEO-friendly URL identifier)
@@ -753,17 +752,14 @@ export class PricingService {
          */
         region?: string,
         /**
-         * Customer UUID for personalized pricing
+         * Customer UUID for personalized pricing.
+         *
+         * When provided, the worker resolves the customer's RFM segment and tier
+         * server-side (from the customers + customer_stores tables) and feeds them
+         * into pricing rule evaluation. There is no need to pass segment/tier directly.
+         *
          */
         customerId?: string,
-        /**
-         * RFM customer segment (Champions, Loyal, etc.)
-         */
-        customerSegment?: string,
-        /**
-         * Customer tier (Gold, Silver, Bronze, VIP)
-         */
-        customerTier?: string,
         /**
          * Quantity for volume-based pricing
          */
@@ -931,14 +927,26 @@ export class PricingService {
          */
         exchange_rate?: number;
         /**
-         * Global context used for pricing
+         * Global context used for pricing rule evaluation. `customer_segment`
+         * and `customer_tier` are resolved server-side from `customer_id`
+         * (they are not request parameters).
+         *
          */
         pricing_context?: {
             location?: string | null;
             region?: string | null;
+            /**
+             * Resolved RFM segment for the supplied customer_id
+             */
             customer_segment?: string | null;
+            /**
+             * Resolved customer tier for the supplied customer_id
+             */
             customer_tier?: string | null;
-            quantity?: number;
+            quantity?: number | null;
+            /**
+             * Detected display currency code
+             */
             currency?: string;
             exchange_rate?: number;
         };
@@ -957,8 +965,6 @@ export class PricingService {
                 'location': location,
                 'region': region,
                 'customer_id': customerId,
-                'customer_segment': customerSegment,
-                'customer_tier': customerTier,
                 'quantity': quantity,
             },
             errors: {

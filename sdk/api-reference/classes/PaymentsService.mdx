@@ -56,7 +56,7 @@ const response = await client.payments.initializePayment({
 
 ### `getPaymentMethods`
 
-Retrieve all active payment methods configured in your Tybrite Admin Panel.
+Retrieve all active payment methods configured in your Tybrite Admin Panel. This endpoint accepts **both publishable (`pk_*`) and secret (`sk_*`) API keys** — storefronts can safely call it client-side to discover available providers before checkout.
 
 ```typescript
 const { methods } = await client.payments.getPaymentMethods({
@@ -68,14 +68,18 @@ const { methods } = await client.payments.getPaymentMethods({
 
 ### `initializePayment`
 
-Create a payment intent with your chosen provider. Requires verified signatures and a mandatory **Idempotency-Key**.
+Create a payment session with your chosen provider. Requires a **Secret Key**, a valid HMAC signature, and a mandatory `Idempotency-Key`. On the first successful call this returns **`201 Created`**; subsequent calls with the same idempotency key and identical payload return **`200 OK`** with `idempotent: true` and the original session.
+
+<Warning>
+  **Secret Key required.** `initializePayment` will reject publishable keys with `403`. Never call this from untrusted client environments — keep your `sk_*` key and HMAC secret server-side.
+</Warning>
 
 <CodeGroup>
 
 ```typescript Stripe (International)
 const paymentData = {
   provider: 'stripe',
-  amount: 5000, 
+  amount: 5000,
   currency: 'USD',
   email: 'customer@email.com',
   success_url: 'https://store.com/thanks',
@@ -86,12 +90,22 @@ const timestamp = Math.floor(Date.now() / 1000);
 const idempotencyKey = `pay-stripe-${Date.now()}`;
 const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(paymentData)}`, hmacSecret);
 
+// HTTP 201 Created on first call; HTTP 200 OK with idempotent:true on replay
 const response = await client.payments.initializePayment({
   idempotencyKey: idempotencyKey,
   xTimestamp: timestamp,
   xSignature: signature,
   requestBody: paymentData
 });
+
+// Example 201 response body
+// {
+//   "provider": "stripe",
+//   "reference": "pi_3Q...",
+//   "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_...",
+//   "status": "pending",
+//   "idempotent": false
+// }
 
 // Redirect to Stripe Checkout
 window.location.href = (response as any).checkout_url;
@@ -108,12 +122,15 @@ const timestamp = Math.floor(Date.now() / 1000);
 const idempotencyKey = `pay-mpesa-${Date.now()}`;
 const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(paymentData)}`, hmacSecret);
 
+// HTTP 201 Created on first call
 const response = await client.payments.initializePayment({
   idempotencyKey: idempotencyKey,
   xTimestamp: timestamp,
   xSignature: signature,
   requestBody: paymentData
 });
+```
+
 ```typescript Airtel Money (Mobile Money)
 const paymentData = {
   provider: 'airtel',
@@ -126,6 +143,7 @@ const timestamp = Math.floor(Date.now() / 1000);
 const idempotencyKey = `pay-airtel-${Date.now()}`;
 const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(paymentData)}`, hmacSecret);
 
+// HTTP 201 Created on first call
 const response = await client.payments.initializePayment({
   idempotencyKey: idempotencyKey,
   xTimestamp: timestamp,
@@ -142,6 +160,10 @@ const response = await client.payments.initializePayment({
 
 Retrieve the absolute source of truth for a transaction. This is a read operation and does not require HMAC signing.
 
+<Warning>
+  **Secret Key required.** `verifyPayment` will reject publishable keys with `403`. Verification responses include charge details (amounts, customer email, payment intents) and must not be exposed to untrusted clients.
+</Warning>
+
 ```typescript
 const result = await client.payments.verifyPayment({
   requestBody: {
@@ -150,6 +172,78 @@ const result = await client.payments.verifyPayment({
   }
 });
 ```
+
+#### Response shape (per-provider `oneOf`)
+
+The response shape depends on the `provider` field — the worker returns one of four variants:
+
+<CodeGroup>
+
+```json Stripe
+{
+  "provider": "stripe",
+  "reference": "cs_test_a1b2c3...",
+  "status": "success",
+  "amount": 5000,
+  "currency": "USD",
+  "customer_email": "customer@email.com",
+  "payment_intent": "pi_3Q...",
+  "metadata": {
+    "order_id": "ord_01HX..."
+  }
+}
+```
+
+```json Paystack
+{
+  "provider": "paystack",
+  "reference": "T123456789",
+  "status": "success",
+  "amount": 250000,
+  "currency": "NGN",
+  "channel": "card",
+  "customer_email": "customer@email.com",
+  "paid_at": "2026-05-20T10:24:11.000Z",
+  "metadata": {
+    "order_id": "ord_01HX..."
+  }
+}
+```
+
+```json M-Pesa
+{
+  "provider": "mpesa",
+  "reference": "ws_CO_20260520102411...",
+  "status": "success",
+  "result_code": "0",
+  "result_description": "The service request is processed successfully.",
+  "merchant_request_id": "29115-34620561-1"
+}
+```
+
+```json Airtel
+{
+  "provider": "airtel",
+  "reference": "AIR-20260520-001",
+  "status": "success",
+  "response": {
+    "transaction": {
+      "id": "CI220305.1207.C00001",
+      "status_code": "TS"
+    }
+  },
+  "created_at": "2026-05-20T10:24:11.000Z"
+}
+```
+
+</CodeGroup>
+
+**Status semantics by provider:**
+
+- **Stripe** — `success` when the session/intent is paid, otherwise the raw Stripe `payment_status` (`unpaid`, `no_payment_required`, etc.).
+- **Paystack** — Mirrors Paystack's `status` field (`success`, `failed`, `abandoned`).
+- **M-Pesa** — Enum: `pending | success | cancelled | failed`. Result code `1032` (user cancelled on phone) maps to `cancelled`.
+- **Airtel** — Sourced from the `payment_transaction_logs` table. If no log row exists for the reference, the response is `{ "status": "not_found", "message": "..." }` instead of the shape above.
 
 ## Provider Support Matrix
 
@@ -166,3 +260,40 @@ const result = await client.payments.verifyPayment({
   **Formatting Tip:** For African mobile money (M-Pesa/Airtel), always provide the phone number in international format without the `+` prefix (e.g., `2547...`).
 </Note>
 
+---
+
+### Response Codes
+
+#### `initializePayment`
+
+| Code | Meaning |
+| :--- | :--- |
+| `201` | Payment session created (new on first call with idempotency key). |
+| `200` | Idempotent replay — same key and identical payload, original initialization returned. |
+| `400` | Invalid request (missing `provider`/`amount`, invalid phone format for mpesa/airtel). |
+| `401` | Invalid API key, or invalid/expired HMAC signature (5-minute replay window). |
+| `403` | Publishable key supplied — initialize requires a secret key. |
+| `404` | `order_id` provided but no matching order exists. |
+| `429` | Rate limit exceeded (100 / hour per API key on initialize). |
+| `500` | Upstream provider error or worker configuration error. |
+
+#### `verifyPayment`
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Verification result returned. `status` field varies per provider — see shapes above. |
+| `400` | Invalid request, or provider returned a validation error. |
+| `401` | Invalid API key. |
+| `403` | Publishable key supplied — verify requires a secret key. |
+| `429` | Rate limit exceeded. |
+| `500` | Server error. |
+
+#### `getPaymentMethods`
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | List of configured payment methods. |
+| `400` | Invalid `fields` parameter. |
+| `401` | Invalid API key. |
+| `429` | Rate limit exceeded. |
+| `500` | Server error. |

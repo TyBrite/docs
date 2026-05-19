@@ -10,22 +10,28 @@ export class TaxonomyService {
     constructor(public readonly httpRequest: BaseHttpRequest) {}
     /**
      * List categories
-     * Retrieve all product categories
+     * Retrieve all product categories for the authenticated store. Accepts both publishable and secret API keys.
      * @returns any Success
      * @throws ApiError
      */
     public listCategories({
         search,
-        active,
+        active = true,
         limit = 50,
         cursor,
         fields,
     }: {
+        /**
+         * Case-insensitive substring match on category name
+         */
         search?: string,
         /**
-         * Filter by active status
+         * Filter by active status. Defaults to true (only active categories) when omitted.
          */
         active?: boolean,
+        /**
+         * Maximum number of results to return
+         */
         limit?: number,
         /**
          * Cursor for pagination (base64-encoded)
@@ -63,6 +69,7 @@ export class TaxonomyService {
     }
     /**
      * Get category
+     * Retrieve a single product category by ID. Accepts both publishable and secret API keys.
      * @returns Category Success
      * @throws ApiError
      */
@@ -96,23 +103,33 @@ export class TaxonomyService {
     }
     /**
      * List subcategories
+     * Retrieve all product subcategories. Optionally filter by parent category. Accepts both publishable and secret API keys.
      * @returns any Success
      * @throws ApiError
      */
     public listSubcategories({
         categoryId,
         search,
-        active,
+        active = true,
         limit = 100,
         cursor,
         fields,
     }: {
+        /**
+         * Filter subcategories by parent category ID
+         */
         categoryId?: string,
+        /**
+         * Case-insensitive substring match on subcategory name
+         */
         search?: string,
         /**
-         * Filter by active status
+         * Filter by active status. Defaults to true (only active subcategories) when omitted.
          */
         active?: boolean,
+        /**
+         * Maximum number of results to return
+         */
         limit?: number,
         /**
          * Cursor for pagination (base64-encoded)
@@ -151,6 +168,7 @@ export class TaxonomyService {
     }
     /**
      * Get subcategory by ID
+     * Retrieve a single subcategory by ID. Accepts both publishable and secret API keys.
      * @returns Subcategory Success
      * @throws ApiError
      */

@@ -61,3 +61,18 @@ if (promo.image) {
 <Tip>
   **Pro Marketing Tip:** Use the `image` field to build high-impact promotional carousels. By associating visual assets directly with your discount logic, you can ensure that your marketing banners always reflect the current campaign status and validity.
 </Tip>
+
+---
+
+## Response Codes
+
+All promotion endpoints are `GET` and accept both **publishable** and **secret** keys. The `status` query parameter is validated against a strict enum.
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success. |
+| `400` | Invalid `status` enum (must be one of `active`, `inactive`, `scheduled`, `expired`) or malformed query parameter. |
+| `401` | Invalid or missing API key. |
+| `404` | Promotion not found (single-resource endpoint only). List endpoint returns `200` with an empty array. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |

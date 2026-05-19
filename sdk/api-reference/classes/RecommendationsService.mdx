@@ -5,9 +5,9 @@ description: "Reference for the RecommendationsService class in the Tybrite SDK.
 
 The `RecommendationsService` class (accessed via `client.recommendations`) allows you to integrate AI-driven product suggestions into your storefront to increase discovery and conversion.
 
-<Note>
-  **Security Note:** All recommendation requests require a **Secret Key** because they leverage computationally intensive AI models and vector embeddings.
-</Note>
+<Warning>
+  **Secret Key Required.** This service requires a **Secret Key** (`sk_live_*` / `sk_test_*`). AI inference is computationally expensive and consumes Gemini API quota — gating to `sk` prevents abuse from scraped publishable keys. Requests authenticated with a publishable key receive `403 Forbidden`.
+</Warning>
 
 ## Methods
 
@@ -98,3 +98,35 @@ const { recommendations } = await client.recommendations.getRecommendations({
 <Note>
   Recommendation results are often cached for high performance. The response includes a `fromCache` boolean, a `computedAt` ISO timestamp, and an optional `fallbackUsed` string indicating if the system had to use a simpler algorithm due to data scarcity.
 </Note>
+
+---
+
+## Cascading Fallback Chain
+
+When a recommendation type cannot produce results (insufficient data, missing embeddings, cold-start product, etc.), Tybrite degrades gracefully to a simpler algorithm rather than returning an empty array:
+
+| Requested Type | Fallback Order |
+| :--- | :--- |
+| `bundle` | `bundle → also-bought → similar → trending` |
+| `also-bought` | `also-bought → similar → trending` |
+| `similar` | `similar → trending` |
+| `personalized` | `personalized → trending` |
+| `trending` | `trending` (terminal — no further fallback) |
+
+When a fallback is used, the response's `fallbackUsed` field contains the name of the algorithm that ultimately produced the results.
+
+---
+
+## Response Codes
+
+This endpoint is `POST` and **requires a Secret Key**.
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Recommendations returned (possibly via fallback — check `fallbackUsed`). |
+| `400` | Invalid `type` enum or missing required field (`productId` for `similar`/`also-bought`/`bundle`; `customerId` for `personalized`). |
+| `401` | Invalid or missing API key. |
+| `403` | Publishable key supplied — recommendations require a Secret Key. |
+| `404` | `productId` was provided but the product was not found (applies to `similar`, `bundle`, and `also-bought`). |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error or upstream Gemini failure. |

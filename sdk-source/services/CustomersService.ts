@@ -37,6 +37,12 @@ export class CustomersService {
                 400: `Invalid request - malformed data or missing required fields`,
                 401: `Authentication failed - invalid or missing API key`,
                 403: `Insufficient permissions - operation requires secret key`,
+                409: `Conflict — the request could not be completed because it conflicts with the current state of a resource.
+                Common causes:
+                - Email already registered to another customer at this store
+                - Item already exists in wishlist
+                - Idempotency-Key reused with a different request body
+                `,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,
             },
@@ -44,14 +50,27 @@ export class CustomersService {
     }
     /**
      * Get customer details
+     * Returns the authenticated customer's profile + store-level metrics.
+     *
+     * **Customer authentication required.** Pass the customer's session token in
+     * the `x-auth-token` header. The token must resolve (via
+     * `supabase.auth.getUser`) to a customer whose `id` equals the `{id}` path
+     * parameter — otherwise 403 is returned. This prevents a leaked publishable
+     * key from being used to enumerate or read other customers' profiles.
+     *
      * @returns Customer Success
      * @throws ApiError
      */
     public getCustomer({
         id,
+        xAuthToken,
         fields,
     }: {
         id: string,
+        /**
+         * Customer session access_token from `/v1/auth/login` or `/v1/auth/verify-otp`. The resolved customer must match the `{id}` path parameter.
+         */
+        xAuthToken: string,
         /**
          * Comma-separated list of fields to include in the response.
          *
@@ -70,12 +89,16 @@ export class CustomersService {
             path: {
                 'id': id,
             },
+            headers: {
+                'x-auth-token': xAuthToken,
+            },
             query: {
                 'fields': fields,
             },
             errors: {
                 400: `Invalid request - malformed data or missing required fields`,
                 401: `Authentication failed - invalid or missing API key`,
+                403: `Insufficient permissions - operation requires secret key`,
                 404: `Resource not found`,
                 429: `Rate limit exceeded`,
                 500: `Internal server error`,
@@ -84,15 +107,27 @@ export class CustomersService {
     }
     /**
      * Update customer
-     * Partially update customer information. Only provided fields will be updated. Requires secret key.
+     * Partially update the authenticated customer's profile. Only the fields
+     * provided in the request body are updated.
+     *
+     * **Customer authentication required.** Pass the customer's session token in
+     * the `x-auth-token` header. The token must resolve to a customer whose
+     * `id` equals the `{id}` path parameter — otherwise 403 is returned.
+     * Protected fields (`store_id`, `auth_user_id`) cannot be modified.
+     *
      * @returns Customer Customer updated successfully
      * @throws ApiError
      */
     public updateCustomer({
         id,
+        xAuthToken,
         requestBody,
     }: {
         id: string,
+        /**
+         * Customer session access_token. The resolved customer must match the `{id}` path parameter.
+         */
+        xAuthToken: string,
         requestBody?: {
             email?: string;
             phone?: string;
@@ -106,6 +141,9 @@ export class CustomersService {
             url: '/v1/customers/{id}',
             path: {
                 'id': id,
+            },
+            headers: {
+                'x-auth-token': xAuthToken,
             },
             body: requestBody,
             mediaType: 'application/json',

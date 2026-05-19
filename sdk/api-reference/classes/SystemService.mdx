@@ -74,3 +74,32 @@ if (health.status === 'healthy') {
   console.log('API is online and operational.');
 }
 ```
+
+---
+
+<Note>
+  **Edge caching:** `getStoreInfo` responses are cached for **5 minutes (300s)** at the Cloudflare edge. Repeat calls from the same region typically hit the edge cache and never reach the origin worker. Pass `cache: false` to bypass.
+</Note>
+
+## Response Codes
+
+### `getApiInfo` (`GET /`) and `healthCheck` (`GET /v1/health`)
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Service is reachable. |
+
+These endpoints are unauthenticated public endpoints — no `401`, `403`, or `429` is emitted.
+
+### `getStoreInfo` (`GET /v1/store/info`)
+
+Requires authentication. Both **publishable** and **secret** keys are accepted.
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Store info returned (possibly served from edge cache). |
+| `400` | Invalid `sections` parameter (unknown section name). |
+| `401` | Invalid or missing API key. |
+| `403` | Forbidden (e.g., key disabled or store suspended). |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |

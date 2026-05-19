@@ -12,12 +12,13 @@ The `GiftCardsService` class (accessed via `client.giftCards`) manages the check
 Retrieve all gift cards owned by a specific customer. This is used for displaying a user's digital wallet in their account dashboard.
 
 <Note>
-  `customerId` is **strictly required** for this endpoint to identify which wallet to retrieve.
+  `customerId` is **strictly required** for this endpoint to identify which wallet to retrieve. In addition, an `xAuthToken` (the customer's session JWT) must be supplied so the gateway can verify the requester owns that wallet.
 </Note>
 
 ```typescript
 const { gift_cards } = await client.giftCards.listGiftCards({
-  customerId: 'customer-uuid-here',
+  customerId: 'customer-uuid',
+  xAuthToken: customerSession.access_token, // Required — customer JWT
   fields: 'code,balance,status,expiry_date' // Optional field filtering
 });
 
@@ -25,6 +26,10 @@ gift_cards.forEach(gc => {
   console.log(`GC: ${gc.code} | Balance: ${gc.balance}`);
 });
 ```
+
+<Note>
+  When listing gift cards for a customer, the resolved `xAuthToken` JWT must match the `customerId` parameter. Otherwise the gateway returns 403. This means a leaked publishable key alone cannot enumerate another customer's gift cards — the customer's session token is required.
+</Note>
 
 ---
 
@@ -43,6 +48,10 @@ const details = await client.giftCards.checkGiftCard({
 console.log(`Remaining Balance: ${details.balance}`);
 console.log(`Status: ${details.status}`); // 'active', 'redeemed', or 'expired'
 ```
+
+<Note>
+  No customer auth required — the gift card code itself is the credential.
+</Note>
 
 ---
 
@@ -82,3 +91,37 @@ Gift cards in Tybrite move through three states:
 <Tip>
   To let customers pay for partial orders with gift cards, use `checkGiftCard` to see the available balance first, then include it in the `gift_card_redemption` object when calling `createOrder`.
 </Tip>
+
+---
+
+## Authentication Flow
+
+`listGiftCards` requires the customer's session JWT in addition to your API key. Obtain it via the `AuthenticationService` and pass it as `xAuthToken`:
+
+```typescript
+// 1. Sign the customer in (magic link, OTP, or password)
+const session = await client.authentication.signIn({
+  requestBody: {
+    email: 'customer@example.com',
+    password: 'their-password'
+  }
+});
+
+// 2. Use the returned access token to list their gift cards
+const { gift_cards } = await client.giftCards.listGiftCards({
+  customerId: session.user.id,
+  xAuthToken: session.access_token
+});
+```
+
+The gateway validates that the JWT's subject matches the requested `customerId` before returning any wallet contents.
+
+### Response Codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `200` | Success. |
+| `400` | Missing required `customer_id` (on `listGiftCards`). |
+| `401` | Missing or invalid `xAuthToken` or API key. |
+| `403` | Customer token does not match the `customer_id`. |
+| `404` | Gift card not found (on `checkGiftCard`). |
