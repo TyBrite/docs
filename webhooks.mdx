@@ -1,0 +1,342 @@
+---
+title: "Webhooks"
+description: "Receive real-time event notifications when orders, payments, customers, and other resources change state in your store."
+---
+
+Webhooks let your systems react to Tybrite events the moment they happen — no polling, no lag. When an order is paid, a payment fails, or a customer signs up, Tybrite sends an HTTP POST to your registered endpoint containing the full event payload.
+
+<Info>
+  **Dashboard:** You can manage webhook endpoints directly from **Settings → Webhooks** in your Tybrite dashboard, or programmatically via the API and SDK.
+</Info>
+
+---
+
+## Quick start
+
+**1. Create an endpoint**
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+
+const { webhook_endpoint } = await client.webhooks.createWebhookEndpoint({
+  requestBody: {
+    url: 'https://yourapp.com/webhooks/tybrite',
+    events: ['order.paid', 'order.cancelled', 'payment.failed'],
+  }
+});
+
+// Save this immediately — shown only once
+const signingSecret = webhook_endpoint.signing_secret;
+```
+
+**2. Verify + handle deliveries**
+
+```typescript
+// Express handler — use express.raw() so you get the raw body string
+import { createHmac, timingSafeEqual } from 'crypto';
+
+app.post('/webhooks/tybrite', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['x-tybrite-signature'] as string;
+  const rawBody = req.body.toString();
+
+  if (!verifySignature(rawBody, sig, process.env.TYBRITE_WEBHOOK_SECRET!)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  const event = JSON.parse(rawBody);
+
+  switch (event.type) {
+    case 'order.paid':
+      await fulfillOrder(event.data.object);
+      break;
+    case 'payment.failed':
+      await notifyCustomer(event.data.object);
+      break;
+  }
+
+  res.json({ received: true });
+});
+
+function verifySignature(body: string, signature: string, secret: string): boolean {
+  const [tPart, v1Part] = signature.split(',');
+  const timestamp = tPart.replace('t=', '');
+  const received = v1Part.replace('v1=', '');
+
+  // Reject replays older than 5 minutes
+  if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 300) return false;
+
+  const expected = createHmac('sha256', secret)
+    .update(`${timestamp}.${body}`)
+    .digest('hex');
+
+  return timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+}
+```
+
+**3. Send a test event**
+
+```typescript
+const result = await client.webhooks.sendTestWebhookEvent({
+  id: webhook_endpoint.id,
+  requestBody: { event_type: 'order.paid' }
+});
+
+console.log(result.success, result.status_code);
+```
+
+---
+
+## Event catalogue
+
+All events follow the same envelope shape — only `type` and `data.object` vary.
+
+### Orders
+
+| Event | Fired when |
+| :--- | :--- |
+| `order.created` | `POST /v1/orders` succeeds, regardless of payment status |
+| `order.paid` | `payment_status` transitions to `paid` |
+| `order.fulfilled` | `order_status` transitions to `shipped` or `delivered` |
+| `order.cancelled` | `order_status` transitions to `cancelled` |
+| `order.refunded` | A refund is recorded on the order |
+| `order.updated` | Any `PATCH /v1/orders/:id` that doesn't trigger a more specific event |
+
+### Payments
+
+| Event | Fired when |
+| :--- | :--- |
+| `payment.succeeded` | Provider webhook (Stripe / Paystack / M-Pesa / Airtel) reports success |
+| `payment.failed` | Provider webhook reports failure |
+| `payment.refunded` | Provider webhook reports a refund |
+
+### Customers
+
+| Event | Fired when |
+| :--- | :--- |
+| `customer.created` | `POST /v1/customers` succeeds |
+| `customer.updated` | `PATCH /v1/customers/:id` succeeds |
+| `customer.deleted` | A customer is soft-deleted |
+
+### Inventory & catalog
+
+| Event | Fired when |
+| :--- | :--- |
+| `product.created` | New product is published |
+| `product.updated` | Product fields change |
+| `product.stock_low` | A variant's stock drops below `low_stock_threshold` |
+| `product.out_of_stock` | A variant's stock reaches zero |
+
+### Cart & checkout
+
+| Event | Fired when |
+| :--- | :--- |
+| `cart.created` | A new cart session is started |
+| `cart.updated` | Items are added, removed, or quantities changed |
+| `cart.abandoned` | No cart activity for the store-configured window (default 24h) |
+
+### Gift cards
+
+| Event | Fired when |
+| :--- | :--- |
+| `gift_card.issued` | A new gift card is created |
+| `gift_card.redeemed` | A gift card is applied to an order |
+| `gift_card.expired` | A gift card passes its expiry date |
+
+### Promotions
+
+| Event | Fired when |
+| :--- | :--- |
+| `promotion.applied` | An order uses a promotion code |
+
+---
+
+## Event payload shape
+
+Every event uses a consistent Stripe-style envelope:
+
+```json
+{
+  "id": "evt_1716199800000_abc123",
+  "type": "order.paid",
+  "created_at": "2026-05-20T10:30:00Z",
+  "store_id": "a1b2c3d4-...",
+  "api_version": "v1",
+  "data": {
+    "object": {
+      "id": "order-uuid",
+      "order_number": "ORD-0042",
+      "payment_status": "paid",
+      "total_amount": 4500,
+      "currency": "KES"
+    }
+  },
+  "previous_attributes": {
+    "payment_status": "pending"
+  }
+}
+```
+
+`previous_attributes` is present on update events and contains only the fields that changed — useful for transition-based logic (e.g. "did payment_status just flip to `paid`?").
+
+---
+
+## Signature verification
+
+Every delivery carries:
+
+```
+X-Tybrite-Signature: t=<unix_timestamp>,v1=<hmac_sha256_hex>
+```
+
+The signed string is `${timestamp}.${raw_request_body}`. The secret is the `signing_secret` returned when the endpoint was created (per-endpoint, not the store HMAC secret).
+
+<Warning>
+  **Use the raw body.** JSON parsers may reformat whitespace or key ordering, producing a different byte sequence that will fail verification. Capture the raw bytes before parsing.
+</Warning>
+
+**Cloudflare Workers example:**
+
+```typescript
+async function verifyWebhookSignature(
+  request: Request,
+  signingSecret: string
+): Promise<boolean> {
+  const signature = request.headers.get('x-tybrite-signature') ?? '';
+  const [tPart, v1Part] = signature.split(',');
+  const timestamp = tPart.replace('t=', '');
+  const received = v1Part.replace('v1=', '');
+
+  if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 300) return false;
+
+  const rawBody = await request.text();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(signingSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${timestamp}.${rawBody}`));
+  const expected = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return received === expected;
+}
+```
+
+**Next.js App Router example:**
+
+```typescript
+// app/api/webhooks/tybrite/route.ts
+import { createHmac, timingSafeEqual } from 'crypto';
+
+export async function POST(request: Request) {
+  const rawBody = await request.text();
+  const signature = request.headers.get('x-tybrite-signature') ?? '';
+
+  const [tPart, v1Part] = signature.split(',');
+  const timestamp = tPart.replace('t=', '');
+  const received = v1Part.replace('v1=', '');
+
+  if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 300) {
+    return Response.json({ error: 'Replay detected' }, { status: 401 });
+  }
+
+  const expected = createHmac('sha256', process.env.TYBRITE_WEBHOOK_SECRET!)
+    .update(`${timestamp}.${rawBody}`)
+    .digest('hex');
+
+  if (!timingSafeEqual(Buffer.from(received), Buffer.from(expected))) {
+    return Response.json({ error: 'Invalid signature' }, { status: 401 });
+  }
+
+  const event = JSON.parse(rawBody);
+  // handle event...
+
+  return Response.json({ received: true });
+}
+```
+
+---
+
+## Delivery contract
+
+| Property | Details |
+| :--- | :--- |
+| **Guarantee** | At-least-once. Your handler must be **idempotent** — use `event.id` to deduplicate. |
+| **Signing** | HMAC-SHA256. Per-endpoint secret, isolated from store HMAC secret. |
+| **Timeout** | 30 seconds per delivery attempt. |
+| **Retry schedule** | 1 min → 5 min → 30 min → 2 h → 8 h → 24 h → 48 h, then dead-lettered. |
+| **Ordering** | Best-effort. Use `event.created_at` for sequencing logic. |
+| **Payload size** | Capped at 256 KB. |
+
+**Always respond quickly.** Return `2xx` within 30 seconds and do heavy processing asynchronously (queue it). If your handler times out, Tybrite treats the delivery as failed and retries.
+
+---
+
+## Idempotency
+
+Because delivery is at-least-once, your handler may receive the same event more than once on retries. Guard with a seen-events store:
+
+```typescript
+const event = JSON.parse(rawBody);
+
+// Check — use Redis, a DB unique index, or an idempotency table
+if (await redis.exists(`webhook:seen:${event.id}`)) {
+  return res.json({ received: true }); // already processed
+}
+
+// Process first
+await processEvent(event);
+
+// Mark as seen (TTL slightly longer than max retry window)
+await redis.set(`webhook:seen:${event.id}`, '1', { ex: 60 * 60 * 24 * 3 }); // 3 days
+```
+
+---
+
+## Managing endpoints via the Dashboard
+
+Go to **Settings → Webhooks** in your Tybrite dashboard to:
+
+- Create, edit, disable, or delete endpoints
+- Choose which event types to subscribe to (or select "All events")
+- Send a test event with one click to verify your handler
+- View per-endpoint delivery statistics and the full event log
+- Retry failed deliveries
+
+---
+
+## Managing endpoints via the API
+
+See the [WebhooksService SDK reference](/sdk/api-reference/classes/WebhooksService) or the [API Reference](/api-reference) for the complete endpoint documentation.
+
+```typescript
+// List all endpoints
+const { webhook_endpoints } = await client.webhooks.listWebhookEndpoints();
+
+// Disable an endpoint
+await client.webhooks.updateWebhookEndpoint({
+  id: 'endpoint-uuid',
+  requestBody: { enabled: false }
+});
+
+// List recent events
+const { webhook_events } = await client.webhooks.listWebhookEvents({ limit: 20 });
+
+// Retry a failed event
+await client.webhooks.retryWebhookEvent({ id: 'evt_...' });
+```
+
+---
+
+## Security checklist
+
+- [ ] Verify `X-Tybrite-Signature` on every delivery before processing
+- [ ] Reject requests where `|now − timestamp| > 300s` (replay protection)
+- [ ] Use `timingSafeEqual` for constant-time comparison (prevents timing attacks)
+- [ ] Store `signing_secret` in a secrets manager — never in source code
+- [ ] Return `2xx` immediately and process events asynchronously
+- [ ] Implement idempotency using `event.id`
+- [ ] Use HTTPS with a valid TLS certificate on your endpoint

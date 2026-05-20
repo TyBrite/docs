@@ -1,0 +1,310 @@
+---
+title: "Webhooks"
+description: "Reference for the WebhooksService class in the Tybrite SDK."
+---
+
+The `WebhooksService` class (accessed via `client.webhooks`) manages outbound webhook endpoints and provides access to the event delivery log.
+
+<Warning>
+  **Secret key required.** All webhook management endpoints require a secret key (`tybrite_sk_*`). Publishable keys return `403 Forbidden`.
+</Warning>
+
+## Overview
+
+Webhooks allow your systems to receive real-time push notifications when events occur in your store — eliminating the need to poll the API. Every delivery is HMAC-signed so you can verify authenticity before acting on the payload.
+
+**Supported event categories:** Orders, Payments, Customers, Inventory, Cart, Gift Cards, Promotions.
+
+**Delivery contract:**
+- **At-least-once** — your endpoint must be idempotent. Use `event.id` for deduplication.
+- **HMAC-signed** — verify with the `signing_secret` returned at endpoint creation.
+- **Best-effort ordering** — use `event.created_at` for sequencing, not arrival order.
+
+---
+
+## Signature Verification
+
+Every webhook delivery includes the header:
+
+```
+X-Tybrite-Signature: t=<unix_timestamp>,v1=<hmac_sha256_hex>
+```
+
+Verify it in your endpoint handler:
+
+```typescript
+import { createHmac, timingSafeEqual } from 'crypto';
+
+function verifyTybriteWebhook(
+  rawBody: string,
+  signature: string,
+  signingSecret: string
+): boolean {
+  const [tPart, v1Part] = signature.split(',');
+  const timestamp = tPart.replace('t=', '');
+  const receivedSig = v1Part.replace('v1=', '');
+
+  // Reject replays older than 5 minutes
+  if (Math.abs(Date.now() / 1000 - parseInt(timestamp)) > 300) return false;
+
+  const payload = `${timestamp}.${rawBody}`;
+  const expected = createHmac('sha256', signingSecret).update(payload).digest('hex');
+
+  return timingSafeEqual(Buffer.from(receivedSig), Buffer.from(expected));
+}
+
+// In an Express handler:
+app.post('/webhooks/tybrite', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['x-tybrite-signature'] as string;
+  if (!verifyTybriteWebhook(req.body.toString(), sig, process.env.TYBRITE_WEBHOOK_SECRET!)) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  const event = JSON.parse(req.body.toString());
+  switch (event.type) {
+    case 'order.paid':
+      await syncToErp(event.data.object);
+      break;
+    case 'payment.failed':
+      await notifyOps(event.data.object);
+      break;
+  }
+
+  res.json({ received: true });
+});
+```
+
+<Tip>
+  Always read the raw request body (before JSON parsing) for signature verification. Parsers may reformat the JSON, producing a different byte sequence and causing verification to fail.
+</Tip>
+
+---
+
+## Endpoint Management
+
+### `createWebhookEndpoint` 🔒
+
+Register a new HTTPS endpoint to receive event notifications.
+
+```typescript
+const { webhook_endpoint } = await client.webhooks.createWebhookEndpoint({
+  requestBody: {
+    url: 'https://yourapp.com/webhooks/tybrite',
+    events: ['order.paid', 'order.fulfilled', 'payment.succeeded', 'payment.failed'],
+    enabled: true,
+    metadata: { label: 'production-erp', team: 'platform' }
+  }
+});
+
+// signing_secret is returned ONCE — store it immediately
+const signingSecret = webhook_endpoint.signing_secret;
+console.log('Store this secret:', signingSecret);
+```
+
+<Warning>
+  The `signing_secret` is shown **once** at creation. It cannot be retrieved again. Store it in your secrets manager (e.g. AWS Secrets Manager, Doppler, Infisical) immediately.
+</Warning>
+
+To subscribe to **all events**, pass `["*"]` as the events array:
+
+```typescript
+await client.webhooks.createWebhookEndpoint({
+  requestBody: {
+    url: 'https://yourapp.com/webhooks/tybrite',
+    events: ['*'], // receive everything
+  }
+});
+```
+
+**Supported event types:**
+
+| Category | Events |
+| :--- | :--- |
+| Orders | `order.created`, `order.paid`, `order.fulfilled`, `order.cancelled`, `order.refunded`, `order.updated` |
+| Payments | `payment.succeeded`, `payment.failed`, `payment.refunded` |
+| Customers | `customer.created`, `customer.updated`, `customer.deleted` |
+| Inventory | `product.created`, `product.updated`, `product.stock_low`, `product.out_of_stock` |
+| Cart | `cart.created`, `cart.updated`, `cart.abandoned` |
+| Gift Cards | `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired` |
+| Promotions | `promotion.applied` |
+
+---
+
+### `listWebhookEndpoints` 🔒
+
+```typescript
+const { webhook_endpoints, pagination } = await client.webhooks.listWebhookEndpoints({
+  limit: 20,
+});
+```
+
+---
+
+### `getWebhookEndpoint` 🔒
+
+Returns full endpoint details including delivery statistics.
+
+```typescript
+const { webhook_endpoint } = await client.webhooks.getWebhookEndpoint({
+  id: 'endpoint-uuid',
+});
+
+console.log(webhook_endpoint.delivery_stats);
+// { total: 1420, successful: 1418, failed: 2 }
+```
+
+---
+
+### `updateWebhookEndpoint` 🔒
+
+All fields are optional. Only provided fields are updated.
+
+```typescript
+// Disable an endpoint temporarily
+await client.webhooks.updateWebhookEndpoint({
+  id: 'endpoint-uuid',
+  requestBody: { enabled: false }
+});
+
+// Change subscribed events
+await client.webhooks.updateWebhookEndpoint({
+  id: 'endpoint-uuid',
+  requestBody: {
+    events: ['order.paid', 'order.cancelled', 'payment.failed']
+  }
+});
+```
+
+---
+
+### `deleteWebhookEndpoint` 🔒
+
+Soft-deletes the endpoint. In-flight deliveries are not cancelled.
+
+```typescript
+await client.webhooks.deleteWebhookEndpoint({ id: 'endpoint-uuid' });
+```
+
+---
+
+### `sendTestWebhookEvent` 🔒
+
+Sends a synthetic test payload to an endpoint. Use this to verify your signature verification code and endpoint connectivity before going live.
+
+The payload includes `"test": true` so your handler can distinguish test from live events.
+
+```typescript
+const result = await client.webhooks.sendTestWebhookEvent({
+  id: 'endpoint-uuid',
+  requestBody: { event_type: 'order.paid' }
+});
+
+console.log(result.success);     // true
+console.log(result.status_code); // 200
+```
+
+Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `gift_card.issued`, `promotion.applied`.
+
+---
+
+## Event Log
+
+### `listWebhookEvents` 🔒
+
+Returns the event log in reverse-chronological order. Useful for debugging delivery failures or auditing event history.
+
+```typescript
+// All events
+const { webhook_events } = await client.webhooks.listWebhookEvents({ limit: 50 });
+
+// Filter by type
+const { webhook_events: failedPayments } = await client.webhooks.listWebhookEvents({
+  type: 'payment.failed',
+  limit: 20,
+});
+```
+
+---
+
+### `getWebhookEvent` 🔒
+
+Returns a single event with all its delivery attempts across all endpoints.
+
+```typescript
+const { webhook_event } = await client.webhooks.getWebhookEvent({
+  id: 'evt_1716199800000_abc123'
+});
+
+// Inspect delivery attempts
+for (const delivery of webhook_event.deliveries) {
+  console.log(delivery.attempt_number, delivery.success, delivery.status_code, delivery.latency_ms);
+}
+```
+
+---
+
+### `retryWebhookEvent` 🔒
+
+Manually re-delivers the event to all enabled endpoints subscribed to its event type. Each re-delivery is recorded as a new attempt.
+
+```typescript
+const result = await client.webhooks.retryWebhookEvent({
+  id: 'evt_1716199800000_abc123'
+});
+
+console.log(`Retried to ${result.retried} endpoint(s)`);
+for (const r of result.results) {
+  console.log(r.endpoint_id, r.success, r.status_code);
+}
+```
+
+---
+
+## Event Payload Shape
+
+All events use a consistent envelope:
+
+```json
+{
+  "id": "evt_1716199800000_abc123",
+  "type": "order.paid",
+  "created_at": "2026-05-20T10:30:00Z",
+  "store_id": "store-uuid",
+  "api_version": "v1",
+  "data": {
+    "object": { /* the resource — order, payment, customer, etc. */ }
+  },
+  "previous_attributes": {
+    /* on update events: prior values for changed fields only */
+  }
+}
+```
+
+Use `event.id` for idempotency — store it and skip processing if you've seen it before:
+
+```typescript
+const event = JSON.parse(req.body.toString());
+
+// Idempotency check
+if (await db.webhookEvents.exists(event.id)) {
+  return res.json({ received: true }); // already processed
+}
+
+await db.webhookEvents.markSeen(event.id);
+await processEvent(event);
+```
+
+---
+
+## Response Codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success on reads, updates, deletes, retry, and test delivery. |
+| `201` | New endpoint created. |
+| `400` | Invalid URL (must be HTTPS), empty event list, invalid event type, or disabled endpoint on test. |
+| `401` | Missing or invalid API key. |
+| `403` | Publishable key used — all webhook operations require a secret key. |
+| `404` | Endpoint or event not found. |
+| `429` | Rate limit exceeded (500 req/hr per secret key). |
+| `500` | Internal server error. |
