@@ -21,6 +21,7 @@ import { SearchService } from './services/SearchService';
 import { ShippingService } from './services/ShippingService';
 import { SystemService } from './services/SystemService';
 import { TaxonomyService } from './services/TaxonomyService';
+import { WebhooksService } from './services/WebhooksService';
 type HttpRequestConstructor = new (config: OpenAPIConfig) => BaseHttpRequest;
 export class Tybrite {
     public readonly authentication: AuthenticationService;
@@ -39,6 +40,7 @@ export class Tybrite {
     public readonly shipping: ShippingService;
     public readonly system: SystemService;
     public readonly taxonomy: TaxonomyService;
+    public readonly webhooks: WebhooksService;
     public readonly request: BaseHttpRequest;
     constructor(config?: Partial<OpenAPIConfig>, HttpRequest: HttpRequestConstructor = FetchHttpRequest) {
         this.request = new HttpRequest({
@@ -68,6 +70,7 @@ export class Tybrite {
         this.shipping = new ShippingService(this.request);
         this.system = new SystemService(this.request);
         this.taxonomy = new TaxonomyService(this.request);
+        this.webhooks = new WebhooksService(this.request);
     }
 }
 
