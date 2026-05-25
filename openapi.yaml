@@ -1238,8 +1238,9 @@ paths:
                         description: Number of products per page
                         example: 20
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Cursor for the next page (null if no more pages)
                         example: eyJwcm9kdWN0X2lkIjoiZDhjZWEyNzctOWJiNi00OTQyLWI5ZTktMmYyYWMzNTE1MDlmIn0=
                       has_more:
@@ -2077,9 +2078,10 @@ paths:
                           type: string
                           format: uuid
                         template_id:
-                          type: string
+                          type:
+                            - string
+                            - 'null'
                           format: uuid
-                          nullable: true
                         specification_data:
                           type: object
                           additionalProperties: true
@@ -2099,8 +2101,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
         '400':
@@ -2162,8 +2165,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
         '400':
@@ -2201,8 +2205,9 @@ paths:
                   - type: object
                     properties:
                       rules:
-                        type: object
-                        nullable: true
+                        type:
+                          - object
+                          - 'null'
                         additionalProperties: true
                         description: Smart/automated collection rules (when collection_type is automated or smart)
         '400':
@@ -2249,15 +2254,18 @@ paths:
                       type: object
                       properties:
                         online_product_id:
-                          type: string
+                          type:
+                            - string
+                            - 'null'
                           format: uuid
-                          nullable: true
                         sort_order:
-                          type: integer
-                          nullable: true
+                          type:
+                            - integer
+                            - 'null'
                         product:
-                          type: object
-                          nullable: true
+                          type:
+                            - object
+                            - 'null'
                           description: |
                             Embedded online product row joined from `online_products`.
                             Contains online-prefixed fields directly (not the sanitized
@@ -2267,70 +2275,89 @@ paths:
                               type: string
                               format: uuid
                             inventory_id:
-                              type: string
+                              type:
+                                - string
+                                - 'null'
                               format: uuid
-                              nullable: true
                             online_name:
-                              type: string
-                              nullable: true
+                              type:
+                                - string
+                                - 'null'
                             online_description:
-                              type: string
-                              nullable: true
+                              type:
+                                - string
+                                - 'null'
                             online_images:
-                              type: array
+                              type:
+                                - array
+                                - 'null'
                               items:
                                 type: string
-                              nullable: true
                             online_price:
-                              type: number
-                              nullable: true
+                              type:
+                                - number
+                                - 'null'
                             online_sale_price:
-                              type: number
-                              nullable: true
+                              type:
+                                - number
+                                - 'null'
                             online_stock:
-                              type: integer
-                              nullable: true
+                              type:
+                                - integer
+                                - 'null'
                             is_online_enabled:
-                              type: boolean
-                              nullable: true
+                              type:
+                                - boolean
+                                - 'null'
                             seo_title:
-                              type: string
-                              nullable: true
+                              type:
+                                - string
+                                - 'null'
                             seo_description:
-                              type: string
-                              nullable: true
+                              type:
+                                - string
+                                - 'null'
                             seo_keywords:
-                              type: string
-                              nullable: true
+                              type:
+                                - string
+                                - 'null'
                             featured:
-                              type: boolean
-                              nullable: true
+                              type:
+                                - boolean
+                                - 'null'
                             featured_order:
-                              type: integer
-                              nullable: true
+                              type:
+                                - integer
+                                - 'null'
                             online_category:
-                              type: string
-                              nullable: true
+                              type:
+                                - string
+                                - 'null'
                             tags:
-                              type: array
+                              type:
+                                - array
+                                - 'null'
                               items:
                                 type: string
-                              nullable: true
                             attributes:
-                              type: object
+                              type:
+                                - object
+                                - 'null'
                               additionalProperties: true
-                              nullable: true
                             shipping_info:
-                              type: object
-                              nullable: true
+                              type:
+                                - object
+                                - 'null'
                             created_at:
-                              type: string
+                              type:
+                                - string
+                                - 'null'
                               format: date-time
-                              nullable: true
                             updated_at:
-                              type: string
+                              type:
+                                - string
+                                - 'null'
                               format: date-time
-                              nullable: true
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -2397,8 +2424,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
         '400':
@@ -2512,8 +2540,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
         '400':
@@ -2746,8 +2775,9 @@ paths:
                         description: Total price for this line item (quantity × unit_price)
                         example: 2000
                       product_options:
-                        type: object
-                        nullable: true
+                        type:
+                          - object
+                          - 'null'
                         description: Product variant options (e.g., color, size)
                         example:
                           color: Space Black
@@ -2825,24 +2855,28 @@ paths:
                   description: External payment reference (e.g., Stripe charge ID, M-Pesa receipt)
                   example: ch_1NqFvE2eZvKYlo2C8Z3y4abc
                 shipping_metadata:
-                  type: object
-                  nullable: true
+                  type:
+                    - object
+                    - 'null'
                   description: Shipping calculation details from /v1/shipping/calculate for audit trail
                   properties:
                     fee:
                       type: number
                       example: 100
                     zone_name:
-                      type: string
-                      nullable: true
+                      type:
+                        - string
+                        - 'null'
                       example: null
                     tier_name:
-                      type: string
-                      nullable: true
+                      type:
+                        - string
+                        - 'null'
                       example: Within Nairobi
                     distance_meters:
-                      type: number
-                      nullable: true
+                      type:
+                        - number
+                        - 'null'
                       example: 19.23
                     is_free:
                       type: boolean
@@ -2858,8 +2892,9 @@ paths:
                         - default
                       example: distance
                 gift_card_redemption:
-                  type: object
-                  nullable: true
+                  type:
+                    - object
+                    - 'null'
                   description: Optional gift card to redeem towards this order
                   required:
                     - code
@@ -2875,8 +2910,9 @@ paths:
                       description: Amount to redeem from the gift card
                       example: 1000
                 promotion_usages:
-                  type: array
-                  nullable: true
+                  type:
+                    - array
+                    - 'null'
                   description: Promotion usages applied to this order (tracked when payment_status is paid)
                   items:
                     type: object
@@ -4061,21 +4097,24 @@ paths:
                           otherwise the raw Stripe payment_status (e.g., `unpaid`, `no_payment_required`).
                         example: success
                       amount:
-                        type: number
+                        type:
+                          - number
+                          - 'null'
                         format: float
-                        nullable: true
                         description: Amount in major currency units (converted from Stripe's minor units)
                         example: 100
                       currency:
                         type: string
                         example: usd
                       customer_email:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         example: customer@example.com
                       payment_intent:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Stripe Payment Intent ID
                         example: pi_3ABC123...
                       metadata:
@@ -4096,9 +4135,10 @@ paths:
                         description: Normalized status (`success` when Paystack `status === 'success'`)
                         example: success
                       amount:
-                        type: number
+                        type:
+                          - number
+                          - 'null'
                         format: float
-                        nullable: true
                         description: Amount in major currency units (converted from kobo)
                         example: 500
                       currency:
@@ -4108,13 +4148,15 @@ paths:
                         type: string
                         example: card
                       customer_email:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         example: customer@example.com
                       paid_at:
-                        type: string
+                        type:
+                          - string
+                          - 'null'
                         format: date-time
-                        nullable: true
                         example: '2026-02-10T10:30:00Z'
                       metadata:
                         type: object
@@ -4539,11 +4581,13 @@ paths:
                   subtotal:
                     type: number
                   session_id:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   customer_id:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
         '400':
           description: Invalid request or insufficient stock
           content:
@@ -4640,11 +4684,13 @@ paths:
                   subtotal:
                     type: number
                   session_id:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   customer_id:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -4765,11 +4811,13 @@ paths:
                   subtotal:
                     type: number
                   session_id:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   customer_id:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -5047,11 +5095,13 @@ paths:
                   subtotal:
                     type: number
                   session_id:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   customer_id:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
         '400':
           description: Invalid request or insufficient stock
           content:
@@ -6177,12 +6227,14 @@ paths:
                       - full_redeemed
                       - inactive
                   expiry_date:
-                    type: string
+                    type:
+                      - string
+                      - 'null'
                     format: date
-                    nullable: true
                   maximum_usage_percentage:
-                    type: number
-                    nullable: true
+                    type:
+                      - number
+                      - 'null'
                   gift_card:
                     $ref: '#/components/schemas/GiftCard'
               example:
@@ -6286,8 +6338,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
         '400':
@@ -6404,8 +6457,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
                   total:
@@ -6513,8 +6567,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
                   total:
@@ -6778,8 +6833,9 @@ paths:
                           description: Currency symbol for display
                           example: $
                         thumbnail_url:
-                          type: string
-                          nullable: true
+                          type:
+                            - string
+                            - 'null'
                           description: Primary image URL for list views
                         media:
                           type: array
@@ -6797,8 +6853,9 @@ paths:
                               position:
                                 type: integer
                               alt_text:
-                                type: string
-                                nullable: true
+                                type:
+                                  - string
+                                  - 'null'
                               is_primary:
                                 type: boolean
                         exchange_rate:
@@ -6841,8 +6898,9 @@ paths:
                               type: number
                               description: Final price after all discounts
                             currency_conversion:
-                              type: object
-                              nullable: true
+                              type:
+                                - object
+                                - 'null'
                               description: Currency conversion details (null if no conversion)
                               properties:
                                 from_currency:
@@ -6870,24 +6928,29 @@ paths:
                       (they are not request parameters).
                     properties:
                       location:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       region:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Detected or specified region
                         example: United States
                       customer_segment:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Resolved RFM segment for the supplied customer_id
                       customer_tier:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Resolved customer tier for the supplied customer_id
                       quantity:
-                        type: integer
-                        nullable: true
+                        type:
+                          - integer
+                          - 'null'
                       currency:
                         type: string
                         description: Detected or default currency
@@ -7109,21 +7172,25 @@ paths:
                   description:
                     type: string
                   brand:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   category_name:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   images:
                     type: array
                     items:
                       type: string
                   product_slug:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   thumbnail_url:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                     description: Primary image URL for list views
                   media:
                     type: array
@@ -7141,38 +7208,46 @@ paths:
                         position:
                           type: integer
                         alt_text:
-                          type: string
-                          nullable: true
+                          type:
+                            - string
+                            - 'null'
                         is_primary:
                           type: boolean
                   variant_id:
-                    type: string
+                    type:
+                      - string
+                      - 'null'
                     format: uuid
-                    nullable: true
                     description: Only present for simple products
                   sku:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                     description: Only present for simple products
                   stock:
-                    type: integer
-                    nullable: true
+                    type:
+                      - integer
+                      - 'null'
                     description: Only present for simple products
                   base_price:
-                    type: number
-                    nullable: true
+                    type:
+                      - number
+                      - 'null'
                     description: Price in store's base currency (only for simple products)
                   resolved_price:
-                    type: number
-                    nullable: true
+                    type:
+                      - number
+                      - 'null'
                     description: Price after discounts before conversion (only for simple products)
                   display_price:
-                    type: number
-                    nullable: true
+                    type:
+                      - number
+                      - 'null'
                     description: Final price in customer's currency (only for simple products)
                   price_breakdown:
-                    type: object
-                    nullable: true
+                    type:
+                      - object
+                      - 'null'
                     description: Detailed price calculation (only for simple products)
                     properties:
                       base_price:
@@ -7195,8 +7270,9 @@ paths:
                       final_price:
                         type: number
                       currency_conversion:
-                        type: object
-                        nullable: true
+                        type:
+                          - object
+                          - 'null'
                         properties:
                           from_currency:
                             type: string
@@ -7207,12 +7283,14 @@ paths:
                           converted_amount:
                             type: number
                   total_stock:
-                    type: integer
-                    nullable: true
+                    type:
+                      - integer
+                      - 'null'
                     description: Sum of stock across all variants (only for multi-variant)
                   price_range:
-                    type: object
-                    nullable: true
+                    type:
+                      - object
+                      - 'null'
                     description: Price range calculated from variant display_prices (only for multi-variant)
                     properties:
                       min:
@@ -7225,12 +7303,14 @@ paths:
                     type: boolean
                     description: Whether product has multiple variants
                   variant_count:
-                    type: integer
-                    nullable: true
+                    type:
+                      - integer
+                      - 'null'
                     description: Number of variants (only for multi-variant)
                   variants:
-                    type: array
-                    nullable: true
+                    type:
+                      - array
+                      - 'null'
                     description: Array of variants with pricing (only for multi-variant)
                     items:
                       type: object
@@ -7246,8 +7326,9 @@ paths:
                           type: object
                           additionalProperties: true
                         variant_name:
-                          type: string
-                          nullable: true
+                          type:
+                            - string
+                            - 'null'
                         is_default:
                           type: boolean
                         media:
@@ -7266,8 +7347,9 @@ paths:
                               position:
                                 type: integer
                               alt_text:
-                                type: string
-                                nullable: true
+                                type:
+                                  - string
+                                  - 'null'
                               is_primary:
                                 type: boolean
                         base_price:
@@ -7303,8 +7385,9 @@ paths:
                             final_price:
                               type: number
                             currency_conversion:
-                              type: object
-                              nullable: true
+                              type:
+                                - object
+                                - 'null'
                               properties:
                                 from_currency:
                                   type: string
@@ -7339,23 +7422,28 @@ paths:
                       (they are not request parameters).
                     properties:
                       location:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       region:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         example: United Kingdom
                       customer_segment:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Resolved RFM segment for the supplied customer_id
                       customer_tier:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Resolved customer tier for the supplied customer_id
                       quantity:
-                        type: integer
-                        nullable: true
+                        type:
+                          - integer
+                          - 'null'
                       currency:
                         type: string
                         description: Detected display currency code
@@ -7738,21 +7826,25 @@ paths:
                   description:
                     type: string
                   brand:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   category_name:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   images:
                     type: array
                     items:
                       type: string
                   product_slug:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                   thumbnail_url:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                     description: Primary image URL for list views
                   media:
                     type: array
@@ -7770,38 +7862,46 @@ paths:
                         position:
                           type: integer
                         alt_text:
-                          type: string
-                          nullable: true
+                          type:
+                            - string
+                            - 'null'
                         is_primary:
                           type: boolean
                   variant_id:
-                    type: string
+                    type:
+                      - string
+                      - 'null'
                     format: uuid
-                    nullable: true
                     description: Only present for simple products
                   sku:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
                     description: Only present for simple products
                   stock:
-                    type: integer
-                    nullable: true
+                    type:
+                      - integer
+                      - 'null'
                     description: Only present for simple products
                   base_price:
-                    type: number
-                    nullable: true
+                    type:
+                      - number
+                      - 'null'
                     description: Price in store's base currency (only for simple products)
                   resolved_price:
-                    type: number
-                    nullable: true
+                    type:
+                      - number
+                      - 'null'
                     description: Price after discounts before conversion (only for simple products)
                   display_price:
-                    type: number
-                    nullable: true
+                    type:
+                      - number
+                      - 'null'
                     description: Final price in customer's currency (only for simple products)
                   price_breakdown:
-                    type: object
-                    nullable: true
+                    type:
+                      - object
+                      - 'null'
                     description: Detailed price calculation (only for simple products)
                     properties:
                       base_price:
@@ -7824,8 +7924,9 @@ paths:
                       final_price:
                         type: number
                       currency_conversion:
-                        type: object
-                        nullable: true
+                        type:
+                          - object
+                          - 'null'
                         properties:
                           from_currency:
                             type: string
@@ -7836,12 +7937,14 @@ paths:
                           converted_amount:
                             type: number
                   total_stock:
-                    type: integer
-                    nullable: true
+                    type:
+                      - integer
+                      - 'null'
                     description: Sum of stock across all variants (only for multi-variant)
                   price_range:
-                    type: object
-                    nullable: true
+                    type:
+                      - object
+                      - 'null'
                     description: Price range calculated from variant display_prices (only for multi-variant)
                     properties:
                       min:
@@ -7854,12 +7957,14 @@ paths:
                     type: boolean
                     description: Whether product has multiple variants
                   variant_count:
-                    type: integer
-                    nullable: true
+                    type:
+                      - integer
+                      - 'null'
                     description: Number of variants (only for multi-variant)
                   variants:
-                    type: array
-                    nullable: true
+                    type:
+                      - array
+                      - 'null'
                     description: Array of variants with pricing (only for multi-variant)
                     items:
                       type: object
@@ -7875,8 +7980,9 @@ paths:
                           type: object
                           additionalProperties: true
                         variant_name:
-                          type: string
-                          nullable: true
+                          type:
+                            - string
+                            - 'null'
                         is_default:
                           type: boolean
                         media:
@@ -7895,8 +8001,9 @@ paths:
                               position:
                                 type: integer
                               alt_text:
-                                type: string
-                                nullable: true
+                                type:
+                                  - string
+                                  - 'null'
                               is_primary:
                                 type: boolean
                         base_price:
@@ -7932,8 +8039,9 @@ paths:
                             final_price:
                               type: number
                             currency_conversion:
-                              type: object
-                              nullable: true
+                              type:
+                                - object
+                                - 'null'
                               properties:
                                 from_currency:
                                   type: string
@@ -7968,23 +8076,28 @@ paths:
                       (they are not request parameters).
                     properties:
                       location:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       region:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         example: United Kingdom
                       customer_segment:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Resolved RFM segment for the supplied customer_id
                       customer_tier:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                         description: Resolved customer tier for the supplied customer_id
                       quantity:
-                        type: integer
-                        nullable: true
+                        type:
+                          - integer
+                          - 'null'
                       currency:
                         type: string
                         description: Detected display currency code
@@ -8266,8 +8379,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
         '400':
@@ -8504,8 +8618,9 @@ paths:
                       limit:
                         type: integer
                       next_cursor:
-                        type: string
-                        nullable: true
+                        type:
+                          - string
+                          - 'null'
                       has_more:
                         type: boolean
         '400':
@@ -9405,11 +9520,13 @@ paths:
                   endpoint_url:
                     type: string
                   status_code:
-                    type: integer
-                    nullable: true
+                    type:
+                      - integer
+                      - 'null'
                   response_body:
-                    type: string
-                    nullable: true
+                    type:
+                      - string
+                      - 'null'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -9554,8 +9671,9 @@ paths:
                         success:
                           type: boolean
                         status_code:
-                          type: integer
-                          nullable: true
+                          type:
+                            - integer
+                            - 'null'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -9827,8 +9945,9 @@ components:
                       delivery_fee:
                         type: number
                       free_threshold:
-                        type: number
-                        nullable: true
+                        type:
+                          - number
+                          - 'null'
             has_free_shipping_threshold:
               type: boolean
         cms:
@@ -9919,8 +10038,9 @@ components:
           description: Base price in cents
           example: 36999
         sale_price:
-          type: number
-          nullable: true
+          type:
+            - number
+            - 'null'
           description: Sale price in cents (null if not on sale)
         selling_price:
           type: number
@@ -9931,26 +10051,30 @@ components:
           description: Available stock quantity for this variant
           example: 10
         threshold:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           description: Low stock threshold (internal inventory field)
           example: 5
         last_restocked:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date
-          nullable: true
           description: Last restock date (internal inventory field)
           example: '2026-02-17'
         variant_attributes:
-          type: object
+          type:
+            - object
+            - 'null'
           additionalProperties: true
-          nullable: true
           description: Variant-specific attributes (e.g., color, size, material)
           example:
             color: Black
         variant_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Display name for this variant
           example: Variant 3
         is_default:
@@ -9975,8 +10099,9 @@ components:
               position:
                 type: integer
               alt_text:
-                type: string
-                nullable: true
+                type:
+                  - string
+                  - 'null'
               is_primary:
                 type: boolean
     Product:
@@ -10012,34 +10137,40 @@ components:
           description: Product description (mapped from online_description or description)
           example: Wireless noise-cancelling headphones
         category_id:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uuid
-          nullable: true
           description: Category UUID
         category_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Category display name
           example: Electronics
         subcategory_id:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uuid
-          nullable: true
           description: Subcategory UUID
         subcategory_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Subcategory display name
           example: Headphones
         brand:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Product brand
           example: Sony
         thumbnail_url:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uri
-          nullable: true
           description: Primary image URL for list views
           example: https://pub-...r2.dev/stores/.../primary-123.jpg
         media:
@@ -10060,53 +10191,64 @@ components:
               position:
                 type: integer
               alt_text:
-                type: string
-                nullable: true
+                type:
+                  - string
+                  - 'null'
               is_primary:
                 type: boolean
         product_slug:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: SEO-friendly URL slug
           example: sony-wh-1000xm4-abc123
         seo_title:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: SEO optimized title
         seo_description:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: SEO optimized description
         seo_keywords:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: SEO keywords
         featured:
-          type: boolean
-          nullable: true
+          type:
+            - boolean
+            - 'null'
           description: Whether product is featured
         featured_order:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           description: Display order for featured products
         online_category:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Merged category/subcategory string
         tags:
-          type: array
+          type:
+            - array
+            - 'null'
           items:
             type: string
-          nullable: true
           description: Product tags
         attributes:
-          type: object
+          type:
+            - object
+            - 'null'
           additionalProperties: true
-          nullable: true
           description: Product-level attributes (not variant-specific)
         shipping_info:
-          type: object
-          nullable: true
+          type:
+            - object
+            - 'null'
           description: Shipping dimensions and weight
           properties:
             weight:
@@ -10121,81 +10263,97 @@ components:
                 height:
                   type: number
         created_at:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
-          nullable: true
           description: Product creation timestamp
         updated_at:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
-          nullable: true
           description: Last update timestamp
         is_active:
-          type: boolean
-          nullable: true
+          type:
+            - boolean
+            - 'null'
           description: Whether product is active
         variant_id:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uuid
-          nullable: true
           description: Variant identifier (only present for simple products or list endpoint)
           example: cc35d16b-fca5-4faa-8699-d3d5d3521bca
         sku:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Stock Keeping Unit (only present for simple products or list endpoint)
           example: SNY-WH1000
         price:
-          type: number
-          nullable: true
+          type:
+            - number
+            - 'null'
           description: Base price in cents (only present for simple products or list endpoint)
           example: 36999
         sale_price:
-          type: number
-          nullable: true
+          type:
+            - number
+            - 'null'
           description: Sale price in cents if on sale
         selling_price:
-          type: number
-          nullable: true
+          type:
+            - number
+            - 'null'
           description: Actual customer-facing price (considers sale_price)
           example: 34999
         stock:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           description: Available stock quantity (only present for simple products or list endpoint)
           example: 40
         threshold:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           description: Low stock threshold
         last_restocked:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date
-          nullable: true
           description: Last restock date
         variant_attributes:
-          type: object
+          type:
+            - object
+            - 'null'
           additionalProperties: true
-          nullable: true
           description: Variant-specific attributes (e.g., color, size)
           example:
             color: Black
         variant_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Variant display name
         is_default:
-          type: boolean
-          nullable: true
+          type:
+            - boolean
+            - 'null'
           description: Whether this is the default variant
         total_stock:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           description: Sum of stock across all variants (only present for multi-variant products)
           example: 85
         price_range:
-          type: object
-          nullable: true
+          type:
+            - object
+            - 'null'
           description: Price range across variants using selling_price (only present for multi-variant products)
           properties:
             min:
@@ -10211,8 +10369,9 @@ components:
           description: Whether product has multiple variants
           example: true
         variant_count:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           description: Number of variants (only present for multi-variant products)
           example: 3
         display_currency:
@@ -10224,8 +10383,9 @@ components:
           description: Currency symbol
           example: €
         variants:
-          type: array
-          nullable: true
+          type:
+            - array
+            - 'null'
           description: Array of product variants (only present for multi-variant products in detail endpoints)
           items:
             $ref: '#/components/schemas/ProductVariant'
@@ -10273,9 +10433,10 @@ components:
         description:
           type: string
         image:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uri
-          nullable: true
           description: URL of the category image
         active:
           type: boolean
@@ -10301,9 +10462,10 @@ components:
         description:
           type: string
         image:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uri
-          nullable: true
           description: URL of the subcategory image
         active:
           type: boolean
@@ -10453,8 +10615,9 @@ components:
           type: string
           format: date-time
         shipping_metadata:
-          type: object
-          nullable: true
+          type:
+            - object
+            - 'null'
           description: Complete shipping calculation details for audit trail
           properties:
             fee:
@@ -10463,19 +10626,22 @@ components:
               description: Calculated shipping fee
               example: 100
             zone_name:
-              type: string
-              nullable: true
+              type:
+                - string
+                - 'null'
               description: Delivery zone name (if zone-based pricing)
               example: CBD Zone
             tier_name:
-              type: string
-              nullable: true
+              type:
+                - string
+                - 'null'
               description: Pricing tier name (if distance-based pricing)
               example: Within Nairobi
             distance_meters:
-              type: number
+              type:
+                - number
+                - 'null'
               format: float
-              nullable: true
               description: Calculated distance from store (if distance-based)
               example: 19.23
             is_free:
@@ -10583,8 +10749,9 @@ components:
           description: Product name
           example: Sony WH-1000XM4
         variant_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Variant display name
           example: Black
         variant_attributes:
@@ -10598,9 +10765,10 @@ components:
           description: Variant-specific SKU
           example: SNY-WH1002
         thumbnail_url:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uri
-          nullable: true
           description: Primary image URL for quick display
           example: https://pub-41977a...r2.dev/.../primary-image.jpg
         media:
@@ -10623,8 +10791,9 @@ components:
               position:
                 type: integer
               alt_text:
-                type: string
-                nullable: true
+                type:
+                  - string
+                  - 'null'
               is_primary:
                 type: boolean
         quantity:
@@ -10646,8 +10815,9 @@ components:
           description: unit_price × quantity
           example: 69998
         stock_available:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           description: Variant-specific stock count
           example: 10
         has_variants:
@@ -10679,8 +10849,9 @@ components:
           description: Product name
           example: Sony WH-1000XM4
         variant_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: Variant display name
           example: Blue
         variant_attributes:
@@ -10699,9 +10870,10 @@ components:
           description: Variant selling price
           example: 36999
         thumbnail_url:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uri
-          nullable: true
           description: Primary image URL for quick display
           example: https://pub-41977a...r2.dev/.../primary-image.jpg
         media:
@@ -10724,13 +10896,15 @@ components:
               position:
                 type: integer
               alt_text:
-                type: string
-                nullable: true
+                type:
+                  - string
+                  - 'null'
               is_primary:
                 type: boolean
         stock_available:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           description: Variant-specific stock count
           example: 35
         has_variants:
@@ -10932,9 +11106,10 @@ components:
         description:
           type: string
         image:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uri
-          nullable: true
           description: URL of the promotion image
         discount_value:
           type: number
@@ -11087,26 +11262,31 @@ components:
           type: string
           format: uuid
         customer_id:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         customer_name:
           type: string
         customer_email:
           type: string
         customer_phone:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         store_name:
           type: string
         store_avatar:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         order_id:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         product_id:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         subject:
           type: string
         thread_type:
@@ -11185,11 +11365,13 @@ components:
             - store
             - system
         sender_id:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         sender_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         attachments:
           type: array
           items:
@@ -11204,21 +11386,24 @@ components:
             - read
             - failed
         read_at:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
-          nullable: true
         is_edited:
           type: boolean
         is_deleted:
           type: boolean
         edited_at:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
-          nullable: true
         deleted_at:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
-          nullable: true
         created_at:
           type: string
           format: date-time
@@ -11249,9 +11434,10 @@ components:
           example: 100
           description: Delivery fee for this tier
         free_delivery_threshold:
-          type: number
+          type:
+            - number
+            - 'null'
           format: float
-          nullable: true
           example: 100000
           description: Minimum order amount for free delivery (null = no free delivery)
         is_active:
@@ -11276,9 +11462,10 @@ components:
           example: 150
           description: Delivery fee for this zone
         free_delivery_threshold:
-          type: number
+          type:
+            - number
+            - 'null'
           format: float
-          nullable: true
           example: 2000
           description: Minimum order amount for free delivery (null = no free delivery)
         is_active:
@@ -11304,19 +11491,22 @@ components:
           example: 100
           description: Calculated delivery fee
         zone_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           example: null
           description: Name of delivery zone if customer is in a zone
         tier_name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           example: Within Nairobi
           description: Name of pricing tier if distance-based pricing was applied
         distance_meters:
-          type: number
+          type:
+            - number
+            - 'null'
           format: float
-          nullable: true
           example: 29556.31
           description: Distance from store to customer in meters (null if zone-based)
         is_free:
@@ -11380,13 +11570,15 @@ components:
           type: object
           example: {}
         last_success_at:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
-          nullable: true
         last_failure_at:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
-          nullable: true
         created_at:
           type: string
           format: date-time
@@ -11403,8 +11595,9 @@ components:
           type: boolean
           example: false
         next_cursor:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           example: null
     WebhookEndpointWithSecret:
       allOf:
@@ -11479,16 +11672,19 @@ components:
           type: integer
           example: 1
         status_code:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           example: 200
         response_body:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
           description: First 1024 characters of the endpoint's response body
         latency_ms:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           example: 143
         success:
           type: boolean
