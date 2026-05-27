@@ -8,6 +8,85 @@ import type { BaseHttpRequest } from '../core/BaseHttpRequest';
 export class OrdersService {
     constructor(public readonly httpRequest: BaseHttpRequest) {}
     /**
+     * List orders
+     * Retrieve a paginated list of orders for the store, newest first.
+     *
+     * The list view returns order headers **without line items** for efficiency —
+     * fetch `GET /v1/orders/{id}` for the full order including its items.
+     *
+     * **Key Type Support:**
+     * - ✅ Secret keys (full access)
+     * - ❌ Publishable keys (forbidden — returns 403)
+     *
+     * Supports cursor pagination (`limit` + `cursor`) and optional filters by
+     * `payment_status`, `order_status`, and `customer_id`.
+     *
+     * @returns any Paginated list of orders (newest first)
+     * @throws ApiError
+     */
+    public listOrders({
+        limit = 50,
+        cursor,
+        paymentStatus,
+        orderStatus,
+        customerId,
+        fields,
+    }: {
+        /**
+         * Maximum number of orders to return (1–200, default 50)
+         */
+        limit?: number,
+        /**
+         * Opaque pagination cursor returned as `pagination.next_cursor` from a prior call
+         */
+        cursor?: string,
+        /**
+         * Filter by payment status
+         */
+        paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded',
+        /**
+         * Filter by order fulfillment status
+         */
+        orderStatus?: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled',
+        /**
+         * Filter to orders for a specific customer
+         */
+        customerId?: string,
+        /**
+         * Comma-separated list of fields to include per order. Same allowed fields
+         * as `GET /v1/orders/{id}` (excluding `items`, which is not returned in list view).
+         *
+         */
+        fields?: string,
+    }): CancelablePromise<{
+        orders?: Array<Order>;
+        pagination?: {
+            limit?: number;
+            next_cursor?: string | null;
+            has_more?: boolean;
+        };
+    }> {
+        return this.httpRequest.request({
+            method: 'GET',
+            url: '/v1/orders',
+            query: {
+                'limit': limit,
+                'cursor': cursor,
+                'payment_status': paymentStatus,
+                'order_status': orderStatus,
+                'customer_id': customerId,
+                'fields': fields,
+            },
+            errors: {
+                400: `Invalid request - malformed data or missing required fields`,
+                401: `Authentication failed - invalid or missing API key`,
+                403: `Insufficient permissions - operation requires secret key`,
+                429: `Rate limit exceeded`,
+                500: `Internal server error`,
+            },
+        });
+    }
+    /**
      * Create order
      * Create a new order with HMAC signature verification and idempotency protection.
      *
@@ -145,7 +224,7 @@ export class OrdersService {
                 /**
                  * Product variant options (e.g., color, size)
                  */
-                product_options?: Record<string, any> | null;
+                product_options?: any | null;
             }>;
             /**
              * Payment method identifier (required)
@@ -198,41 +277,15 @@ export class OrdersService {
             /**
              * Shipping calculation details from /v1/shipping/calculate for audit trail
              */
-            shipping_metadata?: {
-                fee?: number;
-                zone_name?: string | null;
-                tier_name?: string | null;
-                distance_meters?: number | null;
-                is_free?: boolean;
-                reason?: string;
-                applied_rule?: 'zone' | 'distance' | 'default';
-            } | null;
+            shipping_metadata?: any | null;
             /**
              * Optional gift card to redeem towards this order
              */
-            gift_card_redemption?: {
-                /**
-                 * Gift card code to redeem
-                 */
-                code: string;
-                /**
-                 * Amount to redeem from the gift card
-                 */
-                amount: number;
-            } | null;
+            gift_card_redemption?: any | null;
             /**
              * Promotion usages applied to this order (tracked when payment_status is paid)
              */
-            promotion_usages?: Array<{
-                /**
-                 * Promotion ID that was applied
-                 */
-                promotion_id: number;
-                /**
-                 * Discount amount attributed to this promotion
-                 */
-                discount_amount: number;
-            }> | null;
+            promotion_usages?: any[] | null;
         },
     }): CancelablePromise<(Order & {
         /**

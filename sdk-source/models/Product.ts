@@ -2,7 +2,6 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ProductVariant } from './ProductVariant';
 /**
  * Represents a product in the catalog. Response structure varies based on endpoint and variant configuration:
  *
@@ -100,22 +99,15 @@ export type Product = {
     /**
      * Product tags
      */
-    tags?: Array<string> | null;
+    tags?: any[] | null;
     /**
      * Product-level attributes (not variant-specific)
      */
-    attributes?: Record<string, any> | null;
+    attributes?: any | null;
     /**
      * Shipping dimensions and weight
      */
-    shipping_info?: {
-        weight?: number;
-        dimensions?: {
-            length?: number;
-            width?: number;
-            height?: number;
-        };
-    } | null;
+    shipping_info?: any | null;
     /**
      * Product creation timestamp
      */
@@ -163,7 +155,7 @@ export type Product = {
     /**
      * Variant-specific attributes (e.g., color, size)
      */
-    variant_attributes?: Record<string, any> | null;
+    variant_attributes?: any | null;
     /**
      * Variant display name
      */
@@ -179,16 +171,7 @@ export type Product = {
     /**
      * Price range across variants using selling_price (only present for multi-variant products)
      */
-    price_range?: {
-        /**
-         * Minimum selling price in cents
-         */
-        min?: number;
-        /**
-         * Maximum selling price in cents
-         */
-        max?: number;
-    } | null;
+    price_range?: any | null;
     /**
      * Whether product has multiple variants
      */
@@ -208,6 +191,6 @@ export type Product = {
     /**
      * Array of product variants (only present for multi-variant products in detail endpoints)
      */
-    variants?: Array<ProductVariant> | null;
+    variants?: any[] | null;
 };
 

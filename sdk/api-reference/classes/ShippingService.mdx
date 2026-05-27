@@ -78,7 +78,7 @@ Tybrite uses a priority-based logic to determine the shipping fee:
 ---
 
 <Note>
-  **Input Flexibility:** `calculateShipping` accepts **either** `{ latitude, longitude, order_total }` **or** `{ place_name, country_code?, order_total }`. When `place_name` is supplied, the worker geocodes via Nominatim. The response shape is identical regardless of input mode: `{ fee, zone_name, tier_name, distance_meters, is_free, reason, applied_rule, coordinates }`.
+  **Input Flexibility:** `calculateShipping` accepts **either** `{ latitude, longitude, order_total }` **or** `{ place_name, country_code?, order_total }`. When you supply a `place_name`, Galactic Core resolves it to coordinates for you. The response shape is identical regardless of input mode: `{ fee, zone_name, tier_name, distance_meters, is_free, reason, applied_rule, coordinates }`.
 </Note>
 
 ## Response Codes

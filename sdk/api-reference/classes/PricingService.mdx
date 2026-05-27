@@ -3,18 +3,18 @@ title: "Dynamic Pricing"
 description: "Reference for the PricingService class in the Tybrite SDK."
 ---
 
-The `PricingService` class (accessed via `client.pricing`) provides high-performance price calculations using a **Service Binding Architecture**. It acts as a single source of truth, enriching product data with real-time regional discounts, tax adjustments, and multi-currency conversion.
+The `PricingService` class (accessed via `client.pricing`) provides high-performance price calculations. It acts as a single source of truth, enriching product data with real-time regional discounts, tax adjustments, and multi-currency conversion.
 
 <Note>
-  **Customer Segment & Tier are server-derived.** `customer_segment` and `customer_tier` are **not** accepted as request parameters — they are resolved server-side from `customer_id` using internal RFM/loyalty data. Sending them as parameters has no effect. To apply segment-specific pricing, pass `customerId` only.
+  **Customer Segment & Tier are determined automatically.** `customer_segment` and `customer_tier` are **not** accepted as request parameters — they are resolved automatically from the `customer_id` you provide. Sending them as parameters has no effect. To apply segment-specific pricing, pass `customerId` only.
 </Note>
 
 ## Integration Highlights
 
-*   **Service Binding**: Leverages the Products API directly for consistent data structures.
-*   **Media Integration**: Automatically proxies and whitelists `thumbnail_url` and `media` (including variant-level media) from the Products API.
+*   **Consistent with the catalog**: Returns the same product and variant data structures as the Products API, so you can use one shape across discovery and checkout.
+*   **Media included**: Returns `thumbnail_url` and `media` (including variant-level media) alongside pricing.
 *   **Multi-Variant Support**: Automatically calculates prices, discounts, and breakdowns for every variant in a product.
-*   **Geographic Detection**: Accurate currency retrieval using PostGIS boundary matching with a 100% success rate across global locations.
+*   **Geographic Detection**: Accurate currency selection based on the customer's location, worldwide.
 
 ---
 

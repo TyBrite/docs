@@ -36,36 +36,7 @@ export type Order = {
     /**
      * Complete shipping calculation details for audit trail
      */
-    shipping_metadata?: {
-        /**
-         * Calculated shipping fee
-         */
-        fee?: number;
-        /**
-         * Delivery zone name (if zone-based pricing)
-         */
-        zone_name?: string | null;
-        /**
-         * Pricing tier name (if distance-based pricing)
-         */
-        tier_name?: string | null;
-        /**
-         * Calculated distance from store (if distance-based)
-         */
-        distance_meters?: number | null;
-        /**
-         * Whether free delivery was applied
-         */
-        is_free?: boolean;
-        /**
-         * Human-readable explanation of fee
-         */
-        reason?: string;
-        /**
-         * Which pricing system was applied
-         */
-        applied_rule?: Order.applied_rule;
-    } | null;
+    shipping_metadata?: any | null;
 };
 export namespace Order {
     export enum order_status {
@@ -91,14 +62,6 @@ export namespace Order {
         AIRTEL = 'airtel',
         CASH = 'cash',
         BANK_TRANSFER = 'bank_transfer',
-    }
-    /**
-     * Which pricing system was applied
-     */
-    export enum applied_rule {
-        ZONE = 'zone',
-        DISTANCE = 'distance',
-        DEFAULT = 'default',
     }
 }
 

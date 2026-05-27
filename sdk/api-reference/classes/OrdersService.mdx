@@ -51,6 +51,80 @@ const order = await client.orders.createOrder({
 
 ## Core Operations
 
+### `listOrders`
+
+Retrieve a paginated list of your store's orders, newest first. Use this to build order dashboards, fulfillment queues, or customer order history — anywhere you need to browse orders without already knowing an order ID.
+
+The list returns order summaries **without line items** (to keep responses fast). When you need the full order including its items, call [`getOrder`](#getorder) with the order's `id`.
+
+<Warning>
+  Reading orders requires a **Secret Key**. Publishable keys receive `403 Forbidden`. Order data contains customer details, addresses, and payment status — it must never be exposed to browsers.
+</Warning>
+
+**Parameters** (all optional):
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `limit` | number | How many orders to return per page (1–200, default 50). |
+| `cursor` | string | Pass the `next_cursor` from a previous response to fetch the next page. |
+| `paymentStatus` | string | Filter by payment status: `pending`, `paid`, `failed`, or `refunded`. |
+| `orderStatus` | string | Filter by fulfillment status: `pending`, `processing`, `shipped`, `delivered`, or `cancelled`. |
+| `customerId` | string | Return only orders belonging to a specific customer. |
+| `fields` | string | Comma-separated list of fields to return per order (e.g. `order_number,total_amount,created_at`). |
+
+```typescript
+const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+
+// First page — most recent 20 paid orders
+const page = await client.orders.listOrders({
+  limit: 20,
+  paymentStatus: 'paid',
+});
+
+console.log(page.orders);            // array of order summaries
+console.log(page.pagination.has_more); // true if more pages exist
+```
+
+**Paging through all results** — keep calling with the returned cursor until `has_more` is `false`:
+
+```typescript
+let cursor: string | undefined = undefined;
+
+do {
+  const page = await client.orders.listOrders({ limit: 50, cursor });
+  for (const order of page.orders ?? []) {
+    // process each order
+  }
+  cursor = page.pagination?.next_cursor ?? undefined;
+} while (cursor);
+```
+
+**Response shape:**
+
+```typescript
+{
+  orders: [
+    {
+      id: 'order-uuid',
+      order_number: 'ORD-1771523999910',
+      customer_name: 'John Doe',
+      payment_status: 'paid',
+      order_status: 'processing',
+      total_amount: 2520,
+      created_at: '2026-02-19T10:30:00Z'
+      // ...other order header fields (no `items`)
+    }
+  ],
+  pagination: {
+    limit: 50,
+    next_cursor: 'eyJ...' | null, // pass this back as `cursor` for the next page
+    has_more: false
+  }
+}
+```
+
+---
+
 ### `createOrder`
 
 Place a new order. Returns **`201 Created`** (semantic create) with the new order resource. Requires verified signatures and idempotency protection.
@@ -58,7 +132,7 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
 *   **Required body fields**: `total_amount`, `payment_method`, and a non-empty `items` array. Each item requires `product_id`.
 *   **Optional**: `customer_id` (guest checkout is supported), `billing_address`, `shipping_address` (both nullable), `variant_id` per item (defaults to the product's primary variant), and `gift_card_redemption`.
 *   **Replay Protection**: The `X-Timestamp` must be within **5 minutes** of the server time.
-*   **Post-processing**: When `payment_status: "paid"` is set, the worker runs gift card redemption, stock reduction, and customer metrics updates. See [Post-Processing Warnings](#post-processing-warnings) below — the response may include a `post_processing_warnings` array that clients **must** check.
+*   **Post-processing**: When `payment_status: "paid"` is set, Galactic Core applies gift card redemption, stock reduction, and customer metrics updates. See [Post-Processing Warnings](#post-processing-warnings) below — the response may include a `post_processing_warnings` array that you **must** check.
 
 ```typescript
 const order = await client.orders.createOrder({
@@ -83,13 +157,13 @@ const order = await client.orders.createOrder({
 
 ## Post-Processing Warnings
 
-When an order is created with `payment_status: "paid"`, the worker runs post-processing in this order:
+When an order is created with `payment_status: "paid"`, Galactic Core applies these follow-up steps:
 
 1.  **Gift card redemption** (if `gift_card_redemption` provided)
-2.  **Stock reduction** per item via atomic RPC
-3.  **Customer metrics** update via atomic RPC (no lost-update races)
+2.  **Stock reduction** per item
+3.  **Customer metrics** update (purchase count and lifetime value)
 
-If any step fails, the order is still recorded — but the response includes a `post_processing_warnings` array AND the order's `notes` field is stamped with a tag (`[GIFT_CARD_REDEMPTION_FAILED]` or `[STOCK_REDUCTION_PARTIAL]`). **Clients MUST check this array** and route failures to a support or retry flow.
+If any step fails, the order is still recorded — but the response includes a `post_processing_warnings` array. **You MUST check this array** and route any failures to a support or retry flow.
 
 ### Response shape
 
@@ -124,15 +198,15 @@ if (order.post_processing_warnings?.length) {
       await flagForRetry(order.id, warning);
     }
     if (warning.stage === 'stock_reduction') {
-      // Notify ops; inventory needs manual reconciliation
-      console.warn('Stock reconciliation needed for order', order.id);
+      // Notify ops; inventory needs manual review
+      console.warn('Stock review needed for order', order.id);
     }
   }
 }
 ```
 
 <Note>
-  Customer metrics (`total_purchases`, lifetime value) are incremented via the atomic `increment_customer_purchase_stats` RPC. This eliminates lost-update races under concurrent order load, so purchase counts remain correct at high throughput. This is transparent to clients.
+  Customer metrics (`total_purchases`, lifetime value) update automatically when an order is paid. Counts stay accurate even when many orders for the same customer are placed at once — no action needed on your side.
 </Note>
 
 ---
@@ -187,7 +261,7 @@ const updated = await client.orders.updateOrder({
 Transitioning an order to the **paid** state automatically triggers:
 1.  **Inventory Sync**: Live stock reduction across variants.
 2.  **Accounting Engine**: Double-entry bookkeeping entry creation.
-3.  **LTV Update**: Increments customer lifetime value and purchase counts (via atomic RPC — safe under concurrent load).
+3.  **LTV Update**: Increments customer lifetime value and purchase counts (accurate even under heavy concurrent order load).
 4.  **Promoter Logic**: Marks loyalty points and promotion usage as finalized.
 
 ---
@@ -196,13 +270,13 @@ Transitioning an order to the **paid** state automatically triggers:
 
 | Code | Endpoint | Meaning |
 | :--- | :--- | :--- |
+| `200` | `GET /v1/orders`, `GET /v1/orders/{id}`, `PATCH /v1/orders/{id}` | Success. `GET /v1/orders` returns a paginated list; `PATCH` returns the updated order. |
 | `201` | `POST /v1/orders` | Order created. Response includes `post_processing_warnings?` if any post-paid step failed. |
-| `200` | `GET /v1/orders/{id}`, `PATCH /v1/orders/{id}` | Success. `PATCH` returns the updated order. |
-| `400` | All | Invalid request body — missing `total_amount` / `payment_method` / `items`, per-item missing `product_id`, or invalid tax/subtotal for a tax-exclusive store. |
+| `400` | All | Invalid request — bad pagination/filter value, missing `total_amount` / `payment_method` / `items`, per-item missing `product_id`, or invalid tax/subtotal for a tax-exclusive store. |
 | `401` | All | Invalid API key, or invalid / expired HMAC signature. |
 | `403` | Read & write | Publishable key used on an order endpoint. Orders are secret-key only. |
-| `404` | All | Order not found, or a `product_id` referenced in `items` not found. |
+| `404` | `GET /v1/orders/{id}`, `PATCH`, `POST` | Order not found, or a `product_id` referenced in `items` not found. |
 | `409` | `POST /v1/orders` | Idempotency key reused with a different payload. |
-| `429` | `POST` / `PATCH` | Rate limit exceeded (100/hr per key). |
+| `429` | All | Rate limit exceeded. |
 | `500` | All | Server error. |
 

@@ -2593,6 +2593,134 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/orders:
+    get:
+      operationId: listOrders
+      tags:
+        - Orders
+      summary: List orders
+      description: |
+        Retrieve a paginated list of orders for the store, newest first.
+
+        The list view returns order headers **without line items** for efficiency —
+        fetch `GET /v1/orders/{id}` for the full order including its items.
+
+        **Key Type Support:**
+        - ✅ Secret keys (full access)
+        - ❌ Publishable keys (forbidden — returns 403)
+
+        Supports cursor pagination (`limit` + `cursor`) and optional filters by
+        `payment_status`, `order_status`, and `customer_id`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of orders to return (1–200, default 50)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          example: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination cursor returned as `pagination.next_cursor` from a prior call
+          schema:
+            type: string
+          example: MjAyNi0wNS0yN1QxMDozMDowMFo=
+        - name: payment_status
+          in: query
+          required: false
+          description: Filter by payment status
+          schema:
+            type: string
+            enum:
+              - pending
+              - paid
+              - failed
+              - refunded
+          example: paid
+        - name: order_status
+          in: query
+          required: false
+          description: Filter by order fulfillment status
+          schema:
+            type: string
+            enum:
+              - pending
+              - processing
+              - shipped
+              - delivered
+              - cancelled
+          example: processing
+        - name: customer_id
+          in: query
+          required: false
+          description: Filter to orders for a specific customer
+          schema:
+            type: string
+            format: uuid
+          example: c320094c-eb65-4879-804c-83d2e1dd7f99
+        - name: fields
+          in: query
+          required: false
+          description: |
+            Comma-separated list of fields to include per order. Same allowed fields
+            as `GET /v1/orders/{id}` (excluding `items`, which is not returned in list view).
+          schema:
+            type: string
+          example: order_number,order_status,total_amount,created_at
+      responses:
+        '200':
+          description: Paginated list of orders (newest first)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                        example: 50
+                      next_cursor:
+                        type:
+                          - string
+                          - 'null'
+                        example: MjAyNi0wNS0yN1QxMDozMDowMFo=
+                      has_more:
+                        type: boolean
+                        example: false
+              example:
+                orders:
+                  - id: 880e8400-e29b-41d4-a716-446655440003
+                    order_number: ORD-1771523999910
+                    customer_name: John Doe
+                    payment_status: paid
+                    order_status: processing
+                    total_amount: 2520
+                    created_at: '2026-02-19T10:30:00Z'
+                pagination:
+                  limit: 50
+                  next_cursor: null
+                  has_more: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
       operationId: createOrder
       tags:

@@ -827,7 +827,7 @@ export class ProductsService {
                                                                                         /**
                                                                                          * Smart/automated collection rules (when collection_type is automated or smart)
                                                                                          */
-                                                                                        rules?: Record<string, any> | null;
+                                                                                        rules?: any | null;
                                                                                     })> {
                                                                                         return this.httpRequest.request({
                                                                                             method: 'GET',
@@ -870,28 +870,7 @@ export class ProductsService {
                                                                                              * catalog Product shape returned by `/v1/products`).
                                                                                              *
                                                                                              */
-                                                                                            product?: {
-                                                                                                id?: string;
-                                                                                                inventory_id?: string | null;
-                                                                                                online_name?: string | null;
-                                                                                                online_description?: string | null;
-                                                                                                online_images?: Array<string> | null;
-                                                                                                online_price?: number | null;
-                                                                                                online_sale_price?: number | null;
-                                                                                                online_stock?: number | null;
-                                                                                                is_online_enabled?: boolean | null;
-                                                                                                seo_title?: string | null;
-                                                                                                seo_description?: string | null;
-                                                                                                seo_keywords?: string | null;
-                                                                                                featured?: boolean | null;
-                                                                                                featured_order?: number | null;
-                                                                                                online_category?: string | null;
-                                                                                                tags?: Array<string> | null;
-                                                                                                attributes?: Record<string, any> | null;
-                                                                                                shipping_info?: Record<string, any> | null;
-                                                                                                created_at?: string | null;
-                                                                                                updated_at?: string | null;
-                                                                                            } | null;
+                                                                                            product?: any | null;
                                                                                         }>;
                                                                                     }> {
                                                                                         return this.httpRequest.request({
