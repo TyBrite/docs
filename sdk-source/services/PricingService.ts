@@ -232,12 +232,7 @@ export class PricingService {
                 /**
                  * Currency conversion details (null if no conversion)
                  */
-                currency_conversion?: {
-                    from_currency?: string;
-                    to_currency?: string;
-                    rate?: number;
-                    converted_amount?: number;
-                } | null;
+                currency_conversion?: any | null;
             };
         }>;
         /**
@@ -478,23 +473,7 @@ export class PricingService {
         /**
          * Detailed price calculation (only for simple products)
          */
-        price_breakdown?: {
-            base_price?: number;
-            discounts?: Array<{
-                rule_id?: string;
-                rule_name?: string;
-                type?: string;
-                value?: number;
-                amount?: number;
-            }>;
-            final_price?: number;
-            currency_conversion?: {
-                from_currency?: string;
-                to_currency?: string;
-                rate?: number;
-                converted_amount?: number;
-            } | null;
-        } | null;
+        price_breakdown?: any | null;
         /**
          * Sum of stock across all variants (only for multi-variant)
          */
@@ -502,16 +481,7 @@ export class PricingService {
         /**
          * Price range calculated from variant display_prices (only for multi-variant)
          */
-        price_range?: {
-            /**
-             * Minimum display price across variants
-             */
-            min?: number;
-            /**
-             * Maximum display price across variants
-             */
-            max?: number;
-        } | null;
+        price_range?: any | null;
         /**
          * Whether product has multiple variants
          */
@@ -523,57 +493,7 @@ export class PricingService {
         /**
          * Array of variants with pricing (only for multi-variant)
          */
-        variants?: Array<{
-            variant_id?: string;
-            sku?: string;
-            stock?: number;
-            variant_attributes?: Record<string, any>;
-            variant_name?: string | null;
-            is_default?: boolean;
-            /**
-             * Array of variant-specific media objects
-             */
-            media?: Array<{
-                id?: string;
-                url?: string;
-                type?: string;
-                position?: number;
-                alt_text?: string | null;
-                is_primary?: boolean;
-            }>;
-            /**
-             * Price in store's base currency
-             */
-            base_price?: number;
-            /**
-             * Price after discounts before conversion
-             */
-            resolved_price?: number;
-            /**
-             * Final price in customer's currency
-             */
-            display_price?: number;
-            /**
-             * Detailed price calculation for this variant
-             */
-            price_breakdown?: {
-                base_price?: number;
-                discounts?: Array<{
-                    rule_id?: string;
-                    rule_name?: string;
-                    type?: string;
-                    value?: number;
-                    amount?: number;
-                }>;
-                final_price?: number;
-                currency_conversion?: {
-                    from_currency?: string;
-                    to_currency?: string;
-                    rate?: number;
-                    converted_amount?: number;
-                } | null;
-            };
-        }> | null;
+        variants?: any[] | null;
         /**
          * Store's base currency code
          */
@@ -814,23 +734,7 @@ export class PricingService {
         /**
          * Detailed price calculation (only for simple products)
          */
-        price_breakdown?: {
-            base_price?: number;
-            discounts?: Array<{
-                rule_id?: string;
-                rule_name?: string;
-                type?: string;
-                value?: number;
-                amount?: number;
-            }>;
-            final_price?: number;
-            currency_conversion?: {
-                from_currency?: string;
-                to_currency?: string;
-                rate?: number;
-                converted_amount?: number;
-            } | null;
-        } | null;
+        price_breakdown?: any | null;
         /**
          * Sum of stock across all variants (only for multi-variant)
          */
@@ -838,16 +742,7 @@ export class PricingService {
         /**
          * Price range calculated from variant display_prices (only for multi-variant)
          */
-        price_range?: {
-            /**
-             * Minimum display price across variants
-             */
-            min?: number;
-            /**
-             * Maximum display price across variants
-             */
-            max?: number;
-        } | null;
+        price_range?: any | null;
         /**
          * Whether product has multiple variants
          */
@@ -859,57 +754,7 @@ export class PricingService {
         /**
          * Array of variants with pricing (only for multi-variant)
          */
-        variants?: Array<{
-            variant_id?: string;
-            sku?: string;
-            stock?: number;
-            variant_attributes?: Record<string, any>;
-            variant_name?: string | null;
-            is_default?: boolean;
-            /**
-             * Array of variant-specific media objects
-             */
-            media?: Array<{
-                id?: string;
-                url?: string;
-                type?: string;
-                position?: number;
-                alt_text?: string | null;
-                is_primary?: boolean;
-            }>;
-            /**
-             * Price in store's base currency
-             */
-            base_price?: number;
-            /**
-             * Price after discounts before conversion
-             */
-            resolved_price?: number;
-            /**
-             * Final price in customer's currency
-             */
-            display_price?: number;
-            /**
-             * Detailed price calculation for this variant
-             */
-            price_breakdown?: {
-                base_price?: number;
-                discounts?: Array<{
-                    rule_id?: string;
-                    rule_name?: string;
-                    type?: string;
-                    value?: number;
-                    amount?: number;
-                }>;
-                final_price?: number;
-                currency_conversion?: {
-                    from_currency?: string;
-                    to_currency?: string;
-                    rate?: number;
-                    converted_amount?: number;
-                } | null;
-            };
-        }> | null;
+        variants?: any[] | null;
         /**
          * Store's base currency code
          */

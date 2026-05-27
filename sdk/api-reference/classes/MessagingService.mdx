@@ -7,13 +7,13 @@ The `MessagingService` class (accessed via `client.messaging`) handles real-time
 
 ## Security Model
 
-Messaging threads carry sensitive customer PII — order inquiries, complaints, contact details, and uploaded attachments. To prevent one customer from reading or mutating another customer's conversation, **every customer-facing messaging endpoint requires a signed customer session token** (`xAuthToken`) issued by `client.auth`. The gateway enforces ownership through one of three layered gates:
+Messaging threads carry sensitive customer information — order inquiries, complaints, contact details, and uploaded attachments. To prevent one customer from reading or changing another customer's conversation, **every customer-facing messaging endpoint requires a signed customer session token** (`xAuthToken`) issued by `client.auth`. Ownership is enforced on every call:
 
-| Gate | Applied To | Check |
-| :--- | :--- | :--- |
-| `gateByCustomerId` | List / create operations | The `customer_id` supplied in the query or request body must match the `customer_id` claim on the bearer token. |
-| `gateByThreadId` | Thread-scoped reads & writes | The worker resolves `thread.customer_id` from the database, then asserts it equals the token's `customer_id`. Applied to `getThread`, `updateThread`, `getThreadMessages`, `sendMessage`, and `markThreadRead`. |
-| `gateByMessageId` | Per-message edit & delete | The worker resolves the target message and asserts `sender_type = 'customer'` **and** `sender_id = auth.customerId`. A customer can only edit or delete messages they personally authored. |
+| Applies to | Rule |
+| :--- | :--- |
+| List / create operations | The `customer_id` you supply in the query or request body must match the `customer_id` on your session token. |
+| Thread reads & writes | The thread must belong to the customer on the session token. Applies to `getThread`, `updateThread`, `getThreadMessages`, `sendMessage`, and `markThreadRead`. |
+| Per-message edit & delete | You can only edit or delete messages the customer personally authored — not store or system messages. |
 
 Obtain a customer session via `client.auth.login(...)` or `client.auth.verifyOtp(...)` and pass `customerSession.access_token` as `xAuthToken` on every call below.
 
@@ -71,7 +71,7 @@ const thread = await client.messaging.getThread({
 });
 ```
 
-<Note>Gated by `gateByThreadId` — the worker resolves `thread.customer_id` and asserts it equals the token's `customer_id` claim.</Note>
+<Note>The thread must belong to the customer on your session token, otherwise the request is rejected.</Note>
 
 ---
 
@@ -169,7 +169,7 @@ await client.messaging.editMessage({
 });
 ```
 
-<Note>Gated by `gateByMessageId` — the worker asserts `message.sender_type = 'customer'` **and** `message.sender_id = auth.customerId`. Customers cannot edit store or system messages.</Note>
+<Note>You can only edit or delete messages the customer personally authored. Store and system messages cannot be modified.</Note>
 
 ---
 

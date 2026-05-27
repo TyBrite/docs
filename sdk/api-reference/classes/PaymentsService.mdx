@@ -175,7 +175,7 @@ const result = await client.payments.verifyPayment({
 
 #### Response shape (per-provider `oneOf`)
 
-The response shape depends on the `provider` field — the worker returns one of four variants:
+The response shape depends on the `provider` field — one of four variants is returned:
 
 <CodeGroup>
 
@@ -275,7 +275,7 @@ The response shape depends on the `provider` field — the worker returns one of
 | `403` | Publishable key supplied — initialize requires a secret key. |
 | `404` | `order_id` provided but no matching order exists. |
 | `429` | Rate limit exceeded (100 / hour per API key on initialize). |
-| `500` | Upstream provider error or worker configuration error. |
+| `500` | Upstream payment provider error or server configuration error. |
 
 #### `verifyPayment`
 
