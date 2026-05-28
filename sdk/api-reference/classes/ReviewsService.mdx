@@ -1,0 +1,228 @@
+---
+title: "Reviews"
+description: "Reference for the ReviewsService class in the Tybrite SDK."
+---
+
+The `ReviewsService` class (accessed via `client.reviews`) manages product reviews and ratings — submitting, listing, moderating, and surfacing helpfulness votes.
+
+## Overview
+
+Reviews follow a moderation lifecycle:
+
+1. A logged-in customer submits a review. It starts as `pending`.
+2. The merchant approves or rejects it from their dashboard.
+3. Once approved, the review appears in public listing results.
+
+**Key type behavior:**
+- **Publishable keys** — list and get approved reviews, submit reviews (with a customer session token), mark reviews helpful.
+- **Secret keys** — all of the above, plus view pending/rejected reviews, moderate submissions, and delete any review.
+
+---
+
+## `listReviews`
+
+Returns reviews for a product. Includes an aggregate `summary` block (average rating and star distribution) regardless of the status filter applied.
+
+```typescript
+const { reviews, pagination, summary } = await client.reviews.listReviews({
+  productId: 'd8cea277-9bb6-4942-b9e9-2f2ac351509f',
+  status: 'approved',
+  sort: 'newest',
+  limit: 20,
+});
+
+console.log(`${summary.total_reviews} reviews, avg ${summary.average_rating}★`);
+```
+
+**Parameters**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `productId` | `string` | Yes | UUID of the product to list reviews for. |
+| `variantId` | `string` | No | Filter to reviews mentioning a specific variant. |
+| `status` | `'approved' \| 'pending' \| 'rejected' \| 'all'` | No | Default: `'approved'`. Publishable keys always see only approved reviews regardless of this value. |
+| `rating` | `number` | No | Filter to reviews with this exact star rating (1–5). |
+| `sort` | `'newest' \| 'oldest' \| 'highest' \| 'lowest'` | No | Default: `'newest'`. |
+| `limit` | `number` | No | Page size, 1–100. Default: 20. |
+| `cursor` | `string` | No | Pagination cursor from the previous response's `pagination.next_cursor`. |
+
+**Response shape**
+
+```typescript
+{
+  reviews: Review[];
+  pagination: {
+    limit: number;
+    has_more: boolean;
+    next_cursor: string | null;
+  };
+  summary: {
+    total_reviews: number;
+    average_rating: number;
+    five_star: number;
+    four_star: number;
+    three_star: number;
+    two_star: number;
+    one_star: number;
+    verified_count: number;
+  };
+}
+```
+
+---
+
+## `getReview`
+
+Returns a single review by ID. Publishable keys receive `404` for pending or rejected reviews — only approved reviews are visible.
+
+```typescript
+const { review } = await client.reviews.getReview({
+  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+});
+```
+
+---
+
+## `submitReview`
+
+Submits a review on behalf of a logged-in customer. Requires both your API key and a customer session token.
+
+<Note>
+  Pass the customer's session token (obtained from `POST /v1/auth/login`) in the `xAuthToken` parameter. Reviews start as `pending` and must be approved before they appear publicly.
+</Note>
+
+```typescript
+const { review } = await client.reviews.submitReview({
+  xAuthToken: customerSessionToken,
+  requestBody: {
+    product_id: 'd8cea277-9bb6-4942-b9e9-2f2ac351509f',
+    rating: 5,
+    title: 'Absolutely love it',
+    body: "Best purchase I've made this year. Quality is outstanding.",
+    order_id: '770a0622-0401-63f6-c938-557766551111', // enables verified_purchase
+  },
+});
+// review.status === 'pending' — awaiting merchant approval
+```
+
+**Parameters**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `xAuthToken` | `string` | Yes | Customer session JWT from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. |
+| `requestBody.product_id` | `string` | Yes | UUID of the product being reviewed. |
+| `requestBody.rating` | `number` | Yes | Star rating 1–5. |
+| `requestBody.variant_id` | `string` | No | Specific variant being reviewed. |
+| `requestBody.order_id` | `string` | No | Order UUID — if it belongs to this customer, the review is marked `verified_purchase: true`. |
+| `requestBody.title` | `string` | No | Short headline for the review. |
+| `requestBody.body` | `string` | No | Full review text. |
+| `requestBody.media_urls` | `string[]` | No | Image or video URLs attached to the review. |
+
+**Duplicate prevention:** A customer may only have one non-rejected review per product. A second submission returns `409 Conflict`.
+
+---
+
+## `moderateReview`
+
+Approves or rejects a pending review. Secret key required.
+
+```typescript
+// Approve
+await client.reviews.moderateReview({
+  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+  requestBody: { status: 'approved' },
+});
+
+// Reject with a reason
+await client.reviews.moderateReview({
+  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+  requestBody: {
+    status: 'rejected',
+    rejection_reason: 'Review contains inappropriate language.',
+  },
+});
+```
+
+Approving clears any previous `rejection_reason`. Providing `rejection_reason` when approving has no effect.
+
+---
+
+## `deleteReview`
+
+Deletes a review permanently.
+
+- **Secret key** — can delete any review belonging to the store.
+- **Publishable key + customer token** — can delete only the authenticated customer's own review.
+
+```typescript
+// Merchant deletes any review (secret key)
+await client.reviews.deleteReview({
+  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+});
+
+// Customer deletes their own review (publishable key)
+await client.reviews.deleteReview({
+  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+  xAuthToken: customerSessionToken,
+});
+```
+
+---
+
+## `markReviewHelpful`
+
+Increments the `helpful_count` on an approved review. Use this to surface the most useful reviews in your storefront UI.
+
+```typescript
+const { helpful_count } = await client.reviews.markReviewHelpful({
+  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+});
+console.log(`${helpful_count} people found this helpful`);
+```
+
+Only approved reviews accept votes — calling this on a pending or rejected review returns `404`.
+
+No server-side deduplication is applied per customer. If you need per-customer dedup, track votes client-side (e.g. in `localStorage`) before calling this method.
+
+---
+
+## Displaying reviews on a storefront
+
+```typescript
+async function loadProductReviews(productId: string) {
+  const { reviews, pagination, summary } = await client.reviews.listReviews({
+    productId,
+    sort: 'newest',
+    limit: 10,
+  });
+
+  // Render star distribution
+  renderRatingSummary(summary);
+
+  // Render individual reviews
+  for (const review of reviews) {
+    renderReview(review);
+  }
+
+  // Load more button
+  if (pagination.has_more) {
+    return pagination.next_cursor;
+  }
+}
+```
+
+---
+
+## Response codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Success |
+| `201` | Review submitted (pending moderation) |
+| `400` | Invalid request — missing required field or bad UUID |
+| `401` | Missing or invalid API key |
+| `403` | Publishable key used on a secret-key-only endpoint |
+| `404` | Review not found, or review is not approved (publishable key) |
+| `409` | Duplicate review — customer already has a non-rejected review for this product |
+| `429` | Rate limit exceeded |
+| `500` | Unexpected error |

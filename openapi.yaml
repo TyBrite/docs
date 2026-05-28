@@ -537,6 +537,32 @@ tags:
 
       **To integrate**, your application must be approved by Galactic Core. Apply via the
       [Developer Portal](https://gc.tybritelabs.com/developers).
+  - name: Reviews
+    description: |
+      Product reviews and ratings submitted by customers, moderated by merchants.
+
+      **Key type behavior:**
+      - Publishable keys (`tybrite_pk_*`) — list and get approved reviews, submit reviews
+        (requires an additional customer session token), and mark reviews helpful.
+      - Secret keys (`tybrite_sk_*`) — all of the above, plus view pending/rejected reviews,
+        approve or reject submissions, and delete any review.
+
+      **Review lifecycle:**
+      1. A logged-in customer submits a review (`POST /v1/reviews`). It starts as `pending`.
+      2. The merchant reviews pending submissions in their dashboard and calls
+         `PATCH /v1/reviews/{id}` to approve or reject.
+      3. Once approved, the review appears in public listing results.
+
+      **Verified purchases:** Supply the `order_id` when submitting. If the order belongs to
+      the authenticated customer, the review is automatically marked `verified_purchase: true`.
+
+      **Duplicate prevention:** A customer may only have one non-rejected review per product.
+      A second submission returns `409 Conflict`.
+
+      **Special headers:**
+      - `x-auth-token`: Customer session JWT — required for `POST /v1/reviews` (submit)
+        and for `DELETE /v1/reviews/{id}` when using a publishable key to delete own review.
+        Obtained from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`.
   - name: Webhooks
     description: |
       Outbound webhook management for merchant integrators.
@@ -9929,6 +9955,505 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/reviews:
+    get:
+      operationId: listReviews
+      tags:
+        - Reviews
+      summary: List reviews for a product
+      description: |
+        Returns reviews for a product. Publishable keys see only approved reviews.
+        Secret keys can filter by any status including `pending` and `rejected`.
+
+        The response always includes an aggregate `summary` block with the average
+        rating and star distribution across all approved reviews for the product,
+        regardless of the `status` filter applied to the `reviews` array.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: product_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Filter reviews for this product. Required.
+          example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+        - name: variant_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Further filter to reviews that mention a specific variant.
+          example: cc35d16b-fca5-4faa-8699-d3d5d3521bca
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - approved
+              - pending
+              - rejected
+              - all
+            default: approved
+          description: |
+            Review status filter. Publishable keys always see only `approved` regardless
+            of this parameter. Secret keys can pass `pending`, `rejected`, or `all`.
+          example: approved
+        - name: rating
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+          description: Filter to reviews with this exact star rating.
+          example: 5
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - newest
+              - oldest
+              - highest
+              - lowest
+            default: newest
+          description: |
+            Sort order: `newest`/`oldest` by submission date; `highest`/`lowest` by rating.
+          example: newest
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Number of reviews to return per page.
+          example: 20
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Pagination cursor from the previous response's `pagination.next_cursor`.
+            Omit for the first page.
+      responses:
+        '200':
+          description: Reviews retrieved successfully
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - reviews
+                  - pagination
+                  - summary
+                properties:
+                  reviews:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Review'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+                  summary:
+                    $ref: '#/components/schemas/ReviewSummary'
+              example:
+                reviews:
+                  - id: aabbccdd-1234-5678-abcd-ef0123456789
+                    store_id: f47ac10b-58cc-4372-a567-0e02b2c3d479
+                    product_id: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                    variant_id: null
+                    order_id: null
+                    customer_id: 550e8400-e29b-41d4-a716-446655440000
+                    customer_name: Jane Smith
+                    rating: 5
+                    title: Absolutely love it
+                    body: Best purchase I've made this year. Quality is outstanding.
+                    media_urls: []
+                    status: approved
+                    rejection_reason: null
+                    helpful_count: 12
+                    verified_purchase: true
+                    created_at: '2026-05-20T10:00:00Z'
+                    updated_at: '2026-05-21T08:00:00Z'
+                pagination:
+                  limit: 20
+                  has_more: false
+                  next_cursor: null
+                summary:
+                  total_reviews: 47
+                  average_rating: 4.6
+                  five_star: 28
+                  four_star: 12
+                  three_star: 4
+                  two_star: 2
+                  one_star: 1
+                  verified_count: 31
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: submitReview
+      tags:
+        - Reviews
+      summary: Submit a product review
+      description: |
+        Submits a review on behalf of a logged-in customer. Requires both an API
+        key and a customer session token.
+
+        Reviews are created with `status: "pending"` and must be approved by the
+        store owner before they appear in public listing results.
+
+        **Authentication:** API key in `Authorization: Bearer` header **and** a
+        customer JWT in the `x-auth-token` header (obtained from
+        `POST /v1/auth/login`).
+
+        **Duplicate prevention:** A customer may only submit one non-rejected review
+        per product. Attempting a second submission returns `409 Conflict`.
+
+        **Verified purchase:** If you provide an `order_id` that belongs to the
+        authenticated customer's order history at this store, the review is marked
+        `verified_purchase: true`.
+
+        **Rate limit:** 10 submissions/hour per IP address.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Customer session JWT from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - product_id
+                - rating
+              properties:
+                product_id:
+                  type: string
+                  format: uuid
+                  description: Product being reviewed.
+                  example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                variant_id:
+                  type: string
+                  format: uuid
+                  description: Optional — specific variant being reviewed.
+                  example: cc35d16b-fca5-4faa-8699-d3d5d3521bca
+                order_id:
+                  type: string
+                  format: uuid
+                  description: |
+                    Optional — the order this review relates to. Providing a valid order
+                    that belongs to the authenticated customer marks the review as
+                    `verified_purchase: true`.
+                  example: 770a0622-0401-63f6-c938-557766551111
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  description: Star rating from 1 (lowest) to 5 (highest).
+                  example: 5
+                title:
+                  type: string
+                  description: Optional short headline for the review.
+                  example: Absolutely love it
+                body:
+                  type: string
+                  description: Optional full review text.
+                  example: Best purchase I've made this year. Quality is outstanding.
+                media_urls:
+                  type: array
+                  items:
+                    type: string
+                    format: uri
+                  description: Optional array of image or video URLs attached to the review.
+                  example:
+                    - https://cdn.example.com/review-photo-1.jpg
+      responses:
+        '201':
+          description: Review submitted and pending moderation
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - review
+                properties:
+                  review:
+                    $ref: '#/components/schemas/Review'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/reviews/{id}:
+    get:
+      operationId: getReview
+      tags:
+        - Reviews
+      summary: Get a single review
+      description: |
+        Returns a single review by ID. Publishable keys see only approved reviews —
+        pending or rejected reviews return `404`. Secret keys see all statuses.
+
+        **Rate limit:** 600 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Review UUID.
+      responses:
+        '200':
+          description: Review found
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - review
+                properties:
+                  review:
+                    $ref: '#/components/schemas/Review'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      operationId: moderateReview
+      tags:
+        - Reviews
+      summary: Approve or reject a review
+      description: |
+        Updates the moderation status of a review. Used by store owners to approve
+        or reject customer-submitted reviews before they appear publicly.
+
+        Approving clears any previous `rejection_reason`. Rejecting accepts an
+        optional reason that may be shown to the customer.
+
+        **Authentication:** Secret key required. Publishable keys return `403`.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Review UUID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - approved
+                    - rejected
+                  description: New moderation status for the review.
+                  example: approved
+                rejection_reason:
+                  type: string
+                  description: |
+                    Optional reason for rejection. Only relevant when `status` is `rejected`.
+                    Ignored when approving.
+                  example: Review contains inappropriate language.
+      responses:
+        '200':
+          description: Review status updated
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - review
+                properties:
+                  review:
+                    $ref: '#/components/schemas/Review'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      operationId: deleteReview
+      tags:
+        - Reviews
+      summary: Delete a review
+      description: |
+        Deletes a review permanently.
+
+        - **Secret key:** Can delete any review belonging to the store.
+        - **Publishable key + customer token:** Can delete only the authenticated
+          customer's own review. Requires `x-auth-token` header.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Review UUID.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Customer JWT — required when using a publishable key to delete the
+            authenticated customer's own review.
+      responses:
+        '200':
+          description: Review deleted
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Review deleted
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/reviews/{id}/helpful:
+    post:
+      operationId: markReviewHelpful
+      tags:
+        - Reviews
+      summary: Mark a review as helpful
+      description: |
+        Increments the `helpful_count` on an approved review. Use this to surface
+        the most useful reviews in your storefront UI.
+
+        Only approved reviews accept helpful votes. Pending or rejected reviews
+        return `404`.
+
+        No deduplication is applied — if you need per-customer dedup, track it
+        client-side.
+
+        **Rate limit:** 60 requests/hour per IP address.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Review UUID.
+      responses:
+        '200':
+          description: Helpful count incremented
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - helpful_count
+                properties:
+                  helpful_count:
+                    type: integer
+                    description: Updated helpful count.
+                    example: 13
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/webhook_endpoints:
     post:
       operationId: createWebhookEndpoint
@@ -12528,6 +13053,154 @@ components:
           format: uuid
           description: Key pair identifier. Use this to revoke via `POST /v1/connect/revoke`.
           example: 550e8400-e29b-41d4-a716-446655440000
+    Review:
+      type: object
+      required:
+        - id
+        - store_id
+        - product_id
+        - customer_name
+        - rating
+        - status
+        - helpful_count
+        - verified_purchase
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: aabbccdd-1234-5678-abcd-ef0123456789
+        store_id:
+          type: string
+          format: uuid
+          example: f47ac10b-58cc-4372-a567-0e02b2c3d479
+        product_id:
+          type: string
+          format: uuid
+          example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+        variant_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          example: null
+        order_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          example: null
+        customer_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        customer_name:
+          type: string
+          example: Jane Smith
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 5
+        title:
+          type:
+            - string
+            - 'null'
+          example: Absolutely love it
+        body:
+          type:
+            - string
+            - 'null'
+          example: Best purchase I've made this year. Quality is outstanding.
+        media_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+          example: []
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - rejected
+          example: approved
+        rejection_reason:
+          type:
+            - string
+            - 'null'
+          example: null
+        helpful_count:
+          type: integer
+          example: 12
+        verified_purchase:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-05-20T10:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-05-21T08:00:00Z'
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+          example: 50
+        has_more:
+          type: boolean
+          example: false
+        next_cursor:
+          type:
+            - string
+            - 'null'
+          example: null
+    ReviewSummary:
+      type: object
+      required:
+        - total_reviews
+        - average_rating
+        - five_star
+        - four_star
+        - three_star
+        - two_star
+        - one_star
+        - verified_count
+      properties:
+        total_reviews:
+          type: integer
+          description: Total number of approved reviews for the product.
+          example: 47
+        average_rating:
+          type: number
+          format: float
+          description: Average star rating across all approved reviews.
+          example: 4.6
+        five_star:
+          type: integer
+          example: 28
+        four_star:
+          type: integer
+          example: 12
+        three_star:
+          type: integer
+          example: 4
+        two_star:
+          type: integer
+          example: 2
+        one_star:
+          type: integer
+          example: 1
+        verified_count:
+          type: integer
+          description: Number of approved reviews marked as verified purchases.
+          example: 31
     WebhookEndpoint:
       type: object
       properties:
@@ -12570,20 +13243,6 @@ components:
         updated_at:
           type: string
           format: date-time
-    Pagination:
-      type: object
-      properties:
-        limit:
-          type: integer
-          example: 50
-        has_more:
-          type: boolean
-          example: false
-        next_cursor:
-          type:
-            - string
-            - 'null'
-          example: null
     WebhookEndpointWithSecret:
       allOf:
         - $ref: '#/components/schemas/WebhookEndpoint'
