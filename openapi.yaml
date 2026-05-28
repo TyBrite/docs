@@ -514,6 +514,29 @@ tags:
     description: Gift card management
   - name: Messaging
     description: Real-time customer support messaging
+  - name: GC Connect
+    description: |
+      Hosted authorization flow for connecting third-party tools to a merchant's store.
+
+      **Connect your GC Store** lets developers build integrations where merchants
+      authorize access with a single click — no API key copying required. The result
+      is a permanent key pair scoped to the merchant's store and the permissions they
+      granted.
+
+      **Flow overview:**
+      1. Redirect the merchant to the consent page with your `client_id`, `redirect_uri`,
+         `scope`, and `state`.
+      2. The merchant logs in (if not already) and approves the connection.
+      3. Galactic Core redirects back to your `redirect_uri` with a short-lived `code`.
+      4. Your **server** calls `POST /v1/connect/token` to exchange the code for `sk` + `pk`.
+      5. Store the `sk` securely server-side. Use it for all subsequent API calls on behalf
+         of the merchant.
+
+      **Keys are permanent** — they remain active until the merchant disconnects your
+      application from their Settings panel, or you call `POST /v1/connect/revoke`.
+
+      **To integrate**, your application must be approved by Galactic Core. Apply via the
+      [Developer Portal](https://gc.tybritelabs.com/developers).
   - name: Webhooks
     description: |
       Outbound webhook management for merchant integrators.
@@ -9488,6 +9511,424 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/connect/authorize:
+    get:
+      operationId: getConnectAuthorize
+      tags:
+        - GC Connect
+      summary: Validate an authorization request
+      description: |
+        Entry point for the Connect your GC Store flow. Validates the
+        `client_id`, `redirect_uri`, and requested `scope` and returns the
+        information the consent page needs to render.
+
+        **Authentication:** None required — this is a public endpoint.
+        Validation errors are returned as JSON error responses, never
+        as redirects (prevents open redirect attacks).
+
+        **Rate limit:** 60 requests/hour per IP address.
+      security: []
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Registered client identifier assigned when your application was approved.
+          example: fantastic-storefront
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Must exactly match one of your application's registered redirect URIs.
+          example: https://yourapp.com/callback
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+          description: |
+            Space-separated list of permission scopes your application is requesting.
+
+            Available scopes: `read`, `write`, `orders:read`, `orders:write`,
+            `customers:read`, `customers:write`, `payments:read`, `cart:write`,
+            `cms:read`, `shipping:read`, `pricing:read`
+          example: read orders:read
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: |
+            A random value you generate and store. Galactic Core returns it
+            unchanged in the callback so you can verify it and prevent CSRF attacks.
+          example: a8f3d2e1c9b7
+        - name: environment
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - sandbox
+              - production
+            default: sandbox
+          description: |
+            Whether to connect to the merchant's live store data or test data.
+            Defaults to `sandbox`. Pass `production` once your integration is
+            ready for live data. Merchants see this clearly on the consent screen.
+          example: sandbox
+      responses:
+        '200':
+          description: Request is valid — consent page can render
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectAuthorizeResponse'
+              example:
+                valid: true
+                client:
+                  client_id: fantastic-storefront
+                  name: Fantastic
+                  description: Storefront generator for GC merchants
+                  logo_url: https://fantastic.app/logo.png
+                request:
+                  redirect_uri: https://yourapp.com/callback
+                  scopes:
+                    - read
+                    - orders:read
+                  state: a8f3d2e1c9b7
+                  environment: sandbox
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: postConnectAuthorize
+      tags:
+        - GC Connect
+      summary: Approve the authorization (merchant consent)
+      description: |
+        Called by the Galactic Core consent page after the merchant clicks
+        **Authorize**. Provisions a key pair for the selected store, records the
+        connection, and returns the redirect URL the browser should follow to
+        complete the flow.
+
+        **Authentication:** The merchant's active Galactic Core session JWT in
+        the `Authorization: Bearer` header. This is not an API key — it is the
+        session token issued by the GC login flow.
+
+        **Rate limit:** 20 requests/hour per IP address.
+
+        This endpoint is called by the hosted consent page — you do not call
+        it directly from your integration.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - client_id
+                - redirect_uri
+                - scope
+                - state
+                - environment
+                - store_id
+              properties:
+                client_id:
+                  type: string
+                  description: Registered client identifier.
+                  example: fantastic-storefront
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: Must match the URI from the original GET request.
+                  example: https://yourapp.com/callback
+                scope:
+                  type: string
+                  description: Space-separated list of scopes from the original GET request.
+                  example: read orders:read
+                state:
+                  type: string
+                  description: CSRF token from the original GET request.
+                  example: a8f3d2e1c9b7
+                environment:
+                  type: string
+                  enum:
+                    - sandbox
+                    - production
+                  description: Environment for the provisioned key pair.
+                  example: sandbox
+                store_id:
+                  type: string
+                  format: uuid
+                  description: UUID of the store the merchant is authorizing access to.
+                  example: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '200':
+          description: Authorization approved — redirect the browser to `redirect_to`
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - redirect_to
+                properties:
+                  redirect_to:
+                    type: string
+                    format: uri
+                    description: |
+                      The URL to redirect the merchant's browser to. Contains a
+                      short-lived one-time `code` and the original `state` value.
+                    example: https://yourapp.com/callback?code=abc123def456&state=a8f3d2e1c9b7
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/connect/token:
+    post:
+      operationId: connectToken
+      tags:
+        - GC Connect
+      summary: Exchange authorization code for API keys
+      description: |
+        Exchanges the one-time authorization code (received in the callback
+        redirect) for the merchant's API key pair. Call this from your **server**
+        — never from a browser.
+
+        **Authentication:** `client_id` and `client_secret` in the request body.
+        Your `client_secret` is issued when your application is approved. Store
+        it securely server-side and never expose it client-side.
+
+        **The code is single-use and expires after 10 minutes.** Attempting to
+        exchange an already-used or expired code returns an error.
+
+        **Rate limit:** 10 requests/minute per IP address.
+
+        **Security:** Always verify that the `state` value in the callback
+        matches what you sent before calling this endpoint.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+                - client_id
+                - client_secret
+                - redirect_uri
+              properties:
+                code:
+                  type: string
+                  description: The one-time authorization code from the callback `?code=` parameter.
+                  example: abc123def456ghi789jkl012mno345pq
+                client_id:
+                  type: string
+                  description: Your application's client identifier.
+                  example: fantastic-storefront
+                client_secret:
+                  type: string
+                  description: Your application's client secret. Never send this from a browser.
+                  example: YOUR_CLIENT_SECRET
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: Must exactly match the redirect URI used in the original authorization request.
+                  example: https://yourapp.com/callback
+      responses:
+        '200':
+          description: Code exchanged successfully — store the `sk` securely server-side
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectTokenResponse'
+              example:
+                sk: tybrite_sk_live_...
+                pk: tybrite_pk_live_...
+                pair_id: 550e8400-e29b-41d4-a716-446655440000
+                store_id: 660f9511-f30c-52e5-b827-557766551111
+                environment: production
+                scopes:
+                  - read
+                  - orders:read
+                client_id: fantastic-storefront
+        '400':
+          description: |
+            Invalid code, expired code, already-used code, or mismatched redirect URI.
+
+            Error codes:
+            - `invalid_code` — code not found or expired
+            - `code_already_used` — code has already been exchanged
+            - `redirect_uri_mismatch` — redirect_uri does not match the original request
+            - `invalid_request` — missing required field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid `client_id` or `client_secret`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_client
+                  message: Invalid client credentials
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/connect/revoke:
+    post:
+      operationId: connectRevoke
+      tags:
+        - GC Connect
+      summary: Revoke a store connection
+      description: |
+        Programmatically revokes a store connection — deactivates the key pair
+        and marks the session as disconnected. Use this when a merchant
+        disconnects your application from their end (e.g. cancels their
+        subscription on your platform).
+
+        **Authentication:** `client_id` and `client_secret` in the request body.
+
+        **Note:** Merchants can also disconnect your application at any time from
+        their store's **Settings → Integrations → Connected Apps** panel.
+        Galactic Core handles that automatically — you do not need to call this
+        endpoint for merchant-initiated disconnects.
+
+        **Rate limit:** 60 requests/hour per IP address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - pair_id
+                - client_id
+                - client_secret
+              properties:
+                pair_id:
+                  type: string
+                  format: uuid
+                  description: The `pair_id` returned by `POST /v1/connect/token`.
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                client_id:
+                  type: string
+                  description: Your application's client identifier.
+                  example: fantastic-storefront
+                client_secret:
+                  type: string
+                  description: Your application's client secret.
+                  example: YOUR_CLIENT_SECRET
+                revoke_reason:
+                  type: string
+                  description: |
+                    Optional reason for revocation. Recorded in the connection log.
+                    Common values: `user_disconnected`, `subscription_cancelled`.
+                  example: user_disconnected
+      responses:
+        '200':
+          description: Connection revoked (or was already revoked)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          description: Invalid `client_id` or `client_secret`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_client
+                  message: Invalid client credentials
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/connect/sessions:
+    get:
+      operationId: listConnectSessions
+      tags:
+        - GC Connect
+      summary: List active store connections
+      description: |
+        Returns all active third-party tool connections for the authenticated
+        store. Powers the **Settings → Integrations → Connected Apps** panel.
+
+        **Authentication:** Secret key (`tybrite_sk_*`) required.
+        Publishable keys return 403.
+
+        **Rate limit:** 120 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Active connections for this store
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - sessions
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConnectSession'
+              example:
+                sessions:
+                  - session_id: 770a0622-0401-63f6-c938-557877662222
+                    client_id: fantastic-storefront
+                    client_name: Fantastic
+                    client_logo_url: https://fantastic.app/logo.png
+                    environment: production
+                    scopes:
+                      - read
+                      - orders:read
+                    connected_at: '2026-05-28T10:00:00Z'
+                    last_used_at: '2026-05-28T14:30:00Z'
+                    pair_id: 550e8400-e29b-41d4-a716-446655440000
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/webhook_endpoints:
     post:
       operationId: createWebhookEndpoint
@@ -11911,6 +12352,182 @@ components:
               format: double
               example: 37.013954
               description: Customer longitude
+    ConnectAuthorizeResponse:
+      type: object
+      required:
+        - valid
+        - client
+        - request
+      properties:
+        valid:
+          type: boolean
+          example: true
+        client:
+          type: object
+          required:
+            - client_id
+            - name
+          properties:
+            client_id:
+              type: string
+              example: fantastic-storefront
+            name:
+              type: string
+              example: Fantastic
+            description:
+              type:
+                - string
+                - 'null'
+              example: Storefront generator for GC merchants
+            logo_url:
+              type:
+                - string
+                - 'null'
+              format: uri
+              example: https://fantastic.app/logo.png
+        request:
+          type: object
+          required:
+            - redirect_uri
+            - scopes
+            - state
+            - environment
+          properties:
+            redirect_uri:
+              type: string
+              format: uri
+              example: https://yourapp.com/callback
+            scopes:
+              type: array
+              items:
+                type: string
+              example:
+                - read
+                - orders:read
+            state:
+              type: string
+              example: a8f3d2e1c9b7
+            environment:
+              type: string
+              enum:
+                - sandbox
+                - production
+              example: sandbox
+    ConnectTokenResponse:
+      type: object
+      required:
+        - sk
+        - pk
+        - pair_id
+        - store_id
+        - environment
+        - scopes
+        - client_id
+      properties:
+        sk:
+          type: string
+          description: |
+            Secret key. Store this securely server-side — it will not be shown again.
+            Use it for all server-side API calls on behalf of the merchant.
+          example: tybrite_sk_live_...
+        pk:
+          type: string
+          description: |
+            Publishable key. Safe to use client-side (browser/mobile).
+            Use it for read-only catalog and cart operations.
+          example: tybrite_pk_live_...
+        pair_id:
+          type: string
+          format: uuid
+          description: Unique identifier for this key pair. Store it — required to call `POST /v1/connect/revoke`.
+          example: 550e8400-e29b-41d4-a716-446655440000
+        store_id:
+          type: string
+          format: uuid
+          description: The UUID of the store the merchant authorized access to.
+          example: 660f9511-f30c-52e5-b827-557766551111
+        environment:
+          type: string
+          enum:
+            - sandbox
+            - production
+          description: Environment the key pair is scoped to.
+          example: production
+        scopes:
+          type: array
+          items:
+            type: string
+          description: The permission scopes granted by the merchant.
+          example:
+            - read
+            - orders:read
+        client_id:
+          type: string
+          description: Your application's client identifier.
+          example: fantastic-storefront
+    ConnectSession:
+      type: object
+      required:
+        - session_id
+        - client_id
+        - client_name
+        - environment
+        - scopes
+        - connected_at
+        - pair_id
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Unique identifier for this connection session.
+          example: 770a0622-0401-63f6-c938-557877662222
+        client_id:
+          type: string
+          description: Client identifier of the connected application.
+          example: fantastic-storefront
+        client_name:
+          type: string
+          description: Display name of the connected application.
+          example: Fantastic
+        client_logo_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Logo URL of the connected application.
+          example: https://fantastic.app/logo.png
+        environment:
+          type: string
+          enum:
+            - sandbox
+            - production
+          description: Whether this connection is scoped to live or test data.
+          example: production
+        scopes:
+          type: array
+          items:
+            type: string
+          description: Permission scopes granted to this application.
+          example:
+            - read
+            - orders:read
+        connected_at:
+          type: string
+          format: date-time
+          description: When the merchant authorized this connection.
+          example: '2026-05-28T10:00:00Z'
+        last_used_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When an API call was last made with this connection's keys. Null if never used.
+          example: '2026-05-28T14:30:00Z'
+        pair_id:
+          type: string
+          format: uuid
+          description: Key pair identifier. Use this to revoke via `POST /v1/connect/revoke`.
+          example: 550e8400-e29b-41d4-a716-446655440000
     WebhookEndpoint:
       type: object
       properties:
