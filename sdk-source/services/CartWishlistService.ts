@@ -196,10 +196,6 @@ export class CartWishlistService {
                      * Customer UUID for authenticated carts (optional if using X-Session-Id)
                      */
                     customer_id?: string;
-                    /**
-                     * Legacy/optional online product UUID. Ignored when `variant_id` is provided; included for backwards compatibility.
-                     */
-                    product_id?: string;
                 },
                 /**
                  * Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. Required whenever `customer_id` is supplied so the gateway can prove the caller owns that customer record. Anonymous (session-only) carts may omit it.
@@ -229,7 +225,7 @@ export class CartWishlistService {
                         400: `Invalid request or insufficient stock`,
                         401: `Authentication failed - invalid or missing API key`,
                         403: `Insufficient permissions - operation requires secret key`,
-                        404: `Variant not found or not available online`,
+                        404: `Variant not found or not available`,
                         429: `Rate limit exceeded`,
                         500: `Internal server error`,
                     },
@@ -468,10 +464,6 @@ export class CartWishlistService {
                      * Customer UUID
                      */
                     customer_id: string;
-                    /**
-                     * Legacy/optional online product UUID. Ignored when `variant_id` is provided; included for backwards compatibility.
-                     */
-                    product_id?: string;
                 },
             }): CancelablePromise<{
                 items?: Array<WishlistItem>;

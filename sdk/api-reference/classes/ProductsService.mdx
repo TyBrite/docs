@@ -164,10 +164,15 @@ const { collections } = await client.products.listProductCollections({
 });
 
 // Get items in a specific collection
-const { items, pagination: itemPagination } = await client.products.getProductCollectionItems({ 
+// Each item has: product_id, sort_order, and an embedded product object
+const { items } = await client.products.getProductCollectionItems({ 
   id: 'flash-sale-uuid',
   limit: 10
 });
+
+for (const item of items) {
+  console.log(`${item.product.name} — sort order: ${item.sort_order}`);
+}
 ```
 
 ---

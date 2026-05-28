@@ -26,11 +26,11 @@ export type Product = {
      */
     product_id?: string;
     /**
-     * Product name (mapped from online_name or name)
+     * Product name
      */
     name?: string;
     /**
-     * Product description (mapped from online_description or description)
+     * Product description
      */
     description?: string;
     /**

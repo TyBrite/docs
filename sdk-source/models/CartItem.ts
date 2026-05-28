@@ -8,7 +8,7 @@ export type CartItem = {
      */
     id?: string;
     /**
-     * Online product UUID (parent product)
+     * Product UUID
      */
     product_id?: string;
     /**

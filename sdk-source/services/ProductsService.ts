@@ -862,13 +862,13 @@ export class ProductsService {
                                                                                         id: string,
                                                                                     }): CancelablePromise<{
                                                                                         items?: Array<{
-                                                                                            online_product_id?: string | null;
+                                                                                            /**
+                                                                                             * Product UUID
+                                                                                             */
+                                                                                            product_id?: string | null;
                                                                                             sort_order?: number | null;
                                                                                             /**
-                                                                                             * Embedded online product row joined from `online_products`.
-                                                                                             * Contains online-prefixed fields directly (not the sanitized
-                                                                                             * catalog Product shape returned by `/v1/products`).
-                                                                                             *
+                                                                                             * Core product fields for the collection member.
                                                                                              */
                                                                                             product?: any | null;
                                                                                         }>;
