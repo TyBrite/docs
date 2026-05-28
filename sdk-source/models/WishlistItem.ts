@@ -59,5 +59,18 @@ export type WishlistItem = {
      */
     has_variants?: boolean;
     created_at?: string;
+    /**
+     * Whether this wishlist item belongs to the live or test environment.
+     */
+    environment?: WishlistItem.environment;
 };
+export namespace WishlistItem {
+    /**
+     * Whether this wishlist item belongs to the live or test environment.
+     */
+    export enum environment {
+        PRODUCTION = 'production',
+        SANDBOX = 'sandbox',
+    }
+}
 

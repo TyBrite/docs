@@ -33,6 +33,27 @@ Secret keys are for server-side environments and provide full administrative acc
 
 ---
 
+## Environments & Sandbox
+
+The key prefix determines which environment your requests target — there is no separate sandbox base URL.
+
+| Prefix | Environment | Data scope |
+| :--- | :--- | :--- |
+| `tybrite_sk_live_` / `tybrite_pk_live_` | **Production** | Live customer, order, and inventory data |
+| `tybrite_sk_test_` / `tybrite_pk_test_` | **Sandbox** | Isolated test data — never mixed with production |
+
+**What sandbox isolation means in practice:**
+
+- Orders, customers, cart items, and wishlist entries created with a `test` key are stored in the sandbox partition and are never returned to `live` key requests.
+- Payment providers switch to test mode automatically when a `test` key is used — Stripe test mode, Paystack test keys, M-Pesa sandbox, Airtel staging — regardless of what your store's payment settings show.
+- Every authenticated response includes a `Tybrite-Environment: production | sandbox` header so you can confirm which partition resolved.
+
+<Tip>
+  Build and test your entire integration with `tybrite_sk_test_*` keys. When you're ready for production, swap to `tybrite_sk_live_*` and the right environment follows automatically — no code changes needed.
+</Tip>
+
+---
+
 ## Authorization Header
 
 For direct REST API calls, provide your key in the `Authorization` header using the `Bearer` scheme:

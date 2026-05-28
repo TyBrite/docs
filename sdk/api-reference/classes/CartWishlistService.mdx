@@ -9,6 +9,10 @@ The `CartWishlistService` class (accessed via `client.cartWishlist`) manages sho
 
 The cart and wishlist APIs support full variant tracking and a unified media gallery system. This enables customers to save specific product selections (color, size, etc.) with accurate pricing, real-time stock levels, and variant-specific images.
 
+<Note>
+  **Sandbox isolation:** Cart and wishlist items created with a `tybrite_pk_test_*` or `tybrite_sk_test_*` key are stored in the sandbox environment and are never visible to production keys. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment resolved.
+</Note>
+
 ## Security Model
 
 Cart and wishlist endpoints accept **publishable keys** (storefronts run in browsers), so a leaked publishable key alone is not enough to access another customer's cart. When the request claims a `customer_id` (query or body), the gateway requires an `xAuthToken` header — the customer's session JWT from `client.authentication.login` or `verifyOtp`. The resolved customer must match the claimed `customer_id`, otherwise the gateway returns `403 forbidden`. Anonymous (session-only) carts skip this check and rely on the secrecy of `X-Session-Id`.
@@ -233,6 +237,7 @@ Both cart and wishlist items include structured data for optimized frontend rend
 | `stock_available` | `number` | Real-time stock count for the variant. |
 | `has_variants` | `boolean` | Whether the product supports variation selection. |
 | `created_at` | `string` | Timestamp of when the item was added. |
+| `environment` | `string` | `production` or `sandbox` — matches the key used to add the item. |
 
 <CodeGroup>
 
@@ -263,7 +268,8 @@ Both cart and wishlist items include structured data for optimized frontend rend
     "stock_available": 49,
     "has_variants": false,
     "created_at": "2026-04-11T10:54:23Z",
-    "updated_at": "2026-04-11T10:54:23Z"
+    "updated_at": "2026-04-11T10:54:23Z",
+    "environment": "production"
 }
 ```
 
@@ -290,7 +296,8 @@ Both cart and wishlist items include structured data for optimized frontend rend
     ],
     "stock_available": 49,
     "has_variants": false,
-    "created_at": "2026-04-11T10:52:09Z"
+    "created_at": "2026-04-11T10:52:09Z",
+    "environment": "production"
 }
 ```
 
