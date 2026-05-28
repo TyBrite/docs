@@ -11,7 +11,7 @@ export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { Address } from './models/Address';
-export type { CartItem } from './models/CartItem';
+export { CartItem } from './models/CartItem';
 export type { Category } from './models/Category';
 export { Customer } from './models/Customer';
 export { DeliveryFeeCalculation } from './models/DeliveryFeeCalculation';
@@ -46,7 +46,7 @@ export type { WebhookEndpointWithSecret } from './models/WebhookEndpointWithSecr
 export type { WebhookEndpointWithStats } from './models/WebhookEndpointWithStats';
 export type { WebhookEvent } from './models/WebhookEvent';
 export type { WebhookEventWithDeliveries } from './models/WebhookEventWithDeliveries';
-export type { WishlistItem } from './models/WishlistItem';
+export { WishlistItem } from './models/WishlistItem';
 
 export { AuthenticationService } from './services/AuthenticationService';
 export { CartWishlistService } from './services/CartWishlistService';

@@ -5,6 +5,10 @@ description: "Reference for the OrdersService class in the Tybrite SDK."
 
 The `OrdersService` class (accessed via `client.orders`) manages the entire commerce lifecycle. All order write operations require mandatory **HMAC Security** to ensure complete data integrity.
 
+<Note>
+  **Sandbox isolation:** Orders created with a `tybrite_sk_test_*` key are stored in the sandbox environment and are never visible to production keys, and vice versa. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment your key resolved to.
+</Note>
+
 ## 🔐 Security & Signing (HMAC)
 
 To prevent tampering, replay attacks, and duplicate processing of updates, `createOrder` and `updateOrder` require both an HMAC-SHA256 signature and a mandatory Idempotency Key.
@@ -111,6 +115,7 @@ do {
       payment_status: 'paid',
       order_status: 'processing',
       total_amount: 2520,
+      environment: 'production',
       created_at: '2026-02-19T10:30:00Z'
       // ...other order header fields (no `items`)
     }

@@ -34,6 +34,10 @@ export type Order = {
     created_at?: string;
     updated_at?: string;
     /**
+     * Whether this order was created in the live or test environment. Sandbox orders are isolated from production data.
+     */
+    environment?: Order.environment;
+    /**
      * Complete shipping calculation details for audit trail
      */
     shipping_metadata?: any | null;
@@ -62,6 +66,13 @@ export namespace Order {
         AIRTEL = 'airtel',
         CASH = 'cash',
         BANK_TRANSFER = 'bank_transfer',
+    }
+    /**
+     * Whether this order was created in the live or test environment. Sandbox orders are isolated from production data.
+     */
+    export enum environment {
+        PRODUCTION = 'production',
+        SANDBOX = 'sandbox',
     }
 }
 

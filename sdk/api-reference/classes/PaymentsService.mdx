@@ -5,6 +5,10 @@ description: "Reference for the PaymentsService class in the Tybrite SDK."
 
 The `PaymentsService` class (accessed via `client.payments`) handles the core initialization and status verification for diverse payment providers including Stripe, Paystack, M-Pesa, and Airtel Money.
 
+<Note>
+  **Sandbox test mode:** When you use a `tybrite_sk_test_*` key, all payment providers are automatically switched to their test/sandbox credentials — regardless of what your store's payment settings show. Stripe uses test mode, Paystack uses test keys, M-Pesa targets the Safaricom sandbox, and Airtel targets the staging environment. No code changes are needed between sandbox and production; swap the key and the right environment follows. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment resolved.
+</Note>
+
 ## 🔐 Security & Signing (HMAC & Idempotency)
 
 To prevent unauthorized payment initiation and duplicate charges, `initializePayment` requires both an HMAC-SHA256 signature and a mandatory **Idempotency Key**.

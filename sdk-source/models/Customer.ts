@@ -22,11 +22,22 @@ export type Customer = {
         status?: string;
         preferred_store?: string;
     };
+    /**
+     * Whether this customer record belongs to the live or test environment.
+     */
+    environment?: Customer.environment;
 };
 export namespace Customer {
     export enum status {
         ACTIVE = 'active',
         INACTIVE = 'inactive',
+    }
+    /**
+     * Whether this customer record belongs to the live or test environment.
+     */
+    export enum environment {
+        PRODUCTION = 'production',
+        SANDBOX = 'sandbox',
     }
 }
 
