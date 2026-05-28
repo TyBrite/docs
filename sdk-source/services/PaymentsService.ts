@@ -213,29 +213,7 @@ export class PaymentsService {
              */
             callback_url?: string;
         },
-    }): CancelablePromise<(PaymentInitializeResponse | {
-        success?: boolean;
-        provider?: string;
-        type?: string;
-        reference?: string;
-        public_key?: string;
-        email?: string;
-        /**
-         * Amount in kobo (smallest currency unit)
-         */
-        amount?: number;
-        currency?: string;
-        environment?: string;
-    } | {
-        success?: boolean;
-        provider?: string;
-        type?: string;
-        reference?: string;
-        checkout_request_id?: string;
-        merchant_request_id?: string;
-        customer_message?: string;
-        environment?: string;
-    })> {
+    }): CancelablePromise<(PaymentInitializeResponse | Record<string, any>)> {
         return this.httpRequest.request({
             method: 'POST',
             url: '/v1/payments/initialize',
@@ -314,80 +292,7 @@ export class PaymentsService {
              */
             reference: string;
         },
-    }): CancelablePromise<({
-        provider?: string;
-        /**
-         * Stripe Checkout Session ID
-         */
-        reference?: string;
-        /**
-         * Normalized status. Returns `success` when Stripe `payment_status === 'paid'`,
-         * otherwise the raw Stripe payment_status (e.g., `unpaid`, `no_payment_required`).
-         *
-         */
-        status?: string;
-        /**
-         * Amount in major currency units (converted from Stripe's minor units)
-         */
-        amount?: number | null;
-        currency?: string;
-        customer_email?: string | null;
-        /**
-         * Stripe Payment Intent ID
-         */
-        payment_intent?: string | null;
-        /**
-         * Stripe session metadata (with `store_id` stripped)
-         */
-        metadata?: Record<string, any>;
-    } | {
-        provider?: string;
-        reference?: string;
-        /**
-         * Normalized status (`success` when Paystack `status === 'success'`)
-         */
-        status?: string;
-        /**
-         * Amount in major currency units (converted from kobo)
-         */
-        amount?: number | null;
-        currency?: string;
-        channel?: string;
-        customer_email?: string | null;
-        paid_at?: string | null;
-        /**
-         * Paystack metadata (with `store_id` stripped)
-         */
-        metadata?: Record<string, any>;
-    } | {
-        provider?: string;
-        /**
-         * CheckoutRequestID supplied at verification time
-         */
-        reference?: string;
-        status?: 'pending' | 'success' | 'cancelled' | 'failed';
-        result_code?: (string | number);
-        result_description?: string;
-        merchant_request_id?: string;
-    } | {
-        provider?: string;
-        reference?: string;
-        /**
-         * Status from the most recent payment_transaction_logs row.
-         * `not_found` is returned if no matching log exists.
-         *
-         */
-        status?: string;
-        /**
-         * Raw response_payload captured at initialization
-         */
-        response?: Record<string, any>;
-        created_at?: string;
-        /**
-         * Present only when status is `not_found`
-         */
-        message?: string;
-    })> {
+    }): CancelablePromise<Record<string, any>> {
         return this.httpRequest.request({
             method: 'POST',
             url: '/v1/payments/verify',

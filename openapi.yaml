@@ -2253,11 +2253,12 @@ paths:
                     items:
                       type: object
                       properties:
-                        online_product_id:
+                        product_id:
                           type:
                             - string
                             - 'null'
                           format: uuid
+                          description: Product UUID
                         sort_order:
                           type:
                             - integer
@@ -2266,87 +2267,34 @@ paths:
                           type:
                             - object
                             - 'null'
-                          description: |
-                            Embedded online product row joined from `online_products`.
-                            Contains online-prefixed fields directly (not the sanitized
-                            catalog Product shape returned by `/v1/products`).
+                          description: Core product fields for the collection member.
                           properties:
                             id:
                               type: string
                               format: uuid
-                            inventory_id:
+                            name:
                               type:
                                 - string
                                 - 'null'
-                              format: uuid
-                            online_name:
+                            description:
                               type:
                                 - string
                                 - 'null'
-                            online_description:
+                            slug:
                               type:
                                 - string
                                 - 'null'
-                            online_images:
+                            brand:
                               type:
-                                - array
+                                - string
                                 - 'null'
-                              items:
-                                type: string
-                            online_price:
-                              type:
-                                - number
-                                - 'null'
-                            online_sale_price:
-                              type:
-                                - number
-                                - 'null'
-                            online_stock:
-                              type:
-                                - integer
-                                - 'null'
-                            is_online_enabled:
+                            has_variants:
                               type:
                                 - boolean
                                 - 'null'
-                            seo_title:
-                              type:
-                                - string
-                                - 'null'
-                            seo_description:
-                              type:
-                                - string
-                                - 'null'
-                            seo_keywords:
-                              type:
-                                - string
-                                - 'null'
-                            featured:
+                            is_active:
                               type:
                                 - boolean
-                                - 'null'
-                            featured_order:
-                              type:
-                                - integer
-                                - 'null'
-                            online_category:
-                              type:
-                                - string
-                                - 'null'
-                            tags:
-                              type:
-                                - array
-                                - 'null'
-                              items:
-                                type: string
-                            attributes:
-                              type:
-                                - object
-                                - 'null'
-                              additionalProperties: true
-                            shipping_info:
-                              type:
-                                - object
                                 - 'null'
                             created_at:
                               type:
@@ -3141,7 +3089,7 @@ paths:
                     product_name: iPhone 15 Pro
                     quantity: 2
                     unit_price: 1000
-                    total_price: 2000
+                    subtotal: 2000
                 created_at: '2026-02-19T10:30:00Z'
         '400':
           description: Invalid request (missing required fields, invalid data)
@@ -3302,12 +3250,14 @@ paths:
               example:
                 id: 880e8400-e29b-41d4-a716-446655440003
                 customer_id: 550e8400-e29b-41d4-a716-446655440000
-                status: confirmed
+                order_status: processing
+                payment_status: paid
                 total_amount: 2049.97
                 items:
                   - product_name: iPhone 15 Pro
                     quantity: 2
                     unit_price: 999.99
+                    subtotal: 1999.98
                 created_at: '2026-02-03T10:30:00Z'
                 updated_at: '2026-02-03T10:35:00Z'
         '400':
@@ -3918,10 +3868,11 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
+                anyOf:
                   - $ref: '#/components/schemas/PaymentInitializeResponse'
                   - type: object
                     description: Paystack-specific response
+                    additionalProperties: true
                     properties:
                       success:
                         type: boolean
@@ -3953,6 +3904,7 @@ paths:
                         example: test
                   - type: object
                     description: M-Pesa/Airtel Money-specific response
+                    additionalProperties: true
                     properties:
                       success:
                         type: boolean
@@ -4207,9 +4159,10 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
+                anyOf:
                   - type: object
                     description: Stripe verification response
+                    additionalProperties: true
                     properties:
                       provider:
                         type: string
@@ -4251,6 +4204,7 @@ paths:
                         description: Stripe session metadata (with `store_id` stripped)
                   - type: object
                     description: Paystack verification response
+                    additionalProperties: true
                     properties:
                       provider:
                         type: string
@@ -4292,6 +4246,7 @@ paths:
                         description: Paystack metadata (with `store_id` stripped)
                   - type: object
                     description: M-Pesa STK Push Query response
+                    additionalProperties: true
                     properties:
                       provider:
                         type: string
@@ -4321,6 +4276,7 @@ paths:
                         example: 12345-67890-1
                   - type: object
                     description: Airtel Money verification response (derived from local transaction log)
+                    additionalProperties: true
                     properties:
                       provider:
                         type: string
@@ -4687,11 +4643,6 @@ paths:
                   format: uuid
                   description: Customer UUID for authenticated carts (optional if using X-Session-Id)
                   example: 650e8400-e29b-41d4-a716-446655440000
-                product_id:
-                  type: string
-                  format: uuid
-                  description: Legacy/optional online product UUID. Ignored when `variant_id` is provided; included for backwards compatibility.
-                  example: 770e8400-e29b-41d4-a716-446655440000
       responses:
         '200':
           description: Item added (returns refreshed cart)
@@ -4732,7 +4683,7 @@ paths:
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
-          description: Variant not found or not available online
+          description: Variant not found or not available
           content:
             application/json:
               schema:
@@ -4740,7 +4691,7 @@ paths:
               example:
                 error:
                   code: not_found
-                  message: Variant not found or not available online
+                  message: Variant not found or not available
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -5046,11 +4997,6 @@ paths:
                   format: uuid
                   description: Customer UUID
                   example: 650e8400-e29b-41d4-a716-446655440000
-                product_id:
-                  type: string
-                  format: uuid
-                  description: Legacy/optional online product UUID. Ignored when `variant_id` is provided; included for backwards compatibility.
-                  example: 770e8400-e29b-41d4-a716-446655440000
       responses:
         '201':
           description: Item added (returns refreshed wishlist)
@@ -5328,7 +5274,7 @@ paths:
                 summary: Personalized recommendations
                 value:
                   type: personalized
-                  customerId: customer-uuid
+                  customerId: 550e8400-e29b-41d4-a716-446655440000
                   limit: 10
       responses:
         '200':
@@ -10142,6 +10088,24 @@ components:
             details:
               type: string
               example: The 'email' field is required
+            hint:
+              type: string
+              description: Additional guidance on how to resolve the error.
+            available_stock:
+              type: integer
+              description: Current stock level (present on insufficient_stock errors).
+            current_cart_quantity:
+              type: integer
+              description: Quantity already in cart (present on insufficient_stock errors).
+            limit:
+              type: integer
+              description: Rate limit ceiling (present on rate_limit_exceeded errors).
+            remaining:
+              type: integer
+              description: Requests remaining in the current window (present on rate_limit_exceeded errors).
+            reset:
+              type: integer
+              description: Unix timestamp when the rate limit window resets (present on rate_limit_exceeded errors).
     ProductVariant:
       type: object
       description: |
@@ -10258,11 +10222,11 @@ components:
           example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
         name:
           type: string
-          description: Product name (mapped from online_name or name)
+          description: Product name
           example: Sony WH-1000XM4
         description:
           type: string
-          description: Product description (mapped from online_description or description)
+          description: Product description
           example: Wireless noise-cancelling headphones
         category_id:
           type:
@@ -10628,9 +10592,10 @@ components:
         id:
           type: string
           format: uuid
-        online_product_id:
+        product_id:
           type: string
           format: uuid
+          description: Product UUID
         product_name:
           type: string
         product_sku:
@@ -10831,6 +10796,7 @@ components:
           example: true
     PaymentInitializeResponse:
       type: object
+      additionalProperties: true
       properties:
         success:
           type: boolean
@@ -10867,7 +10833,7 @@ components:
         product_id:
           type: string
           format: uuid
-          description: Online product UUID (parent product)
+          description: Product UUID
         variant_id:
           type: string
           format: uuid
@@ -10967,7 +10933,7 @@ components:
         product_id:
           type: string
           format: uuid
-          description: Online product UUID (parent product)
+          description: Product UUID
         variant_id:
           type: string
           format: uuid
@@ -11202,10 +11168,14 @@ components:
           type: string
           format: date
         last_used_date:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
         maximum_usage_percentage:
-          type: number
+          type:
+            - number
+            - 'null'
         redemption_count:
           type: integer
         created_at:
@@ -11829,59 +11799,6 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/WebhookDelivery'
-  parameters:
-    LimitParam:
-      name: limit
-      in: query
-      description: Maximum number of results to return
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 200
-        default: 50
-    OffsetParam:
-      name: offset
-      in: query
-      description: Number of results to skip for pagination
-      schema:
-        type: integer
-        minimum: 0
-        default: 0
-    FieldsParam:
-      name: fields
-      in: query
-      description: |
-        Comma-separated list of fields to return. Supports nested fields with dot notation.
-            
-        **Available fields:** product_id, variant_id, name, online_name, sku, description, online_description, category_id, category_name, subcategory_id, subcategory_name, price, online_price, compare_at_price, online_sale_price, stock, online_stock, image, online_images, product_slug, is_online_enabled, seo_title, seo_description, seo_keywords, featured, featured_order, brand, barcode, selling_price, threshold, last_restocked, tracking_mode, is_active, has_variants, variant_name, variant_attributes, tags, attributes.*, shipping_info.*, created_at, updated_at
-            
-        **Examples:**
-        - `product_id,name,price,stock` - Basic product info
-        - `name,online_images,online_price,stock` - Online store display
-        - `name,description,attributes.color,attributes.size` - With nested attributes
-      schema:
-        type: string
-        example: product_id,name,online_price,stock,online_images
-    SearchParam:
-      name: search
-      in: query
-      description: Search query for filtering results
-      schema:
-        type: string
-    CategoryIdParam:
-      name: category_id
-      in: query
-      description: Filter by category ID
-      schema:
-        type: string
-        format: uuid
-    SubcategoryIdParam:
-      name: subcategory_id
-      in: query
-      description: Filter by subcategory ID
-      schema:
-        type: string
-        format: uuid
   responses:
     BadRequestError:
       description: Invalid request - malformed data or missing required fields
