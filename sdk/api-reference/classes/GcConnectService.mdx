@@ -1,0 +1,251 @@
+---
+title: "GC Connect"
+description: "Reference for the GcConnectService class in the Tybrite SDK."
+---
+
+The `GcConnectService` class (accessed via `client.gcConnect`) implements the **Connect your GC Store** flow — letting merchants authorize your application to access their store with a single click, no API key copying required.
+
+## Overview
+
+When a merchant authorizes your application, Galactic Core provisions a key pair (`sk` + `pk`) scoped to their store and the permissions they granted. Those keys are permanent — they stay active until the merchant disconnects your app or you call `connectRevoke`.
+
+**The flow in four steps:**
+
+1. Redirect the merchant to `https://gc.tybritelabs.com/connect/authorize` with your `client_id`, `redirect_uri`, `scope`, and `state`.
+2. After the merchant approves, Galactic Core redirects to your `redirect_uri` with a short-lived `code`.
+3. Your **server** calls `connectToken` to exchange the code for `sk` + `pk`.
+4. Store the `sk` securely server-side. Use it for all API calls on behalf of the merchant.
+
+<Note>
+  Your application must be approved by Galactic Core before you can use these endpoints. Apply via the [Developer Portal](https://gc.tybritelabs.com/developers).
+</Note>
+
+---
+
+## Building the Authorization URL
+
+Construct the URL yourself and redirect the merchant's browser to it. The SDK provides `getConnectAuthorize` for validation/rendering, but the redirect itself is a browser navigation.
+
+```typescript
+const params = new URLSearchParams({
+  client_id: 'your-client-id',
+  redirect_uri: 'https://yourapp.com/callback',
+  scope: 'read orders:read',
+  state: crypto.randomUUID(), // store this in the user's session for CSRF check
+  environment: 'production',  // or 'sandbox' during development
+});
+
+const authUrl = `https://gc.tybritelabs.com/connect/authorize?${params}`;
+// Redirect the user: window.location.href = authUrl (browser), or res.redirect(authUrl) (server)
+```
+
+**Available scopes:**
+
+| Scope | Access |
+| :--- | :--- |
+| `read` | Products, inventory, pricing, categories |
+| `write` | Create/update products and inventory |
+| `orders:read` | Read order history and status |
+| `orders:write` | Create and update orders |
+| `customers:read` | Read customer profiles |
+| `customers:write` | Create and update customer records |
+| `payments:read` | Read payment status and history |
+| `cart:write` | Cart operations (browser-safe) |
+| `cms:read` | Blog posts and lookbooks |
+| `shipping:read` | Delivery zones and rates |
+| `pricing:read` | Dynamic pricing rules |
+
+---
+
+## `getConnectAuthorize`
+
+Validates an authorization request and returns the information the consent page needs to render. You typically do not call this from your integration — it is used by the hosted consent page.
+
+**No authentication required.**
+
+```typescript
+const data = await client.gcConnect.getConnectAuthorize({
+  clientId: 'your-client-id',
+  redirectUri: 'https://yourapp.com/callback',
+  scope: 'read orders:read',
+  state: 'a8f3d2e1c9b7',
+  environment: 'sandbox',
+});
+
+console.log(data.client.name);          // "Your App"
+console.log(data.request.scopes);       // ["read", "orders:read"]
+console.log(data.request.environment);  // "sandbox"
+```
+
+Validation errors (unknown `client_id`, unregistered `redirect_uri`, invalid scopes) return a `400` response rather than a redirect, preventing open redirect attacks.
+
+---
+
+## `connectToken`
+
+Exchanges the one-time authorization code for the merchant's API key pair.
+
+Call this from your **server** — never from a browser. The `client_secret` must never be exposed client-side.
+
+```typescript
+// In your callback handler (e.g. GET /callback?code=XXX&state=YYY)
+async function handleCallback(req, res) {
+  const { code, state } = req.query;
+
+  // Always verify state before calling token exchange
+  if (state !== req.session.oauthState) {
+    return res.status(400).send('State mismatch — possible CSRF');
+  }
+
+  const result = await client.gcConnect.connectToken({
+    requestBody: {
+      code,
+      client_id: 'your-client-id',
+      client_secret: process.env.GC_CLIENT_SECRET,
+      redirect_uri: 'https://yourapp.com/callback',
+    },
+  });
+
+  // Store the keys — sk is not shown again
+  await db.merchants.storeKeys(merchantId, {
+    sk: result.sk,
+    pk: result.pk,
+    pair_id: result.pair_id,
+    store_id: result.store_id,
+    environment: result.environment,
+  });
+
+  res.redirect('/dashboard?connected=true');
+}
+```
+
+<Warning>
+  Store the `sk` securely server-side immediately — it is returned only once. The `pk` is safe to use client-side for read-only catalog and cart operations.
+</Warning>
+
+**Response fields:**
+
+| Field | Description |
+| :--- | :--- |
+| `sk` | Secret key — use server-side for all API calls requiring a secret key |
+| `pk` | Publishable key — safe for browser use (products, cart, CMS) |
+| `pair_id` | Key pair UUID — required to call `connectRevoke` |
+| `store_id` | The merchant's store UUID |
+| `environment` | `production` or `sandbox` |
+| `scopes` | Permissions the merchant granted |
+| `client_id` | Your application's client identifier |
+
+**Error codes:**
+
+| Code | Meaning |
+| :--- | :--- |
+| `invalid_code` | Code not found or has expired (10-minute window) |
+| `code_already_used` | Code has already been exchanged |
+| `redirect_uri_mismatch` | `redirect_uri` does not match the original request |
+| `invalid_client` | Invalid `client_id` or `client_secret` |
+
+---
+
+## `connectRevoke`
+
+Programmatically revokes a store connection — deactivates the key pair and records the disconnection.
+
+Use this when a merchant cancels their subscription on your platform or you otherwise need to disconnect them from your side.
+
+```typescript
+await client.gcConnect.connectRevoke({
+  requestBody: {
+    pair_id: storedPairId,
+    client_id: 'your-client-id',
+    client_secret: process.env.GC_CLIENT_SECRET,
+    revoke_reason: 'subscription_cancelled', // optional
+  },
+});
+```
+
+<Note>
+  Merchants can also disconnect your application at any time from their **Settings → Integrations → Connected Apps** panel. Galactic Core handles that automatically — you do not need to call this endpoint for merchant-initiated disconnects. Both paths deactivate the same key pair.
+</Note>
+
+---
+
+## `listConnectSessions`
+
+Returns all active connections for the authenticated store. This powers the Connected Apps section in the merchant's settings panel.
+
+**Requires a secret key (`tybrite_sk_*`).**
+
+```typescript
+const { sessions } = await client.gcConnect.listConnectSessions();
+
+for (const session of sessions) {
+  console.log(session.client_name);    // "Fantastic"
+  console.log(session.environment);   // "production"
+  console.log(session.scopes);        // ["read", "orders:read"]
+  console.log(session.connected_at);  // "2026-05-28T10:00:00Z"
+  console.log(session.last_used_at);  // "2026-05-28T14:30:00Z"
+  console.log(session.pair_id);       // UUID — use to revoke
+}
+```
+
+---
+
+## Complete Integration Example
+
+```typescript
+import Tybrite from 'tybrite-typescript-sdk';
+
+// Initialize without a global API key — for the Connect flow,
+// auth is per-merchant and handled at exchange time.
+const client = new Tybrite({ BASE: 'https://api.tybritelabs.com' });
+
+// Step 1 — build the authorization URL and redirect the merchant
+export function buildAuthUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: process.env.GC_CLIENT_ID!,
+    redirect_uri: `${process.env.APP_URL}/callback`,
+    scope: 'read orders:read customers:read',
+    state,
+    environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox',
+  });
+  return `https://gc.tybritelabs.com/connect/authorize?${params}`;
+}
+
+// Step 2 — handle the callback and exchange the code
+export async function handleCallback(code: string, state: string, sessionState: string) {
+  if (state !== sessionState) throw new Error('CSRF check failed');
+
+  const result = await client.gcConnect.connectToken({
+    requestBody: {
+      code,
+      client_id: process.env.GC_CLIENT_ID!,
+      client_secret: process.env.GC_CLIENT_SECRET!,
+      redirect_uri: `${process.env.APP_URL}/callback`,
+    },
+  });
+
+  return result; // { sk, pk, pair_id, store_id, environment, scopes }
+}
+
+// Step 3 — use the sk to call the API on behalf of the merchant
+export function merchantClient(sk: string): Tybrite {
+  return new Tybrite({
+    BASE: 'https://api.tybritelabs.com',
+    TOKEN: sk,
+  });
+}
+```
+
+---
+
+## Response Codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success. |
+| `400` | Invalid or missing parameter, expired/used code, or mismatched redirect URI. |
+| `401` | Invalid `client_id`/`client_secret`, or missing merchant session on consent POST. |
+| `403` | Merchant does not have access to the specified store. |
+| `404` | Store or connection session not found. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |
