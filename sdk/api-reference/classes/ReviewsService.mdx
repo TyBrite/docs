@@ -113,10 +113,14 @@ const { review } = await client.reviews.submitReview({
 | `requestBody.product_id` | `string` | Yes | UUID of the product being reviewed. |
 | `requestBody.rating` | `number` | Yes | Star rating 1–5. |
 | `requestBody.variant_id` | `string` | No | Specific variant being reviewed. |
-| `requestBody.order_id` | `string` | No | Order UUID — if it belongs to this customer, the review is marked `verified_purchase: true`. |
+| `requestBody.order_id` | `string` | No | Optional order UUID. If provided and the order belongs to this customer, the review is marked `verified_purchase: true`. If omitted or the order doesn't match, the review is still accepted with `verified_purchase: false`. |
 | `requestBody.title` | `string` | No | Short headline for the review. |
 | `requestBody.body` | `string` | No | Full review text. |
 | `requestBody.media_urls` | `string[]` | No | Image or video URLs attached to the review. |
+
+**`order_id` is optional — reviews are not gated on purchase history.** Customers can review products they received as gifts, bought in-store, or purchased before creating an account. Providing a matching `order_id` simply unlocks the `verified_purchase: true` badge on the review. If the order doesn't belong to the authenticated customer, the review is accepted without the badge — no error is returned.
+
+**`customer_name`** on the returned review object is automatically populated from the customer's profile at submission time. You don't supply it — it's read from the account.
 
 **Duplicate prevention:** A customer may only have one non-rejected review per product. A second submission returns `409 Conflict`.
 
