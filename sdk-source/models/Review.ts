@@ -7,8 +7,14 @@ export type Review = {
     store_id: string;
     product_id: string;
     variant_id?: string | null;
+    /**
+     * Order associated with this review. Present only when the reviewer provided one at submission time and it matched their purchase history, resulting in verified_purchase true.
+     */
     order_id?: string | null;
     customer_id?: string | null;
+    /**
+     * Display name of the reviewer, taken from their customer profile at submission time.
+     */
     customer_name: string;
     rating: number;
     title?: string | null;

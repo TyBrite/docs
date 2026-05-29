@@ -140,7 +140,7 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
 *   **Post-processing**: When `payment_status: "paid"` is set, Galactic Core applies gift card redemption, stock reduction, and customer metrics updates. See [Post-Processing Warnings](#post-processing-warnings) below — the response may include a `post_processing_warnings` array that you **must** check.
 
 ```typescript
-const order = await client.orders.createOrder({
+const result = await client.orders.createOrder({
   idempotencyKey: `order-${Date.now()}-abc123`,
   xTimestamp: Math.floor(Date.now() / 1000),
   xSignature: hmacSignature, // base64 HMAC-SHA256 of `${timestamp}.${body}`
@@ -154,9 +154,14 @@ const order = await client.orders.createOrder({
     payment_status: 'paid' // triggers inventory + accounting + metrics
   }
 });
+const order = result.order;
 // order.id is the new order UUID
-// order.post_processing_warnings is undefined OR present with details
+// result.post_processing_warnings is undefined OR present with details
 ```
+
+<Note>
+  `createOrder` returns `{ order, post_processing_warnings? }`. `getOrder`, `updateOrder`, and `listOrders` return the order resource(s) at the top level.
+</Note>
 
 ---
 
@@ -174,8 +179,10 @@ If any step fails, the order is still recorded — but the response includes a `
 
 ```typescript
 {
-  id: 'order-uuid',
-  // ... full order fields
+  order: {
+    id: 'order-uuid',
+    // ... full order fields
+  },
   post_processing_warnings: [
     {
       stage: 'gift_card_redemption',
@@ -193,10 +200,11 @@ If any step fails, the order is still recorded — but the response includes a `
 ### Handling pattern
 
 ```typescript
-const order = await client.orders.createOrder({ /* ... */ });
+const result = await client.orders.createOrder({ /* ... */ });
+const order = result.order;
 
-if (order.post_processing_warnings?.length) {
-  for (const warning of order.post_processing_warnings) {
+if (result.post_processing_warnings?.length) {
+  for (const warning of result.post_processing_warnings) {
     if (warning.stage === 'gift_card_redemption') {
       // Alert the customer + create a support ticket
       // The customer paid full price but the gift card credit was not applied

@@ -3,7 +3,11 @@ title: "Customers"
 description: "Reference for the CustomersService class in the Tybrite SDK."
 ---
 
-The `CustomersService` class (accessed via `client.customers`) provides administrative and logistical control over customer profiles.
+The `CustomersService` class (accessed via `client.customers`) exposes the customer record as a first-class API resource — meant for integrations that manage authentication outside Galactic Core.
+
+<Note>
+  **Two integration paths.** If your storefront uses Galactic Core's built-in auth (`/v1/auth/register`, `/v1/auth/login`, etc.), prefer the [`AuthenticationService`](./AuthenticationService) — it creates and links the customer record for you. Use `CustomersService` when you're bringing your own identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO, etc.) and want to provision the Galactic Core customer record directly from your backend. See [Customers and Auth](../../customers-and-auth) for the full decision matrix.
+</Note>
 
 <Note>
   **Sandbox isolation:** Customer records created with a `tybrite_sk_test_*` key exist only in the sandbox environment and are never visible to production keys. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment resolved.
@@ -13,62 +17,98 @@ The `CustomersService` class (accessed via `client.customers`) provides administ
 
 ### `createCustomer`
 
-Create a new customer profile. This is ideal for bulk imports or custom CRM integrations. 
+Provision a Galactic Core customer record. The customer exists immediately and can place orders, hold a cart, leave reviews, etc. — but no Galactic Core login credentials are created. Authentication remains the responsibility of your external identity provider.
+
+Pass `external_id` to store your upstream user identifier (Auth0 `sub`, Clerk `user.id`, etc.). It's unique per store + environment, so subsequent reads can look up the Galactic Core customer by that identifier without keeping a side-table.
 
 <Note>
-  This method requires a **Secret Key** and should only be called from secure server-side environments.
+  **Secret Key only.** Call this from a secure server-side environment — typically a webhook or post-signup hook in your identity provider.
 </Note>
 
 ```typescript
-const customer = await client.customers.createCustomer({
+const result = await client.customers.createCustomer({
   requestBody: {
-    email: 'client@example.com',
-    name: 'John Doe',
+    email: 'jane@example.com',
+    name: 'Jane Doe',
     phone: '254711222333',
-    address: '123 Business Way, Nairobi'
+    address: '123 Business Way, Nairobi',
+    external_id: 'auth0|66a3f8c2b1d9c204a1f7e3d1', // your upstream user id
   }
 });
+const customer = result.customer;
+// Store customer.id alongside your upstream user record for future calls.
 ```
+
+<Note>
+  `createCustomer` returns `{ customer }`. `getCustomer` returns the customer fields at the top level.
+</Note>
 
 ---
 
 ### `getCustomer`
 
-Retrieve complete details for a specific customer, including store metrics and purchase history.
+Retrieve a customer's profile, including store metrics and purchase history. This is the endpoint your "My Account" page calls.
 
-<Note>
-  This method requires both a **Publishable/Secret Key** (in client constructor) AND the customer's session token (`xAuthToken`). The token resolves to a customer whose id must match the `id` parameter — otherwise 403 is returned. This prevents enumeration of other customers' profiles.
-</Note>
+Sign an `xExternalAuth` assertion in your backend (see [Customers and Auth](../../customers-and-auth) for the signing helper) and pass it through:
 
 ```typescript
+const assertion = signCustomerAssertion(upstreamUserId, process.env.GC_HMAC_SECRET);
+
 const customer = await client.customers.getCustomer({
-  id: 'customer-uuid-here',
-  xAuthToken: customerSession.access_token, // Required customer JWT
+  id: gcCustomerId,
+  xExternalAuth: assertion,
   fields: 'name,email,store_metrics.total_spent'
 });
 ```
+
+<Accordion title="Using Galactic Core auth instead?">
+  If your storefront authenticates customers through Galactic Core (Path A), pass the customer's session JWT as `xAuthToken` in place of `xExternalAuth`:
+
+  ```typescript
+  const customer = await client.customers.getCustomer({
+    id: gcCustomerId,
+    xAuthToken: customerSession.access_token,
+  });
+  ```
+
+  Provide exactly one of `xAuthToken` or `xExternalAuth`. Both → `400`. Mismatch with the path `id` → `403`.
+</Accordion>
 
 ---
 
 ### `updateCustomer`
 
-Perform partial updates on a customer record. Only the fields you provide will be modified.
-
-<Note>
-  Customers may only update **their own** record. The `xAuthToken` (session JWT) must resolve to a customer whose id matches the `id` parameter, or the server returns 403.
-</Note>
+Partially update a customer's profile. Only the fields you supply are modified. Typical caller: a "Save changes" button on the customer's account page.
 
 ```typescript
-const updated = await client.customers.updateCustomer({
-  id: 'customer-uuid-here',
-  xAuthToken: customerSession.access_token, // Required customer JWT
+const assertion = signCustomerAssertion(upstreamUserId, process.env.GC_HMAC_SECRET);
+
+const result = await client.customers.updateCustomer({
+  id: gcCustomerId,
+  xExternalAuth: assertion,
   requestBody: {
-    status: 'active',
     address: '123 Business Way, Nairobi',
-    name: 'John Updated'
+    name: 'Jane Updated'
   }
 });
+const updated = result.customer;
 ```
+
+<Accordion title="Using Galactic Core auth instead?">
+  ```typescript
+  const result = await client.customers.updateCustomer({
+    id: gcCustomerId,
+    xAuthToken: customerSession.access_token,
+    requestBody: { address: '123 Business Way, Nairobi' }
+  });
+  ```
+
+  Provide exactly one of `xAuthToken` or `xExternalAuth`. Both → `400`. Mismatch with the path `id` → `403`.
+</Accordion>
+
+<Note>
+  `updateCustomer` returns `{ customer }`. Unwrap the `customer` key to get the resource.
+</Note>
 
 
 ## Customer Utilities

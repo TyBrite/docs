@@ -7,6 +7,10 @@ The `AuthenticationService` (accessed via `client.auth`) is the **gateway to obt
 
 Every customer-scoped operation across the SDK — on `client.customers`, `client.cartWishlist`, `client.giftCards`, and `client.messaging` — requires the `access_token` minted here to be passed as the `xAuthToken` header.
 
+<Note>
+  **Already using your own auth provider?** If your storefront authenticates through Auth0, Clerk, Cognito, Firebase, NextAuth, SSO, or any other external identity system, you don't need this service. Use [`CustomersService`](./CustomersService) to provision Galactic Core customer records directly from your backend. See [Customers and Auth](../../customers-and-auth) for the decision matrix.
+</Note>
+
 ## The Customer Session Lifecycle
 
 ```
@@ -206,7 +210,7 @@ localStorage.setItem('tybrite_refresh_token', session.refresh_token);
 
 ### `getCurrentUser`
 
-Retrieve the profile of the currently authenticated user. Also routed as `GET /v1/auth/me`. Returns **`200 OK`** with `{ user, customer }`.
+Retrieve the lightweight identity of the currently authenticated user — useful right after login to confirm "who am I?" Also routed as `GET /v1/auth/me`. Returns **`200 OK`** with `{ user, customer }`.
 
 <Warning>
   `xAuthToken` is **mandatory** and must be the customer's **own** session JWT. This endpoint resolves "who am I?" from the JWT alone — passing the wrong token returns a different customer's record (or `401`).
@@ -221,6 +225,10 @@ const { user, customer } = await client.auth.getCurrentUser({
 
 console.log(`Logged in as: ${user.email} (customer id: ${customer.id})`);
 ```
+
+<Note>
+  **Looking for the full customer profile?** `getCurrentUser` returns just enough to identify the customer (id, email, basic fields). For the complete profile — addresses, store metrics, purchase history, status — call [`CustomersService.getCustomer`](./CustomersService#getcustomer). The same `xAuthToken` works there. Profile *edits* (address change, name change, etc.) also live on `CustomersService` via [`updateCustomer`](./CustomersService#updatecustomer).
+</Note>
 
 ---
 

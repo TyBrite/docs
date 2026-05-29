@@ -10,6 +10,14 @@ export type Customer = {
     address?: string;
     status?: Customer.status;
     join_date?: string;
+    /**
+     * Optional identifier from an external identity provider (Auth0, Clerk, Cognito,
+     * Firebase, NextAuth, etc). Unique per store + environment. Set this when you
+     * manage authentication outside Galactic Core and need a stable handle to map
+     * your upstream user back to the Galactic Core customer record.
+     *
+     */
+    external_id?: string | null;
     total_purchases?: number;
     last_purchase?: string;
     created_at?: string;
