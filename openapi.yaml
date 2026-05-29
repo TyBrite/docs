@@ -304,7 +304,7 @@ info:
     Request only specific fields to reduce bandwidth:
 
     ```
-    GET /v1/products?fields=id,name,online_price,online_stock
+    GET /v1/products?fields=id,name,price,stock
     ```
 
     Supports nested fields with dot notation:
@@ -1228,7 +1228,7 @@ paths:
             - **Media:** `media`, `thumbnail_url`
             - **SEO:** `product_slug`, `seo_title`, `seo_description`, `seo_keywords`
             - **Taxonomy:** `category_id`, `category_name`, `subcategory_id`, `subcategory_name`
-            - **Metadata:** `brand`, `featured`, `featured_order`, `tags`, `is_active`, `online_category`
+            - **Metadata:** `brand`, `featured`, `featured_order`, `tags`, `is_active`
             - **Nested:** `attributes.*`, `shipping_info.*`, `variant_attributes.*`
             - **Timestamps:** `created_at`, `updated_at`
             - **Flags:** `has_variants`, `is_default`
@@ -11586,11 +11586,6 @@ components:
             - integer
             - 'null'
           description: Display order for featured products
-        online_category:
-          type:
-            - string
-            - 'null'
-          description: Merged category/subcategory string
         tags:
           type:
             - array

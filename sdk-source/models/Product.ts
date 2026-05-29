@@ -97,10 +97,6 @@ export type Product = {
      */
     featured_order?: number | null;
     /**
-     * Merged category/subcategory string
-     */
-    online_category?: string | null;
-    /**
      * Product tags
      */
     tags?: any[] | null;
