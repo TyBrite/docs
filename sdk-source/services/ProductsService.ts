@@ -219,7 +219,7 @@ export class ProductsService {
                                                      * - **Media:** `media`, `thumbnail_url`
                                                      * - **SEO:** `product_slug`, `seo_title`, `seo_description`, `seo_keywords`
                                                      * - **Taxonomy:** `category_id`, `category_name`, `subcategory_id`, `subcategory_name`
-                                                     * - **Metadata:** `brand`, `featured`, `featured_order`, `tags`, `is_active`, `online_category`
+                                                     * - **Metadata:** `brand`, `featured`, `featured_order`, `tags`, `is_active`
                                                      * - **Nested:** `attributes.*`, `shipping_info.*`, `variant_attributes.*`
                                                      * - **Timestamps:** `created_at`, `updated_at`
                                                      * - **Flags:** `has_variants`, `is_default`
