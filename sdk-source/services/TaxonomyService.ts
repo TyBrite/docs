@@ -103,12 +103,15 @@ export class TaxonomyService {
     }
     /**
      * List subcategories
-     * Retrieve all product subcategories. Optionally filter by parent category. Accepts both publishable and secret API keys.
+     * Retrieve product subcategories. Subcategories can be nested to arbitrary depth via their parent_id. By default a flat list is returned; use tree=true to receive them as a nested hierarchy, or parent_id / root_only to fetch a specific level. Accepts both publishable and secret API keys.
      * @returns any Success
      * @throws ApiError
      */
     public listSubcategories({
         categoryId,
+        parentId,
+        rootOnly = false,
+        tree = false,
         search,
         active = true,
         limit = 100,
@@ -119,6 +122,18 @@ export class TaxonomyService {
          * Filter subcategories by parent category ID
          */
         categoryId?: string,
+        /**
+         * Return only the direct children of the given subcategory. Pass the literal value null to return only top-level subcategories (those with no parent).
+         */
+        parentId?: string,
+        /**
+         * When true, return only top-level subcategories (those with no parent). Useful for rendering the first level of a category's subcategory hierarchy.
+         */
+        rootOnly?: boolean,
+        /**
+         * When true, return subcategories as a nested hierarchy: each subcategory includes a children array of its nested subcategories. The response is not paginated in this mode — the full tree is returned in one call.
+         */
+        tree?: boolean,
         /**
          * Case-insensitive substring match on subcategory name
          */
@@ -152,6 +167,9 @@ export class TaxonomyService {
             url: '/v1/subcategories',
             query: {
                 'category_id': categoryId,
+                'parent_id': parentId,
+                'root_only': rootOnly,
+                'tree': tree,
                 'search': search,
                 'active': active,
                 'limit': limit,
@@ -168,15 +186,20 @@ export class TaxonomyService {
     }
     /**
      * Get subcategory by ID
-     * Retrieve a single subcategory by ID. Accepts both publishable and secret API keys.
+     * Retrieve a single subcategory by ID. Use the include parameter to also receive the subcategory's direct children and/or its ancestor breadcrumb chain. Accepts both publishable and secret API keys.
      * @returns Subcategory Success
      * @throws ApiError
      */
     public getSubcategory({
         id,
+        include,
         fields,
     }: {
         id: string,
+        /**
+         * Comma-separated list of related data to nest on the response. Supported values: children (the subcategory's direct, one-level-down child subcategories, as a children array) and ancestors (the breadcrumb chain from the top-level subcategory down to the immediate parent, as an ancestors array ordered root-first; empty for a top-level subcategory). Combine them, e.g. include=ancestors,children. Omit for a flat subcategory object.
+         */
+        include?: string,
         /**
          * Comma-separated list of fields to include in the response.
          */
@@ -189,6 +212,7 @@ export class TaxonomyService {
                 'id': id,
             },
             query: {
+                'include': include,
                 'fields': fields,
             },
             errors: {

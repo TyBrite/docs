@@ -2529,7 +2529,7 @@ paths:
       tags:
         - Taxonomy
       summary: List subcategories
-      description: Retrieve all product subcategories. Optionally filter by parent category. Accepts both publishable and secret API keys.
+      description: Retrieve product subcategories. Subcategories can be nested to arbitrary depth via their parent_id. By default a flat list is returned; use tree=true to receive them as a nested hierarchy, or parent_id / root_only to fetch a specific level. Accepts both publishable and secret API keys.
       security:
         - BearerAuth: []
       parameters:
@@ -2539,6 +2539,24 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: parent_id
+          in: query
+          description: Return only the direct children of the given subcategory. Pass the literal value null to return only top-level subcategories (those with no parent).
+          schema:
+            type: string
+            format: uuid
+        - name: root_only
+          in: query
+          description: When true, return only top-level subcategories (those with no parent). Useful for rendering the first level of a category's subcategory hierarchy.
+          schema:
+            type: boolean
+            default: false
+        - name: tree
+          in: query
+          description: 'When true, return subcategories as a nested hierarchy: each subcategory includes a children array of its nested subcategories. The response is not paginated in this mode — the full tree is returned in one call.'
+          schema:
+            type: boolean
+            default: false
         - name: search
           in: query
           description: Case-insensitive substring match on subcategory name
@@ -2609,7 +2627,7 @@ paths:
       tags:
         - Taxonomy
       summary: Get subcategory by ID
-      description: Retrieve a single subcategory by ID. Accepts both publishable and secret API keys.
+      description: Retrieve a single subcategory by ID. Use the include parameter to also receive the subcategory's direct children and/or its ancestor breadcrumb chain. Accepts both publishable and secret API keys.
       security:
         - BearerAuth: []
       parameters:
@@ -2619,6 +2637,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: include
+          in: query
+          description: 'Comma-separated list of related data to nest on the response. Supported values: children (the subcategory''s direct, one-level-down child subcategories, as a children array) and ancestors (the breadcrumb chain from the top-level subcategory down to the immediate parent, as an ancestors array ordered root-first; empty for a top-level subcategory). Combine them, e.g. include=ancestors,children. Omit for a flat subcategory object.'
+          schema:
+            type: string
+            example: ancestors,children
         - name: fields
           in: query
           schema:
@@ -2635,6 +2659,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Subcategory'
+              examples:
+                flat:
+                  summary: Default response (no children)
+                  value:
+                    id: a0a4d789-f25a-4e7c-977a-70d4441062c6
+                    category_id: fc86fd7a-e6f0-4d8d-afa6-f7086f8096f0
+                    parent_id: 12d9df81-e3c9-4a87-978b-f082c02ccecd
+                    name: Laptops
+                    active: true
+                withChildren:
+                  summary: include=children — direct children nested
+                  value:
+                    id: 12d9df81-e3c9-4a87-978b-f082c02ccecd
+                    category_id: fc86fd7a-e6f0-4d8d-afa6-f7086f8096f0
+                    parent_id: null
+                    name: Computers
+                    active: true
+                    children:
+                      - id: 691b8fb5-9c60-4fe3-8484-6e01e85423e4
+                        category_id: fc86fd7a-e6f0-4d8d-afa6-f7086f8096f0
+                        parent_id: 12d9df81-e3c9-4a87-978b-f082c02ccecd
+                        name: Desktops
+                        active: true
+                      - id: a0a4d789-f25a-4e7c-977a-70d4441062c6
+                        category_id: fc86fd7a-e6f0-4d8d-afa6-f7086f8096f0
+                        parent_id: 12d9df81-e3c9-4a87-978b-f082c02ccecd
+                        name: Laptops
+                        active: true
+                withAncestors:
+                  summary: include=ancestors — breadcrumb chain (root-first) for a nested subcategory
+                  value:
+                    id: 1a16ccb5-1fba-4d84-b1f1-9f04a0db135a
+                    category_id: fc86fd7a-e6f0-4d8d-afa6-f7086f8096f0
+                    parent_id: a0a4d789-f25a-4e7c-977a-70d4441062c6
+                    name: Gaming Laptops
+                    active: true
+                    ancestors:
+                      - id: 12d9df81-e3c9-4a87-978b-f082c02ccecd
+                        category_id: fc86fd7a-e6f0-4d8d-afa6-f7086f8096f0
+                        parent_id: null
+                        name: Computers
+                        active: true
+                      - id: a0a4d789-f25a-4e7c-977a-70d4441062c6
+                        category_id: fc86fd7a-e6f0-4d8d-afa6-f7086f8096f0
+                        parent_id: 12d9df81-e3c9-4a87-978b-f082c02ccecd
+                        name: Laptops
+                        active: true
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -11810,6 +11881,12 @@ components:
         category_id:
           type: string
           format: uuid
+        parent_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: ID of the parent subcategory, or null for a top-level subcategory directly under its category. Subcategories can be nested to arbitrary depth (e.g. Shoes → Men's → Sneakers).
         name:
           type: string
           example: Smartphones
@@ -11824,6 +11901,16 @@ components:
         active:
           type: boolean
           description: Whether the subcategory is active
+        children:
+          type: array
+          description: Nested child subcategories. Only included when listing subcategories with tree=true, or when fetching a single subcategory with include=children; omitted otherwise.
+          items:
+            $ref: '#/components/schemas/Subcategory'
+        ancestors:
+          type: array
+          description: Ancestor breadcrumb chain, ordered from the top-level subcategory down to the immediate parent (root-first). Only included when fetching a single subcategory with include=ancestors; empty for a top-level subcategory, omitted otherwise.
+          items:
+            $ref: '#/components/schemas/Subcategory'
         created_at:
           type: string
           format: date-time
