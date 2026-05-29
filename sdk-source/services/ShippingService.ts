@@ -5,6 +5,7 @@
 import type { DeliveryFeeCalculation } from '../models/DeliveryFeeCalculation';
 import type { DeliveryPricingTier } from '../models/DeliveryPricingTier';
 import type { DeliveryZone } from '../models/DeliveryZone';
+import type { ShippingCalculationRequest } from '../models/ShippingCalculationRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
 export class ShippingService {
@@ -74,7 +75,7 @@ export class ShippingService {
     public calculateShipping({
         requestBody,
     }: {
-        requestBody: ,
+        requestBody: ShippingCalculationRequest,
     }): CancelablePromise<DeliveryFeeCalculation> {
         return this.httpRequest.request({
             method: 'POST',

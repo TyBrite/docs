@@ -46,6 +46,38 @@ The `Tybrite` constructor accepts a configuration object to customize the client
 | `apiKey` | `string` | Your Tybrite API key (Publishable or Secret). |
 | `BASE` | `string` | Optional. The base URL of the API. Defaults to `https://api.tybritelabs.com`. |
 | `HEADERS` | `Record<string, string>` | Optional. Custom headers to be included in every request. |
+| `MAX_RETRIES` | `number` | Optional. Maximum number of automatic retries for transient failures. Defaults to `2`. Set to `0` to disable retries. |
+| `RETRY_DELAY_MS` | `number` | Optional. Base delay (ms) for exponential backoff between retries. Defaults to `500`. |
+
+## Automatic Retries
+
+The SDK automatically retries requests that fail for transient reasons — network errors and the
+HTTP statuses `429`, `500`, `502`, `503`, and `504` — using exponential backoff with jitter
+(and honoring a `Retry-After` header when the API sends one). By default it makes up to **2**
+retries; tune or disable this with `MAX_RETRIES`.
+
+```typescript
+const client = new Tybrite({
+  apiKey: 'tybrite_sk_live_...',
+  MAX_RETRIES: 3,      // up to 3 retries (4 attempts total)
+  RETRY_DELAY_MS: 400, // ~0.4s, 0.8s, 1.6s (+ jitter)
+});
+```
+
+**Retries are safe by design.** The SDK never risks creating a duplicate resource:
+
+- `GET`, `PUT`, and `DELETE` are safe to repeat and are always retried.
+- `POST` and `PATCH` are retried on an error **status** only when you send an
+  `Idempotency-Key` header. The API deduplicates those operations server-side
+  (order creation, order updates, and payment initialization), so a retry returns the
+  original result instead of acting twice. A `POST`/`PATCH` without an idempotency key is
+  retried only when the connection fails outright (the request never reached the server, so
+  no work could have happened) — never after the server has responded.
+
+<Tip>
+  For order and payment calls, always pass a unique `Idempotency-Key`. It both guarantees
+  exactly-once processing and unlocks automatic retries for those requests.
+</Tip>
 
 ## Two-Token Security Model
 

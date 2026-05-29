@@ -159,6 +159,10 @@ const order = result.order;
 // result.post_processing_warnings is undefined OR present with details
 ```
 
+<Tip>
+  Because you pass an `idempotencyKey`, the SDK can safely [auto-retry](/sdk/introduction#automatic-retries) this call on a transient failure — a retry returns the original order rather than creating a duplicate.
+</Tip>
+
 <Note>
   `createOrder` returns `{ order, post_processing_warnings? }`. `getOrder`, `updateOrder`, and `listOrders` return the order resource(s) at the top level.
 </Note>
@@ -244,7 +248,7 @@ const order = await client.orders.getOrder({ id: 'order-uuid' });
 Update fulfillment or payment status. **Requires HMAC signature and Idempotency Key.**
 
 *   **Idempotency**: Use a unique key for each distinct update (e.g., `update-payment-{order_id}-{timestamp}`).
-*   **Protection**: This prevents double-triggering side effects like accounting entries or inventory reduction on network retries.
+*   **Protection**: This prevents double-triggering side effects like accounting entries or inventory reduction on network retries — and lets the SDK [auto-retry](/sdk/introduction#automatic-retries) the call safely.
 
 ```typescript
 const updated = await client.orders.updateOrder({

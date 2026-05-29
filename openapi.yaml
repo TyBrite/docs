@@ -9544,50 +9544,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              oneOf:
-                - required:
-                    - latitude
-                    - longitude
-                  properties:
-                    latitude:
-                      type: number
-                      format: double
-                      minimum: -90
-                      maximum: 90
-                      description: Customer's GPS latitude
-                      example: -1.106583
-                    longitude:
-                      type: number
-                      format: double
-                      minimum: -180
-                      maximum: 180
-                      description: Customer's GPS longitude
-                      example: 37.013954
-                    order_total:
-                      type: number
-                      format: float
-                      minimum: 0
-                      description: Total order value (before shipping)
-                      example: 5000
-                - required:
-                    - place_name
-                  properties:
-                    place_name:
-                      type: string
-                      description: Address or place name to geocode (e.g., "Westlands, Nairobi, Kenya")
-                      example: Westlands, Nairobi, Kenya
-                    country_code:
-                      type: string
-                      pattern: ^[A-Z]{2}$
-                      description: Optional ISO 3166-1 alpha-2 country code (improves geocoding accuracy)
-                      example: KE
-                    order_total:
-                      type: number
-                      format: float
-                      minimum: 0
-                      description: Total order value (before shipping)
-                      example: 5000
+              $ref: '#/components/schemas/ShippingCalculationRequest'
             examples:
               short_distance:
                 summary: Short distance delivery
@@ -12965,6 +12922,59 @@ components:
           pattern: ^#[0-9A-Fa-f]{6}$
           example: '#3B82F6'
           description: Hex color code for map visualization
+    ShippingCalculationByCoordinates:
+      type: object
+      description: Calculate shipping using the customer's GPS coordinates.
+      required:
+        - latitude
+        - longitude
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          description: Customer's GPS latitude
+          example: -1.106583
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          description: Customer's GPS longitude
+          example: 37.013954
+        order_total:
+          type: number
+          format: float
+          minimum: 0
+          description: Total order value (before shipping)
+          example: 5000
+    ShippingCalculationByPlace:
+      type: object
+      description: Calculate shipping using a place name or address that will be geocoded.
+      required:
+        - place_name
+      properties:
+        place_name:
+          type: string
+          description: Address or place name to geocode (e.g., "Westlands, Nairobi, Kenya")
+          example: Westlands, Nairobi, Kenya
+        country_code:
+          type: string
+          pattern: ^[A-Z]{2}$
+          description: Optional ISO 3166-1 alpha-2 country code (improves geocoding accuracy)
+          example: KE
+        order_total:
+          type: number
+          format: float
+          minimum: 0
+          description: Total order value (before shipping)
+          example: 5000
+    ShippingCalculationRequest:
+      description: Input for a shipping fee calculation. Provide either GPS coordinates (latitude + longitude) or a place_name to geocode.
+      oneOf:
+        - $ref: '#/components/schemas/ShippingCalculationByCoordinates'
+        - $ref: '#/components/schemas/ShippingCalculationByPlace'
     DeliveryFeeCalculation:
       type: object
       description: Calculated delivery fee based on customer location and order total

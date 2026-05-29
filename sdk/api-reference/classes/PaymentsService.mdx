@@ -74,6 +74,10 @@ const { methods } = await client.payments.getPaymentMethods({
 
 Create a payment session with your chosen provider. Requires a **Secret Key**, a valid HMAC signature, and a mandatory `Idempotency-Key`. On the first successful call this returns **`201 Created`**; subsequent calls with the same idempotency key and identical payload return **`200 OK`** with `idempotent: true` and the original session.
 
+<Tip>
+  The mandatory `Idempotency-Key` also makes this call eligible for the SDK's [automatic retries](/sdk/introduction#automatic-retries): a transient failure is retried safely and returns the original session rather than starting a second charge.
+</Tip>
+
 <Warning>
   **Secret Key required.** `initializePayment` will reject publishable keys with `403`. Never call this from untrusted client environments — keep your `sk_*` key and HMAC secret server-side.
 </Warning>
