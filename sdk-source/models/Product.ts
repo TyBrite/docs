@@ -22,7 +22,11 @@
  */
 export type Product = {
     /**
-     * Main product identifier
+     * Product identifier. Identical to `product_id`.
+     */
+    id?: string;
+    /**
+     * Product identifier. Identical to `id`.
      */
     product_id?: string;
     /**

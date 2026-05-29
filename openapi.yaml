@@ -3160,48 +3160,51 @@ paths:
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: '#/components/schemas/Order'
-                  - type: object
-                    properties:
-                      post_processing_warnings:
-                        type: array
-                        description: |
-                          Optional. Present only when one or more post-order processing
-                          steps (gift card redemption, stock reduction, etc.) failed.
-                          The order itself was created successfully, but a downstream
-                          side effect needs human follow-up. Each warning indicates the
-                          stage that failed and a human-readable message.
-                        items:
-                          type: object
-                          required:
-                            - stage
-                            - message
-                          properties:
-                            stage:
-                              type: string
-                              description: The post-processing stage that emitted the warning
-                              example: gift_card_redemption
-                            message:
-                              type: string
-                              description: Human-readable description of the failure
-                              example: 'Gift card redemption failed: Gift card not found for this store. The order was created but no gift card credit was applied. Please contact support.'
+                type: object
+                required:
+                  - order
+                properties:
+                  order:
+                    $ref: '#/components/schemas/Order'
+                  post_processing_warnings:
+                    type: array
+                    description: |
+                      Optional. Present only when one or more post-order processing
+                      steps (gift card redemption, stock reduction, etc.) failed.
+                      The order itself was created successfully, but a downstream
+                      side effect needs human follow-up. Each warning indicates the
+                      stage that failed and a human-readable message.
+                    items:
+                      type: object
+                      required:
+                        - stage
+                        - message
+                      properties:
+                        stage:
+                          type: string
+                          description: The post-processing stage that emitted the warning
+                          example: gift_card_redemption
+                        message:
+                          type: string
+                          description: Human-readable description of the failure
+                          example: 'Gift card redemption failed: Gift card not found for this store. The order was created but no gift card credit was applied. Please contact support.'
               example:
-                id: 922d235e-48c9-4933-abcd-88cb2a264f86
-                order_number: ORD-1771523999910
-                customer_id: c320094c-eb65-4879-804c-83d2e1dd7f99
-                customer_email: john.doe@example.com
-                customer_name: John Doe
-                order_status: pending
-                payment_status: pending
-                total_amount: 2520
-                items:
-                  - product_id: 9b2bb0c5-666d-4729-a59d-2526ec38add9
-                    product_name: iPhone 15 Pro
-                    quantity: 2
-                    unit_price: 1000
-                    subtotal: 2000
-                created_at: '2026-02-19T10:30:00Z'
+                order:
+                  id: 922d235e-48c9-4933-abcd-88cb2a264f86
+                  order_number: ORD-1771523999910
+                  customer_id: c320094c-eb65-4879-804c-83d2e1dd7f99
+                  customer_email: john.doe@example.com
+                  customer_name: John Doe
+                  order_status: pending
+                  payment_status: pending
+                  total_amount: 2520
+                  items:
+                    - product_id: 9b2bb0c5-666d-4729-a59d-2526ec38add9
+                      product_name: iPhone 15 Pro
+                      quantity: 2
+                      unit_price: 1000
+                      subtotal: 2000
+                  created_at: '2026-02-19T10:30:00Z'
         '400':
           description: Invalid request (missing required fields, invalid data)
           content:
@@ -6201,6 +6204,14 @@ paths:
                 join_date:
                   type: string
                   format: date
+                external_id:
+                  type: string
+                  description: |
+                    Optional identifier from an external identity provider (Auth0, Clerk,
+                    Cognito, Firebase, NextAuth, etc). Must be unique within the store +
+                    environment. Use this to map your upstream user to a Galactic Core
+                    customer record without keeping a side-table.
+                  example: auth0|66a3f8c2b1d9c204a1f7e3d1
       responses:
         '201':
           description: Customer created
@@ -6210,7 +6221,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Customer'
+                type: object
+                required:
+                  - customer
+                properties:
+                  customer:
+                    $ref: '#/components/schemas/Customer'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -6232,11 +6248,18 @@ paths:
       description: |
         Returns the authenticated customer's profile + store-level metrics.
 
-        **Customer authentication required.** Pass the customer's session token in
-        the `x-auth-token` header. The token must resolve (via
-        `supabase.auth.getUser`) to a customer whose `id` equals the `{id}` path
-        parameter — otherwise 403 is returned. This prevents a leaked publishable
-        key from being used to enumerate or read other customers' profiles.
+        **Customer-self authentication required.** Provide **exactly one** of:
+
+        - `x-auth-token` — Galactic Core customer session JWT (issued by
+          `/v1/auth/login` or `/v1/auth/verify-otp`). The token must resolve to a
+          customer whose `id` equals the `{id}` path parameter.
+        - `x-external-auth` — bring-your-own-auth assertion: a base64url-encoded
+          JSON claim `{external_id, iat, exp}` followed by `.` and the base64url
+          HMAC-SHA256 signature of the claim using the store's `hmac_secret`. The
+          `external_id` must resolve to a customer whose `id` equals the `{id}`
+          path parameter. The claim's lifetime (`exp - iat`) must not exceed 300s.
+
+        Mismatch on either path returns `403`. Providing both headers returns `400`.
       security:
         - BearerAuth: []
       parameters:
@@ -6248,8 +6271,17 @@ paths:
             format: uuid
         - name: x-auth-token
           in: header
-          required: true
-          description: Customer session access_token from `/v1/auth/login` or `/v1/auth/verify-otp`. The resolved customer must match the `{id}` path parameter.
+          required: false
+          description: Galactic Core customer session access_token from `/v1/auth/login` or `/v1/auth/verify-otp`. The resolved customer must match the `{id}` path parameter. Provide this OR `x-external-auth`, not both.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO).
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide this OR `x-auth-token`, not both.
           schema:
             type: string
         - name: fields
@@ -6296,10 +6328,14 @@ paths:
         Partially update the authenticated customer's profile. Only the fields
         provided in the request body are updated.
 
-        **Customer authentication required.** Pass the customer's session token in
-        the `x-auth-token` header. The token must resolve to a customer whose
-        `id` equals the `{id}` path parameter — otherwise 403 is returned.
-        Protected fields (`store_id`, `auth_user_id`) cannot be modified.
+        **Customer-self authentication required.** Provide **exactly one** of:
+
+        - `x-auth-token` — Galactic Core customer session JWT.
+        - `x-external-auth` — bring-your-own-auth assertion (HMAC-signed claim
+          carrying `external_id` and a `(iat, exp)` window ≤ 300 seconds).
+
+        Mismatch returns `403`. Providing both headers returns `400`. Protected
+        fields (`store_id`, `auth_user_id`, `environment`) cannot be modified.
       security:
         - BearerAuth: []
       parameters:
@@ -6311,8 +6347,15 @@ paths:
             format: uuid
         - name: x-auth-token
           in: header
-          required: true
-          description: Customer session access_token. The resolved customer must match the `{id}` path parameter.
+          required: false
+          description: Galactic Core customer session access_token. The resolved customer must match the `{id}` path parameter. Provide this OR `x-external-auth`, not both.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion. Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` signed with the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide this OR `x-auth-token`, not both.
           schema:
             type: string
       requestBody:
@@ -6335,6 +6378,12 @@ paths:
                   enum:
                     - active
                     - inactive
+                external_id:
+                  type: string
+                  description: |
+                    Optional identifier from an external identity provider. Set or update
+                    the link between this Galactic Core customer and your upstream user.
+                  example: auth0|66a3f8c2b1d9c204a1f7e3d1
       responses:
         '200':
           description: Customer updated successfully
@@ -6344,7 +6393,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Customer'
+                type: object
+                required:
+                  - customer
+                properties:
+                  customer:
+                    $ref: '#/components/schemas/Customer'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -11423,10 +11477,15 @@ components:
         - Nested filtering: Filter specific variant fields using dot notation 
         - Example: fields=name,price_range,variants.sku,variants.selling_price,variants.stock
       properties:
+        id:
+          type: string
+          format: uuid
+          description: Product identifier. Identical to `product_id`.
+          example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
         product_id:
           type: string
           format: uuid
-          description: Main product identifier
+          description: Product identifier. Identical to `id`.
           example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
         name:
           type: string
@@ -12330,6 +12389,16 @@ components:
         join_date:
           type: string
           format: date
+        external_id:
+          type:
+            - string
+            - 'null'
+          description: |
+            Optional identifier from an external identity provider (Auth0, Clerk, Cognito,
+            Firebase, NextAuth, etc). Unique per store + environment. Set this when you
+            manage authentication outside Galactic Core and need a stable handle to map
+            your upstream user back to the Galactic Core customer record.
+          example: auth0|66a3f8c2b1d9c204a1f7e3d1
         total_purchases:
           type: integer
         last_purchase:

@@ -287,7 +287,8 @@ export class OrdersService {
              */
             promotion_usages?: any[] | null;
         },
-    }): CancelablePromise<(Order & {
+    }): CancelablePromise<{
+        order: Order;
         /**
          * Optional. Present only when one or more post-order processing
          * steps (gift card redemption, stock reduction, etc.) failed.
@@ -306,7 +307,7 @@ export class OrdersService {
              */
             message: string;
         }>;
-    })> {
+    }> {
         return this.httpRequest.request({
             method: 'POST',
             url: '/v1/orders',
