@@ -41,9 +41,14 @@ console.log(`Category Banner: ${category.image}`);
 
 Subcategories allow for more granular organization within a parent category (e.g., "Laptops" inside "Electronics").
 
+Subcategories can be **nested to arbitrary depth**. Each subcategory has a `parent_id`:
+`null` means it sits directly under its category, while a non-null `parent_id` points to
+another subcategory — letting you model hierarchies like `Shoes → Men's → Sneakers`.
+
 ### `listSubcategories`
 
-Retrieve a paginated list of subcategories. You can scope this to a specific parent category and include images for each.
+Retrieve subcategories. By default this returns a flat, paginated list, which you can scope
+to a parent category and include images for each.
 
 ```typescript
 const { subcategories, pagination } = await client.taxonomy.listSubcategories({
@@ -53,6 +58,33 @@ const { subcategories, pagination } = await client.taxonomy.listSubcategories({
   limit: 24,
   fields: 'id,name,category_id,image'
 });
+```
+
+**Working with the hierarchy**
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `tree` | `boolean` | Return subcategories as a nested hierarchy. Each subcategory includes a `children` array of its nested subcategories. The response is **not paginated** in this mode — the full tree is returned in one call. |
+| `rootOnly` | `boolean` | Return only top-level subcategories (those with no parent). Ideal for rendering the first level of a category's menu. |
+| `parentId` | `string` | Return only the direct children of the given subcategory. Pass `"null"` to return only top-level subcategories. |
+
+```typescript
+// Fetch the full nested hierarchy for a category
+const { subcategories } = await client.taxonomy.listSubcategories({
+  categoryId: 'apparel-uuid',
+  tree: true,
+});
+// [
+//   { id: 'shoes', name: 'Shoes', parent_id: null, children: [
+//       { id: 'mens', name: "Men's", parent_id: 'shoes', children: [
+//           { id: 'sneakers', name: 'Sneakers', parent_id: 'mens', children: [] }
+//       ] }
+//   ] }
+// ]
+
+// Or fetch one level at a time, lazy-loading as the shopper drills in:
+const roots = await client.taxonomy.listSubcategories({ categoryId: 'apparel-uuid', rootOnly: true });
+const children = await client.taxonomy.listSubcategories({ parentId: 'shoes' });
 ```
 
 ---
@@ -67,6 +99,65 @@ const sub = await client.taxonomy.getSubcategory({
   fields: 'name,description,image' // Optional
 });
 ```
+
+**Include direct children**
+
+Pass `include: 'children'` to receive the subcategory's **direct** child subcategories
+(one level down) nested under a `children` array — handy for lazily expanding a single node
+as the shopper drills into your navigation. The array is empty for a leaf subcategory.
+
+```typescript
+const computers = await client.taxonomy.getSubcategory({
+  id: 'computers-uuid',
+  include: 'children',
+});
+
+// {
+//   id: 'computers-uuid',
+//   name: 'Computers',
+//   parent_id: null,
+//   children: [
+//     { id: 'desktops-uuid', name: 'Desktops', parent_id: 'computers-uuid' },
+//     { id: 'laptops-uuid',  name: 'Laptops',  parent_id: 'computers-uuid' }
+//   ]
+// }
+```
+
+<Note>
+  `include: 'children'` returns only the **immediate** children. To pull a whole multi-level
+  hierarchy in one call, use `listSubcategories({ tree: true })` instead.
+</Note>
+
+**Include the ancestor breadcrumb chain**
+
+Pass `include: 'ancestors'` to receive the chain of parent subcategories from the top-level
+subcategory down to the immediate parent, as an `ancestors` array ordered **root-first** —
+exactly the shape you need to render a breadcrumb (`Home › Computers › Laptops › Gaming Laptops`).
+The array is empty for a top-level subcategory.
+
+```typescript
+const sub = await client.taxonomy.getSubcategory({
+  id: 'gaming-laptops-uuid',
+  include: 'ancestors',
+});
+
+// {
+//   id: 'gaming-laptops-uuid',
+//   name: 'Gaming Laptops',
+//   parent_id: 'laptops-uuid',
+//   ancestors: [
+//     { id: 'computers-uuid', name: 'Computers', parent_id: null },
+//     { id: 'laptops-uuid',   name: 'Laptops',   parent_id: 'computers-uuid' }
+//   ]
+// }
+
+// Build a breadcrumb: [...sub.ancestors, sub].map(s => s.name).join(' › ')
+// → "Computers › Laptops › Gaming Laptops"
+```
+
+You can combine both in one request — `include: 'ancestors,children'` returns the node with
+both its breadcrumb trail and its direct children, enough to render a full category page
+(breadcrumb + sub-navigation) from a single call.
 
 ## Browsing Products
 
@@ -88,6 +179,12 @@ const smartphones = await client.products.listProducts({
   subcategoryId: 'smartphones-uuid'
 });
 ```
+
+<Note>
+  Filtering products by a subcategory automatically includes products in **all of its nested
+  subcategories**. Requesting products for `Shoes` returns everything filed under
+  `Shoes → Men's → Sneakers` as well, so a single call powers a parent-category landing page.
+</Note>
 
 ### Combined Hierarchical Filter
 ```typescript
