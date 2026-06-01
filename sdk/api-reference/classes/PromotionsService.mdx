@@ -14,16 +14,16 @@ Retrieve a list of promotions based on their lifecycle status. This is useful fo
 ```typescript
 const { promotions, pagination } = await client.promotions.listPromotions({
   status: 'active',
-  cartTotal: '10000',
+  cartTotal: '120.00',
   limit: 50,
-  fields: 'id,name,discount_value,discount_type,image'
+  fields: 'id,name,type,value,min_purchase,image'
 });
 
 console.log(`Available promotions: ${promotions.length}`);
 ```
 
 **Filter: `cartTotal`**
-Providing a `cartTotal` allows the engine to pre-filter promotions that the customer is actually eligible for based on their current shopping bag value.
+Providing a `cartTotal` allows the engine to pre-filter promotions that the customer is actually eligible for based on their current shopping bag value (compared against each promotion's `min_purchase`).
 
 ---
 
@@ -33,8 +33,8 @@ Fetch full configuration data for a promotion, including its exact discount logi
 
 ```typescript
 const promo = await client.promotions.getPromotion({
-  id: 'promo-uuid-or-code',
-  fields: 'name,discount_value,discount_type,min_purchase,image' // Optional
+  id: 'promotion_uuid',
+  fields: 'name,type,value,min_purchase,image' // Optional
 });
 
 if (promo.image) {
@@ -52,9 +52,14 @@ if (promo.image) {
 | `id` | `uuid` | Unique promotion identifier. |
 | `name` | `string` | Promotion display name. |
 | `type` | `enum` | `fixed`, `discount`, `bundle`, `bogo`. |
+| `display_type` | `string` | Human-readable label derived from `type` (e.g. "Percentage Discount"). |
+| `value` | `string` | The discount amount or percentage, depending on `type`. |
+| `min_purchase` | `number` | Minimum order total for the promotion to apply. |
+| `start_date` / `end_date` | `date` | Validity window. Only `active` promotions within this window apply. |
+| `status` | `string` | Lifecycle status. |
 | `image`| `string`| URL of the promotion banner. |
-| `discount_value`| `number`| The numerical value of the discount. |
-| `discount_type`| `enum` | `percentage`, `fixed`. |
+| `bundle_products` / `bogo_required_products` / `bogo_free_products` / `free_products` | `array` | Product sets for `bundle` / `bogo` promotions. |
+| `has_time_restrictions` | `boolean` | Whether the promotion only applies on certain days/times (`start_time`, `end_time`, `time_zone`, `apply_to_days`). |
 
 ---
 

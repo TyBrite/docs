@@ -46,7 +46,8 @@ const details = await client.giftCards.checkGiftCard({
 });
 
 console.log(`Remaining Balance: ${details.balance}`);
-console.log(`Status: ${details.status}`); // 'active', 'redeemed', or 'expired'
+console.log(`Valid: ${details.valid}`);   // true only when active, has balance, and not expired
+console.log(`Status: ${details.status}`); // 'active' while redeemable
 ```
 
 <Note>
@@ -80,11 +81,13 @@ This ensures the gift card balance is only deducted if the main order succeeds.
 
 ## Card Lifecycle
 
-Gift cards in Tybrite move through three states:
+A gift card is redeemable only when **all** of the following hold — this is exactly what the `valid` flag on `checkGiftCard` reflects:
 
-*   **Active**: Valid for use and has a non-zero balance.
-*   **Redeemed**: The balance has been fully utilized.
-*   **Expired**: The card has passed its `expires_at` date and can no longer be used, regardless of balance.
+*   **Active**: `status` is `active`.
+*   **Has balance**: `balance` is greater than zero.
+*   **Not expired**: the current date is before `expiry_date`.
+
+Once the balance reaches zero or the `expiry_date` passes, the card is no longer redeemable even though its `status` may still read `active`. Always rely on the `valid` flag rather than inferring usability from `status` alone.
 
 ---
 

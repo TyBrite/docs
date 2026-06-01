@@ -2927,6 +2927,11 @@ paths:
             schema:
               type: object
               required:
+                - customer_email
+                - customer_name
+                - billing_address
+                - shipping_address
+                - subtotal
                 - total_amount
                 - payment_method
                 - items
@@ -2939,38 +2944,38 @@ paths:
                 customer_email:
                   type: string
                   format: email
-                  description: Customer email address
+                  description: Customer email address. Required.
                   example: john.doe@example.com
                 customer_name:
                   type: string
-                  description: Customer full name
+                  description: Customer full name. Required.
                   example: John Doe
                 customer_phone:
                   type: string
-                  description: Customer phone number
-                  example: '+254700000999'
+                  description: Customer phone number (optional)
+                  example: '+14155550199'
                 billing_address:
                   type: object
-                  description: Billing address (optional)
+                  description: Billing address. Required.
                   properties:
                     street:
                       type: string
                       example: 123 Main Street
                     city:
                       type: string
-                      example: Nairobi
+                      example: New York
                     state:
                       type: string
-                      example: Nairobi County
+                      example: NY
                     zip:
                       type: string
-                      example: '00100'
+                      example: '10001'
                     country:
                       type: string
-                      example: Kenya
+                      example: US
                 shipping_address:
                   type: object
-                  description: Shipping address (optional)
+                  description: Shipping address. Required.
                   properties:
                     street:
                       type: string
@@ -3008,7 +3013,7 @@ paths:
                         example: 7a1aa0b4-555c-3618-a48c-1415db27bcc8
                       product_name:
                         type: string
-                        description: Product name at time of order
+                        description: Product name captured on the line item. Optional — if omitted, it is resolved from the product automatically.
                         example: iPhone 15 Pro
                       product_sku:
                         type: string
@@ -3070,7 +3075,7 @@ paths:
                 subtotal:
                   type: number
                   format: float
-                  description: Subtotal before tax and shipping
+                  description: Subtotal before tax and shipping. Required.
                   example: 2000
                 tax_amount:
                   type: number
@@ -3176,9 +3181,10 @@ paths:
                       - discount_amount
                     properties:
                       promotion_id:
-                        type: integer
-                        description: Promotion ID that was applied
-                        example: 42
+                        type: string
+                        format: uuid
+                        description: ID of the promotion that was applied
+                        example: 7a1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e
                       discount_amount:
                         type: number
                         format: float
@@ -3188,19 +3194,19 @@ paths:
               customer_id: c320094c-eb65-4879-804c-83d2e1dd7f99
               customer_email: john.doe@example.com
               customer_name: John Doe
-              customer_phone: '+254700000999'
+              customer_phone: '+14155550199'
               billing_address:
                 street: 123 Main Street
-                city: Nairobi
-                state: Nairobi County
-                zip: '00100'
-                country: Kenya
+                city: New York
+                state: NY
+                zip: '10001'
+                country: US
               shipping_address:
                 street: 123 Main Street
-                city: Nairobi
-                state: Nairobi County
-                zip: '00100'
-                country: Kenya
+                city: New York
+                state: NY
+                zip: '10001'
+                country: US
               items:
                 - product_id: 9b2bb0c5-666d-4729-a59d-2526ec38add9
                   product_name: iPhone 15 Pro
@@ -3220,7 +3226,7 @@ paths:
                 code: V5G6-4N7H-9P2R-8W1S
                 amount: 1000
               promotion_usages:
-                - promotion_id: 42
+                - promotion_id: 7a1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e
                   discount_amount: 150
       responses:
         '201':
@@ -3714,6 +3720,148 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/checkout/reserve:
+    post:
+      operationId: reserveStock
+      tags:
+        - Orders
+      summary: Reserve stock for checkout
+      description: |
+        **Optional.** Holds stock for the items a customer is checking out so the
+        units can't be sold to someone else while they complete payment.
+
+        Use this when there is a gap between "customer commits to buy" and "payment
+        confirms" — card redirects, 3‑D Secure, or mobile‑money push prompts — so
+        the stock is claimed *before* the customer pays and a second shopper racing
+        for the last unit is turned away up front. For instant‑capture or fully
+        synchronous flows you can skip it and call `POST /v1/orders` directly;
+        Galactic Core still prevents stock from going negative at order time. In
+        other words, reserving is a stronger guarantee for async payments, not a
+        mandatory step before every order.
+
+        Reservations are all‑or‑nothing: if any item lacks available stock, nothing
+        is reserved and the response is `409`. Each hold expires automatically after
+        a window (15 minutes by default). Pass the returned `reservation_ids` to
+        `POST /v1/orders` (or when you `PATCH` an order to `paid`) and Galactic Core
+        converts the hold into the actual stock deduction. If the customer abandons
+        checkout, the hold simply expires and the stock returns to availability —
+        you don't need to release it explicitly.
+
+        Works with both publishable and secret keys (checkout originates in the
+        browser).
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  description: The variants and quantities to hold.
+                  items:
+                    type: object
+                    required:
+                      - variant_id
+                      - quantity
+                    properties:
+                      variant_id:
+                        type: string
+                        format: uuid
+                        description: The product variant to reserve.
+                      quantity:
+                        type: integer
+                        minimum: 1
+                        description: How many units to hold.
+                ttl_seconds:
+                  type: integer
+                  description: |
+                    Optional hold duration in seconds. Defaults to 900 (15 minutes);
+                    values below 60 are raised to 60.
+                  example: 900
+                customer_id:
+                  type: string
+                  format: uuid
+                  description: Optional - associate the hold with a customer (used for checkout recovery).
+                session_id:
+                  type: string
+                  description: Optional - associate the hold with an anonymous browser session.
+            example:
+              items:
+                - variant_id: 0d65aa5b-082a-4847-810c-38ca18e0896d
+                  quantity: 2
+              ttl_seconds: 900
+      responses:
+        '201':
+          description: Stock reserved
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - reservations
+                  - reservation_ids
+                  - expires_in_seconds
+                properties:
+                  reservations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        reservation_id:
+                          type: string
+                          format: uuid
+                        variant_id:
+                          type: string
+                          format: uuid
+                        quantity:
+                          type: integer
+                  reservation_ids:
+                    type: array
+                    description: Pass these to order creation to convert the hold into a sale.
+                    items:
+                      type: string
+                      format: uuid
+                  expires_in_seconds:
+                    type: integer
+                    description: Seconds until the hold expires if not converted.
+              example:
+                reservations:
+                  - reservation_id: 9f1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                    variant_id: 0d65aa5b-082a-4847-810c-38ca18e0896d
+                    quantity: 2
+                reservation_ids:
+                  - 9f1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                expires_in_seconds: 900
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          description: Insufficient stock - nothing was reserved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: insufficient_stock
+                  message: 'Insufficient stock: 1 available, 2 requested'
+                  details: 'variant 0d65aa5b-082a-4847-810c-38ca18e0896d: 1 available, 2 requested'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -6519,10 +6667,10 @@ paths:
             Comma-separated list of fields to include in the response.
 
             **Allowed Fields:**
-            - `id`, `code`, `balance`, `initial_balance`, `currency`, `status`
-            - `expiry_date`, `customer_id`, `issued_date`, `last_used_date`
-            - `maximum_usage_percentage`, `redemption_count`
-            - `created_at`, `updated_at`
+            - `id`, `code`, `value`, `balance`, `status`, `type`
+            - `expiry_date`, `customer_id`, `issued_to`, `issued_date`, `last_used`
+            - `minimum_purchase_amount`, `maximum_usage_percentage`, `usage_restrictions`
+            - `redemption_count`, `max_redemptions`, `created_at`, `updated_at`
 
             Unknown field names will return a `400` error.
           example: code,balance,expiry_date
@@ -6543,20 +6691,24 @@ paths:
                       $ref: '#/components/schemas/GiftCard'
               example:
                 gift_cards:
-                  - id: f1c4a2b3-8d77-4e0a-9b6c-2e3f5a8d1c44
+                  - id: 1024
                     code: V5G6-4N7H-9P2R-8W1S
-                    initial_balance: 10000
+                    value: 100
+                    balance: 100
                     status: active
+                    type: promotional
                     expiry_date: '2026-03-31'
                     customer_id: aeaae40a-71e2-4fb8-862e-c37a34a2f651
+                    issued_to: jane.smith@example.com
                     issued_date: '2025-12-17'
-                    last_used_date: null
-                    balance: 10000
-                    currency: KES
+                    last_used: null
+                    minimum_purchase_amount: 0
+                    maximum_usage_percentage: null
+                    usage_restrictions: {}
+                    redemption_count: 0
+                    max_redemptions: null
                     created_at: '2025-12-17T07:43:31.304672+00:00'
                     updated_at: '2026-02-24T08:48:13.548922+00:00'
-                    maximum_usage_percentage: null
-                    redemption_count: 0
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -6600,10 +6752,10 @@ paths:
             Comma-separated list of fields to include in the embedded `gift_card` object.
 
             **Allowed Fields:**
-            - `id`, `code`, `balance`, `initial_balance`, `currency`, `status`
-            - `expiry_date`, `customer_id`, `issued_date`, `last_used_date`
-            - `maximum_usage_percentage`, `redemption_count`
-            - `created_at`, `updated_at`
+            - `id`, `code`, `value`, `balance`, `status`, `type`
+            - `expiry_date`, `customer_id`, `issued_to`, `issued_date`, `last_used`
+            - `minimum_purchase_amount`, `maximum_usage_percentage`, `usage_restrictions`
+            - `redemption_count`, `max_redemptions`, `created_at`, `updated_at`
 
             Unknown field names will return a `400` error.
           example: code,balance,expiry_date
@@ -6625,10 +6777,7 @@ paths:
                     type: number
                   status:
                     type: string
-                    enum:
-                      - active
-                      - full_redeemed
-                      - inactive
+                    description: Lifecycle status. A gift card is only redeemable while `active`.
                   expiry_date:
                     type:
                       - string
@@ -6642,23 +6791,27 @@ paths:
                     $ref: '#/components/schemas/GiftCard'
               example:
                 valid: true
-                balance: 10000
+                balance: 100
                 status: active
                 expiry_date: '2026-03-31'
                 maximum_usage_percentage: null
                 gift_card:
-                  id: f1c4a2b3-8d77-4e0a-9b6c-2e3f5a8d1c44
+                  id: 1024
                   code: V5G6-4N7H-9P2R-8W1S
-                  balance: 10000
-                  initial_balance: 10000
-                  currency: KES
+                  value: 100
+                  balance: 100
                   status: active
+                  type: promotional
                   expiry_date: '2026-03-31'
                   customer_id: aeaae40a-71e2-4fb8-862e-c37a34a2f651
+                  issued_to: jane.smith@example.com
                   issued_date: '2025-12-17'
-                  last_used_date: null
+                  last_used: null
+                  minimum_purchase_amount: 0
                   maximum_usage_percentage: null
+                  usage_restrictions: {}
                   redemption_count: 0
+                  max_redemptions: null
                   created_at: '2025-12-17T07:43:31.304672+00:00'
                   updated_at: '2026-02-24T08:48:13.548922+00:00'
         '400':
@@ -6715,14 +6868,12 @@ paths:
             Comma-separated list of fields to include in the response.
               
             **Allowed Fields:**
-            - `id`, `name`, `type`, `display_type`, `description`
-            - `discount_value`, `discount_type`, `min_purchase`, `max_discount`
-            - `start_date`, `end_date`, `status`
-            - `usage_limit`, `usage_per_customer`
+            - `id`, `name`, `type`, `display_type`, `value`, `min_purchase`
+            - `start_date`, `end_date`, `status`, `conditions`, `image`
             - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
-            - `applicable_categories`, `applicable_products`
+            - `has_time_restrictions`, `start_time`, `end_time`, `time_zone`, `apply_to_days`
             - `created_at`, `updated_at`
-          example: name,type,discount_value
+          example: name,type,value
       responses:
         '200':
           description: Success
@@ -6780,14 +6931,12 @@ paths:
             Comma-separated list of fields to include in the response.
               
             **Allowed Fields:**
-            - `id`, `name`, `type`, `display_type`, `description`
-            - `discount_value`, `discount_type`, `min_purchase`, `max_discount`
-            - `start_date`, `end_date`, `status`
-            - `usage_limit`, `usage_per_customer`
+            - `id`, `name`, `type`, `display_type`, `value`, `min_purchase`
+            - `start_date`, `end_date`, `status`, `conditions`, `image`
             - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
-            - `applicable_categories`, `applicable_products`
+            - `has_time_restrictions`, `start_time`, `end_time`, `time_zone`, `apply_to_days`
             - `created_at`, `updated_at`
-          example: name,type,discount_value
+          example: name,type,value
       responses:
         '200':
           description: Success
@@ -10348,91 +10497,20 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
-    patch:
-      operationId: moderateReview
-      tags:
-        - Reviews
-      summary: Approve or reject a review
-      description: |
-        Updates the moderation status of a review. Used by store owners to approve
-        or reject customer-submitted reviews before they appear publicly.
-
-        Approving clears any previous `rejection_reason`. Rejecting accepts an
-        optional reason that may be shown to the customer.
-
-        **Authentication:** Secret key required. Publishable keys return `403`.
-
-        **Rate limit:** 300 requests/hour per API key.
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Review UUID.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - status
-              properties:
-                status:
-                  type: string
-                  enum:
-                    - approved
-                    - rejected
-                  description: New moderation status for the review.
-                  example: approved
-                rejection_reason:
-                  type: string
-                  description: |
-                    Optional reason for rejection. Only relevant when `status` is `rejected`.
-                    Ignored when approving.
-                  example: Review contains inappropriate language.
-      responses:
-        '200':
-          description: Review status updated
-          headers:
-            Tybrite-Environment:
-              $ref: '#/components/headers/TybriteEnvironment'
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - review
-                properties:
-                  review:
-                    $ref: '#/components/schemas/Review'
-        '400':
-          $ref: '#/components/responses/BadRequestError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '429':
-          $ref: '#/components/responses/RateLimitError'
-        '500':
-          $ref: '#/components/responses/ServerError'
     delete:
       operationId: deleteReview
       tags:
         - Reviews
-      summary: Delete a review
+      summary: Delete your own review
       description: |
-        Deletes a review permanently.
+        Permanently deletes a review submitted by the authenticated customer.
 
-        - **Secret key:** Can delete any review belonging to the store.
-        - **Publishable key + customer token:** Can delete only the authenticated
-          customer's own review. Requires `x-auth-token` header.
+        A customer may only delete the review they themselves wrote — attempting to
+        delete another customer's review returns `403`.
+
+        **Authentication:** API key in `Authorization: Bearer` header **and** the
+        review author's customer JWT in the `x-auth-token` header (obtained from
+        `POST /v1/auth/login`).
 
         **Rate limit:** 300 requests/hour per API key.
       security:
@@ -10447,12 +10525,12 @@ paths:
           description: Review UUID.
         - name: x-auth-token
           in: header
-          required: false
+          required: true
           schema:
             type: string
           description: |
-            Customer JWT — required when using a publishable key to delete the
-            authenticated customer's own review.
+            Customer JWT for the review's author, from `POST /v1/auth/login` or
+            `POST /v1/auth/verify-otp`.
       responses:
         '200':
           description: Review deleted
@@ -12486,42 +12564,69 @@ components:
       type: object
       properties:
         id:
-          type: string
-          format: uuid
+          type: integer
+          description: Unique gift card identifier.
         code:
           type: string
+          description: The unique redeemable code.
+        value:
+          type: number
+          description: The original face value the gift card was issued with.
         balance:
           type: number
-        initial_balance:
-          type: number
-        currency:
-          type: string
+          description: Remaining redeemable balance.
         status:
           type: string
-          enum:
-            - active
-            - full_redeemed
-            - inactive
+          description: Lifecycle status. A gift card is only redeemable while `active`.
+          example: active
+        type:
+          type: string
+          description: Gift card type (e.g. `promotional`, `purchased`).
         expiry_date:
           type: string
           format: date
+          description: Date the gift card expires. It is not redeemable on or after this date.
         customer_id:
-          type: string
-          format: uuid
-        issued_date:
-          type: string
-          format: date
-        last_used_date:
           type:
             - string
             - 'null'
-          format: date-time
+          format: uuid
+          description: Customer the gift card is assigned to, if any.
+        issued_to:
+          type:
+            - string
+            - 'null'
+          description: Free-text recipient the card was issued to (e.g. an email or name), if any.
+        issued_date:
+          type: string
+          format: date
+        last_used:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: Date the gift card was last redeemed, or `null` if never used.
+        minimum_purchase_amount:
+          type:
+            - number
+            - 'null'
+          description: Minimum order total required before this gift card can be applied.
         maximum_usage_percentage:
           type:
             - number
             - 'null'
+          description: Maximum percentage of the balance that may be applied to a single order.
+        usage_restrictions:
+          type: object
+          description: Optional restrictions on where the card can be applied (e.g. excluded categories or products).
         redemption_count:
           type: integer
+          description: Number of times the gift card has been redeemed.
+        max_redemptions:
+          type:
+            - integer
+            - 'null'
+          description: Maximum number of redemptions allowed, or `null` for unlimited.
         created_at:
           type: string
           format: date-time
@@ -12538,6 +12643,7 @@ components:
           type: string
         type:
           type: string
+          description: Promotion mechanic.
           enum:
             - fixed
             - discount
@@ -12545,64 +12651,79 @@ components:
             - bogo
         display_type:
           type: string
-        description:
+          description: Human-readable label derived from `type` (e.g. "Percentage Discount").
+        value:
           type: string
+          description: The discount amount or percentage for this promotion, depending on `type`.
+        min_purchase:
+          type:
+            - number
+            - 'null'
+          description: Minimum order total required for the promotion to apply.
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        status:
+          type: string
+          description: Lifecycle status. Only `active` promotions (within their date window) apply.
+          example: active
+        conditions:
+          type:
+            - string
+            - 'null'
+          description: Optional human-readable conditions for the promotion.
         image:
           type:
             - string
             - 'null'
           format: uri
-          description: URL of the promotion image
-        discount_value:
-          type: number
-        discount_type:
-          type: string
-          enum:
-            - percentage
-            - fixed
-        min_purchase:
-          type: number
-        max_discount:
-          type: number
-        start_date:
-          type: string
-          format: date-time
-        end_date:
-          type: string
-          format: date-time
-        status:
-          type: string
-          enum:
-            - active
-            - inactive
-            - scheduled
-            - expired
-        usage_limit:
-          type: integer
-        usage_per_customer:
-          type: integer
+          description: URL of the promotion image.
         bundle_products:
           type: array
+          description: Products that make up a bundle promotion (present for `bundle` type).
           items:
             type: object
         bogo_required_products:
           type: array
+          description: Products that must be purchased to unlock a BOGO promotion (present for `bogo` type).
           items:
             type: object
         bogo_free_products:
           type: array
+          description: Products given free under a BOGO promotion (present for `bogo` type).
           items:
             type: object
         free_products:
           type: array
+          description: Products given free under the promotion.
           items:
             type: object
-        applicable_categories:
-          type: array
-          items:
-            type: string
-        applicable_products:
-          type: array
+        has_time_restrictions:
+          type: boolean
+          description: Whether the promotion only applies during specific times/days.
+        start_time:
+          type:
+            - string
+            - 'null'
+          description: Daily start time (when `has_time_restrictions` is true).
+        end_time:
+          type:
+            - string
+            - 'null'
+          description: Daily end time (when `has_time_restrictions` is true).
+        time_zone:
+          type:
+            - string
+            - 'null'
+          description: Time zone the time restrictions are evaluated in.
+        apply_to_days:
+          type:
+            - array
+            - 'null'
+          description: Days of the week the promotion applies to (when `has_time_restrictions` is true).
           items:
             type: string
         created_at:
