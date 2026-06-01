@@ -130,12 +130,50 @@ do {
 
 ---
 
+### `reserveStock`
+
+**Optional.** Holds stock for the items a customer is checking out so they can't be sold to someone else while payment is in flight. Returns `201` with `reservation_ids` and an expiry.
+
+Use it when there's a gap between "customer commits to buy" and "payment confirms" — card redirects, 3-D Secure, mobile-money prompts — so the stock is claimed *before* the customer pays. For instant-capture or synchronous flows you can skip it and call `createOrder` directly; Galactic Core still prevents stock from going negative at order time. Reserving is a stronger guarantee for async payments, **not** a mandatory step before every order.
+
+Reservations are all-or-nothing: if any item lacks available stock, nothing is reserved and you get `409 insufficient_stock`. Each hold expires automatically (15 minutes by default); an abandoned checkout simply lets the hold lapse — no explicit release needed. Works with publishable or secret keys.
+
+```typescript
+const { reservation_ids, expires_in_seconds } = await client.orders.reserveStock({
+  requestBody: {
+    items: [
+      { variant_id: 'variant-uuid', quantity: 2 }
+    ],
+    // optional: ttl_seconds, customer_id, session_id (for checkout recovery)
+  }
+});
+
+// ...customer completes payment...
+
+// Convert the hold into the sale by passing reservation_ids to createOrder:
+const result = await client.orders.createOrder({
+  idempotencyKey: `order-${Date.now()}`,
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: hmacSignature,
+  requestBody: {
+    total_amount: 5000,
+    payment_method: 'card',
+    payment_status: 'paid',
+    items: [{ product_id: 'product-uuid', variant_id: 'variant-uuid', quantity: 2, unit_price: 2500 }],
+    reservation_ids, // converts the hold into the actual stock deduction
+  }
+});
+```
+
+---
+
 ### `createOrder`
 
 Place a new order. Returns **`201 Created`** (semantic create) with the new order resource. Requires verified signatures and idempotency protection.
 
-*   **Required body fields**: `total_amount`, `payment_method`, and a non-empty `items` array. Each item requires `product_id`.
-*   **Optional**: `customer_id` (guest checkout is supported), `billing_address`, `shipping_address` (both nullable), `variant_id` per item (defaults to the product's primary variant), and `gift_card_redemption`.
+*   **Required body fields**: `customer_email`, `customer_name`, `billing_address`, `shipping_address`, `subtotal`, `total_amount`, `payment_method`, and a non-empty `items` array. Each item requires `product_id`.
+*   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `variant_id` per item (defaults to the product's primary variant), `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement).
+*   Missing a required field returns `400` with a message naming the field.
 *   **Replay Protection**: The `X-Timestamp` must be within **5 minutes** of the server time.
 *   **Post-processing**: When `payment_status: "paid"` is set, Galactic Core applies gift card redemption, stock reduction, and customer metrics updates. See [Post-Processing Warnings](#post-processing-warnings) below — the response may include a `post_processing_warnings` array that you **must** check.
 
@@ -145,11 +183,16 @@ const result = await client.orders.createOrder({
   xTimestamp: Math.floor(Date.now() / 1000),
   xSignature: hmacSignature, // base64 HMAC-SHA256 of `${timestamp}.${body}`
   requestBody: {
+    customer_email: 'jane@example.com',
+    customer_name: 'Jane Doe',
+    billing_address: { street: '123 Main St', city: 'New York', state: 'NY', zip: '10001', country: 'US' },
+    shipping_address: { street: '123 Main St', city: 'New York', state: 'NY', zip: '10001', country: 'US' },
+    subtotal: 5000,
     total_amount: 5000,
     payment_method: 'card',
-    customer_id: 'optional-customer-uuid',
+    customer_id: 'optional-customer-uuid', // optional; omit for guest checkout
     items: [
-      { product_id: 'product-uuid', quantity: 2, unit_price: 2500 }
+      { product_id: 'product-uuid', quantity: 2, unit_price: 2500, total_price: 5000 }
     ],
     payment_status: 'paid' // triggers inventory + accounting + metrics
   }

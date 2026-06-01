@@ -3,19 +3,19 @@ title: "Reviews"
 description: "Reference for the ReviewsService class in the Tybrite SDK."
 ---
 
-The `ReviewsService` class (accessed via `client.reviews`) manages product reviews and ratings — submitting, listing, moderating, and surfacing helpfulness votes.
+The `ReviewsService` class (accessed via `client.reviews`) handles the storefront side of product reviews — listing approved reviews, submitting a review, deleting your own review, and surfacing helpfulness votes.
 
 ## Overview
 
 Reviews follow a moderation lifecycle:
 
 1. A logged-in customer submits a review. It starts as `pending`.
-2. The merchant approves or rejects it from their dashboard.
+2. The store approves or rejects it. Approval happens in the store's admin.
 3. Once approved, the review appears in public listing results.
 
 **Key type behavior:**
-- **Publishable keys** — list and get approved reviews, submit reviews (with a customer session token), mark reviews helpful.
-- **Secret keys** — all of the above, plus view pending/rejected reviews, moderate submissions, and delete any review.
+- **Publishable keys** — list and get approved reviews, submit a review (with a customer session token), delete the customer's own review (with a customer session token), mark reviews helpful.
+- **Secret keys** — the same storefront actions, for server-side use.
 
 ---
 
@@ -126,50 +126,26 @@ const { review } = await client.reviews.submitReview({
 
 ---
 
-## `moderateReview`
-
-Approves or rejects a pending review. Secret key required.
-
-```typescript
-// Approve
-await client.reviews.moderateReview({
-  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
-  requestBody: { status: 'approved' },
-});
-
-// Reject with a reason
-await client.reviews.moderateReview({
-  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
-  requestBody: {
-    status: 'rejected',
-    rejection_reason: 'Review contains inappropriate language.',
-  },
-});
-```
-
-Approving clears any previous `rejection_reason`. Providing `rejection_reason` when approving has no effect.
-
----
-
 ## `deleteReview`
 
-Deletes a review permanently.
+Permanently deletes a review submitted by the authenticated customer. A customer can only delete the review they wrote.
 
-- **Secret key** — can delete any review belonging to the store.
-- **Publishable key + customer token** — can delete only the authenticated customer's own review.
+Requires the review author's customer session token in `xAuthToken`.
 
 ```typescript
-// Merchant deletes any review (secret key)
-await client.reviews.deleteReview({
-  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
-});
-
-// Customer deletes their own review (publishable key)
+// Customer deletes their own review
 await client.reviews.deleteReview({
   id: 'aabbccdd-1234-5678-abcd-ef0123456789',
   xAuthToken: customerSessionToken,
 });
 ```
+
+**Parameters**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `id` | `string` | Yes | UUID of the review to delete. |
+| `xAuthToken` | `string` | Yes | Customer session JWT for the review's author, from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. |
 
 ---
 
@@ -225,7 +201,7 @@ async function loadProductReviews(productId: string) {
 | `201` | Review submitted (pending moderation) |
 | `400` | Invalid request — missing required field or bad UUID |
 | `401` | Missing or invalid API key |
-| `403` | Publishable key used on a secret-key-only endpoint |
+| `403` | Attempting to delete a review that the authenticated customer did not write |
 | `404` | Review not found, or review is not approved (publishable key) |
 | `409` | Duplicate review — customer already has a non-rejected review for this product |
 | `429` | Rate limit exceeded |
