@@ -5645,9 +5645,19 @@ paths:
         commission is resolved per merchant, and one payment covers the entire order.
 
         The response includes a `client_secret` to complete the payment on the
-        storefront and a per-merchant breakdown of gross, commission, and net amounts.
-        Once payment succeeds, the order finalizes automatically — no further call is
-        required.
+        storefront and a per-merchant breakdown of gross, discount, commission, and net
+        amounts. Once payment succeeds, the order finalizes automatically — no further
+        call is required.
+
+        **Discounts.** Pass the optional `discounts` array to apply a merchant's own
+        promotion or gift card to that merchant's portion of the basket — each entry
+        names the `merchant_store_id` and an optional `promotion_id` and/or
+        `gift_card_code`, and the discount reduces only that merchant's subtotal.
+        Marketplace-wide promotions run by the operator apply automatically; you do not
+        pass them. The response reports `discount_total`, the
+        `operator_funded_discount` (the share the operator funded), a per-merchant
+        `discount_breakdown`, and `discount_amount` plus `merchant_gross` on each
+        `merchant_breakdown` entry.
 
         Stock is reserved at checkout: the items are held against each merchant's
         inventory immediately so concurrent shoppers cannot oversell the last units,
@@ -5710,6 +5720,25 @@ paths:
                 billing_address:
                   type: object
                   additionalProperties: true
+                discounts:
+                  type: array
+                  description: Optional per-merchant discounts. Each entry applies a merchant's own promotion and/or gift card to that merchant's portion of the basket, reducing only that merchant's subtotal. Marketplace-wide promotions run by the operator apply automatically and are not passed here.
+                  items:
+                    type: object
+                    required:
+                      - merchant_store_id
+                    properties:
+                      merchant_store_id:
+                        type: string
+                        format: uuid
+                        description: The merchant whose portion of the basket this discount applies to.
+                      promotion_id:
+                        type: string
+                        format: uuid
+                        description: The merchant's own promotion to apply.
+                      gift_card_code:
+                        type: string
+                        description: A gift card code to redeem against this merchant's portion.
             example:
               items:
                 - product_id: 11111111-1111-1111-1111-111111111111
@@ -5719,6 +5748,10 @@ paths:
               customer_email: dannytyoung1@gmail.com
               customer_name: Danny Young
               currency: USD
+              discounts:
+                - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                  promotion_id: 8a7b6c5d-1234-5678-9abc-def012345678
+                  gift_card_code: GC-XXXX-YYYY
       responses:
         '201':
           description: The multi-merchant order was created and is awaiting payment.
@@ -5736,12 +5769,21 @@ paths:
                 client_secret: pi_3Pxxxxxxxxxxxx_secret_yyyyyyyy
                 currency: USD
                 subtotal: 245
-                total_amount: 245
+                total_amount: 230
+                discount_total: 15
+                operator_funded_discount: 5
+                discount_breakdown:
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    merchant_discount: 10
+                    gift_card_amount: 0
+                    operator_funded_discount: 5
                 merchant_breakdown:
                   - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
-                    gross_amount: 245
-                    commission_amount: 24.5
-                    net_amount: 220.5
+                    merchant_gross: 245
+                    discount_amount: 15
+                    gross_amount: 230
+                    commission_amount: 23
+                    net_amount: 207
                     commission_rule_id: 7e6d5c4b-1234-5678-9abc-def012345678
         '400':
           $ref: '#/components/responses/BadRequestError'
@@ -11863,15 +11905,20 @@ paths:
       operationId: getAdSlot
       tags:
         - Marketplace
-      summary: Get sponsored placements for a slot
+      summary: Get placements for a slot
       description: |
-        Returns the active sponsored placements to render in a named slot on a marketplace
-        storefront (for example a hero banner, a category strip, or search results). **Requires a
-        marketplace operator key.**
+        Returns the active placements to render in a named slot on a marketplace storefront (for
+        example a hero banner, a category strip, or search results). **Requires a marketplace
+        operator key.**
 
-        Each placement is paid advertising and **must be rendered with its `disclosure_label`** (for
-        example "Sponsored") so shoppers can tell it apart from organic results. Blend placements
-        with your organic listings or recommendations as appropriate for the slot.
+        A slot can return two kinds of placement. **Sponsored** placements (`sponsored: true`) are
+        paid advertising and **must be rendered with their `disclosure_label`** (for example
+        "Sponsored") so shoppers can tell them apart from organic results. **Curated fallback**
+        placements (`curated: true, sponsored: false`) are hand-picked by the marketplace operator
+        to fill the slot when no paid placement is available; they are **not** labelled as sponsored.
+        Only sponsored placements require the disclosure label.
+
+        Blend placements with your organic listings or recommendations as appropriate for the slot.
 
         Use the optional `context` parameter to request placements scoped to a category or a search
         term, and `limit` to cap how many placements come back.
@@ -11906,7 +11953,7 @@ paths:
           example: 5
       responses:
         '200':
-          description: The active sponsored placements for the slot.
+          description: The active placements for the slot.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -12014,6 +12061,128 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+  /v1/marketplace/collections:
+    get:
+      operationId: listMarketplaceCollections
+      tags:
+        - Marketplace
+      summary: List operator-curated merchandising sections
+      description: |
+        Returns the merchandising sections the marketplace operator has curated for the storefront —
+        for example "Trending now", "Featured shops", or a seasonal promotion rail. Each section
+        groups products, merchants, or promotions the operator hand-picked (or auto-curated) to
+        merchandise the storefront. **Requires a marketplace operator key.**
+
+        Use these to render homepage sections, and blend them with sponsored placements and organic
+        recommendations as appropriate. Fetch a section's resolved members with
+        `GET /v1/marketplace/collections/{slug}`.
+
+        Use the optional `placement_kind` parameter to return only sections of a given kind.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: placement_kind
+          in: query
+          required: false
+          description: Return only sections of this kind.
+          schema:
+            type: string
+            enum:
+              - product
+              - merchant
+              - promotion
+          example: product
+      responses:
+        '200':
+          description: The operator-curated merchandising sections.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceCollectionListResponse'
+              example:
+                collections:
+                  - slug: trending-now
+                    name: Trending now
+                    description: The most popular products across the marketplace this week.
+                    placement_kind: product
+                    display_priority: 10
+                    show_on_homepage: true
+                  - slug: featured-shops
+                    name: Featured shops
+                    description: Merchants worth a look.
+                    placement_kind: merchant
+                    display_priority: 20
+                    show_on_homepage: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /v1/marketplace/collections/{slug}:
+    get:
+      operationId: getMarketplaceCollection
+      tags:
+        - Marketplace
+      summary: Get one curated section with its members
+      description: |
+        Returns a single curated merchandising section together with its resolved members. The
+        members are products, merchants, or promotions hand-picked (or auto-curated) by the
+        marketplace operator to merchandise the storefront. **Requires a marketplace operator key.**
+
+        Render the section as a homepage rail and blend it with sponsored placements and organic
+        recommendations as appropriate.
+
+        Use the optional `limit` parameter to cap how many members come back.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The section's slug, taken from the section list.
+          schema:
+            type: string
+          example: trending-now
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of members to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          example: 12
+      responses:
+        '200':
+          description: The curated section and its members.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceCollectionDetail'
+              example:
+                slug: trending-now
+                name: Trending now
+                description: The most popular products across the marketplace this week.
+                placement_kind: product
+                curated: true
+                items:
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    product_id: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    product_id: 9cd6e472-de84-435c-be43-957b56682f43
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
 components:
   securitySchemes:
     BearerAuth:
@@ -13373,9 +13542,17 @@ components:
         merchant_store_id:
           type: string
           format: uuid
+        merchant_gross:
+          type: number
+          description: Total of this merchant's items before any discount is applied.
+          example: 130
+        discount_amount:
+          type: number
+          description: Total discount applied to this merchant's portion of the basket (the merchant's own promotion and/or gift card). Reduces this merchant's subtotal.
+          example: 10
         gross_amount:
           type: number
-          description: Total of this merchant's items before commission.
+          description: Total of this merchant's items after discount and before commission.
           example: 120
         commission_amount:
           type: number
@@ -13421,9 +13598,38 @@ components:
         total_amount:
           type: number
           example: 245
+        discount_total:
+          type: number
+          description: Total discount applied across the whole basket — the sum of every merchant's own promotion and gift card discounts plus any marketplace-wide promotion run by the operator.
+          example: 10
+        operator_funded_discount:
+          type: number
+          description: The portion of `discount_total` funded by the marketplace operator (for example a marketplace-wide promotion). The remainder is funded by individual merchants.
+          example: 5
+        discount_breakdown:
+          type: array
+          description: Per-merchant breakdown of how discounts were applied.
+          items:
+            type: object
+            properties:
+              merchant_store_id:
+                type: string
+                format: uuid
+              merchant_discount:
+                type: number
+                description: Discount funded by this merchant's own promotion.
+                example: 5
+              gift_card_amount:
+                type: number
+                description: Amount redeemed from a gift card against this merchant's portion.
+                example: 0
+              operator_funded_discount:
+                type: number
+                description: Discount applied to this merchant's portion that the marketplace operator funded (for example a marketplace-wide promotion).
+                example: 5
         merchant_breakdown:
           type: array
-          description: Per-merchant gross, commission, and net amounts for this order.
+          description: Per-merchant gross, discount, commission, and net amounts for this order.
           items:
             $ref: '#/components/schemas/MerchantBreakdownItem'
     Recommendation:
@@ -15000,7 +15206,7 @@ components:
           description: Whether commission is applied to marketplace sales.
     AdPlacement:
       type: object
-      description: A single sponsored placement to render inside a marketplace storefront slot. Always render it together with its disclosure label so shoppers can tell it apart from organic results.
+      description: 'A single placement to render inside a marketplace storefront slot. A placement is either a paid (`sponsored: true`) advertisement — which must be rendered with its disclosure label so shoppers can tell it apart from organic results — or an operator-curated fallback (`curated: true, sponsored: false`) used to fill a slot when no paid placement is available. Only sponsored placements require the disclosure label.'
       required:
         - booking_id
         - merchant_store_id
@@ -15012,7 +15218,7 @@ components:
         booking_id:
           type: string
           format: uuid
-          description: Identifier for this sponsored placement. Pass it back when logging impression and click beacons for this placement.
+          description: Identifier for this placement. Pass it back when logging impression and click beacons for this placement.
         merchant_store_id:
           type: string
           format: uuid
@@ -15022,24 +15228,35 @@ components:
           enum:
             - product
             - merchant
-          description: Whether the placement promotes specific products (`product`) or a merchant's shop as a whole (`merchant`).
+            - promotion
+          description: Whether the placement promotes specific products (`product`), a merchant's shop as a whole (`merchant`), or a promotion (`promotion`).
         product_ids:
           type: array
           description: The product identifiers to feature. For `merchant` placements this may be a curated selection of that merchant's products, or empty.
           items:
             type: string
             format: uuid
+        promotion_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: For `promotion` placements, the promotion this placement features. Null for other placement kinds.
         creative:
           type: object
           additionalProperties: true
           description: Creative content to render for this placement (for example a headline, image, or call to action). The shape varies by slot; render the fields your storefront supports.
         sponsored:
           type: boolean
-          description: Always true — this is paid placement and must be labelled as such.
+          description: Whether this is paid advertising. When `true` the placement must be rendered with its disclosure label. When `false` the placement is an operator-curated fallback and is not labelled as sponsored.
           example: true
+        curated:
+          type: boolean
+          description: Whether this placement was hand-picked by the marketplace operator to fill the slot when no paid placement is available. Curated fallback placements are not labelled as sponsored.
+          example: false
         disclosure_label:
           type: string
-          description: The label the storefront must show on the placement (for example "Sponsored"). Always display it.
+          description: The label to show on a sponsored placement (for example "Sponsored"). Display it on every placement where `sponsored` is `true`.
           example: Sponsored
     AdSlotResponse:
       type: object
@@ -15075,6 +15292,112 @@ components:
         billable:
           type: boolean
           description: Whether this event counted toward billing after de-duplication and invalid-traffic filtering. Informational only — the storefront does not need to act on it.
+    MarketplaceCollection:
+      type: object
+      description: A merchandising section hand-picked (or auto-curated) by the marketplace operator to feature on the storefront — for example "Trending now", "Featured shops", or a seasonal promotion rail. Use these to render homepage sections.
+      required:
+        - slug
+        - name
+        - placement_kind
+      properties:
+        slug:
+          type: string
+          description: Stable identifier for the section. Use it to fetch the section's resolved members.
+          example: trending-now
+        name:
+          type: string
+          description: Display name for the section.
+          example: Trending now
+        description:
+          type:
+            - string
+            - 'null'
+          description: Optional longer description for the section.
+        placement_kind:
+          type: string
+          enum:
+            - product
+            - merchant
+            - promotion
+          description: Whether the section features products (`product`), merchants (`merchant`), or promotions (`promotion`).
+        display_priority:
+          type:
+            - integer
+            - 'null'
+          description: Suggested ordering for the section relative to others. Lower comes first.
+          example: 10
+        show_on_homepage:
+          type:
+            - boolean
+            - 'null'
+          description: Whether the operator intends this section to appear on the storefront homepage.
+          example: true
+    MarketplaceCollectionListResponse:
+      type: object
+      description: The operator-curated merchandising sections for the marketplace storefront.
+      required:
+        - collections
+      properties:
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketplaceCollection'
+    CollectionItem:
+      type: object
+      description: A single resolved member of a curated section.
+      required:
+        - merchant_store_id
+      properties:
+        merchant_store_id:
+          type: string
+          format: uuid
+          description: The merchant this member belongs to.
+        product_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: For `product` sections, the featured product. Null for other section kinds.
+        promotion_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: For `promotion` sections, the featured promotion. Null for other section kinds.
+    MarketplaceCollectionDetail:
+      type: object
+      description: A single curated merchandising section with its resolved members. The members are products, merchants, or promotions hand-picked (or auto-curated) by the marketplace operator. Render them as a homepage section and blend them with sponsored placements and organic recommendations as appropriate.
+      required:
+        - slug
+        - name
+        - placement_kind
+        - curated
+        - items
+      properties:
+        slug:
+          type: string
+          example: trending-now
+        name:
+          type: string
+          example: Trending now
+        description:
+          type:
+            - string
+            - 'null'
+        placement_kind:
+          type: string
+          enum:
+            - product
+            - merchant
+            - promotion
+        curated:
+          type: boolean
+          description: Always true — the members were selected by the marketplace operator.
+          example: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionItem'
   responses:
     BadRequestError:
       description: Invalid request - malformed data or missing required fields

@@ -113,7 +113,9 @@ console.log(merchant.catalog?.products.sample);                  // a thin sampl
 
 Check out a cart that may contain items from **multiple merchants** in one call. Each line item names the merchant it belongs to. Tybrite validates the items against the live marketplace catalog, resolves commission per merchant, and creates **one payment** for the entire basket.
 
-The response gives you a `client_secret` to complete the payment on the storefront (with Stripe.js) and a per-merchant `merchant_breakdown` (gross, commission, net) you can display.
+The response gives you a `client_secret` to complete the payment on the storefront (with Stripe.js) and a per-merchant `merchant_breakdown` (gross, discount, commission, net) you can display.
+
+You can also apply discounts. Pass an optional `discounts` array to apply a **merchant's own promotion or gift card** to that merchant's portion of the basket — each entry names a `merchant_store_id` and an optional `promotion_id` and/or `gift_card_code`, and the discount reduces only that merchant's subtotal. **Marketplace-wide promotions run by the operator apply automatically** — you don't pass them. The response then reports `discount_total`, the `operator_funded_discount` (the share the operator funded), a per-merchant `discount_breakdown`, and `discount_amount` + `merchant_gross` on each `merchant_breakdown` entry.
 
 ```typescript
 const order = await client.marketplace.marketplaceCheckout({
@@ -127,13 +129,20 @@ const order = await client.marketplace.marketplaceCheckout({
     currency: 'USD',
     shipping_address: { line1: '1 Market St', city: 'San Francisco', country: 'US' },
     billing_address:  { line1: '1 Market St', city: 'San Francisco', country: 'US' },
+    // Optional: apply a merchant's own promotion / gift card to that merchant's portion.
+    discounts: [
+      { merchant_store_id: 'merchant-a-uuid', promotion_id: 'promo-uuid', gift_card_code: 'GC-XXXX-YYYY' },
+    ],
   },
 });
 
 // Show the shopper what each merchant receives (already computed for you):
 order.merchant_breakdown.forEach(m =>
-  console.log(`${m.merchant_store_id}: gross ${m.gross_amount}, fee ${m.commission_amount}, net ${m.net_amount}`)
+  console.log(`${m.merchant_store_id}: gross ${m.gross_amount}, discount ${m.discount_amount}, fee ${m.commission_amount}, net ${m.net_amount}`)
 );
+
+// Total savings on the basket (per-merchant discounts + any marketplace-wide promotion):
+console.log(`saved ${order.discount_total} (${order.operator_funded_discount} funded by the marketplace)`);
 
 // Complete the payment on the storefront with the returned client_secret:
 const stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
@@ -164,6 +173,7 @@ const { error } = await stripe.confirmPayment({
 | `currency` | `string?` | Optional ISO code; defaults to `USD`. |
 | `shipping_address` | `object?` | Optional address object. |
 | `billing_address` | `object?` | Optional address object. |
+| `discounts` | `array?` | Optional per-merchant discounts. Each entry: `{ merchant_store_id, promotion_id?, gift_card_code? }`. Applies a merchant's own promotion/gift card to that merchant's portion of the basket. Marketplace-wide operator promotions apply automatically and are **not** passed here. |
 
 **Response (`201`)**
 
@@ -176,9 +186,19 @@ const { error } = await stripe.confirmPayment({
   currency: string,
   subtotal: number,
   total_amount: number,
+  discount_total?: number,             // total discount across the basket
+  operator_funded_discount?: number,   // the share funded by the marketplace operator
+  discount_breakdown?: Array<{
+    merchant_store_id: string,
+    merchant_discount: number,         // funded by this merchant's own promotion
+    gift_card_amount: number,          // redeemed from a gift card against this merchant
+    operator_funded_discount: number,  // operator-funded portion for this merchant
+  }>,
   merchant_breakdown: Array<{
     merchant_store_id: string,
-    gross_amount: number,
+    merchant_gross: number,            // before discount
+    discount_amount: number,           // discount applied to this merchant's portion
+    gross_amount: number,              // after discount, before commission
     commission_amount: number,
     net_amount: number,
     commission_rule_id: string | null,
@@ -287,14 +307,96 @@ const reviews = await market.reviews.listReviews({
 
 ---
 
+## Curated collections (homepage merchandising)
+
+A marketplace operator can curate **merchandising sections** for the storefront — for example "Trending now", "Featured shops", or a seasonal promotion rail. Each section groups products, merchants, or promotions the operator hand-picked (or auto-curated) to merchandise the storefront. Use them to build your homepage.
+
+Two operator-key methods cover this: `listMarketplaceCollections` returns the sections, and `getMarketplaceCollection` returns one section's resolved members. Curating the sections themselves is an operator back-office task in the Super Admin app — not part of this API.
+
+### `listMarketplaceCollections` — the storefront's curated sections
+
+```typescript
+const market = new Tybrite({ apiKey: 'tybrite_pk_live_operator_...' });
+
+const { collections } = await market.marketplace.listMarketplaceCollections({
+  placementKind: 'product',   // optional: 'product' | 'merchant' | 'promotion'
+});
+
+// Render each section in display order:
+collections
+  .sort((a, b) => (a.display_priority ?? 0) - (b.display_priority ?? 0))
+  .filter((c) => c.show_on_homepage)
+  .forEach((c) => {
+    // c.slug, c.name, c.description, c.placement_kind
+    renderSectionHeader(c.name, c.description);
+  });
+```
+
+| Param | Required | Notes |
+|---|---|---|
+| `placementKind` | no | Return only sections of this kind: `product`, `merchant`, or `promotion`. |
+
+### `getMarketplaceCollection` — one section's members
+
+```typescript
+const section = await market.marketplace.getMarketplaceCollection({
+  slug: 'trending-now',
+  limit: 12,   // optional
+});
+
+// section.slug, section.name, section.description
+// section.placement_kind — 'product' | 'merchant' | 'promotion'
+// section.curated        — always true
+for (const item of section.items) {
+  // item.merchant_store_id — the merchant this member belongs to
+  // item.product_id        — for 'product' sections (else null)
+  // item.promotion_id      — for 'promotion' sections (else null)
+}
+```
+
+| Param | Required | Notes |
+|---|---|---|
+| `slug` | yes | The section's slug, from `listMarketplaceCollections`. |
+| `limit` | no | Max members to return. |
+
+| Code | Meaning |
+|---|---|
+| `200` | The section and its members. |
+| `400` | Invalid query parameter. |
+| `404` | No section matches `slug`. |
+
+### Blending curated collections with sponsored + organic
+
+Curated collections, sponsored placements, and organic recommendations are complementary — a typical homepage interleaves all three. Fetch them together:
+
+```typescript
+const [{ collections }, { placements }, recs] = await Promise.all([
+  market.marketplace.listMarketplaceCollections({}),
+  market.marketplace.getAdSlot({ slotKey: 'home_hero', limit: 3 }),
+  market.recommendations.getRecommendations({ type: 'trending', limit: 12 }),
+]);
+
+// Resolve the members of each curated section, then lay out the homepage:
+const sections = await Promise.all(
+  collections.map((c) => market.marketplace.getMarketplaceCollection({ slug: c.slug, limit: 12 })),
+);
+
+// e.g. hero (sponsored, labelled) → curated sections → organic "you might like" rail.
+```
+
+---
+
 ## Advertising / sponsored placements
 
-A marketplace storefront can show **sponsored placements** — paid spots that promote a merchant's products or shop. You render them in named **slots** (a hero banner, a category strip, a search-results rail), blended in with your organic listings or recommendations.
+A marketplace storefront can show **placements** in named **slots** (a hero banner, a category strip, a search-results rail), blended in with your organic listings or recommendations. A slot returns two kinds of placement:
+
+- **Sponsored** (`sponsored: true`) — paid spots that promote a merchant's products or shop. These **must** be rendered with their `disclosure_label`.
+- **Curated fallback** (`curated: true, sponsored: false`) — placements the marketplace operator hand-picks to fill a slot when no paid placement is available. These are **not** labelled as sponsored.
 
 Two operator-key methods cover the whole storefront side: `getAdSlot` fetches what to show in a slot, and `logAdEvent` reports impressions and clicks. Booking placements, setting rates, and managing slot inventory are **operator back-office** tasks done in the Super Admin app — they're not part of this API.
 
 <Warning>
-  Every placement comes with a `disclosure_label` (for example `"Sponsored"`) and `sponsored: true`. You **must** render the disclosure label on the placement so shoppers can tell it apart from organic results. This is a requirement, not a suggestion.
+  Render the `disclosure_label` (for example `"Sponsored"`) on **every placement where `sponsored` is `true`** so shoppers can tell it apart from organic results. This is a requirement, not a suggestion. Curated fallback placements (`sponsored: false`) are not paid advertising and do not carry the label.
 </Warning>
 
 ### `getAdSlot` — what to show in a slot
@@ -311,11 +413,15 @@ const { slot, context, placements } = await market.marketplace.getAdSlot({
 for (const p of placements) {
   // p.booking_id        — pass this back when logging beacons for this placement
   // p.merchant_store_id  — the merchant being promoted
-  // p.placement_kind     — 'product' | 'merchant'
+  // p.placement_kind     — 'product' | 'merchant' | 'promotion'
   // p.product_ids        — products to feature
+  // p.promotion_id       — for 'promotion' placements, the promotion to feature (else null)
   // p.creative           — headline / image / cta to render (shape varies by slot)
-  // p.disclosure_label   — ALWAYS render this on the placement
-  renderSponsored(p, { label: p.disclosure_label });
+  // p.sponsored          — true for paid ads, false for operator-curated fallback fill
+  // p.curated            — true when the operator hand-picked this fallback placement
+  // p.disclosure_label   — render this only when p.sponsored is true
+  if (p.sponsored) renderSponsored(p, { label: p.disclosure_label });
+  else renderCurated(p);   // curated fallback — no "Sponsored" label
 }
 ```
 
@@ -379,7 +485,7 @@ These are deliberately **not** SDK methods, because they're administrative, not 
 - **Running or viewing operator payout reports** — the operator does this from the Super Admin app.
 - **Setting commission rules / marketplace branding** — configured by the operator in the Super Admin app; you only *read* the resulting branding via `getMarketplaceInfo`.
 
-So the public marketplace surface is exactly: `getMarketplaceInfo`, `marketplaceCheckout`, `getMarketplaceCustomer`, `getAdSlot`, `logAdEvent`, plus the operator-key behavior of the catalog/search/auth/reviews/recommendations reads.
+So the public marketplace surface is exactly: `getMarketplaceInfo`, `marketplaceCheckout`, `getMarketplaceCustomer`, `listMarketplaceCollections`, `getMarketplaceCollection`, `getAdSlot`, `logAdEvent`, plus the operator-key behavior of the catalog/search/auth/reviews/recommendations reads.
 
 ---
 
