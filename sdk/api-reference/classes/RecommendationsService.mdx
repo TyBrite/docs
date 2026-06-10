@@ -80,6 +80,7 @@ const { recommendations } = await client.recommendations.getRecommendations({
 | `similar` | Products with similar features/meaning (Embedding-based). | `productId` |
 | `also-bought` | Products frequently purchased together. | `productId` |
 | `trending` | Global trending products (Velocity-based). | - |
+| `new` | Recently added products. | - |
 | `personalized` | Suggestions tailored to a specific user history. | `customerId` |
 | `bundle` | Smart bundle suggestions (Semantic + Co-purchase). | `productId` |
 
@@ -98,6 +99,27 @@ const { recommendations } = await client.recommendations.getRecommendations({
 <Note>
   Recommendation results are often cached for high performance. The response includes a `fromCache` boolean, a `computedAt` ISO timestamp, and an optional `fallbackUsed` string indicating if the system had to use a simpler algorithm due to data scarcity.
 </Note>
+
+---
+
+## Marketplace recommendations
+
+When you call this method with a **marketplace operator key**, recommendations are computed **across all merchants in the marketplace** rather than a single store. The supported types are the same: `trending`, `new`, `also-bought`, `similar`, `personalized`, and `bundle`.
+
+Each returned item is stamped with the merchant it came from via `merchant_store_id`, so you can link straight to that merchant's shop page or product:
+
+```typescript
+const market = new Tybrite({ apiKey: 'tybrite_pk_live_operator_...' });
+
+const { recommendations } = await market.recommendations.getRecommendations({
+  requestBody: { type: 'trending', limit: 12 },
+});
+
+for (const r of recommendations) {
+  // r.productId, r.score, r.reason
+  // r.merchant_store_id — the merchant this product belongs to (marketplace responses only)
+}
+```
 
 ---
 

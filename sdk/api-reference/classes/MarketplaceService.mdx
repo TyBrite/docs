@@ -287,6 +287,90 @@ const reviews = await market.reviews.listReviews({
 
 ---
 
+## Advertising / sponsored placements
+
+A marketplace storefront can show **sponsored placements** — paid spots that promote a merchant's products or shop. You render them in named **slots** (a hero banner, a category strip, a search-results rail), blended in with your organic listings or recommendations.
+
+Two operator-key methods cover the whole storefront side: `getAdSlot` fetches what to show in a slot, and `logAdEvent` reports impressions and clicks. Booking placements, setting rates, and managing slot inventory are **operator back-office** tasks done in the Super Admin app — they're not part of this API.
+
+<Warning>
+  Every placement comes with a `disclosure_label` (for example `"Sponsored"`) and `sponsored: true`. You **must** render the disclosure label on the placement so shoppers can tell it apart from organic results. This is a requirement, not a suggestion.
+</Warning>
+
+### `getAdSlot` — what to show in a slot
+
+```typescript
+const market = new Tybrite({ apiKey: 'tybrite_pk_live_operator_...' });
+
+const { slot, context, placements } = await market.marketplace.getAdSlot({
+  slotKey: 'home_hero',     // the named slot you're filling
+  context: 'electronics',   // optional: a category id or search term for context-scoped slots
+  limit: 5,                 // optional
+});
+
+for (const p of placements) {
+  // p.booking_id        — pass this back when logging beacons for this placement
+  // p.merchant_store_id  — the merchant being promoted
+  // p.placement_kind     — 'product' | 'merchant'
+  // p.product_ids        — products to feature
+  // p.creative           — headline / image / cta to render (shape varies by slot)
+  // p.disclosure_label   — ALWAYS render this on the placement
+  renderSponsored(p, { label: p.disclosure_label });
+}
+```
+
+| Param | Required | Notes |
+|---|---|---|
+| `slotKey` | yes | The slot to fill, e.g. `home_hero`, `category_top`. |
+| `context` | no | A category id or search term for context-scoped slots. |
+| `limit` | no | Max placements to return. |
+
+### Blending with organic recommendations
+
+Sponsored placements sit *alongside* organic results, not in place of them. A common pattern is to fetch both and interleave:
+
+```typescript
+const [{ placements }, recs] = await Promise.all([
+  market.marketplace.getAdSlot({ slotKey: 'home_hero', limit: 3 }),
+  market.recommendations.getRecommendations({ type: 'trending', limit: 12 }),
+]);
+
+// Show sponsored placements first (labelled), then organic recommendations.
+const feed = [
+  ...placements.map((p) => ({ kind: 'sponsored', item: p })),
+  ...recs.recommendations.map((r) => ({ kind: 'organic', item: r })),
+];
+```
+
+### `logAdEvent` — impression & click beacons
+
+Fire one **impression** per placement when it becomes visible, and a **click** when the shopper clicks it. Beacons are fire-and-forget.
+
+```typescript
+// When a placement scrolls into view:
+await market.marketplace.logAdEvent({
+  requestBody: {
+    booking_id: placement.booking_id,
+    event_type: 'impression',
+    session_id: storefrontSessionId,   // optional, helps de-duplicate
+  },
+});
+
+// When the shopper clicks it:
+await market.marketplace.logAdEvent({
+  requestBody: {
+    booking_id: placement.booking_id,
+    event_type: 'click',
+    product_id: clickedProductId,      // optional
+    session_id: storefrontSessionId,
+  },
+});
+```
+
+The response is `{ recorded: true, billable }`. `billable` tells you whether the event counted toward billing after de-duplication and invalid-traffic filtering — it's informational, so you don't need to act on it.
+
+---
+
 ## What is NOT in this API
 
 These are deliberately **not** SDK methods, because they're administrative, not storefront actions:
@@ -295,7 +379,7 @@ These are deliberately **not** SDK methods, because they're administrative, not 
 - **Running or viewing operator payout reports** — the operator does this from the Super Admin app.
 - **Setting commission rules / marketplace branding** — configured by the operator in the Super Admin app; you only *read* the resulting branding via `getMarketplaceInfo`.
 
-So the public marketplace surface is exactly: `getMarketplaceInfo`, `marketplaceCheckout`, `getMarketplaceCustomer`, plus the operator-key behavior of the catalog/search/auth/reviews reads.
+So the public marketplace surface is exactly: `getMarketplaceInfo`, `marketplaceCheckout`, `getMarketplaceCustomer`, `getAdSlot`, `logAdEvent`, plus the operator-key behavior of the catalog/search/auth/reviews/recommendations reads.
 
 ---
 

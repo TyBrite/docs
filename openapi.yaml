@@ -5771,20 +5771,26 @@ paths:
         - Recommendations
       summary: Get product recommendations
       description: |
-        AI-powered product recommendations with 5 types:
-        - **similar**: Products similar to given product (embedding-based)
-        - **also-bought**: Frequently purchased together (co-purchase matrix)
-        - **trending**: Currently trending products (velocity-based)
-        - **personalized**: Based on customer preferences
-        - **bundle**: Bundle suggestions (semantic + co-purchase)
-          
+        AI-powered product recommendations. Supported types:
+        - **similar**: Products similar to a given product
+        - **also-bought**: Frequently purchased together
+        - **trending**: Currently trending products
+        - **new**: Recently added products
+        - **personalized**: Based on a customer's preferences
+        - **bundle**: Bundle suggestions
+
         **⚠️ SECRET KEY REQUIRED**
-          
+
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
-          
-        **Why Secret Key?** AI recommendation generation uses computational resources and accesses
+
+        **Why Secret Key?** Recommendation generation uses computational resources and accesses
         machine learning models that should be protected from unauthorized use. This prevents abuse
         and ensures fair resource allocation.
+
+        **Marketplace operator keys.** With a marketplace operator key, recommendations are computed
+        across all merchants in the marketplace; supported types: trending, new, also-bought,
+        similar, personalized, bundle. Each item is stamped with its source merchant
+        (`merchant_store_id`).
       security:
         - BearerAuth: []
       requestBody:
@@ -5802,6 +5808,7 @@ paths:
                     - similar
                     - also-bought
                     - trending
+                    - new
                     - personalized
                     - bundle
                 productId:
@@ -11851,6 +11858,162 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/marketplace/ad-slots/{slot_key}:
+    get:
+      operationId: getAdSlot
+      tags:
+        - Marketplace
+      summary: Get sponsored placements for a slot
+      description: |
+        Returns the active sponsored placements to render in a named slot on a marketplace
+        storefront (for example a hero banner, a category strip, or search results). **Requires a
+        marketplace operator key.**
+
+        Each placement is paid advertising and **must be rendered with its `disclosure_label`** (for
+        example "Sponsored") so shoppers can tell it apart from organic results. Blend placements
+        with your organic listings or recommendations as appropriate for the slot.
+
+        Use the optional `context` parameter to request placements scoped to a category or a search
+        term, and `limit` to cap how many placements come back.
+
+        After rendering, log a beacon with `POST /v1/marketplace/ad-events`: one `impression` per
+        placement when it becomes visible, and a `click` when the shopper clicks it.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slot_key
+          in: path
+          required: true
+          description: The slot to fill, for example `home_hero` or `category_top`.
+          schema:
+            type: string
+          example: home_hero
+        - name: context
+          in: query
+          required: false
+          description: Optional context for context-scoped slots — a category identifier or a search term — used to pick placements relevant to what the shopper is viewing.
+          schema:
+            type: string
+          example: electronics
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of placements to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          example: 5
+      responses:
+        '200':
+          description: The active sponsored placements for the slot.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdSlotResponse'
+              example:
+                slot: home_hero
+                context: null
+                placements:
+                  - booking_id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                    merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    placement_kind: product
+                    product_ids:
+                      - d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                      - 9cd6e472-de84-435c-be43-957b56682f43
+                    creative:
+                      headline: Summer audio sale
+                      image_url: https://cdn.example.com/ads/acme-hero.png
+                      cta: Shop now
+                    sponsored: true
+                    disclosure_label: Sponsored
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /v1/marketplace/ad-events:
+    post:
+      operationId: logAdEvent
+      tags:
+        - Marketplace
+      summary: Log an ad impression or click
+      description: |
+        Records an impression or click beacon for a sponsored placement. **Requires a marketplace
+        operator key.**
+
+        This is fire-and-forget: fire one `impression` per placement when it becomes visible, and a
+        `click` when the shopper clicks it. Pass the `booking_id` from the placement you rendered.
+
+        The response returns `202 Accepted` with `billable` indicating whether the event counted
+        toward billing after de-duplication and invalid-traffic filtering. This is informational —
+        the storefront does not need to act on it.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - booking_id
+                - event_type
+              properties:
+                booking_id:
+                  type: string
+                  format: uuid
+                  description: The placement's identifier, taken from the slot response.
+                event_type:
+                  type: string
+                  enum:
+                    - impression
+                    - click
+                  description: Whether the placement was shown (`impression`) or clicked (`click`).
+                product_id:
+                  type: string
+                  format: uuid
+                  description: Optional — the specific product within the placement the event relates to.
+                session_id:
+                  type: string
+                  description: Optional — an opaque storefront session identifier used to de-duplicate events.
+            examples:
+              impression:
+                summary: Impression beacon
+                value:
+                  booking_id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                  event_type: impression
+                  session_id: sess_abc123
+              click:
+                summary: Click beacon
+                value:
+                  booking_id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                  event_type: click
+                  product_id: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+                  session_id: sess_abc123
+      responses:
+        '202':
+          description: The beacon was accepted.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdEventResponse'
+              example:
+                recorded: true
+                billable: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
 components:
   securitySchemes:
     BearerAuth:
@@ -13276,6 +13439,10 @@ components:
         reason:
           type: string
           example: Similar product based on description and attributes
+        merchant_store_id:
+          type: string
+          format: uuid
+          description: Present only for marketplace recommendations — the merchant that the recommended product belongs to.
     RecommendationResponse:
       type: object
       properties:
@@ -14831,6 +14998,83 @@ components:
         commission_enabled:
           type: boolean
           description: Whether commission is applied to marketplace sales.
+    AdPlacement:
+      type: object
+      description: A single sponsored placement to render inside a marketplace storefront slot. Always render it together with its disclosure label so shoppers can tell it apart from organic results.
+      required:
+        - booking_id
+        - merchant_store_id
+        - placement_kind
+        - product_ids
+        - sponsored
+        - disclosure_label
+      properties:
+        booking_id:
+          type: string
+          format: uuid
+          description: Identifier for this sponsored placement. Pass it back when logging impression and click beacons for this placement.
+        merchant_store_id:
+          type: string
+          format: uuid
+          description: The merchant whose products or shop this placement promotes.
+        placement_kind:
+          type: string
+          enum:
+            - product
+            - merchant
+          description: Whether the placement promotes specific products (`product`) or a merchant's shop as a whole (`merchant`).
+        product_ids:
+          type: array
+          description: The product identifiers to feature. For `merchant` placements this may be a curated selection of that merchant's products, or empty.
+          items:
+            type: string
+            format: uuid
+        creative:
+          type: object
+          additionalProperties: true
+          description: Creative content to render for this placement (for example a headline, image, or call to action). The shape varies by slot; render the fields your storefront supports.
+        sponsored:
+          type: boolean
+          description: Always true — this is paid placement and must be labelled as such.
+          example: true
+        disclosure_label:
+          type: string
+          description: The label the storefront must show on the placement (for example "Sponsored"). Always display it.
+          example: Sponsored
+    AdSlotResponse:
+      type: object
+      description: The active sponsored placements to render in a named marketplace storefront slot. Blend these with your organic listings or recommendations, each shown with its disclosure label.
+      required:
+        - slot
+        - placements
+      properties:
+        slot:
+          type: string
+          description: The slot key that was requested.
+          example: home_hero
+        context:
+          type:
+            - string
+            - 'null'
+          description: The context the slot was scoped to (a category identifier or search term), or null when no context was supplied.
+        placements:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdPlacement'
+    AdEventResponse:
+      type: object
+      description: Acknowledges an impression or click beacon.
+      required:
+        - recorded
+        - billable
+      properties:
+        recorded:
+          type: boolean
+          description: Always true — the beacon was accepted.
+          example: true
+        billable:
+          type: boolean
+          description: Whether this event counted toward billing after de-duplication and invalid-traffic filtering. Informational only — the storefront does not need to act on it.
   responses:
     BadRequestError:
       description: Invalid request - malformed data or missing required fields
