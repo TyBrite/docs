@@ -111,6 +111,83 @@ const updated = result.customer;
 </Note>
 
 
+## Saved addresses
+
+Let a signed-in shopper keep a personal address book — multiple billing and shipping addresses they can reuse at checkout instead of re-typing them every time. Pre-fill your checkout form from `listAddresses`, or pre-select the shopper's default shipping/billing address.
+
+These are **customer-self** operations: they work with a **publishable key** (safe to call from the browser), but require the shopper's session token in `xAuthToken`. The token must resolve to the customer in the `id` path parameter, otherwise the call returns `403`.
+
+<Note>
+  **Single default per kind.** Setting an address as the default for shipping (`is_default_shipping`) or billing (`is_default_billing`) automatically clears any previous default of the same kind, so there's always at most one default shipping address and one default billing address.
+</Note>
+
+### `listAddresses`
+
+Return the shopper's saved addresses, defaults first. Use this to render their saved addresses at checkout.
+
+```typescript
+const { addresses } = await client.customers.listAddresses({
+  id: session.customer.id,
+  xAuthToken: session.session.access_token,
+});
+
+const defaultShipping = addresses.find(a => a.is_default_shipping);
+```
+
+### `createAddress`
+
+Save a new address to the shopper's address book. `full_name`, `line1`, `city`, and `country` are required; everything else is optional. `address_type` is one of `shipping`, `billing`, or `both` (default `both`).
+
+```typescript
+const { address } = await client.customers.createAddress({
+  id: session.customer.id,
+  xAuthToken: session.session.access_token,
+  requestBody: {
+    full_name: 'Jane Doe',
+    line1: '123 Main St',
+    line2: 'Apt 4B',
+    city: 'New York',
+    state: 'NY',
+    postal_code: '10001',
+    country: 'US',
+    label: 'Home',
+    address_type: 'both',
+    is_default_shipping: true,
+  },
+});
+// Save address.id to reference this address at checkout.
+```
+
+### `updateAddress`
+
+Partially update a saved address — only the fields you supply are changed. Pass the address `id` as `addressId`.
+
+```typescript
+const { address } = await client.customers.updateAddress({
+  id: session.customer.id,
+  addressId: existingAddressId,
+  xAuthToken: session.session.access_token,
+  requestBody: {
+    line2: 'Suite 200',
+    is_default_billing: true,
+  },
+});
+```
+
+### `deleteAddress`
+
+Remove an address from the shopper's address book.
+
+```typescript
+await client.customers.deleteAddress({
+  id: session.customer.id,
+  addressId: existingAddressId,
+  xAuthToken: session.session.access_token,
+});
+// → { success: true, message: 'Address deleted' }
+```
+
+
 ## Customer Utilities
 
 <Tip>
