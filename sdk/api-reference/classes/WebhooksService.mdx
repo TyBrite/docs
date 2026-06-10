@@ -19,6 +19,8 @@ Webhooks allow your systems to receive real-time push notifications when events 
 - **At-least-once** — your endpoint must be idempotent. Use `event.id` for deduplication.
 - **HMAC-signed** — verify with the `signing_secret` returned at endpoint creation.
 - **Best-effort ordering** — use `event.created_at` for sequencing, not arrival order.
+- **Automatic retries** — failed deliveries are retried with exponential backoff.
+- **Auto-disable** — an endpoint that fails 20 deliveries in a row (each after its retries are exhausted) is automatically disabled. Re-enable it once it's healthy; see [Endpoint health & auto-disable](#endpoint-health--auto-disable).
 
 ---
 
@@ -151,6 +153,32 @@ const { webhook_endpoint } = await client.webhooks.getWebhookEndpoint({
 
 console.log(webhook_endpoint.delivery_stats);
 // { total: 1420, successful: 1418, failed: 2 }
+
+console.log(webhook_endpoint.consecutive_failures); // 0 when healthy
+console.log(webhook_endpoint.disabled_reason);      // null unless auto-disabled
+```
+
+---
+
+### Endpoint health & auto-disable
+
+Every endpoint tracks its recent delivery health:
+
+| Field | Meaning |
+| :--- | :--- |
+| `last_success_at` | When the endpoint last accepted a delivery (2xx). |
+| `last_failure_at` | When a delivery to the endpoint last failed. |
+| `consecutive_failures` | Deliveries that have failed in a row after exhausting their retries. Reset to `0` by any successful delivery. |
+| `disabled_reason` | Set when the endpoint was **auto-disabled**; `null` otherwise. |
+| `disabled_at` | When it was auto-disabled; `null` otherwise. |
+
+When `consecutive_failures` reaches **20**, the endpoint is automatically disabled (`enabled: false`) so a permanently-dead endpoint stops accumulating deliveries. Fix the endpoint, then re-enable it — re-enabling resets the failure counter and clears `disabled_reason`:
+
+```typescript
+await client.webhooks.updateWebhookEndpoint({
+  id: 'endpoint-uuid',
+  requestBody: { enabled: true } // resets consecutive_failures, clears disabled_reason
+});
 ```
 
 ---
@@ -191,7 +219,7 @@ await client.webhooks.deleteWebhookEndpoint({ id: 'endpoint-uuid' });
 
 Sends a synthetic test payload to an endpoint. Use this to verify your signature verification code and endpoint connectivity before going live.
 
-The payload includes `"test": true` so your handler can distinguish test from live events.
+The payload carries `"test": true` (it's synthetic — `data.object` holds placeholder values, so your handler should skip side effects) and a `livemode` flag reflecting the key's environment. These are two distinct signals — see [`livemode` vs `test`](#livemode-vs-test--two-different-flags).
 
 ```typescript
 const result = await client.webhooks.sendTestWebhookEvent({
@@ -222,7 +250,15 @@ const { webhook_events: failedPayments } = await client.webhooks.listWebhookEven
   type: 'payment.failed',
   limit: 20,
 });
+
+// Filter by environment (production vs sandbox/test)
+const { webhook_events: liveEvents } = await client.webhooks.listWebhookEvents({
+  environment: 'production',
+  limit: 50,
+});
 ```
+
+Each event also carries an `environment` field (`production` or `sandbox`) so you can tell live and test events apart in the log.
 
 ---
 
@@ -271,6 +307,7 @@ All events use a consistent envelope:
   "created_at": "2026-05-20T10:30:00Z",
   "store_id": "store-uuid",
   "api_version": "v1",
+  "livemode": true,
   "data": {
     "object": { /* the resource — order, payment, customer, etc. */ }
   },
@@ -278,6 +315,29 @@ All events use a consistent envelope:
     /* on update events: prior values for changed fields only */
   }
 }
+```
+
+### `livemode` vs `test` — two different flags
+
+The envelope carries two boolean signals that are easy to confuse but answer **different** questions. Check the one that matches what you're deciding:
+
+| Flag | Question it answers | When it's set |
+| :--- | :--- | :--- |
+| `livemode` | *Which environment produced this event?* | **Always present.** `true` for production; `false` for any event emitted while authenticating with a test key (`tybrite_sk_test_…` / `tybrite_pk_test_…`). |
+| `test` | *Is this payload synthetic/fake?* | **Only** on events sent via `sendTestWebhookEvent` (the "send test" endpoint). Its `data.object` holds placeholder values. Absent on all real events. |
+
+- Use **`livemode`** to **route** — e.g. drop anything where `livemode === false` in your production handler.
+- Use **`test`** to **skip side effects** — don't fulfil, charge, or persist when `test === true`, because the data is fake.
+
+They're orthogonal. A **real** order placed with a test key is `livemode: false` with **no** `test` flag — a genuine sandbox event you can process as an end-to-end integration test. A synthetic test fired while on a live key is `livemode: true` with `test: true`.
+
+```typescript
+const event = JSON.parse(req.body.toString());
+
+if (event.test) return res.json({ received: true });      // synthetic — acknowledge, do nothing
+if (!event.livemode) return res.json({ received: true }); // sandbox — ignore in production handler
+
+await processEvent(event); // real, production event
 ```
 
 Use `event.id` for idempotency — store it and skip processing if you've seen it before:

@@ -11,8 +11,11 @@ Access this service via `client.system`.
 
 Retrieve comprehensive store metadata, configuration, and catalog statistics in a single API call. This endpoint is specifically optimized for initial data synchronizations, AI agent context setting, and dashboard overviews.
 
+The `store` section includes business context — `name`, `logo_url`, `description`, `website`, `phone`, `email`, and `address` (any of which may be `null`) — alongside currencies, timezone, and creation date. The `catalog.products` block includes a thin `sample` array (at most 10 items, each `{ id, name, category, price, image, featured }`) — a small sample of products for context; use `client.products.listProducts` to browse the full catalog.
+
 *   **Caching**: Responses are cached for 5 minutes by default.
 *   **Selective Loading**: Use the `sections` parameter to tailor the response and reduce payload size by up to 80%.
+*   **Single-store only**: This endpoint describes one store. A **marketplace operator key** receives `403` — use `client.marketplace.getMarketplaceInfo` for the marketplace's own information, or `getMarketplaceInfo({ storeId })` for one merchant within it.
 
 ```typescript
 // 1. Get full store configuration (all sections)
@@ -100,6 +103,6 @@ Requires authentication. Both **publishable** and **secret** keys are accepted.
 | `200` | Store info returned (possibly served from cache). |
 | `400` | Invalid `sections` parameter (unknown section name). |
 | `401` | Invalid or missing API key. |
-| `403` | Forbidden (e.g., key disabled or store suspended). |
+| `403` | Forbidden — a marketplace operator key was used (use `getMarketplaceInfo` instead), or the key is disabled / store suspended. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |

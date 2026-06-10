@@ -227,7 +227,7 @@ The following services currently support cursor-based pagination:
 
 ## Service Overview
 
-The SDK exposes 16 services, each accessible as a property on the `Tybrite` client. The "Customer auth?" column indicates whether the customer session token (`xAuthToken`) is required for at least some methods.
+The SDK exposes 17 services, each accessible as a property on the `Tybrite` client. The "Customer auth?" column indicates whether the customer session token (`xAuthToken`) is required for at least some methods.
 
 | Service | Access via | Customer auth? | Purpose |
 | :--- | :--- | :--- | :--- |
@@ -246,7 +246,12 @@ The SDK exposes 16 services, each accessible as a property on the `Tybrite` clie
 | `shipping` | `client.shipping` | No | Delivery zones and distance-based rate quotes |
 | `recommendations` | `client.recommendations` | No | Hybrid AI: Gemini embeddings + collaborative filtering |
 | `search` | `client.search` | No | Semantic search with text fallback |
+| `marketplace` | `client.marketplace` | Yes (unified profile) | Multi-merchant marketplaces — marketplace identity and branding, aggregated catalog reads, single-merchant shop pages, unified multi-merchant checkout with automatic payment splitting, and commission previews |
 | `system` | `client.system` | No | Health checks and store metadata |
+
+<Note>
+  **Building a marketplace?** When a deployment runs as a marketplace, you authenticate the storefront with a **marketplace operator key**. The catalog services (`products`, `taxonomy`, `search`) then return data aggregated across **every active merchant** — pass `storeId` to narrow them to a single merchant's shop page. Use `client.marketplace.getMarketplaceInfo` for the marketplace's identity and branding (or one merchant's full store information), and `client.marketplace` to check out a single cart spanning multiple merchants with one payment that is split to each merchant automatically. See the [Marketplace](/sdk/api-reference/classes/MarketplaceService) reference.
+</Note>
 
 ## Next Steps
 
@@ -270,5 +275,8 @@ Now that you have initialized the client, explore the most commonly used service
   </Card>
   <Card title="System & Store" icon="gauge" href="/sdk/api-reference/classes/SystemService">
     Monitor health status and retrieve comprehensive store metadata.
+  </Card>
+  <Card title="Marketplace" icon="store" href="/sdk/api-reference/classes/MarketplaceService">
+    Aggregate many merchants, run a unified multi-merchant checkout, and split payments automatically.
   </Card>
 </CardGroup>

@@ -563,6 +563,26 @@ tags:
       - `x-auth-token`: Customer session JWT — required for `POST /v1/reviews` (submit)
         and for `DELETE /v1/reviews/{id}` when using a publishable key to delete own review.
         Obtained from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`.
+  - name: Marketplace
+    description: |
+      Endpoints for building a multi-merchant marketplace storefront.
+
+      These endpoints let a marketplace storefront read the marketplace's identity and
+      branding (and a single merchant's store information within it), resolve commission,
+      check out a cart spanning multiple merchants in a single payment, and read a
+      shopper's unified profile across every merchant they have shopped with.
+
+      To narrow aggregated marketplace catalog results to a single merchant's "shop page",
+      pass `?store_id=<merchant>` to the products, categories, subcategories, and search
+      endpoints (operator key only).
+
+      **Key types:**
+      - Marketplace information, unified checkout, and the unified customer profile use
+        the marketplace operator key. Commission resolution accepts the marketplace operator
+        key or a merchant secret key.
+
+      Merchant payment onboarding and operator payout runs are merchant/operator back-office
+      tasks handled in the admin interface, not through this API.
   - name: Webhooks
     description: |
       Outbound webhook management for merchant integrators.
@@ -706,9 +726,12 @@ paths:
         - Typical response time: 50-150ms (cached: 10-20ms)
           
         **Selective Loading:**
-        Use the `sections` parameter to request only specific data sections, reducing payload size 
+        Use the `sections` parameter to request only specific data sections, reducing payload size
         by 50-80% when you don't need all information.
-          
+
+        **Single-store only.** This endpoint describes one store. A marketplace operator key has no
+        single store here and receives `403` — use `GET /v1/marketplace/info` for the marketplace's own
+        information, or `GET /v1/marketplace/info?store_id=<merchant>` for one merchant within it.
       security:
         - BearerAuth: []
       parameters:
@@ -1042,9 +1065,13 @@ paths:
         small for fast catalog browsing. Use the `has_variants` flag to determine if a detail fetch 
         is needed to show variant options.
           
-        **Currency:** All prices returned in store's default currency. For multi-currency support with 
+        **Currency:** All prices returned in store's default currency. For multi-currency support with
         geographic detection, use the `/v1/prices/products` endpoint instead.
-          
+
+        **Marketplace:** When called with a marketplace operator key, this returns products aggregated
+        across all merchants in the marketplace rather than a single store's catalog. With a marketplace
+        operator key, pass `?store_id=<merchant>` to narrow results to a single merchant.
+
         **Performance:**
         - Default variant data included at root level (price, stock, sku)
         - No variants array (50-70% smaller than detail endpoints)
@@ -1263,6 +1290,16 @@ paths:
           schema:
             type: string
           example: product_id,name,price,stock,sku
+        - name: store_id
+          in: query
+          required: false
+          description: |
+            Marketplace operator key only. Narrow the aggregated marketplace catalog to a single
+            merchant's products — the "shop page" for one merchant. Ignored when using a single-store key.
+          schema:
+            type: string
+            format: uuid
+          example: 3f1a2b4c-1111-2222-3333-444455556666
       responses:
         '200':
           description: |
@@ -2413,10 +2450,17 @@ paths:
       tags:
         - Taxonomy
       summary: List categories
-      description: Retrieve all product categories for the authenticated store. Accepts both publishable and secret API keys.
+      description: Retrieve all product categories for the authenticated store. Accepts both publishable and secret API keys. When called with a marketplace operator key, returns categories aggregated across all merchants in the marketplace. With a marketplace operator key, pass `?store_id=<merchant>` to narrow results to a single merchant.
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: Marketplace operator key only. Narrow the aggregated marketplace categories to a single merchant. Ignored when using a single-store key.
+          schema:
+            type: string
+            format: uuid
         - name: search
           in: query
           description: Case-insensitive substring match on category name
@@ -2529,10 +2573,17 @@ paths:
       tags:
         - Taxonomy
       summary: List subcategories
-      description: Retrieve product subcategories. Subcategories can be nested to arbitrary depth via their parent_id. By default a flat list is returned; use tree=true to receive them as a nested hierarchy, or parent_id / root_only to fetch a specific level. Accepts both publishable and secret API keys.
+      description: Retrieve product subcategories. Subcategories can be nested to arbitrary depth via their parent_id. By default a flat list is returned; use tree=true to receive them as a nested hierarchy, or parent_id / root_only to fetch a specific level. Accepts both publishable and secret API keys. When called with a marketplace operator key, returns subcategories aggregated across all merchants in the marketplace. With a marketplace operator key, pass `?store_id=<merchant>` to narrow results to a single merchant.
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: Marketplace operator key only. Narrow the aggregated marketplace subcategories to a single merchant. Ignored when using a single-store key.
+          schema:
+            type: string
+            format: uuid
         - name: category_id
           in: query
           description: Filter subcategories by parent category ID
@@ -5580,6 +5631,131 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/cart/checkout:
+    post:
+      operationId: marketplaceCheckout
+      tags:
+        - Marketplace
+      summary: Check out a multi-merchant cart
+      description: |
+        Create a single order for a cart that contains items from multiple merchants
+        in the marketplace, and start a payment for the whole basket. Each item names
+        the merchant it belongs to; items are validated against the marketplace catalog,
+        commission is resolved per merchant, and one payment covers the entire order.
+
+        The response includes a `client_secret` to complete the payment on the
+        storefront and a per-merchant breakdown of gross, commission, and net amounts.
+        Once payment succeeds, the order finalizes automatically — no further call is
+        required.
+
+        Requires the marketplace operator key.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+                - customer_email
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  description: The cart line items to check out.
+                  items:
+                    type: object
+                    required:
+                      - variant_id
+                      - merchant_store_id
+                      - quantity
+                    properties:
+                      product_id:
+                        type: string
+                        format: uuid
+                      variant_id:
+                        type: string
+                        format: uuid
+                      merchant_store_id:
+                        type: string
+                        format: uuid
+                        description: The merchant that sells this item.
+                      quantity:
+                        type: integer
+                        minimum: 1
+                customer_email:
+                  type: string
+                  format: email
+                customer_name:
+                  type: string
+                customer_phone:
+                  type: string
+                currency:
+                  type: string
+                  description: ISO currency code for the order. Defaults to USD.
+                  example: USD
+                shipping_address:
+                  type: object
+                  additionalProperties: true
+                billing_address:
+                  type: object
+                  additionalProperties: true
+            example:
+              items:
+                - product_id: 11111111-1111-1111-1111-111111111111
+                  variant_id: 22222222-2222-2222-2222-222222222222
+                  merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                  quantity: 2
+              customer_email: dannytyoung1@gmail.com
+              customer_name: Danny Young
+              currency: USD
+      responses:
+        '201':
+          description: The multi-merchant order was created and is awaiting payment.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceCheckoutResponse'
+              example:
+                order_group_id: 44444444-4444-4444-4444-444444444444
+                group_number: MKT-100042
+                payment_intent_id: pi_3Pxxxxxxxxxxxx
+                client_secret: pi_3Pxxxxxxxxxxxx_secret_yyyyyyyy
+                currency: USD
+                subtotal: 245
+                total_amount: 245
+                merchant_breakdown:
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    gross_amount: 245
+                    commission_amount: 24.5
+                    net_amount: 220.5
+                    commission_rule_id: 7e6d5c4b-1234-5678-9abc-def012345678
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '502':
+          description: The payment provider could not be reached or rejected the request.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_error
+                  message: Payment initialization failed
   /v1/recommendations:
     post:
       operationId: getRecommendations
@@ -5690,10 +5866,17 @@ paths:
       tags:
         - Search
       summary: Simple text search
-      description: Fast text-based search using
+      description: Fast text-based product search. Accepts both publishable and secret API keys. When called with a marketplace operator key, searches products across all merchants in the marketplace. With a marketplace operator key, pass `?store_id=<merchant>` to narrow results to a single merchant.
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: Marketplace operator key only. Narrow the marketplace search to a single merchant's products. Ignored when using a single-store key.
+          schema:
+            type: string
+            format: uuid
         - name: q
           in: query
           schema:
@@ -5745,6 +5928,9 @@ paths:
           
         **Note:** Despite using POST method (to support complex request bodies with parameters),
         this is a read-only operation. Publishable keys are allowed for client-side search functionality.
+
+        **Marketplace:** When called with a marketplace operator key, searches products across all
+        merchants in the marketplace.
       security:
         - BearerAuth: []
       requestBody:
@@ -6458,6 +6644,46 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/customers/me:
+    get:
+      operationId: getMarketplaceCustomer
+      tags:
+        - Marketplace
+      summary: Get the signed-in shopper's unified marketplace profile
+      description: |
+        Return a marketplace shopper's unified profile, aggregated across every
+        merchant in the marketplace they have shopped with. The response combines
+        their identity, the merchants they have a relationship with, and their full
+        cross-merchant order history.
+
+        Requires the marketplace operator key plus the shopper's session token,
+        supplied in the `X-Customer-Token` header. Sign the shopper in first, then
+        pass the token from that response here.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: X-Customer-Token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The shopper's unified marketplace profile.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnifiedCustomerProfile'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /v1/customers/{id}:
     get:
       operationId: getCustomer
@@ -10200,6 +10426,10 @@ paths:
         rating and star distribution across all approved reviews for the product,
         regardless of the `status` filter applied to the `reviews` array.
 
+        **Marketplace:** A marketplace operator key may read approved reviews for a
+        product belonging to one of its merchants. When using an operator key,
+        `store_id` (the merchant who owns the product) is **required**.
+
         **Rate limit:** 300 requests/hour per API key.
       security:
         - BearerAuth: []
@@ -10212,6 +10442,17 @@ paths:
             format: uuid
           description: Filter reviews for this product. Required.
           example: d8cea277-9bb6-4942-b9e9-2f2ac351509f
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            Marketplace operator key only — and **required** for operator keys. The
+            merchant that owns the product whose reviews you are reading. Ignored when
+            using a single-store key.
+          example: 3f1a2b4c-1111-2222-3333-444455556666
         - name: variant_id
           in: query
           required: false
@@ -10335,6 +10576,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -10461,6 +10704,10 @@ paths:
         Returns a single review by ID. Publishable keys see only approved reviews —
         pending or rejected reviews return `404`. Secret keys see all statuses.
 
+        **Marketplace:** A marketplace operator key may read an approved review that
+        belongs to one of its merchants. When using an operator key, `store_id` (the
+        merchant who owns the reviewed product) is **required**.
+
         **Rate limit:** 600 requests/hour per API key.
       security:
         - BearerAuth: []
@@ -10472,6 +10719,16 @@ paths:
             type: string
             format: uuid
           description: Review UUID.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            Marketplace operator key only — and **required** for operator keys. The
+            merchant that owns the reviewed product. Ignored when using a single-store key.
+          example: 3f1a2b4c-1111-2222-3333-444455556666
       responses:
         '200':
           description: Review found
@@ -10491,6 +10748,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -10625,6 +10884,12 @@ paths:
         The `signing_secret` is returned **once** at creation — store it
         immediately. It cannot be retrieved again; rotate it via a DELETE +
         re-create if lost.
+
+        Failed deliveries are retried automatically with exponential backoff. If an
+        endpoint fails 20 deliveries in a row (each after exhausting its retries),
+        it is automatically disabled (`enabled: false`) and stamped with a
+        `disabled_reason`. Re-enable it with a `PATCH` once the endpoint is healthy
+        again; re-enabling resets the failure counter.
       security:
         - BearerAuth: []
       requestBody:
@@ -10898,9 +11163,16 @@ paths:
       summary: Send a test event
       description: |
         Sends a synthetic test payload to the endpoint immediately. Useful for verifying
-        signature verification and endpoint connectivity during integration.
+        signature verification and endpoint connectivity during integration. The
+        `data.object` contains placeholder values, not real store data.
 
-        The payload includes `"test": true` so your handler can distinguish test from live events.
+        The envelope carries two flags your handler can branch on:
+        - **`test: true`** — marks this as a synthetic payload with fake data; skip
+          any side effects (don't fulfil, charge, or persist). Only events from this
+          endpoint carry it.
+        - **`livemode`** — `false` when this request is authenticated with a test
+          key, `true` with a live key. Independent of `test`: it reflects the key's
+          environment, not whether the payload is synthetic.
       security:
         - BearerAuth: []
       parameters:
@@ -10991,6 +11263,16 @@ paths:
             type: string
           description: Filter by event type (e.g. `order.paid`)
           example: order.paid
+        - name: environment
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - production
+              - sandbox
+          description: Filter by the environment the event was emitted in.
+          example: production
         - name: limit
           in: query
           schema:
@@ -11128,6 +11410,122 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/marketplace/info:
+    get:
+      operationId: getMarketplaceInfo
+      tags:
+        - Marketplace
+      summary: Get marketplace information
+      description: |
+        Returns information about a marketplace. **Requires a marketplace operator key.**
+
+        This endpoint has two modes:
+
+        - **No `store_id`** — returns the marketplace's own identity and branding: name, logo,
+          primary color, tagline, contact details, and whether unified checkout and commission are
+          enabled. Use this to render the marketplace's storefront branding.
+        - **With `?store_id=<merchant>`** — returns the same comprehensive store information as
+          `GET /v1/store/info`, but for that one merchant within the marketplace. Useful for a
+          single-merchant "shop page" or for giving an AI agent context about one merchant. The
+          merchant must be active in the marketplace, otherwise `404` is returned. Combine with
+          `sections` to request only specific sections of that merchant's information.
+
+        A single-store (non-operator) key receives `403`; use `GET /v1/store/info` instead.
+
+        **Caching:** Responses may be cached for up to 5 minutes.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: |
+            A merchant's store identifier. When provided, returns that merchant's comprehensive
+            store information (same shape as `GET /v1/store/info`). Omit to return the marketplace's
+            own identity and branding.
+          schema:
+            type: string
+            format: uuid
+          example: 3f1a2b4c-1111-2222-3333-444455556666
+        - name: sections
+          in: query
+          required: false
+          description: |
+            Only used together with `store_id`. Comma-separated list of sections of the merchant's
+            information to include. Omit to return all sections.
+
+            **Available sections:** `catalog`, `pricing`, `promotions`, `payments`, `shipping`,
+            `cms`, `features`. The `store` section is always included.
+          schema:
+            type: string
+          example: catalog,features
+      responses:
+        '200':
+          description: |
+            Marketplace identity and branding (no `store_id`), or a merchant's comprehensive store
+            information (`store_id` provided).
+          headers:
+            Cache-Control:
+              description: Cache control directives
+              schema:
+                type: string
+                example: public, max-age=300
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/MarketplaceInfoResponse'
+                  - $ref: '#/components/schemas/StoreInfoResponse'
+              examples:
+                marketplace_identity:
+                  summary: Marketplace identity and branding (no store_id)
+                  value:
+                    marketplace: true
+                    mode: marketplace
+                    name: Galactic Market
+                    logo_url: https://cdn.example.com/marketplace-logo.png
+                    primary_color: '#3B82F6'
+                    tagline: Everything you need, from every merchant
+                    support_email: support@galacticmarket.example.com
+                    description: A curated marketplace of independent merchants.
+                    website: https://galacticmarket.example.com
+                    phone: +1-555-0100
+                    address: 123 Market Street, San Francisco, CA
+                    unified_checkout: true
+                    commission_enabled: true
+                merchant_store_info:
+                  summary: One merchant's store information (store_id provided)
+                  value:
+                    store:
+                      store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                      name: Acme Audio
+                      logo_url: https://cdn.example.com/acme-logo.png
+                      description: Premium audio gear.
+                      website: https://acme-audio.example.com
+                      phone: +1-555-0123
+                      email: hello@acme-audio.example.com
+                      address: 42 Sound Ave, Austin, TX
+                      default_currency: USD
+                      currencies:
+                        - USD
+                        - EUR
+                      timezone: America/Chicago
+                      created_at: '2025-12-16T07:20:56.276495+00:00'
+                    marketplace:
+                      mode: marketplace
+                      marketplace_enabled: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
 components:
   securitySchemes:
     BearerAuth:
@@ -11189,6 +11587,36 @@ components:
             name:
               type: string
               description: Store display name
+            logo_url:
+              type:
+                - string
+                - 'null'
+              description: URL of the store's logo, or null if not set.
+            description:
+              type:
+                - string
+                - 'null'
+              description: Short description of the store, or null if not set.
+            website:
+              type:
+                - string
+                - 'null'
+              description: Store's public website URL, or null if not set.
+            phone:
+              type:
+                - string
+                - 'null'
+              description: Store contact phone number, or null if not set.
+            email:
+              type:
+                - string
+                - 'null'
+              description: Store contact email, or null if not set.
+            address:
+              type:
+                - string
+                - 'null'
+              description: Store physical or business address, or null if not set.
             default_currency:
               type: string
               description: Store's default currency code (ISO 4217)
@@ -11227,6 +11655,31 @@ components:
                   type: integer
                 low_stock:
                   type: integer
+                sample:
+                  type: array
+                  description: A small sample of products (at most 10) for context — useful for AI agents and overview screens. This is NOT the full catalog; use the products endpoint to browse all products.
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      name:
+                        type: string
+                      category:
+                        type:
+                          - string
+                          - 'null'
+                      price:
+                        type:
+                          - number
+                          - 'null'
+                      image:
+                        type:
+                          - string
+                          - 'null'
+                      featured:
+                        type: boolean
             collections:
               type: object
               properties:
@@ -11436,6 +11889,19 @@ components:
               type: boolean
             collections:
               type: boolean
+        marketplace:
+          type: object
+          description: Indicates whether this store is part of a marketplace, so a storefront can adapt its experience accordingly.
+          properties:
+            mode:
+              type: string
+              enum:
+                - standard
+                - marketplace
+              description: Whether the store runs on its own or inside a marketplace.
+            marketplace_enabled:
+              type: boolean
+              description: Whether marketplace features are available.
     Error:
       type: object
       required:
@@ -12412,6 +12878,66 @@ components:
             - sandbox
           description: Whether this wishlist item belongs to the live or test environment.
           example: production
+    MerchantBreakdownItem:
+      type: object
+      description: Commission and payout breakdown for a single merchant within a unified order.
+      properties:
+        merchant_store_id:
+          type: string
+          format: uuid
+        gross_amount:
+          type: number
+          description: Total of this merchant's items before commission.
+          example: 120
+        commission_amount:
+          type: number
+          description: Commission deducted from this merchant's gross.
+          example: 12
+        net_amount:
+          type: number
+          description: Amount this merchant receives after commission.
+          example: 108
+        commission_rule_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: Identifier of the commission rule applied to this merchant, or null if none matched.
+    MarketplaceCheckoutResponse:
+      type: object
+      description: |
+        A created multi-merchant order awaiting payment. Use `client_secret` to
+        complete the payment on the storefront; the order finalizes automatically
+        once payment succeeds.
+      properties:
+        order_group_id:
+          type: string
+          format: uuid
+          description: Identifier for the multi-merchant order.
+        group_number:
+          type: string
+          description: Human-readable reference for the order.
+          example: MKT-100042
+        payment_intent_id:
+          type: string
+          description: Identifier of the payment to complete on the storefront.
+        client_secret:
+          type: string
+          description: Secret used by the storefront payment form to complete the charge.
+        currency:
+          type: string
+          example: USD
+        subtotal:
+          type: number
+          example: 245
+        total_amount:
+          type: number
+          example: 245
+        merchant_breakdown:
+          type: array
+          description: Per-merchant gross, commission, and net amounts for this order.
+          items:
+            $ref: '#/components/schemas/MerchantBreakdownItem'
     Recommendation:
       type: object
       properties:
@@ -12560,6 +13086,155 @@ components:
           type: integer
         expires_at:
           type: integer
+    UnifiedCustomerProfile:
+      type: object
+      description: A shopper's unified profile across every merchant in the marketplace.
+      properties:
+        customer:
+          type: object
+          properties:
+            ids:
+              type: array
+              description: The shopper's customer identifiers across the marketplace's merchants.
+              items:
+                type: string
+                format: uuid
+            email:
+              type:
+                - string
+                - 'null'
+              format: email
+            name:
+              type:
+                - string
+                - 'null'
+            phone:
+              type:
+                - string
+                - 'null'
+            address:
+              type:
+                - string
+                - 'null'
+            status:
+              type:
+                - string
+                - 'null'
+            join_date:
+              type:
+                - string
+                - 'null'
+              format: date-time
+        stores:
+          type: array
+          description: The merchants this shopper has a relationship with.
+          items:
+            type: object
+            properties:
+              merchant_store_id:
+                type: string
+                format: uuid
+              merchant_store_name:
+                type:
+                  - string
+                  - 'null'
+              affiliation_date:
+                type:
+                  - string
+                  - 'null'
+                format: date-time
+              first_purchase_date:
+                type:
+                  - string
+                  - 'null'
+                format: date-time
+              last_purchase_date:
+                type:
+                  - string
+                  - 'null'
+                format: date-time
+              total_purchases:
+                type:
+                  - integer
+                  - 'null'
+              total_spent:
+                type:
+                  - number
+                  - 'null'
+              status:
+                type:
+                  - string
+                  - 'null'
+              preferred_store:
+                type:
+                  - boolean
+                  - 'null'
+        orders:
+          type: array
+          description: The shopper's order history across all merchants, newest first.
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              order_number:
+                type:
+                  - string
+                  - 'null'
+              merchant_store_id:
+                type: string
+                format: uuid
+              merchant_store_name:
+                type:
+                  - string
+                  - 'null'
+              order_status:
+                type:
+                  - string
+                  - 'null'
+              payment_status:
+                type:
+                  - string
+                  - 'null'
+              total_amount:
+                type:
+                  - number
+                  - 'null'
+              subtotal:
+                type:
+                  - number
+                  - 'null'
+              tax_amount:
+                type:
+                  - number
+                  - 'null'
+              shipping_amount:
+                type:
+                  - number
+                  - 'null'
+              discount_amount:
+                type:
+                  - number
+                  - 'null'
+              tracking_number:
+                type:
+                  - string
+                  - 'null'
+              estimated_delivery:
+                type:
+                  - string
+                  - 'null'
+              created_at:
+                type:
+                  - string
+                  - 'null'
+                format: date-time
+              updated_at:
+                type:
+                  - string
+                  - 'null'
+                format: date-time
     GiftCard:
       type: object
       properties:
@@ -13507,6 +14182,11 @@ components:
             - order.fulfilled
         enabled:
           type: boolean
+          description: |
+            Whether the endpoint is active. An endpoint is automatically disabled
+            (`enabled: false`) after 20 consecutive failed deliveries; see
+            `disabled_reason`. Re-enable it with a `PATCH` once you've fixed the
+            endpoint — doing so also resets the failure counter.
           example: true
         metadata:
           type: object
@@ -13516,11 +14196,34 @@ components:
             - string
             - 'null'
           format: date-time
+          description: When this endpoint last returned a 2xx for a delivery.
         last_failure_at:
           type:
             - string
             - 'null'
           format: date-time
+          description: When a delivery to this endpoint last failed.
+        consecutive_failures:
+          type: integer
+          description: |
+            Number of consecutive failed deliveries that exhausted all retries. Reset
+            to 0 by any successful delivery. When it reaches 20 the endpoint is
+            automatically disabled.
+          example: 0
+        disabled_reason:
+          type:
+            - string
+            - 'null'
+          description: |
+            Set when the endpoint was automatically disabled after repeated delivery
+            failures. `null` when the endpoint is enabled or was disabled manually.
+          example: null
+        disabled_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the endpoint was automatically disabled. `null` otherwise.
         created_at:
           type: string
           format: date-time
@@ -13569,10 +14272,20 @@ components:
           type: string
           description: Event type
           example: order.paid
+        environment:
+          type: string
+          enum:
+            - production
+            - sandbox
+          description: |
+            The environment this event was emitted in. Events fired while
+            authenticating with a test key (`tybrite_sk_test_…` / `tybrite_pk_test_…`)
+            are `sandbox`; everything else is `production`.
+          example: production
         payload:
           type: object
           description: |
-            Full event envelope in Stripe-style format:
+            Full event envelope:
             ```json
             {
               "id": "evt_...",
@@ -13580,10 +14293,32 @@ components:
               "created_at": "2026-05-20T10:30:00Z",
               "store_id": "...",
               "api_version": "v1",
+              "livemode": true,
               "data": { "object": { ... } },
               "previous_attributes": { ... }
             }
             ```
+
+            Two independent flags on the envelope tell you how to treat the event —
+            they answer different questions, so check the one that matches your need:
+
+            - **`livemode`** (always present) — *which environment produced this event.*
+              `true` for production; `false` for any event emitted while
+              authenticating with a test key (`tybrite_sk_test_…` / `tybrite_pk_test_…`).
+              This is the flag to **route on**: e.g. ignore everything where
+              `livemode` is `false` in your production handler.
+
+            - **`test`** (present and `true` only on synthetic events) — *this payload
+              is fake.* It is set exclusively on events sent via
+              `POST /v1/webhook_endpoints/{id}/test`, whose `data.object` contains
+              placeholder values (e.g. `order_number: "TEST-001"`). Use it to **skip
+              side effects** (don't fulfil, charge, or write records). It is absent on
+              all real events.
+
+            The two are orthogonal. A **real** order placed with a test key is
+            `livemode: false` with **no** `test` flag — a genuine sandbox event you can
+            process as an integration test. A synthetic test fired while on a live key
+            is `livemode: true` with `test: true`.
         created_at:
           type: string
           format: date-time
@@ -13629,6 +14364,73 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/WebhookDelivery'
+    MarketplaceInfoResponse:
+      type: object
+      description: Identity and branding for a marketplace as a whole, returned by GET /v1/marketplace/info when called with a marketplace operator key and no store_id. Use it to render the marketplace's own branding (name, logo, colors, contact details).
+      required:
+        - marketplace
+        - mode
+      properties:
+        marketplace:
+          type: boolean
+          description: Always true — confirms this is a marketplace.
+          example: true
+        mode:
+          type: string
+          enum:
+            - marketplace
+          description: Always "marketplace".
+        name:
+          type:
+            - string
+            - 'null'
+          description: Marketplace display name, or null if not set.
+        logo_url:
+          type:
+            - string
+            - 'null'
+          description: URL of the marketplace logo, or null if not set.
+        primary_color:
+          type:
+            - string
+            - 'null'
+          description: Marketplace primary brand color, or null if not set.
+        tagline:
+          type:
+            - string
+            - 'null'
+          description: Short marketplace tagline, or null if not set.
+        support_email:
+          type:
+            - string
+            - 'null'
+          description: Marketplace support email, or null if not set.
+        description:
+          type:
+            - string
+            - 'null'
+          description: Description of the marketplace, or null if not set.
+        website:
+          type:
+            - string
+            - 'null'
+          description: Marketplace website URL, or null if not set.
+        phone:
+          type:
+            - string
+            - 'null'
+          description: Marketplace contact phone number, or null if not set.
+        address:
+          type:
+            - string
+            - 'null'
+          description: Marketplace business address, or null if not set.
+        unified_checkout:
+          type: boolean
+          description: Whether shoppers can check out a basket spanning multiple merchants in one payment.
+        commission_enabled:
+          type: boolean
+          description: Whether commission is applied to marketplace sales.
   responses:
     BadRequestError:
       description: Invalid request - malformed data or missing required fields
