@@ -146,6 +146,10 @@ const { error } = await stripe.confirmPayment({
 **Once the payment succeeds, the order finalizes automatically** — Tybrite creates each merchant's order, splits the funds, reduces stock, and links the shopper to each merchant. You do **not** make any follow-up API call.
 
 <Note>
+  **Stock is reserved at checkout.** When you call `marketplaceCheckout`, the items are **held** against each merchant's inventory immediately (so two shoppers can't buy the last unit at once), and the hold is converted to a real stock reduction when payment succeeds. If an item can't be held, the call fails with **`400 insufficient_stock`** and no order or payment is created. Holds expire automatically (a short window) if the payment is never completed, returning the stock to availability — so an abandoned checkout never permanently locks inventory.
+</Note>
+
+<Note>
   **You don't resolve commission separately.** The `merchant_breakdown` in this response already contains the per-merchant gross/commission/net. (If you need to show fees on the cart page *before* checkout, compute them from your own displayed prices, or call checkout when the shopper is ready — there is no separate public commission endpoint.)
 </Note>
 

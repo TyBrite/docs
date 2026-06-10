@@ -5649,6 +5649,13 @@ paths:
         Once payment succeeds, the order finalizes automatically — no further call is
         required.
 
+        Stock is reserved at checkout: the items are held against each merchant's
+        inventory immediately so concurrent shoppers cannot oversell the last units,
+        and the hold becomes a real stock reduction when payment succeeds. If an item
+        cannot be held, the call returns `400 insufficient_stock` and no order or
+        payment is created. Holds expire automatically if payment is never completed,
+        returning the stock to availability.
+
         Requires the marketplace operator key.
       security:
         - BearerAuth: []
