@@ -5,6 +5,15 @@ description: "Reference for the PromotionsService class in the Tybrite SDK."
 
 The `PromotionsService` class (accessed via `client.promotions`) handles active store discounts, marketing campaigns, and coupon validation logic. Promotions support an `image` field for displaying visual banners and campaign assets.
 
+<Note>
+  **Never compute discounts yourself.** Galactic Core calculates the exact discount for
+  any cart server-side via `calculatePromotionDiscount` (one promotion) and
+  `calculateBestPromotion` (pick the winner). The number you get back always matches what
+  the merchant sees in their POS — so you never reimplement `subtotal × percentage`,
+  bundle math, or BOGO logic on the storefront. See
+  [Calculating a discount](#calculating-a-discount) below.
+</Note>
+
 ## Methods
 
 ### `listPromotions`
@@ -44,13 +53,38 @@ if (promo.image) {
 
 #### Getting the products in a promotion
 
-The `type` field tells you how a promotion works and which product fields to read. The product fields hold product **ids** — fetch each product's full detail with `client.products.getProduct(...)` to render it.
+The `type` field tells you how a promotion works and which product fields to read.
 
-| `type` | What to render | Products to resolve |
+| `type` | What to render | Products |
 | :--- | :--- | :--- |
-| `discount` (percentage) / `fixed` | A cart-level discount: show `value` and any `min_purchase`. | **None** — these promotions have no product list. |
+| `discount` (percentage) / `fixed` | A cart-wide discount: show `value` and any `min_purchase`. Use [`calculatePromotionDiscount`](#calculating-a-discount) to get the actual amount off a cart. | **None** — these promotions have no product list. |
 | `bundle` | A bundle deal. | `bundle_products`: `[{ productId, quantity, discountedPrice }]` |
 | `bogo` | Buy X, get Y free. | `bogo_required_products` (buy) + `bogo_free_products` (free): `[{ productId, quantity }]` |
+
+**The easy way — `expand: 'products'`.** Pass `expand: 'products'` and Galactic Core resolves every product id in the promotion for you, embedding the product details inline. The response gains `bundle_products_resolved`, `bogo_required_products_resolved`, and `bogo_free_products_resolved` — same entries as the id arrays, but each carries a `product` object (or `null` if that product is unavailable). No second lookup:
+
+```typescript
+const promo = await client.promotions.getPromotion({
+  id: 'promotion_uuid',
+  expand: 'products',
+});
+
+if (promo.type === 'bundle') {
+  for (const item of promo.bundle_products_resolved ?? []) {
+    if (!item.product) continue; // product no longer available
+    console.log(`${item.product.name} ×${item.quantity} — ${item.product.image}`);
+    // item.product = { product_id, name, price, image, category }
+  }
+}
+
+if (promo.type === 'bogo') {
+  const buy  = promo.bogo_required_products_resolved ?? [];
+  const free = promo.bogo_free_products_resolved ?? [];
+  // render "Buy <buy[].product.name>, get <free[].product.name> free"
+}
+```
+
+**The manual way.** Without `expand`, the product fields hold product **ids** — fetch each one's full detail with `client.products.getProduct(...)` yourself:
 
 ```typescript
 const promo = await client.promotions.getPromotion({ id: 'promotion_uuid' });
@@ -66,20 +100,114 @@ if (promo.type === 'bundle') {
 }
 ```
 
-<Tip>
-  **Marketplace storefronts.** When a sponsored ad placement or a curated collection
-  hands you a `promotion_id`, fetch the promotion here by passing **`storeId`** — the
-  `merchant_store_id` you received alongside it — and resolve its products against that
-  same merchant:
+For `discount` and `fixed` promotions there are no products to resolve — render `value` / `min_purchase`, and call `calculatePromotionDiscount` (below) to show the customer the exact amount they'll save on their current cart.
 
-  ```typescript
-  const { merchant_store_id, promotion_id } = placement; // from getAdSlot / getMarketplaceCollection
-  const promo = await client.promotions.getPromotion({ id: promotion_id, storeId: merchant_store_id });
-  // for bundle/bogo, resolve products with client.products.getProduct({ id, storeId: merchant_store_id })
-  ```
+---
 
-  A marketplace key may read a single promotion this way; it cannot list promotions.
-</Tip>
+### Calculating a discount
+
+Use `calculatePromotionDiscount` to compute exactly what a promotion takes off a given cart. **The server does the math**, so the figure you display always matches the merchant's POS — you never multiply a subtotal by a percentage, sum bundle savings, or work out BOGO yourself.
+
+Send the cart you intend to charge. Each line is `{ product_id, quantity, price }`, where `price` is the **unit price** you're charging for that product:
+
+```typescript
+const result = await client.promotions.calculatePromotionDiscount({
+  id: 'promotion_uuid',
+  requestBody: {
+    cart: [
+      { product_id: 'prod_a', quantity: 2, price: 25.00 },
+      { product_id: 'prod_b', quantity: 1, price: 40.00 },
+    ],
+  },
+});
+
+if (result.eligible) {
+  console.log(`You save $${result.discount}`);   // e.g. 9.00
+  const total = 90.00 - result.discount;          // apply it to your cart total
+} else {
+  console.log(`Not eligible: ${result.reason}`);  // e.g. "Minimum purchase of $120 not met"
+}
+```
+
+The response is the same shape for every promotion type:
+
+```json
+{
+  "promotion_id": "promotion_uuid",
+  "type": "discount",
+  "eligible": true,
+  "discount": 9.00,
+  "reason": null
+}
+```
+
+- `type` — `discount` (percentage) and `fixed` are cart-wide discounts; `bundle` and `bogo` are computed from the products present in your cart.
+- When the cart doesn't qualify, you get `eligible: false`, `discount: 0`, and a `reason` (minimum purchase not met, the promotion is outside its active date/time window, or required products are absent). Show the `reason` to nudge the shopper (e.g. "Add $30 more to unlock this deal").
+
+This is the right call for **every** type, including percentage and `fixed` — it's how you turn "10% off" into a concrete dollar amount for the current cart.
+
+---
+
+### Auto-applying the best promotion
+
+`calculateBestPromotion` evaluates **all** of the store's active promotions against a cart and returns the single one that saves the customer the most — ideal for auto-applying a deal at checkout without making the shopper hunt for a code:
+
+```typescript
+const best = await client.promotions.calculateBestPromotion({
+  requestBody: {
+    cart: [
+      { product_id: 'prod_a', quantity: 2, price: 25.00 },
+      { product_id: 'prod_b', quantity: 1, price: 40.00 },
+    ],
+  },
+});
+
+if (best.promotion) {
+  console.log(`Applied "${best.promotion.name}" — you save $${best.discount}`);
+  // best.promotion = { id, name, type }
+  const total = 90.00 - best.discount;
+} else {
+  console.log('No promotions apply to this cart.');
+}
+```
+
+When nothing applies, `promotion` is `null` and `discount` is `0`:
+
+```json
+{ "promotion": null, "discount": 0 }
+```
+
+---
+
+#### Marketplace storefronts
+
+When a sponsored ad placement or a curated collection hands you a `promotion_id`, pass the **`storeId`** you received alongside it (the `merchant_store_id`). It works the same way across all four calls here — `getPromotion` (including `expand: 'products'`), `calculatePromotionDiscount`, and `calculateBestPromotion`:
+
+```typescript
+const { merchant_store_id, promotion_id } = placement; // from getAdSlot / getMarketplaceCollection
+
+// Resolve products in one call:
+const promo = await client.promotions.getPromotion({
+  id: promotion_id,
+  storeId: merchant_store_id,
+  expand: 'products',
+});
+
+// Compute the discount against that merchant's cart:
+const result = await client.promotions.calculatePromotionDiscount({
+  id: promotion_id,
+  storeId: merchant_store_id,
+  requestBody: { cart: [{ product_id: 'prod_a', quantity: 1, price: 25.0 }] },
+});
+
+// Or find the best deal among that merchant's promotions:
+const best = await client.promotions.calculateBestPromotion({
+  storeId: merchant_store_id,
+  requestBody: { cart: [{ product_id: 'prod_a', quantity: 1, price: 25.0 }] },
+});
+```
+
+A marketplace key may read and calculate a single merchant's promotions this way; it cannot list promotions.
 
 ---
 
@@ -97,8 +225,24 @@ if (promo.type === 'bundle') {
 | `start_date` / `end_date` | `date` | Validity window. Only `active` promotions within this window apply. |
 | `status` | `string` | Lifecycle status. |
 | `image`| `string`| URL of the promotion banner. |
-| `bundle_products` / `bogo_required_products` / `bogo_free_products` / `free_products` | `array` | Product sets for `bundle` / `bogo` promotions. |
+| `bundle_products` / `bogo_required_products` / `bogo_free_products` / `free_products` | `array` | Product sets (ids) for `bundle` / `bogo` promotions. |
+| `*_resolved` (e.g. `bundle_products_resolved`) | `array` | Only present when fetched with `expand: 'products'`. Same entries as the matching id array, each with an embedded `product` (`{ product_id, name, price, image, category }`) or `null`. |
 | `has_time_restrictions` | `boolean` | Whether the promotion only applies on certain days/times (`start_time`, `end_time`, `time_zone`, `apply_to_days`). |
+
+### `PromotionCalculation` (returned by `calculatePromotionDiscount`)
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `promotion_id` | `uuid` | The promotion that was evaluated. |
+| `type` | `enum` | `discount`, `fixed`, `bundle`, `bogo`. |
+| `eligible` | `boolean` | Whether the cart qualifies. |
+| `discount` | `number` | Amount to subtract from the cart total (`0` when not eligible). |
+| `reason` | `string \| null` | Why the cart isn't eligible; `null` when it is. |
+
+### `BestPromotion` (returned by `calculateBestPromotion`)
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `promotion` | `object \| null` | The winning promotion `{ id, name, type }`, or `null` when none applies. |
+| `discount` | `number` | Discount for the winning promotion (`0` when none applies). |
 
 ---
 
@@ -110,14 +254,14 @@ if (promo.type === 'bundle') {
 
 ## Response Codes
 
-All promotion endpoints are `GET` and accept both **publishable** and **secret** keys. Marketplace keys may call `getPromotion` (with `storeId`) but not `listPromotions`. The `status` query parameter is validated against a strict enum.
+Every method here accepts both **publishable** and **secret** keys, and `calculatePromotionDiscount` / `calculateBestPromotion` return `200` (they compute a result, they don't create a resource). Marketplace keys may call `getPromotion`, `calculatePromotionDiscount`, and `calculateBestPromotion` (each with `storeId`) but not `listPromotions`. The `status` query parameter is validated against a strict enum.
 
 | Code | Meaning |
 | :--- | :--- |
 | `200` | Success. |
-| `400` | Invalid `status` enum (must be one of `active`, `inactive`, `scheduled`, `expired`), malformed query parameter, or a marketplace `getPromotion` call missing `store_id`. |
-| `403` | A marketplace key tried to list promotions, or write. Use `getPromotion` with `store_id` to read a single promotion. |
+| `400` | Invalid `status` enum (must be one of `active`, `inactive`, `scheduled`, `expired`), a malformed query parameter, a calculation request with a missing/invalid `cart` (each line needs `product_id`, `quantity`, `price`), or a marketplace call missing `store_id`. |
 | `401` | Invalid or missing API key. |
-| `404` | Promotion not found (single-resource endpoint only). List endpoint returns `200` with an empty array. |
+| `403` | A marketplace key tried to list promotions, or write. Use `getPromotion` / the calculate methods with `store_id` instead. |
+| `404` | Promotion not found (`getPromotion` and `calculatePromotionDiscount`). `listPromotions` returns `200` with an empty array; `calculateBestPromotion` returns `200` with `promotion: null` when nothing matches. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |
