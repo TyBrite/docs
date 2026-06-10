@@ -1,0 +1,355 @@
+---
+title: "Marketplace"
+description: "Build a multi-merchant marketplace storefront with the Tybrite SDK — aggregated catalog, single-merchant shop pages, and unified split checkout."
+---
+
+The `MarketplaceService` class (accessed via `client.marketplace`) is the entry point for building a **multi-merchant marketplace storefront** — one shopfront where many independent merchants are aggregated into a single shopping experience, a single cart can span several merchants, and one payment is automatically split to each merchant.
+
+If you're building a normal single-store storefront, you don't need this service at all — use `products`, `cart`, `orders`, etc. directly. This page is for marketplace deployments.
+
+---
+
+## Before you start: how a marketplace works in Tybrite
+
+A few concepts make everything else click.
+
+- **Marketplace vs. merchant.** A *marketplace* aggregates many *merchants* (each is an independent store with its own catalog, pricing, and inventory). The marketplace operator sets commission and branding; merchants keep full control of their own products.
+- **The operator key.** A marketplace storefront authenticates with a single **marketplace operator key** (a publishable key, `tybrite_pk_...`, minted by the operator). You use this one key for everything the storefront does: browsing the aggregated catalog, rendering a single merchant's shop page, signing shoppers in, previewing carts, and checking out. You do **not** juggle per-merchant keys.
+- **Aggregated reads.** When you call the normal catalog endpoints (`products`, `taxonomy`, `search`) with the operator key, they automatically return results across **every active merchant**, and each product/result is stamped with the `merchant_store_id` it came from. Pass `storeId` to narrow any of them to one merchant.
+- **One shopper, every merchant.** A shopper signs up once and can buy from any merchant. Their identity is marketplace-wide; per-merchant relationships are created automatically the first time they buy from a merchant. `getMarketplaceCustomer` returns the unified picture.
+- **Unified split checkout.** A single cart may contain items from several merchants. One `marketplaceCheckout` call creates one payment for the whole basket; after the shopper pays, each merchant is paid their share (gross minus commission) automatically. You never move money yourself.
+
+<Note>
+  **Use the marketplace operator key** for everything on this page (and for aggregated `products`/`taxonomy`/`search` reads). It's a publishable key, safe for the browser. Merchant-side setup (a merchant connecting their payout account) and operator back-office (payout reports) are **not** part of this API — they happen in the admin apps.
+</Note>
+
+---
+
+## The typical integration flow
+
+A marketplace storefront usually wires up in this order:
+
+1. **Identify the marketplace** — `getMarketplaceInfo()` to get the name, logo, colors, and which capabilities are on.
+2. **Browse** — `client.products.listProducts()`, `client.taxonomy.listCategories()`, `client.search.searchProducts()` with the operator key for the aggregated catalog.
+3. **Shop a single merchant (optional)** — pass `storeId` to the reads above + `getMarketplaceInfo({ storeId })` for that merchant's shop page.
+4. **Sign the shopper in** — `client.authentication.register` / `login` (operator key) → you get a shopper session token.
+5. **Build a cart client-side** — collect line items, each tagged with its `merchant_store_id`.
+6. **Check out** — `marketplaceCheckout()` → returns a `client_secret`; complete the payment with Stripe.js on the storefront.
+7. **Order confirmation / account** — the order finalizes automatically on payment success; `getMarketplaceCustomer()` shows the shopper's cross-merchant history.
+
+---
+
+## Methods
+
+### `getMarketplaceInfo`
+
+Read information about the marketplace. This is usually the **first call** your storefront makes. It has **two modes**, controlled by whether you pass `storeId`:
+
+#### Mode 1 — Marketplace identity & branding (no `storeId`)
+
+Returns the marketplace's own name, branding, contact details, and which capabilities are enabled. Use it to render your storefront chrome (logo, colors, name) and to feature-detect (e.g. only show the fee line if `commission_enabled`).
+
+```typescript
+const marketplace = await client.marketplace.getMarketplaceInfo({});
+
+// {
+//   marketplace: true,
+//   mode: "marketplace",
+//   name: "Acme Marketplace",
+//   logo_url: "https://.../logo.png",
+//   primary_color: "#3B82F6",
+//   tagline: "Everything, from everyone",
+//   support_email: "help@acme.market",
+//   description: "...",
+//   website: "https://acme.market",
+//   phone: "+1 555 0100",
+//   address: "...",
+//   unified_checkout: true,      // is cross-merchant checkout enabled?
+//   commission_enabled: true     // does the marketplace charge commission?
+// }
+
+document.title = marketplace.name;
+applyTheme(marketplace.primary_color);
+```
+
+#### Mode 2 — One merchant's full store context (`storeId`)
+
+Returns the **same comprehensive payload** as `client.system.getStoreInfo`, but for a single merchant inside the marketplace. This is what you render on a merchant's **shop page header** — their business info, a catalog summary with a small sample of products, payment methods, shipping, CMS content, and feature flags — in one call. It's also ideal as context for an AI shopping agent describing one merchant.
+
+```typescript
+const merchant = await client.marketplace.getMarketplaceInfo({
+  storeId: 'merchant-a-uuid',
+  sections: 'catalog,shipping,features',   // optional: request only what you need
+});
+
+console.log(merchant.store.name, merchant.store.logo_url, merchant.store.description);
+console.log(`${merchant.catalog?.products.total} products`);     // a COUNT, not the full list
+console.log(merchant.catalog?.products.sample);                  // a thin sample (≤10) for context
+```
+
+<Tip>
+  The catalog block returns **counts plus a small sample** of products (each with a few fields: id, name, category, price, image). It is intentionally **not** the full catalog — use `client.products.listProducts({ storeId })` to actually browse and paginate a merchant's products.
+</Tip>
+
+**Parameters**
+
+| Param | Type | Notes |
+| :--- | :--- | :--- |
+| `storeId` | `string?` | Optional. A merchant's id. Omit for marketplace identity; supply to get one merchant's store context. The merchant must be active in the marketplace. |
+| `sections` | `string?` | Optional, only with `storeId`. Comma-separated subset of `catalog,pricing,promotions,payments,shipping,cms,features`. Omit to return all. |
+
+**Responses**
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Marketplace identity, or the merchant's store context. |
+| `400` | `storeId` is not a valid UUID. |
+| `403` | Called with a non-operator (single-store) key — use `client.system.getStoreInfo` instead. |
+| `404` | No **active** merchant matches `storeId` (suspended/pending/unknown). |
+
+---
+
+### `marketplaceCheckout`
+
+Check out a cart that may contain items from **multiple merchants** in one call. Each line item names the merchant it belongs to. Tybrite validates the items against the live marketplace catalog, resolves commission per merchant, and creates **one payment** for the entire basket.
+
+The response gives you a `client_secret` to complete the payment on the storefront (with Stripe.js) and a per-merchant `merchant_breakdown` (gross, commission, net) you can display.
+
+```typescript
+const order = await client.marketplace.marketplaceCheckout({
+  requestBody: {
+    items: [
+      { product_id: 'p1', variant_id: 'v1', merchant_store_id: 'merchant-a-uuid', quantity: 1 },
+      { product_id: 'p2', variant_id: 'v2', merchant_store_id: 'merchant-b-uuid', quantity: 2 },
+    ],
+    customer_email: 'shopper@example.com',
+    customer_name: 'Alex Shopper',
+    currency: 'USD',
+    shipping_address: { line1: '1 Market St', city: 'San Francisco', country: 'US' },
+    billing_address:  { line1: '1 Market St', city: 'San Francisco', country: 'US' },
+  },
+});
+
+// Show the shopper what each merchant receives (already computed for you):
+order.merchant_breakdown.forEach(m =>
+  console.log(`${m.merchant_store_id}: gross ${m.gross_amount}, fee ${m.commission_amount}, net ${m.net_amount}`)
+);
+
+// Complete the payment on the storefront with the returned client_secret:
+const stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
+const { error } = await stripe.confirmPayment({
+  clientSecret: order.client_secret,
+  confirmParams: { return_url: 'https://shop.example.com/order/confirmation' },
+});
+```
+
+**Once the payment succeeds, the order finalizes automatically** — Tybrite creates each merchant's order, splits the funds, reduces stock, and links the shopper to each merchant. You do **not** make any follow-up API call.
+
+<Note>
+  **You don't resolve commission separately.** The `merchant_breakdown` in this response already contains the per-merchant gross/commission/net. (If you need to show fees on the cart page *before* checkout, compute them from your own displayed prices, or call checkout when the shopper is ready — there is no separate public commission endpoint.)
+</Note>
+
+**Request body**
+
+| Field | Type | Notes |
+| :--- | :--- | :--- |
+| `items` | array | Required. Each item: `{ product_id?, variant_id, merchant_store_id, quantity }`. `variant_id` and `merchant_store_id` are required per item. |
+| `customer_email` | `string` | Required. The shopper's email. |
+| `customer_name` | `string?` | Optional. |
+| `customer_phone` | `string?` | Optional. |
+| `currency` | `string?` | Optional ISO code; defaults to `USD`. |
+| `shipping_address` | `object?` | Optional address object. |
+| `billing_address` | `object?` | Optional address object. |
+
+**Response (`201`)**
+
+```typescript
+{
+  order_group_id: string,       // the unified order's id
+  group_number: string,         // human-friendly reference, e.g. "MKT-2026-000123"
+  payment_intent_id: string,    // the payment intent (pi_...)
+  client_secret: string,        // pass to Stripe.js to collect payment
+  currency: string,
+  subtotal: number,
+  total_amount: number,
+  merchant_breakdown: Array<{
+    merchant_store_id: string,
+    gross_amount: number,
+    commission_amount: number,
+    net_amount: number,
+    commission_rule_id: string | null,
+  }>,
+}
+```
+
+**Responses**
+
+| Code | Meaning |
+| :--- | :--- |
+| `201` | Unified order created; awaiting payment. |
+| `400` | Invalid items/body (e.g. bad `variant_id`/`merchant_store_id`, missing email). |
+| `403` | Not a marketplace operator key, or unified checkout is disabled for this marketplace. |
+| `404` | An item isn't available on the marketplace (inactive merchant/product). |
+| `500` / `502` | Server error or the payment provider could not be reached. |
+
+---
+
+### `getMarketplaceCustomer`
+
+Return a shopper's **unified marketplace profile** — their identity, the merchants they've shopped with, and their cross-merchant order history — in one response. Use it for the shopper's account page.
+
+This requires the shopper's session token (from sign-in) in the `X-Customer-Token` header, in addition to the operator key.
+
+```typescript
+// 1. Sign the shopper in (operator key) to get a session token:
+const { session } = await client.authentication.login({
+  requestBody: { email: 'shopper@example.com', password: '...' },
+});
+
+// 2. Fetch their unified profile:
+const profile = await client.marketplace.getMarketplaceCustomer({
+  xCustomerToken: session.access_token,
+});
+
+console.log(profile.customer.email);
+console.log(`${profile.stores.length} merchant relationships`);
+console.log(`${profile.orders.length} orders across all merchants`);
+```
+
+**Response (`200`)**
+
+```typescript
+{
+  customer: { ids: string[], email, name, phone, ... },  // unified identity
+  stores:   Array<{ store_id, ...affiliation }>,          // per-merchant relationships
+  orders:   Array<{ ... }>,                               // cross-merchant order history
+}
+```
+
+**Responses**
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | The unified profile. |
+| `401` | Missing/invalid operator key or customer token. |
+| `403` | Not a marketplace operator key. |
+
+---
+
+## Aggregated reads (the marketplace catalog)
+
+You don't use `MarketplaceService` for browsing — you use the normal services with the **operator key**, and they automatically aggregate across every active merchant. Each product/result carries its source `merchant_store_id`.
+
+```typescript
+const market = new Tybrite({ apiKey: 'tybrite_pk_live_operator_...' });
+
+// Combined catalog across all merchants (each product has merchant_store_id):
+const { products } = await market.products.listProducts({ limit: 24 });
+
+// Deduplicated taxonomy across merchants:
+const { categories } = await market.taxonomy.listCategories();
+
+// Cross-merchant search:
+const results = await market.search.searchProducts({ q: 'headphones' });
+```
+
+### Single merchant "shop page"
+
+To render one merchant's storefront *inside* the marketplace, pass `storeId` (the merchant's id) to the aggregated reads. Everything narrows to that one (active) merchant:
+
+```typescript
+const storeId = 'merchant-a-uuid';
+
+const header        = await market.marketplace.getMarketplaceInfo({ storeId });   // shop-page header
+const { products }  = await market.products.listProducts({ storeId });            // that merchant's catalog
+const { categories} = await market.taxonomy.listCategories({ storeId });          // that merchant's categories
+const results       = await market.search.searchProducts({ q: 'case', storeId }); // search within the merchant
+```
+
+### Reading a product's reviews on the marketplace
+
+With the operator key, you can **read approved reviews** for a product, but you must say which merchant owns it via `storeId` (required for operator keys). Submitting, deleting, or voting on reviews is still done with a shopper session, not the operator key.
+
+```typescript
+const reviews = await market.reviews.listReviews({
+  productId: 'product-uuid',
+  storeId:   'merchant-a-uuid',   // required when using an operator key
+});
+```
+
+<Note>
+  `storeId` only narrows results when you use an **operator** key. With a single-store key it's ignored (you're already scoped to one store). On `reviews`, an operator key **requires** `storeId` and may only read approved reviews.
+</Note>
+
+---
+
+## What is NOT in this API
+
+These are deliberately **not** SDK methods, because they're administrative, not storefront actions:
+
+- **A merchant connecting their payout account** (Stripe Connect onboarding) — the merchant does this from their own admin/POS, not over the storefront API.
+- **Running or viewing operator payout reports** — the operator does this from the Super Admin app.
+- **Setting commission rules / marketplace branding** — configured by the operator in the Super Admin app; you only *read* the resulting branding via `getMarketplaceInfo`.
+
+So the public marketplace surface is exactly: `getMarketplaceInfo`, `marketplaceCheckout`, `getMarketplaceCustomer`, plus the operator-key behavior of the catalog/search/auth/reviews reads.
+
+---
+
+## Putting it together — a minimal storefront
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const market = new Tybrite({ apiKey: 'tybrite_pk_live_operator_...' });
+
+// 1. Chrome
+const info = await market.marketplace.getMarketplaceInfo({});
+renderHeader(info.name, info.logo_url, info.primary_color);
+
+// 2. Aggregated catalog (each product stamped with its merchant)
+const { products } = await market.products.listProducts({ limit: 24 });
+
+// 3. Shopper builds a cross-merchant cart in the browser:
+const cart = [
+  { product_id: 'p1', variant_id: 'v1', merchant_store_id: products[0].merchant_store_id, quantity: 1 },
+  { product_id: 'p2', variant_id: 'v2', merchant_store_id: products[5].merchant_store_id, quantity: 2 },
+];
+
+// 4. Sign in (or register) the shopper:
+const { session } = await market.authentication.login({
+  requestBody: { email: 'shopper@example.com', password: '...' },
+});
+
+// 5. Checkout → one payment, auto-split:
+const order = await market.marketplace.marketplaceCheckout({
+  requestBody: {
+    items: cart,
+    customer_email: 'shopper@example.com',
+    currency: 'USD',
+  },
+});
+
+// 6. Collect payment with the returned client_secret (Stripe.js), then you're done —
+//    the order finalizes and each merchant is paid automatically on success.
+```
+
+---
+
+## Error handling
+
+All marketplace methods follow the standard [response-code contract](/sdk/introduction#response-codes) and throw a typed `ApiError`:
+
+```typescript
+import { ApiError } from '@tybrite-labs/sdk';
+
+try {
+  await market.marketplace.marketplaceCheckout({ requestBody: { items, customer_email } });
+} catch (err) {
+  if (err instanceof ApiError) {
+    if (err.status === 404) {/* an item is no longer available — refresh the cart */}
+    if (err.status === 403) {/* not an operator key, or unified checkout disabled */}
+    if (err.status === 502) {/* payment provider unavailable — ask the shopper to retry */}
+  }
+  throw err;
+}
+```
