@@ -431,6 +431,15 @@ for (const p of placements) {
 | `context` | no | A category id or search term for context-scoped slots. |
 | `limit` | no | Max placements to return. |
 
+<Tip>
+  For a `'promotion'` placement (or a promotion item in a curated collection), the
+  payload gives you a `promotion_id` and a `merchant_store_id`. Fetch the promotion's
+  detail — and the products it features — with
+  `client.promotions.getPromotion({ id: promotion_id, storeId: merchant_store_id })`.
+  See **PromotionsService → Getting the products in a promotion** for how each
+  promotion `type` (percentage / fixed / bundle / bogo) resolves its products.
+</Tip>
+
 ### Blending with organic recommendations
 
 Sponsored placements sit *alongside* organic results, not in place of them. A common pattern is to fetch both and interleave:

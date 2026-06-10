@@ -29,7 +29,7 @@ Providing a `cartTotal` allows the engine to pre-filter promotions that the cust
 
 ### `getPromotion`
 
-Fetch full configuration data for a promotion, including its exact discount logic and validity dates.
+Fetch full configuration data for a promotion, including its exact discount logic, validity dates, and the products it applies to.
 
 ```typescript
 const promo = await client.promotions.getPromotion({
@@ -41,6 +41,45 @@ if (promo.image) {
   console.log(`Promotion Banner: ${promo.image}`);
 }
 ```
+
+#### Getting the products in a promotion
+
+The `type` field tells you how a promotion works and which product fields to read. The product fields hold product **ids** — fetch each product's full detail with `client.products.getProduct(...)` to render it.
+
+| `type` | What to render | Products to resolve |
+| :--- | :--- | :--- |
+| `discount` (percentage) / `fixed` | A cart-level discount: show `value` and any `min_purchase`. | **None** — these promotions have no product list. |
+| `bundle` | A bundle deal. | `bundle_products`: `[{ productId, quantity, discountedPrice }]` |
+| `bogo` | Buy X, get Y free. | `bogo_required_products` (buy) + `bogo_free_products` (free): `[{ productId, quantity }]` |
+
+```typescript
+const promo = await client.promotions.getPromotion({ id: 'promotion_uuid' });
+
+if (promo.type === 'bundle') {
+  const items = await Promise.all(
+    (promo.bundle_products ?? []).map(async (b) => ({
+      ...b,
+      product: await client.products.getProduct({ id: b.productId }),
+    }))
+  );
+  // render each item.product with its b.discountedPrice
+}
+```
+
+<Tip>
+  **Marketplace storefronts.** When a sponsored ad placement or a curated collection
+  hands you a `promotion_id`, fetch the promotion here by passing **`storeId`** — the
+  `merchant_store_id` you received alongside it — and resolve its products against that
+  same merchant:
+
+  ```typescript
+  const { merchant_store_id, promotion_id } = placement; // from getAdSlot / getMarketplaceCollection
+  const promo = await client.promotions.getPromotion({ id: promotion_id, storeId: merchant_store_id });
+  // for bundle/bogo, resolve products with client.products.getProduct({ id, storeId: merchant_store_id })
+  ```
+
+  A marketplace key may read a single promotion this way; it cannot list promotions.
+</Tip>
 
 ---
 
@@ -71,12 +110,13 @@ if (promo.image) {
 
 ## Response Codes
 
-All promotion endpoints are `GET` and accept both **publishable** and **secret** keys. The `status` query parameter is validated against a strict enum.
+All promotion endpoints are `GET` and accept both **publishable** and **secret** keys. Marketplace keys may call `getPromotion` (with `storeId`) but not `listPromotions`. The `status` query parameter is validated against a strict enum.
 
 | Code | Meaning |
 | :--- | :--- |
 | `200` | Success. |
-| `400` | Invalid `status` enum (must be one of `active`, `inactive`, `scheduled`, `expired`) or malformed query parameter. |
+| `400` | Invalid `status` enum (must be one of `active`, `inactive`, `scheduled`, `expired`), malformed query parameter, or a marketplace `getPromotion` call missing `store_id`. |
+| `403` | A marketplace key tried to list promotions, or write. Use `getPromotion` with `store_id` to read a single promotion. |
 | `401` | Invalid or missing API key. |
 | `404` | Promotion not found (single-resource endpoint only). List endpoint returns `200` with an empty array. |
 | `429` | Rate limit exceeded. |
