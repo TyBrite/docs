@@ -1070,7 +1070,8 @@ paths:
 
         **Marketplace:** When called with a marketplace operator key, this returns products aggregated
         across all merchants in the marketplace rather than a single store's catalog. With a marketplace
-        operator key, pass `?store_id=<merchant>` to narrow results to a single merchant.
+        operator key, pass `?store_id=<merchant>` to narrow results to a single merchant. Responses are
+        cursor-paginated; pass the returned `next_cursor` as `?cursor=` for the next page.
 
         **Performance:**
         - Default variant data included at root level (price, stock, sku)
@@ -6856,6 +6857,323 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/customers/{id}/addresses:
+    get:
+      operationId: listAddresses
+      tags:
+        - Customers
+      summary: List a shopper's saved addresses
+      description: |
+        Return the saved addresses in the signed-in shopper's address book.
+        Defaults are returned first.
+
+        **Customer-self access.** Works with a publishable key (safe from the
+        browser). Provide the shopper's session token in the `x-auth-token`
+        header; it must resolve to the customer in the `{id}` path parameter,
+        otherwise the request returns `403`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The shopper's saved addresses.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - addresses
+                properties:
+                  addresses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomerAddress'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      operationId: createAddress
+      tags:
+        - Customers
+      summary: Save a new address
+      description: |
+        Add an address to the signed-in shopper's address book. Setting an
+        address as the default for shipping or billing automatically clears any
+        previous default of the same kind, so there is always at most one default
+        per kind.
+
+        **Customer-self access.** Works with a publishable key (safe from the
+        browser). Provide the shopper's session token in the `x-auth-token`
+        header; it must resolve to the customer in the `{id}` path parameter,
+        otherwise the request returns `403`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - full_name
+                - line1
+                - city
+                - country
+              properties:
+                full_name:
+                  type: string
+                  example: Jane Doe
+                line1:
+                  type: string
+                  example: 123 Main St
+                city:
+                  type: string
+                  example: New York
+                country:
+                  type: string
+                  example: US
+                address_type:
+                  type: string
+                  enum:
+                    - shipping
+                    - billing
+                    - both
+                  default: both
+                  description: Whether this address is usable for shipping, billing, or both.
+                label:
+                  type: string
+                  description: An optional friendly name, e.g. "Home" or "Office".
+                  example: Home
+                phone:
+                  type: string
+                  example: '+14155551234'
+                line2:
+                  type: string
+                  example: Apt 4B
+                state:
+                  type: string
+                  example: NY
+                postal_code:
+                  type: string
+                  example: '10001'
+                is_default_shipping:
+                  type: boolean
+                  default: false
+                  description: Set as the default address pre-selected for shipping at checkout.
+                is_default_billing:
+                  type: boolean
+                  default: false
+                  description: Set as the default address pre-selected for billing at checkout.
+      responses:
+        '201':
+          description: The saved address.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - address
+                properties:
+                  address:
+                    $ref: '#/components/schemas/CustomerAddress'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /v1/customers/{id}/addresses/{addressId}:
+    patch:
+      operationId: updateAddress
+      tags:
+        - Customers
+      summary: Update a saved address
+      description: |
+        Update one of the signed-in shopper's saved addresses. Only the fields
+        provided in the request body are changed. Setting an address as the
+        default for shipping or billing automatically clears any previous default
+        of the same kind.
+
+        **Customer-self access.** Works with a publishable key (safe from the
+        browser). Provide the shopper's session token in the `x-auth-token`
+        header; it must resolve to the customer in the `{id}` path parameter,
+        otherwise the request returns `403`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: addressId
+          in: path
+          required: true
+          description: The id of the saved address to update.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name:
+                  type: string
+                line1:
+                  type: string
+                city:
+                  type: string
+                country:
+                  type: string
+                address_type:
+                  type: string
+                  enum:
+                    - shipping
+                    - billing
+                    - both
+                label:
+                  type: string
+                phone:
+                  type: string
+                line2:
+                  type: string
+                state:
+                  type: string
+                postal_code:
+                  type: string
+                is_default_shipping:
+                  type: boolean
+                is_default_billing:
+                  type: boolean
+      responses:
+        '200':
+          description: The updated address.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - address
+                properties:
+                  address:
+                    $ref: '#/components/schemas/CustomerAddress'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    delete:
+      operationId: deleteAddress
+      tags:
+        - Customers
+      summary: Delete a saved address
+      description: |
+        Remove an address from the signed-in shopper's address book.
+
+        **Customer-self access.** Works with a publishable key (safe from the
+        browser). Provide the shopper's session token in the `x-auth-token`
+        header; it must resolve to the customer in the `{id}` path parameter,
+        otherwise the request returns `403`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: addressId
+          in: path
+          required: true
+          description: The id of the saved address to delete.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The address was deleted.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - message
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Address deleted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /v1/gift-cards:
     get:
       operationId: listGiftCards
@@ -13235,6 +13553,81 @@ components:
                   - string
                   - 'null'
                 format: date-time
+    CustomerAddress:
+      type: object
+      description: |
+        A saved address in a shopper's personal address book. Shoppers can store
+        multiple billing and shipping addresses and reuse them at checkout.
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 9b1c6f0e-3a2d-4f7b-8c11-2d4e5f6a7b8c
+        customer_id:
+          type: string
+          format: uuid
+          example: 6f3d8a21-4b9c-4e2a-9f1d-7c2b3a4d5e6f
+        address_type:
+          type: string
+          enum:
+            - shipping
+            - billing
+            - both
+          default: both
+          description: Whether this address is usable for shipping, billing, or both.
+          example: both
+        label:
+          type:
+            - string
+            - 'null'
+          description: An optional friendly name for the address, e.g. "Home" or "Office".
+          example: Home
+        full_name:
+          type: string
+          example: Jane Doe
+        phone:
+          type:
+            - string
+            - 'null'
+          example: '+14155551234'
+        line1:
+          type: string
+          example: 123 Main St
+        line2:
+          type:
+            - string
+            - 'null'
+          example: Apt 4B
+        city:
+          type: string
+          example: New York
+        state:
+          type:
+            - string
+            - 'null'
+          example: NY
+        postal_code:
+          type:
+            - string
+            - 'null'
+          example: '10001'
+        country:
+          type: string
+          example: US
+        is_default_shipping:
+          type: boolean
+          description: When true, this is the default address pre-selected for shipping at checkout.
+          example: true
+        is_default_billing:
+          type: boolean
+          description: When true, this is the default address pre-selected for billing at checkout.
+          example: false
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     GiftCard:
       type: object
       properties:
