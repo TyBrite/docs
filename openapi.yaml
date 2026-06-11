@@ -581,6 +581,42 @@ tags:
 
       Merchant payment onboarding and operator payout runs are merchant/operator back-office
       tasks handled in the admin interface, not through this API.
+  - name: Ingestion
+    description: |
+      Sync an external product catalog INTO Galactic Core.
+
+      **⚠️ SECRET KEY + SIGNATURE REQUIRED**: `POST /v1/ingest/products` requires a secret
+      key (`tybrite_sk_*`) **and** a request signature. Publishable keys return 403; a missing
+      or invalid signature returns 401. This is the one write endpoint where both are mandatory.
+
+      Use ingestion when a merchant's own system (an ERP, a PIM, another storefront, a
+      spreadsheet export) is the source of truth for products and you want to push or sync
+      that catalog into Galactic Core — rather than entering products by hand.
+
+      **What it does:**
+      - Accepts a batch of products as **JSON, XML, or CSV** (set the `Content-Type`, or
+        `?format=`). One request can carry many products.
+      - **Upserts by SKU**: a product whose SKU already exists is updated; a new SKU is created.
+        Use `?strategy=create_only` to skip existing SKUs instead of updating them.
+      - **Groups variants**: rows that share a `product_group` become variants of a single
+        product (e.g. a shirt in S/M/L). Rows without a group are single-variant products.
+      - **Reports per row**: the response carries a `summary` (created / updated / skipped /
+        failed counts) and an `errors` array naming the row, SKU, field, and reason for every
+        rejected row — so a partly-valid batch still imports the good rows and tells you exactly
+        what to fix.
+
+      **Signing:** sign each request the same way as orders/payments — `X-Timestamp` (unix
+      seconds) + `X-Signature` (HMAC-SHA256 of `timestamp + "." + raw_body`, base64), within a
+      5-minute window. An `Idempotency-Key` is required so a retried batch is processed once.
+
+      **Test before you integrate (no key needed):**
+      - `GET /v1/ingest/sample?format=json|xml|csv` returns a valid sample feed to copy.
+      - `POST /v1/ingest/test` validates a feed and returns the same `summary`/`errors` you'd
+        get from a real import — **without writing anything**. Both are rate-limited to 60/hour
+        per IP.
+
+      **Scheduled sync:** merchants can also register a feed URL in their dashboard for Galactic
+      Core to pull and sync on a schedule; a `feed.sync.completed` webhook fires after each run.
   - name: Webhooks
     description: |
       Outbound webhook management for merchant integrators.
@@ -12205,6 +12241,279 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/ingest/products:
+    post:
+      operationId: ingestProducts
+      tags:
+        - Ingestion
+      summary: Ingest a batch of products
+      description: |
+        Push or sync a batch of products into your store from an external source. Accepts
+        **JSON, XML, or CSV** — declare the format with the `Content-Type` header
+        (`application/json`, `application/xml`, `text/csv`) or the `?format=` query parameter.
+
+        **Upsert by SKU.** A product whose `sku` already exists in your store is **updated**;
+        a new `sku` is **created**. Pass `?strategy=create_only` to skip existing SKUs instead
+        of updating them.
+
+        **Variants.** Rows that share the same `product_group` value become variants of one
+        product (each row needs its own unique `sku`). Rows without a `product_group` are
+        single-variant products.
+
+        **Partial success.** Rows are validated and applied independently — one bad row never
+        fails the whole batch. The response always carries a `summary` with created / updated /
+        skipped / failed counts and an `errors` array describing every rejected row (its
+        position, SKU, the offending field, and a human-readable reason). If **every** row
+        fails validation the response status is `422`.
+
+        **Required headers** (same signing scheme as orders and payments):
+        - `Idempotency-Key` — a unique key per batch; retrying with the same key returns the
+          original result instead of re-processing.
+        - `X-Timestamp` — unix time in seconds, within 5 minutes of server time.
+        - `X-Signature` — base64 HMAC-SHA256 of `` `${X-Timestamp}.${raw_body}` `` signed with
+          your store's signing secret (Settings → Integration Settings).
+
+        Tip: validate your feed first with `POST /v1/ingest/test` (no key, no writes).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - json
+              - xml
+              - csv
+          description: Overrides the `Content-Type` for format detection.
+        - name: strategy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - upsert_by_sku
+              - create_only
+            default: upsert_by_sku
+          description: |
+            `upsert_by_sku` (default) updates existing SKUs; `create_only` skips them.
+        - name: dry_run
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When `true`, validate and report without writing anything.
+      requestBody:
+        required: true
+        description: |
+          A batch of products. For JSON use `{ "products": [ … ] }` (or a bare array). For
+          CSV, the first row is a header; for XML, a `<products>` root with `<product>`
+          children. Field names are matched leniently (e.g. `Product Name` → `name`).
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                products:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/IngestProduct'
+            examples:
+              singleAndVariant:
+                summary: One standalone product + one multi-variant product
+                value:
+                  products:
+                    - sku: LAMP-01
+                      name: Aurora LED Desk Lamp
+                      category: Home
+                      brand: Lumio
+                      price: 36.9
+                      cost_price: 17.2
+                      stock: 40
+                      threshold: 5
+                    - sku: TEE-BLK-S
+                      product_group: TEE-CLASSIC
+                      name: Classic Cotton Tee
+                      variant_name: Black / S
+                      category: Apparel
+                      price: 22
+                      stock: 30
+                    - sku: TEE-BLK-M
+                      product_group: TEE-CLASSIC
+                      name: Classic Cotton Tee
+                      variant_name: Black / M
+                      category: Apparel
+                      price: 22
+                      stock: 25
+          text/csv:
+            schema:
+              type: string
+            example: |
+              sku,product_group,name,category,brand,variant_name,price,cost_price,stock,threshold
+              LAMP-01,,Aurora LED Desk Lamp,Home,Lumio,,36.9,17.2,40,5
+              TEE-BLK-S,TEE-CLASSIC,Classic Cotton Tee,Apparel,,Black / S,22.0,8.4,30,5
+          application/xml:
+            schema:
+              type: string
+            example: |
+              <products>
+                <product>
+                  <sku>LAMP-01</sku>
+                  <name>Aurora LED Desk Lamp</name>
+                  <price>36.9</price>
+                </product>
+              </products>
+      responses:
+        '200':
+          description: |
+            Batch processed. May be a full success or a partial success — inspect `summary`
+            and `errors`. `status` is `success` (no failures) or `partial` (some rows failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResult'
+              example:
+                status: partial
+                format: json
+                strategy: upsert_by_sku
+                summary:
+                  rows_total: 15
+                  rows_created: 9
+                  rows_updated: 1
+                  rows_skipped: 1
+                  rows_failed: 4
+                errors:
+                  - row: 3
+                    sku: TEE-RED-S
+                    field: price
+                    reason: price must be a positive number
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          description: Missing/invalid secret key, or a missing/invalid request signature.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          description: Every row failed validation; nothing was written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResult'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+  /v1/ingest/sample:
+    get:
+      operationId: getIngestSample
+      tags:
+        - Ingestion
+      summary: Get a sample product feed
+      description: |
+        Returns a valid sample product feed you can copy to model your own. **No API key
+        required.** Use `?format=json|xml|csv` to choose the format. The sample includes a
+        single-variant product and a multi-variant product so you can see how variants are
+        expressed via `product_group`. Rate-limited to 60 requests/hour per IP.
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - json
+              - xml
+              - csv
+            default: json
+      responses:
+        '200':
+          description: A sample feed in the requested format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IngestProduct'
+            text/csv:
+              schema:
+                type: string
+            application/xml:
+              schema:
+                type: string
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+  /v1/ingest/test:
+    post:
+      operationId: testIngest
+      tags:
+        - Ingestion
+      summary: Validate a product feed (no writes)
+      description: |
+        Parse and validate a product feed **without writing anything** to your store, and get
+        back the same `summary` and `errors` you would receive from a real import — plus a
+        `normalized_preview` of how Galactic Core interpreted your rows. **No API key
+        required**, so you can perfect your feed format before integrating. Accepts JSON, XML,
+        or CSV like the real endpoint. Rate-limited to 60 requests/hour per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                products:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/IngestProduct'
+          text/csv:
+            schema:
+              type: string
+          application/xml:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: |
+            Validation result. `status` is `valid` (no failures), `partial` (some rows failed),
+            or `invalid` (all rows failed).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - valid
+                      - partial
+                      - invalid
+                  format:
+                    type: string
+                  validate_only:
+                    type: boolean
+                  summary:
+                    $ref: '#/components/schemas/IngestSummary'
+                  errors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IngestRowError'
+                  normalized_preview:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IngestProduct'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
   /v1/marketplace/info:
     get:
       operationId: getMarketplaceInfo
@@ -15837,6 +16146,144 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/WebhookDelivery'
+    IngestProduct:
+      type: object
+      description: |
+        One product (or one variant of a product) in an ingestion feed. Variants of the same
+        product share a `product_group` and each carry their own `sku`.
+      required:
+        - sku
+        - name
+        - price
+        - category
+      properties:
+        sku:
+          type: string
+          description: Your unique stock-keeping unit. The identity used for upsert.
+          example: TEE-BLK-S
+        product_group:
+          type: string
+          description: |
+            Groups rows into one multi-variant product. Rows sharing a non-empty value become
+            variants of the same product. Omit for a standalone single-variant product.
+          example: TEE-CLASSIC
+        name:
+          type: string
+          description: Product name.
+          example: Classic Cotton Tee
+        variant_name:
+          type: string
+          description: Label for this variant (e.g. a size/colour). Defaults to "Default".
+          example: Black / S
+        description:
+          type: string
+        category:
+          type: string
+          description: |
+            **Required.** The category this product belongs to, by name (or its id). The category
+            must already exist in your catalog — categories are not created from a feed (an
+            inactive one is reactivated automatically). A row whose category does not exist is
+            rejected.
+          example: Apparel
+        subcategory:
+          type: string
+          description: |
+            Optional subcategory under the category. Unlike categories, **subcategories are
+            created automatically** if they don't exist. Use ` > ` to nest, e.g.
+            `Audio > Headphones > Wireless`.
+          example: T-Shirts
+        brand:
+          type: string
+        image:
+          type: string
+          format: uri
+          description: Public image URL.
+        price:
+          type: number
+          description: Selling price. Must be greater than 0.
+          example: 22
+        cost_price:
+          type: number
+          description: Unit cost. Optional.
+          example: 8.4
+        stock:
+          type: integer
+          description: On-hand quantity.
+          example: 30
+        threshold:
+          type: integer
+          description: Low-stock threshold.
+          example: 5
+        barcode:
+          type: string
+        barcode_type:
+          type: string
+          description: |
+            Barcode symbology. Common spellings are normalized (e.g. `UPC` → `UPC_A`). Unknown
+            values fall back to `CODE128`.
+          example: EAN13
+    IngestSummary:
+      type: object
+      description: Per-batch counts.
+      properties:
+        rows_total:
+          type: integer
+        rows_created:
+          type: integer
+        rows_updated:
+          type: integer
+        rows_skipped:
+          type: integer
+        rows_failed:
+          type: integer
+    IngestRowError:
+      type: object
+      description: One rejected row, with enough detail to fix and re-submit it.
+      properties:
+        row:
+          type: integer
+          description: 1-based position of the row in the submitted batch.
+          example: 3
+        sku:
+          type: string
+          example: TEE-RED-S
+        field:
+          type: string
+          description: The offending field, when attributable to one.
+          example: price
+        reason:
+          type: string
+          example: price must be a positive number
+    IngestResult:
+      type: object
+      description: The outcome of an ingestion batch.
+      properties:
+        status:
+          type: string
+          enum:
+            - success
+            - partial
+            - failed
+          description: |
+            `success` (no failures), `partial` (some rows failed, the rest applied), or
+            `failed` (every row failed; nothing written).
+        format:
+          type: string
+          enum:
+            - json
+            - xml
+            - csv
+        strategy:
+          type: string
+          enum:
+            - upsert_by_sku
+            - create_only
+        summary:
+          $ref: '#/components/schemas/IngestSummary'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/IngestRowError'
     MarketplaceInfoResponse:
       type: object
       description: Identity and branding for a marketplace as a whole, returned by GET /v1/marketplace/info when called with a marketplace operator key and no store_id. Use it to render the marketplace's own branding (name, logo, colors, contact details).

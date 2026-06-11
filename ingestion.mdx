@@ -1,0 +1,373 @@
+---
+title: "Catalog Ingestion"
+description: "Push or sync an external product catalog into your store — JSON, XML, or CSV — when your own system is the source of truth for products."
+---
+
+Catalog Ingestion lets you bring products *into* Galactic Core from an outside source. When a merchant's own system — an ERP, a PIM, another storefront, or a spreadsheet export — is the source of truth for the catalog, you push that data to Tybrite instead of entering products by hand. Send a batch as JSON, XML, or CSV; Tybrite matches each row to your existing catalog by **SKU**, updates what already exists, and creates what doesn't.
+
+<Info>
+  **Dashboard:** You can register a feed URL for **scheduled sync** from your Tybrite dashboard, or push products directly via the API and SDK. Find your signing secret under **Settings → Integration Settings**.
+</Info>
+
+<Warning>
+  **Secret key + request signature required.** `POST /v1/ingest/products` is the one write endpoint where both a secret key (`tybrite_sk_*`) **and** a signed request are mandatory. A publishable key returns `403`; a missing or invalid signature returns `401`.
+</Warning>
+
+---
+
+## When to use it
+
+Reach for ingestion when products live somewhere else and you want Galactic Core to mirror them:
+
+- A merchant runs their inventory in an ERP/PIM and wants it reflected in their Tybrite store.
+- You're migrating a catalog from another platform.
+- A nightly export from a back-office system should keep the storefront in sync.
+
+If a shopper would do it on a storefront, it's not ingestion — this is a **merchant-side write** for keeping a catalog up to date.
+
+---
+
+## Quick start
+
+Ingestion is a write, so initialize the SDK with a **secret key** and sign each request. Below, one standalone product and one multi-variant product (its rows share a `product_group`):
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+import { createHmac } from 'crypto';
+
+const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+
+const products = [
+  // A standalone, single-variant product
+  {
+    sku: 'MUG-CERAMIC-WHITE',
+    name: 'Ceramic Mug',
+    description: 'A 350ml glazed ceramic mug.',
+    category: 'Kitchenware',
+    price: 12.0,
+    stock: 120,
+    image: 'https://cdn.yourstore.com/mug-white.jpg',
+  },
+
+  // A multi-variant product — three rows sharing one product_group,
+  // each with its own unique sku
+  {
+    sku: 'TEE-CLASSIC-S',
+    product_group: 'TEE-CLASSIC',
+    name: 'Classic T-Shirt',
+    variant_name: 'Small',
+    category: 'Apparel',
+    price: 24.0,
+    stock: 40,
+  },
+  {
+    sku: 'TEE-CLASSIC-M',
+    product_group: 'TEE-CLASSIC',
+    name: 'Classic T-Shirt',
+    variant_name: 'Medium',
+    category: 'Apparel',
+    price: 24.0,
+    stock: 55,
+  },
+  {
+    sku: 'TEE-CLASSIC-L',
+    product_group: 'TEE-CLASSIC',
+    name: 'Classic T-Shirt',
+    variant_name: 'Large',
+    category: 'Apparel',
+    price: 24.0,
+    stock: 30,
+  },
+];
+
+const result = await client.ingestion.ingestProducts({
+  requestBody: { products },
+  // strategy: 'create_only',  // optional — skip SKUs that already exist
+});
+
+console.log(result.status);   // 'success' | 'partial' | 'failed'
+console.log(result.summary);  // { rows_total, rows_created, rows_updated, rows_skipped, rows_failed }
+console.log(result.errors);   // [] when everything imported cleanly
+```
+
+<Note>
+  The SDK signs the request for you when it's configured with your secret key. If you call the endpoint directly (curl, another language, a serverless handler), you must add the signing headers yourself — see [Signing a request](#signing-a-request).
+</Note>
+
+---
+
+## How matching by SKU works
+
+Every row carries a `sku` — your unique stock-keeping unit. That SKU is the identity Galactic Core matches on, scoped to your store:
+
+- **SKU already exists →** the product, its variant, and its stock are **updated** in place.
+- **SKU is new →** a product (and variant) is **created**.
+
+To import only brand-new products and leave existing ones untouched, pass `strategy: 'create_only'`. Matching SKUs are then **skipped** (counted in `rows_skipped`) rather than updated:
+
+```typescript
+const result = await client.ingestion.ingestProducts({
+  requestBody: { products },
+  strategy: 'create_only',
+});
+```
+
+The default is `upsert_by_sku` (update existing, create new).
+
+### Variants
+
+Rows that share the same non-empty `product_group` become variants of a **single** product — each row still needs its own unique `sku`. A row with no `product_group` is a standalone, single-variant product. The first row in a group supplies the product-level fields (`name`, `description`, `category`); each row contributes its own `variant_name`, `price`, and `stock`.
+
+---
+
+## Formats
+
+Declare the format with the `Content-Type` header or the `?format=` query parameter. All three normalize to the same result. The SDK sends JSON; the XML and CSV shapes below are for when you push the raw body yourself.
+
+<CodeGroup>
+
+```json JSON
+{
+  "products": [
+    {
+      "sku": "MUG-CERAMIC-WHITE",
+      "name": "Ceramic Mug",
+      "category": "Kitchenware",
+      "price": 12.0,
+      "stock": 120
+    },
+    {
+      "sku": "TEE-CLASSIC-S",
+      "product_group": "TEE-CLASSIC",
+      "name": "Classic T-Shirt",
+      "variant_name": "Small",
+      "category": "Apparel",
+      "price": 24.0,
+      "stock": 40
+    }
+  ]
+}
+```
+
+```xml XML
+<products>
+  <product>
+    <sku>MUG-CERAMIC-WHITE</sku>
+    <name>Ceramic Mug</name>
+    <category>Kitchenware</category>
+    <price>12.00</price>
+    <stock>120</stock>
+  </product>
+  <product>
+    <sku>TEE-CLASSIC-S</sku>
+    <product_group>TEE-CLASSIC</product_group>
+    <name>Classic T-Shirt</name>
+    <variant_name>Small</variant_name>
+    <category>Apparel</category>
+    <price>24.00</price>
+    <stock>40</stock>
+  </product>
+</products>
+```
+
+```csv CSV
+sku,product_group,name,variant_name,category,price,stock
+MUG-CERAMIC-WHITE,,Ceramic Mug,,Kitchenware,12.00,120
+TEE-CLASSIC-S,TEE-CLASSIC,Classic T-Shirt,Small,Apparel,24.00,40
+TEE-CLASSIC-M,TEE-CLASSIC,Classic T-Shirt,Medium,Apparel,24.00,55
+```
+
+</CodeGroup>
+
+CSV follows standard quoting rules, so commas and newlines inside quoted fields are handled. Field names are matched leniently (e.g. `Product Name` maps to `name`).
+
+### Product fields
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `sku` | Yes | Your unique stock-keeping unit — the identity used for matching. |
+| `name` | Yes | Product name. |
+| `price` | Yes | Selling price. Must be greater than 0. |
+| `product_group` | — | Groups rows into one multi-variant product. Omit for a standalone product. |
+| `variant_name` | — | Label for this variant (e.g. a size or colour). Defaults to `"Default"`. |
+| `description` | — | Product description. |
+| `category` | Yes | The product's category, by name (or id). It must **already exist** in your catalog — categories are not created from a feed. An inactive matching category is reactivated automatically. A row whose category does not exist is rejected. |
+| `subcategory` | — | Subcategory under the category. Unlike categories, **subcategories are created automatically** if new. Nest with ` > `, e.g. `Audio > Headphones > Wireless`. |
+| `brand` | — | Brand name. |
+| `image` | — | Public image URL. A broken URL is a warning, not a failure. |
+| `cost_price` | — | Unit cost. |
+| `stock` | — | On-hand quantity. |
+| `threshold` | — | Low-stock threshold. |
+| `barcode` / `barcode_type` | — | Barcode value and symbology. Common spellings are normalized (e.g. `UPC` → `UPC_A`); unknown values fall back to `CODE128`. |
+
+---
+
+## Response shape
+
+Rows are validated and applied **independently** — one bad row never fails the whole batch. The response always carries a `summary` of counts and an `errors` array describing every rejected row:
+
+```json
+{
+  "status": "partial",
+  "summary": {
+    "rows_total": 15,
+    "rows_created": 9,
+    "rows_updated": 1,
+    "rows_skipped": 1,
+    "rows_failed": 4
+  },
+  "errors": [
+    { "row": 3, "sku": "TEE-RED-S", "field": "price", "reason": "price must be a positive number (got 'free')" }
+  ]
+}
+```
+
+`status` is `success` when nothing failed, or `partial` when some rows failed but others imported. If **every** row fails validation, the request returns `422` and nothing is written.
+
+### Summary fields
+
+| Field | Description |
+| :--- | :--- |
+| `rows_total` | How many rows were in the batch. |
+| `rows_created` | Rows that created a new product or variant. |
+| `rows_updated` | Rows that updated an existing SKU. |
+| `rows_skipped` | Rows skipped — an existing SKU under `create_only`. |
+| `rows_failed` | Rows rejected by validation (see `errors`). |
+
+### Per-row errors
+
+Each entry in `errors` pinpoints exactly what to fix:
+
+| Field | Description |
+| :--- | :--- |
+| `row` | The row's position in the batch. |
+| `sku` | The SKU of the offending row, when available. |
+| `field` | The field that caused the rejection. |
+| `reason` | A human-readable explanation. |
+
+---
+
+## Signing a request
+
+The SDK signs for you when initialized with a secret key. If you push the raw body yourself, add three headers. The signature is a **base64 HMAC-SHA256** of `` `${timestamp}.${rawBody}` `` using your store's signing secret (the same scheme as orders and payments) — sign the **exact bytes** you send.
+
+```typescript
+import { createHmac } from 'crypto';
+
+function signIngestRequest(rawBody: string, signingSecret: string) {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const signature = createHmac('sha256', signingSecret)
+    .update(`${timestamp}.${rawBody}`)
+    .digest('base64');
+
+  return {
+    'X-Timestamp': timestamp,
+    'X-Signature': signature,
+  };
+}
+
+// Raw push (e.g. CSV) without the SDK:
+const rawBody = await fs.promises.readFile('catalog.csv', 'utf8');
+const headers = {
+  'Authorization': `Bearer ${process.env.TYBRITE_SECRET_KEY}`,
+  'Content-Type': 'text/csv',
+  'Idempotency-Key': crypto.randomUUID(),
+  ...signIngestRequest(rawBody, process.env.TYBRITE_SIGNING_SECRET),
+};
+
+await fetch('https://api.tybritelabs.com/v1/ingest/products', {
+  method: 'POST',
+  headers,
+  body: rawBody,
+});
+```
+
+| Header | Required | Purpose |
+| :--- | :--- | :--- |
+| `Idempotency-Key` | Yes | Unique key per batch. Retrying with the same key returns the original result instead of re-processing. |
+| `X-Timestamp` | Yes | Unix time in seconds, within 5 minutes of server time. |
+| `X-Signature` | Yes | Base64 HMAC-SHA256 of `` `${X-Timestamp}.${raw_body}` ``. |
+
+<Warning>
+  Sign the **raw body** exactly as sent. Re-serializing the JSON (whitespace or key ordering changes) produces a different byte sequence and the signature will fail to verify.
+</Warning>
+
+---
+
+## Test without a key
+
+Before you integrate, perfect your feed format against two **public, no-key** endpoints. Both are rate-limited to 60 requests/hour per IP.
+
+**Get a valid sample feed** to model your own (`?format=json|xml|csv`):
+
+```bash
+curl "https://api.tybritelabs.com/v1/ingest/sample?format=json"
+```
+
+The sample includes a single-variant product and a multi-variant product, so you can see exactly how `product_group` expresses variants.
+
+**Validate a feed without writing anything.** You get back the same `summary` and `errors` a real import would return, plus a `normalized_preview` showing how Galactic Core interpreted your rows:
+
+```bash
+curl -X POST "https://api.tybritelabs.com/v1/ingest/test" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "products": [
+      { "sku": "MUG-CERAMIC-WHITE", "name": "Ceramic Mug", "price": 12.0, "stock": 120 }
+    ]
+  }'
+```
+
+From the SDK:
+
+```typescript
+const sample = await client.ingestion.getIngestSample({ format: 'json' });
+
+const check = await client.ingestion.testIngest({
+  requestBody: { products },
+});
+
+console.log(check.status);              // 'valid' | 'partial' | 'invalid'
+console.log(check.normalized_preview);  // how each row was interpreted
+console.log(check.errors);              // rows that would be rejected
+```
+
+---
+
+## Scheduled sync
+
+Instead of pushing, you can have Galactic Core **pull** a feed for you. Register a feed URL in your dashboard, choose a cadence, and Galactic Core fetches and syncs the catalog on that schedule — matching by SKU exactly like the push API.
+
+After each scheduled run, a `feed.sync.completed` [webhook](/webhooks) fires with the run's summary, so your systems can react to the result without polling. Subscribe to it the same way as any other event:
+
+```typescript
+const { webhook_endpoint } = await client.webhooks.createWebhookEndpoint({
+  requestBody: {
+    url: 'https://yourapp.com/webhooks/tybrite',
+    events: ['feed.sync.completed'],
+  },
+});
+```
+
+See the [Webhooks guide](/webhooks) for delivery, signing, and idempotency.
+
+---
+
+## Response codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Batch processed — may be a full or partial success. Inspect `summary` and `errors`. |
+| `400` | Unparseable body, unknown format, or no rows. |
+| `401` | Missing/invalid secret key, or a missing/invalid request signature. |
+| `403` | A publishable key was used — ingestion requires a secret key. |
+| `409` | `Idempotency-Key` reused with a different request body. |
+| `422` | Every row failed validation; nothing was written. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |
+
+---
+
+## SDK reference
+
+See the [IngestionService SDK reference](/sdk/api-reference/classes/IngestionService) for full method signatures, or the [API Reference](/api-reference) for the raw endpoints.

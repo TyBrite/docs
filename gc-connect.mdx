@@ -1,0 +1,201 @@
+---
+title: "GC Connect"
+description: "Let merchants connect their store to your application with a single click — no API key copying. You receive a permanent, scoped key pair in return."
+---
+
+GC Connect — **Connect your GC Store** — is a hosted authorization flow ("Login with GC") for third-party tools. Instead of asking a merchant to find and paste an API key, you send them to a Tybrite-hosted consent screen; they approve the permissions you asked for, and your server receives a key pair (`sk` + `pk`) scoped to that merchant's store. The keys are **permanent** — they stay active until the merchant disconnects your app or you revoke them.
+
+<Info>
+  **Approval required.** Your application must be approved by Galactic Core before the Connect flow will work. Apply via the [Developer Portal](https://gc.tybritelabs.com/developers) to receive your `client_id`, `client_secret`, and registered redirect URIs.
+</Info>
+
+---
+
+## When to use it
+
+Use GC Connect when you're building a tool that acts on behalf of *other* merchants — an app, a SaaS integration, an agency dashboard — and you want them to onboard in one click:
+
+- A marketing or analytics tool that needs read access to a merchant's catalog and orders.
+- A fulfillment or ERP integration that creates and updates orders for many stores.
+- Any product where each customer is a different Tybrite merchant and you don't want to handle their keys manually.
+
+If you're building your **own** storefront against your **own** store, you don't need Connect — just use the API key from your dashboard.
+
+---
+
+## The flow
+
+GC Connect is a five-step, redirect-based handshake. The merchant's browser carries them through the consent screen; your **server** does the final code-for-keys exchange.
+
+<Steps>
+  <Step title="Redirect to the consent screen">
+    Send the merchant's browser to the hosted consent page with your `client_id`, `redirect_uri`, the `scope` you need, and a random `state` value (which you store to verify later).
+  </Step>
+  <Step title="Merchant approves">
+    The merchant logs in (if they aren't already) and reviews exactly which permissions and which store they're granting. They click **Authorize**.
+  </Step>
+  <Step title="Redirect back with a code">
+    Galactic Core redirects the browser back to your `redirect_uri` with a short-lived, single-use `code` and your original `state`.
+  </Step>
+  <Step title="Exchange the code (server-side)">
+    Your server calls `connectToken` with the `code` plus your `client_id` and `client_secret`. You get back the merchant's `sk` and `pk`.
+  </Step>
+  <Step title="Store the key securely">
+    Save the `sk` server-side (it's shown only once) and use it for every API call on behalf of that merchant. The `pk` is safe for browser/mobile read operations.
+  </Step>
+</Steps>
+
+---
+
+## Quick start
+
+### 1. Send the merchant to the consent screen
+
+Build the authorization URL and redirect the merchant's browser to it. Generate a random `state` and stash it in the user's session — you'll check it against the value that comes back to defend against CSRF.
+
+```typescript
+const state = crypto.randomUUID();
+req.session.gcConnectState = state; // store to verify on callback
+
+const params = new URLSearchParams({
+  client_id: process.env.GC_CLIENT_ID!,
+  redirect_uri: 'https://yourapp.com/callback',
+  scope: 'read orders:read customers:read',
+  state,
+  environment: 'production', // or 'sandbox' while developing
+});
+
+res.redirect(`https://gc.tybritelabs.com/connect/authorize?${params}`);
+```
+
+### 2. Handle the callback and exchange the code
+
+When the merchant approves, their browser lands back on your `redirect_uri` with `?code=…&state=…`. Verify the `state`, then exchange the code for keys **from your server** — never from a browser, because it requires your `client_secret`.
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const client = new Tybrite({ BASE: 'https://api.tybritelabs.com' });
+
+// GET /callback?code=XXX&state=YYY
+async function handleCallback(req, res) {
+  const { code, state } = req.query;
+
+  // Always verify state first — this prevents CSRF
+  if (state !== req.session.gcConnectState) {
+    return res.status(400).send('State mismatch — possible CSRF');
+  }
+
+  const keys = await client.gcConnect.connectToken({
+    requestBody: {
+      code,
+      client_id: process.env.GC_CLIENT_ID!,
+      client_secret: process.env.GC_CLIENT_SECRET!,
+      redirect_uri: 'https://yourapp.com/callback',
+    },
+  });
+
+  // Persist the sk securely — it is returned only once
+  await db.merchants.saveKeys(merchantId, {
+    sk: keys.sk,
+    pk: keys.pk,
+    pair_id: keys.pair_id,
+    store_id: keys.store_id,
+    environment: keys.environment,
+    scopes: keys.scopes,
+  });
+
+  res.redirect('/dashboard?connected=true');
+}
+```
+
+### 3. Act on the merchant's behalf
+
+Spin up a client with the merchant's `sk` and call the API as that store:
+
+```typescript
+const merchant = new Tybrite({
+  BASE: 'https://api.tybritelabs.com',
+  TOKEN: storedSecretKey,
+});
+
+const { orders } = await merchant.orders.listOrders({ limit: 20 });
+```
+
+<Warning>
+  Store the `sk` securely server-side immediately — it is returned **only once**. Treat it like a password: keep it in a secrets manager, never in client-side code, logs, or version control.
+</Warning>
+
+---
+
+## Scopes
+
+Request the **narrowest** set of scopes your integration needs — merchants see exactly what you're asking for on the consent screen, and a tight scope list earns trust. Pass them space-separated in the `scope` parameter.
+
+| Scope | Access |
+| :--- | :--- |
+| `read` | Products, inventory, pricing, categories |
+| `write` | Create / update products and inventory |
+| `orders:read` | Read order history and status |
+| `orders:write` | Create and update orders |
+| `customers:read` | Read customer profiles |
+| `customers:write` | Create and update customer records |
+| `payments:read` | Read payment status and history |
+| `cart:write` | Cart operations (browser-safe) |
+| `cms:read` | Blog posts and lookbooks |
+| `shipping:read` | Delivery zones and rates |
+| `pricing:read` | Dynamic pricing rules |
+
+---
+
+## Sandbox vs production
+
+The `environment` parameter on the authorization URL decides whether the resulting key pair touches the merchant's **live** data or isolated **test** data:
+
+- `sandbox` (default) — connect to test data while you build. Nothing you do affects the merchant's real store.
+- `production` — connect to live store data. Use this once your integration is ready.
+
+The merchant sees which environment you're requesting on the consent screen, so be explicit. The returned `environment` field on the key pair confirms what was granted.
+
+---
+
+## Lifecycle & revocation
+
+Connected keys are **permanent** — they don't expire on a timer. A connection ends in one of two ways:
+
+- **The merchant disconnects you** from their store's **Settings → Integrations → Connected Apps** panel. Galactic Core deactivates the key pair automatically — you don't need to do anything.
+- **You revoke the connection** with `connectRevoke` (passing the `pair_id` you saved at exchange time) — for example, when a merchant cancels their subscription on your platform.
+
+```typescript
+await client.gcConnect.connectRevoke({
+  requestBody: {
+    pair_id: storedPairId,
+    client_id: process.env.GC_CLIENT_ID!,
+    client_secret: process.env.GC_CLIENT_SECRET!,
+    revoke_reason: 'subscription_cancelled', // optional
+  },
+});
+```
+
+To see every store currently connected to your application — the data behind a merchant's Connected Apps panel — call `listConnectSessions` with a secret key:
+
+```typescript
+const { sessions } = await client.gcConnect.listConnectSessions();
+```
+
+---
+
+## Security checklist
+
+- [ ] Generate a fresh random `state` per authorization and verify it on the callback (CSRF protection)
+- [ ] Run the code-for-keys exchange **server-side only** — never expose `client_secret` to a browser
+- [ ] Store each merchant's `sk` in a secrets manager, scoped to that merchant
+- [ ] Request the minimum scopes your integration needs
+- [ ] Save the `pair_id` so you can revoke the connection later
+- [ ] Use HTTPS for your `redirect_uri`, and register it exactly in the Developer Portal
+
+---
+
+## SDK reference
+
+See the [GcConnectService SDK reference](/sdk/api-reference/classes/GcConnectService) for full method signatures, or the [API Reference](/api-reference) for the raw endpoints.
