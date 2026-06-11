@@ -11760,6 +11760,11 @@ paths:
                     **Gift cards:** `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired`
 
                     **Promotions:** `promotion.applied`
+
+                    **Catalog sync & syndication:** `feed.sync.completed` (a scheduled
+                    inbound feed-pull finished — carries created/updated/failed counts),
+                    `channel.sync.completed` (a sales-channel push to Google/Meta/… finished —
+                    carries pushed/rejected counts)
                   example:
                     - order.paid
                     - order.fulfilled
@@ -12036,6 +12041,8 @@ paths:
                     - cart.abandoned
                     - gift_card.issued
                     - promotion.applied
+                    - feed.sync.completed
+                    - channel.sync.completed
       responses:
         '200':
           description: Test delivery attempted

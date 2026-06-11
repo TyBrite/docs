@@ -150,6 +150,13 @@ All events follow the same envelope shape — only `type` and `data.object` vary
 | :--- | :--- |
 | `promotion.applied` | An order uses a promotion code |
 
+### Catalog sync & syndication
+
+| Event | Fired when |
+| :--- | :--- |
+| `feed.sync.completed` | A scheduled inbound feed-pull finishes. Payload carries `status` and `rows_created` / `rows_updated` / `rows_failed` (plus a sample of per-row errors). |
+| `channel.sync.completed` | A push of your catalog to a sales channel (Google, Meta, …) finishes. Payload carries `provider`, `status`, and `items_total` / `items_pushed` / `items_rejected`. |
+
 ---
 
 ## Event payload shape
