@@ -12514,6 +12514,82 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '429':
           $ref: '#/components/responses/RateLimitError'
+  /v1/feeds/{store}/products.json:
+    get:
+      operationId: getStoreCatalogFeedJson
+      tags:
+        - Ingestion
+      summary: Public catalog feed (JSON)
+      description: |
+        Returns a store's catalog as a public JSON feed — **no API key required**. This is the
+        outbound counterpart to ingestion: a store opts in (admin → Catalog Sync → "Publish my
+        catalog") and its products become readable at a stable URL, so any system can pull them
+        (another store's scheduled sync, a partner, a script). Only storefront-safe fields are
+        exposed — never cost or margins.
+
+        `{store}` is the store's id or its short store code. If the store set a private token,
+        append `?token=…`. The feed shape matches what the ingestion endpoints accept, so a
+        store-to-store sync is a direct pull-and-ingest with no field mapping.
+      parameters:
+        - name: store
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The store's id or short store code.
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Required only if the store protected its feed with a token.
+      responses:
+        '200':
+          description: The store's catalog.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FeedProduct'
+        '404':
+          description: The store has no public feed (not opted in, or wrong/missing token).
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+  /v1/feeds/{store}/products.xml:
+    get:
+      operationId: getStoreCatalogFeedXml
+      tags:
+        - Ingestion
+      summary: Public catalog feed (XML)
+      description: |
+        XML form of the public catalog feed. See the JSON variant for the opt-in and token rules.
+        No API key required.
+      parameters:
+        - name: store
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The store's catalog as XML.
+          content:
+            application/xml:
+              schema:
+                type: string
+        '404':
+          description: The store has no public feed.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
   /v1/marketplace/info:
     get:
       operationId: getMarketplaceInfo
@@ -16284,6 +16360,68 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/IngestRowError'
+    FeedProduct:
+      type: object
+      description: |
+        A product as it appears in a store's public catalog feed. A superset of the ingestion
+        input shape — it adds the rich media gallery and published specifications, and never
+        includes cost or margin fields.
+      properties:
+        sku:
+          type: string
+          example: TEE-BLK-S
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        subcategory:
+          type: string
+        brand:
+          type: string
+        image:
+          type: string
+          description: A single primary image URL (convenience for simple consumers).
+        media:
+          type: array
+          description: The full media gallery (product-level).
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              type:
+                type: string
+                example: image
+              position:
+                type: integer
+              alt:
+                type: string
+                nullable: true
+              is_primary:
+                type: boolean
+        variant_media:
+          type: array
+          description: Variant-level media, when present.
+          items:
+            type: object
+        price:
+          type: number
+        sale_price:
+          type: number
+          nullable: true
+        stock:
+          type: integer
+        variant_name:
+          type: string
+        product_group:
+          type: string
+          description: Present on multi-variant products so a consumer can regroup variants.
+        specifications:
+          type: object
+          description: Published product specifications as a flat key/value object, when present.
+          additionalProperties: true
     MarketplaceInfoResponse:
       type: object
       description: Identity and branding for a marketplace as a whole, returned by GET /v1/marketplace/info when called with a marketplace operator key and no store_id. Use it to render the marketplace's own branding (name, logo, colors, contact details).
