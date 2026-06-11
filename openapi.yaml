@@ -142,7 +142,7 @@ info:
     ## Technical Features
       
     - **Ultra-Low Latency**: 10-50ms response times via edge caching
-    - **Three-Tier Caching**: Edge → Redis → PostgreSQL
+    - **Multi-tier caching** for low-latency reads.
     - **Idempotency Protection**: Prevent duplicate orders on retry
     - **Field Filtering**: Request only the fields you need (50-90% bandwidth reduction)
     - **Automatic Accounting**: Double-entry journal entries for all transactions
@@ -375,9 +375,7 @@ info:
     url: https://tybritelabs.com/terms-of-service
 servers:
   - url: https://api.tybritelabs.com
-    description: Production API (custom domain)
-  - url: https://gateway-router.catalog-cache.workers.dev
-    description: Cloudflare Workers endpoint (alternative)
+    description: Production API
 security:
   - BearerAuth: []
 tags:
@@ -8084,7 +8082,7 @@ paths:
               
             **Priority:** Coordinates take priority over place_name if both provided.
               
-            **Accuracy:** Uses PostGIS boundary matching for accurate region detection.
+            **Accuracy:** Uses geographic boundary matching for accurate region detection.
               
             **Works with variants:** Currency detection applies to all product variants.
               
@@ -10373,6 +10371,246 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/messaging/realtime-token:
+    post:
+      operationId: getMessagingRealtimeToken
+      tags:
+        - Messaging
+      summary: Get realtime connection details for a thread
+      description: |
+        Returns the connection details a storefront needs to receive a thread's new messages in
+        realtime, without polling. Use these details with a realtime client to subscribe to the
+        conversation and have incoming messages pushed to you as they are sent.
+
+        Two response shapes are returned depending on how the request is authenticated, indicated by
+        the `mode` field:
+
+        - **`direct`** — returned for a customer signed in through Galactic Core
+          (supply their session token via `x-auth-token`). The response includes a short-lived
+          `token` the storefront uses to subscribe directly; the customer only ever receives updates
+          for their own thread.
+        - **`broadcast`** — returned for customers authenticated with your own identity provider
+          (supply the signed identity assertion via `x-external-auth`), for server-side integrations,
+          and for marketplace operators. Subscribe to the named `channel` to receive the thread's
+          message events.
+
+        In both cases, pair `realtime_url` + `realtime_key` + `channel` (and `token` when
+        present) with the `subscribeToThread` helper in the SDK to start receiving messages live.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          description: |
+            Session token of a customer signed in through Galactic Core. Supply this to receive the
+            `direct` connection details for that customer's own thread.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Signed identity assertion for a customer authenticated with your own identity provider.
+            Supply this (instead of `x-auth-token`) to receive the `broadcast` connection details.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - thread_id
+              properties:
+                thread_id:
+                  type: string
+                  format: uuid
+                  description: The conversation to receive realtime messages for.
+      responses:
+        '200':
+          description: Realtime connection details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagingRealtimeToken'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/messaging/operator/threads:
+    get:
+      operationId: listOperatorMessagingThreads
+      tags:
+        - Messaging
+      summary: List conversations across all merchants (operator oversight)
+      description: |
+        Read-only marketplace operator view of customer↔merchant conversations across every active
+        merchant in the marketplace, for oversight. Each thread is stamped with the merchant it
+        belongs to (`merchant_store_id` + `merchant_store_name`). Supports cursor-based pagination and
+        filtering by status, priority, and unread state.
+
+        Requires a marketplace operator key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - resolved
+              - closed
+              - escalated
+              - pending
+          description: Filter threads by status
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - urgent
+              - high
+              - normal
+              - low
+          description: Filter by priority level
+        - name: unread
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Set to true to return only conversations with messages the merchant has not read.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+            minimum: 1
+            maximum: 100
+        - name: cursor
+          in: query
+          description: Cursor for pagination (returned as `next_cursor` in the previous page).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threads:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OperatorThread'
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                      next_cursor:
+                        type:
+                          - string
+                          - 'null'
+                      has_more:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/messaging/operator/threads/{id}/messages:
+    get:
+      operationId: getOperatorMessagingThreadMessages
+      tags:
+        - Messaging
+      summary: Get a conversation's messages (operator oversight)
+      description: |
+        Read-only marketplace operator view of the messages in a single conversation, for oversight.
+        The conversation must belong to an active merchant in the marketplace. Supports cursor-based
+        pagination and sort order.
+
+        Requires a marketplace operator key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The conversation to read messages from.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: cursor
+          in: query
+          description: Cursor for pagination (returned as `next_cursor` in the previous page).
+          schema:
+            type: string
+        - name: order
+          in: query
+          description: Sort order — asc (oldest first, default) or desc (newest first)
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                      next_cursor:
+                        type:
+                          - string
+                          - 'null'
+                      has_more:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/shipping/zones:
     get:
       operationId: getShippingZones
@@ -10450,7 +10688,7 @@ paths:
           
         **Location Input Options:**
         - **Option 1:** Provide `latitude` and `longitude` (GPS coordinates)
-        - **Option 2:** Provide `place_name` (e.g., "Westlands, Nairobi, Kenya") - automatically geocoded using Nominatim
+        - **Option 2:** Provide `place_name` (e.g., "Westlands, Nairobi, Kenya") - automatically geocoded
           
         **Calculation Logic:**
         1. If `place_name` provided, geocode to coordinates internally
@@ -12947,7 +13185,7 @@ components:
             - 'null'
           format: uri
           description: Primary image URL for list views
-          example: https://pub-...r2.dev/stores/.../primary-123.jpg
+          example: https://cdn.tybritelabs.com/stores/.../primary-123.jpg
         media:
           type: array
           description: Array of product media objects including images and videos
@@ -13565,7 +13803,7 @@ components:
             - 'null'
           format: uri
           description: Primary image URL for quick display
-          example: https://pub-41977a...r2.dev/.../primary-image.jpg
+          example: https://cdn.tybritelabs.com/.../primary-image.jpg
         media:
           type: array
           description: Full media gallery (variant-specific or product-level)
@@ -13677,7 +13915,7 @@ components:
             - 'null'
           format: uri
           description: Primary image URL for quick display
-          example: https://pub-41977a...r2.dev/.../primary-image.jpg
+          example: https://cdn.tybritelabs.com/.../primary-image.jpg
         media:
           type: array
           description: Full media gallery (variant-specific or product-level)
@@ -14673,6 +14911,12 @@ components:
           type: boolean
         is_pinned:
           type: boolean
+        environment:
+          type: string
+          enum:
+            - production
+            - sandbox
+          description: Whether this conversation belongs to live or test data. Test API keys only see `sandbox`; live keys only see `production`.
         created_at:
           type: string
           format: date-time
@@ -14742,6 +14986,135 @@ components:
             - string
             - 'null'
           format: date-time
+        environment:
+          type: string
+          enum:
+            - production
+            - sandbox
+          description: Whether this message belongs to live or test data. Test API keys only see `sandbox`; live keys only see `production`.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    MessagingRealtimeToken:
+      type: object
+      description: |
+        Connection details for receiving a thread's new messages in realtime. The `mode` field selects
+        the shape: a customer signed in through Galactic Core gets `direct` (with a short-lived
+        `token` to subscribe directly), while bring-your-own-auth customers, server integrations, and
+        marketplace operators get `broadcast` (subscribe to the named `channel`).
+      properties:
+        mode:
+          type: string
+          enum:
+            - direct
+            - broadcast
+          description: |
+            How to subscribe. `direct` — for a customer signed in through Galactic Core; subscribe with
+            the returned `token`. `broadcast` — for bring-your-own-auth customers, server integrations,
+            and operators; subscribe to the `channel`.
+        realtime_url:
+          type: string
+          description: Base URL of the realtime service to connect to.
+        realtime_key:
+          type: string
+          description: Public connection key for the realtime service. Safe for the browser.
+        token:
+          type:
+            - string
+            - 'null'
+          description: Short-lived subscription token. Present only when `mode` is `direct`.
+        channel:
+          type: string
+          description: Name of the channel to subscribe to.
+        thread_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: The conversation these connection details are for.
+        environment:
+          type: string
+          enum:
+            - production
+            - sandbox
+          description: Whether the connection covers live or test conversations.
+      required:
+        - mode
+        - realtime_url
+        - channel
+        - environment
+    OperatorThread:
+      type: object
+      description: A customer↔merchant conversation as seen by a marketplace operator, stamped with the merchant it belongs to.
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchant_store_id:
+          type: string
+          format: uuid
+          description: The merchant this conversation belongs to.
+        merchant_store_name:
+          type:
+            - string
+            - 'null'
+          description: Display name of the merchant.
+        customer_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        customer_name:
+          type:
+            - string
+            - 'null'
+        subject:
+          type: string
+        thread_type:
+          type: string
+          enum:
+            - general
+            - order_inquiry
+            - product_inquiry
+            - support
+            - complaint
+            - delivery
+            - return
+            - refund
+            - technical
+        status:
+          type: string
+          enum:
+            - active
+            - resolved
+            - closed
+            - escalated
+            - pending
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+        last_message_at:
+          type: string
+          format: date-time
+        last_message_by:
+          type: string
+          enum:
+            - customer
+            - store
+            - system
+        unread_count_customer:
+          type: integer
+        unread_count_store:
+          type: integer
+        is_archived:
+          type: boolean
         created_at:
           type: string
           format: date-time

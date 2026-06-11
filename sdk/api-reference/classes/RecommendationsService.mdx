@@ -6,7 +6,7 @@ description: "Reference for the RecommendationsService class in the Tybrite SDK.
 The `RecommendationsService` class (accessed via `client.recommendations`) allows you to integrate AI-driven product suggestions into your storefront to increase discovery and conversion.
 
 <Warning>
-  **Secret Key Required.** This service requires a **Secret Key** (`sk_live_*` / `sk_test_*`). AI inference is computationally expensive and consumes Gemini API quota — gating to `sk` prevents abuse from scraped publishable keys. Requests authenticated with a publishable key receive `403 Forbidden`.
+  **Secret Key Required.** This service requires a **Secret Key** (`sk_live_*` / `sk_test_*`). AI inference is computationally expensive and consumes AI recommendation quota — gating to `sk` prevents abuse from scraped publishable keys. Requests authenticated with a publishable key receive `403 Forbidden`.
 </Warning>
 
 ## Methods
@@ -151,4 +151,4 @@ This endpoint is `POST` and **requires a Secret Key**.
 | `403` | Publishable key supplied — recommendations require a Secret Key. |
 | `404` | `productId` was provided but the product was not found (applies to `similar`, `bundle`, and `also-bought`). |
 | `429` | Rate limit exceeded. |
-| `500` | Internal server error or upstream Gemini failure. |
+| `500` | Internal server error or upstream AI service failure. |

@@ -196,7 +196,7 @@ The signed string is `${timestamp}.${raw_request_body}`. The secret is the `sign
   **Use the raw body.** JSON parsers may reformat whitespace or key ordering, producing a different byte sequence that will fail verification. Capture the raw bytes before parsing.
 </Warning>
 
-**Cloudflare Workers example:**
+**Serverless function example:**
 
 ```typescript
 async function verifyWebhookSignature(
@@ -282,16 +282,16 @@ Because delivery is at-least-once, your handler may receive the same event more 
 ```typescript
 const event = JSON.parse(rawBody);
 
-// Check — use Redis, a DB unique index, or an idempotency table
-if (await redis.exists(`webhook:seen:${event.id}`)) {
+// Check — use your datastore (a DB unique index, a cache, an idempotency table, etc.)
+if (await seenStore.has(`webhook:seen:${event.id}`)) {
   return res.json({ received: true }); // already processed
 }
 
 // Process first
 await processEvent(event);
 
-// Mark as seen (TTL slightly longer than max retry window)
-await redis.set(`webhook:seen:${event.id}`, '1', { ex: 60 * 60 * 24 * 3 }); // 3 days
+// Mark as seen (retain slightly longer than the max retry window)
+await seenStore.set(`webhook:seen:${event.id}`, '1', { ttlSeconds: 60 * 60 * 24 * 3 }); // 3 days
 ```
 
 ---
