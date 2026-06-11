@@ -1,0 +1,199 @@
+---
+title: "Ingestion"
+description: "Reference for the IngestionService class in the Tybrite SDK."
+---
+
+The `IngestionService` class (accessed via `client.ingestion`) pushes or syncs an external product catalog **into** your store. When the merchant's own system — an ERP, a PIM, another storefront, or a spreadsheet export — is the source of truth for products, you send batches here as JSON, XML, or CSV instead of entering products by hand.
+
+For the full conceptual guide (matching rules, formats, scheduled sync), see [Catalog Ingestion](/ingestion).
+
+## Overview
+
+Galactic Core matches each incoming row to your existing catalog by **SKU**: an existing SKU is updated in place, a new SKU is created. Rows that share a `product_group` become variants of one product. Every batch returns a `summary` of counts and a per-row `errors` array, so one bad row never fails the whole import.
+
+<Warning>
+  **Secret key + request signature required.** `ingestProducts` is a write — initialize the SDK with a secret key (`tybrite_sk_*`). A publishable key returns `403`. The SDK signs the request for you; if you call the endpoint directly, you must add the signing headers yourself (see [Signing a request](/ingestion#signing-a-request)).
+</Warning>
+
+---
+
+## `ingestProducts`
+
+Push or sync a batch of products into your store.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `requestBody.products` | `IngestProduct[]` | Yes | The batch of products. Each row needs a unique `sku`. |
+| `format` | `'json' \| 'xml' \| 'csv'` | — | Overrides format detection. The SDK sends JSON, so you rarely set this. |
+| `strategy` | `'upsert_by_sku' \| 'create_only'` | — | `upsert_by_sku` (default) updates existing SKUs; `create_only` skips them. |
+| `dryRun` | `boolean` | — | When `true`, validate and report without writing anything. |
+
+**Product fields** (each entry in `products`):
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `sku` | Yes | Your unique stock-keeping unit — the identity used for matching. |
+| `name` | Yes | Product name. |
+| `price` | Yes | Selling price. Must be greater than 0. |
+| `product_group` | — | Groups rows into one multi-variant product. Omit for a standalone product. |
+| `variant_name` | — | Label for this variant (e.g. a size or colour). Defaults to `"Default"`. |
+| `description` | — | Product description. |
+| `category` / `subcategory` | — | Matched to your existing categories by name or id. |
+| `brand` | — | Brand name. |
+| `image` | — | Public image URL. |
+| `cost_price` | — | Unit cost. |
+| `stock` | — | On-hand quantity. |
+| `threshold` | — | Low-stock threshold. |
+| `barcode` / `barcode_type` | — | Barcode value and symbology. |
+
+**Signed example** — one standalone product and one multi-variant product (its rows share a `product_group`):
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+
+const result = await client.ingestion.ingestProducts({
+  requestBody: {
+    products: [
+      // Standalone single-variant product
+      {
+        sku: 'MUG-CERAMIC-WHITE',
+        name: 'Ceramic Mug',
+        category: 'Kitchenware',
+        price: 12.0,
+        stock: 120,
+      },
+      // Multi-variant product — rows share product_group, each has its own sku
+      {
+        sku: 'TEE-CLASSIC-S',
+        product_group: 'TEE-CLASSIC',
+        name: 'Classic T-Shirt',
+        variant_name: 'Small',
+        category: 'Apparel',
+        price: 24.0,
+        stock: 40,
+      },
+      {
+        sku: 'TEE-CLASSIC-M',
+        product_group: 'TEE-CLASSIC',
+        name: 'Classic T-Shirt',
+        variant_name: 'Medium',
+        category: 'Apparel',
+        price: 24.0,
+        stock: 55,
+      },
+    ],
+  },
+  // strategy: 'create_only', // optional — skip SKUs that already exist
+});
+
+console.log(result.status);   // 'success' | 'partial' | 'failed'
+console.log(result.summary);  // { rows_total, rows_created, rows_updated, rows_skipped, rows_failed }
+console.log(result.errors);   // [] when everything imported cleanly
+```
+
+<Note>
+  The SDK signs the request when initialized with your secret key. To push a raw body yourself (curl, another language, a serverless handler), add the `X-Timestamp`, `X-Signature`, and `Idempotency-Key` headers — see [Signing a request](/ingestion#signing-a-request).
+</Note>
+
+**Response fields:**
+
+| Field | Description |
+| :--- | :--- |
+| `status` | `success` (no failures), `partial` (some rows failed, the rest applied), or `failed` (every row failed; nothing written). |
+| `format` | The format Galactic Core detected (`json` / `xml` / `csv`). |
+| `strategy` | The strategy applied (`upsert_by_sku` / `create_only`). |
+| `summary` | Per-batch counts (see below). |
+| `errors` | One entry per rejected row (see below). |
+
+**`summary` counts:**
+
+| Field | Description |
+| :--- | :--- |
+| `rows_total` | How many rows were in the batch. |
+| `rows_created` | Rows that created a new product or variant. |
+| `rows_updated` | Rows that updated an existing SKU. |
+| `rows_skipped` | Rows skipped — an existing SKU under `create_only`. |
+| `rows_failed` | Rows rejected by validation (see `errors`). |
+
+**`errors` entries:**
+
+| Field | Description |
+| :--- | :--- |
+| `row` | The row's position in the batch. |
+| `sku` | The SKU of the offending row, when available. |
+| `field` | The field that caused the rejection. |
+| `reason` | A human-readable explanation. |
+
+---
+
+## `getIngestSample`
+
+Returns a valid sample product feed you can copy to model your own. **No API key required.** The sample includes a single-variant product and a multi-variant product so you can see exactly how `product_group` expresses variants. Rate-limited to 60 requests/hour per IP.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `format` | `'json' \| 'xml' \| 'csv'` | — | The format to return the sample in. Defaults to `json`. |
+
+```typescript
+const sample = await client.ingestion.getIngestSample({ format: 'json' });
+
+console.log(sample.products); // model rows you can adapt to your own catalog
+```
+
+---
+
+## `testIngest`
+
+Parses and validates a feed **without writing anything** to your store, returning the same `summary` and `errors` a real import would — plus a `normalized_preview` showing how Galactic Core interpreted each row. **No API key required**, so you can perfect your feed format before integrating. Rate-limited to 60 requests/hour per IP.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `requestBody.products` | `IngestProduct[]` | Yes | The batch of products to validate (same shape as `ingestProducts`). |
+
+```typescript
+const check = await client.ingestion.testIngest({
+  requestBody: {
+    products: [
+      { sku: 'MUG-CERAMIC-WHITE', name: 'Ceramic Mug', price: 12.0, stock: 120 },
+    ],
+  },
+});
+
+console.log(check.status);              // 'valid' | 'partial' | 'invalid'
+console.log(check.normalized_preview);  // how each row was interpreted
+console.log(check.errors);              // rows that would be rejected
+```
+
+**Response fields:**
+
+| Field | Description |
+| :--- | :--- |
+| `status` | `valid` (no failures), `partial` (some rows failed), or `invalid` (every row failed). |
+| `format` | The format Galactic Core detected. |
+| `validate_only` | Always `true` — confirms nothing was written. |
+| `summary` | The same per-batch counts as a real import. |
+| `errors` | Rows that would be rejected, with row / SKU / field / reason. |
+| `normalized_preview` | How each row was interpreted after normalization. |
+
+---
+
+## Response Codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Batch processed — may be a full or partial success. Inspect `summary` and `errors`. |
+| `400` | Unparseable body, unknown format, or no rows. |
+| `401` | Missing/invalid secret key, or a missing/invalid request signature. |
+| `403` | A publishable key was used — ingestion requires a secret key. |
+| `409` | `Idempotency-Key` reused with a different request body. |
+| `422` | Every row failed validation; nothing was written. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |
