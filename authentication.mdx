@@ -44,7 +44,7 @@ The key prefix determines which environment your requests target — there is no
 
 **What sandbox isolation means in practice:**
 
-- Orders, customers, cart items, and wishlist entries created with a `test` key are stored in the sandbox partition and are never returned to `live` key requests.
+- Orders, customers, cart items, wishlist entries, product reviews, and messaging conversations created with a `test` key are stored in the sandbox partition and are never returned to `live` key requests.
 - Payment providers switch to test mode automatically when a `test` key is used — Stripe test mode, Paystack test keys, M-Pesa sandbox, Airtel staging — regardless of what your store's payment settings show.
 - Every authenticated response includes a `Tybrite-Environment: production | sandbox` header so you can confirm which partition resolved.
 
