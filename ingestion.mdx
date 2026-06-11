@@ -353,6 +353,56 @@ See the [Webhooks guide](/webhooks) for delivery, signing, and idempotency.
 
 ---
 
+## Publish your own catalog (outbound feed)
+
+Ingestion works both ways. Just as you can pull products *in*, you can expose *your* catalog
+as a public feed so other systems can pull *from* you — another store's scheduled sync, a
+partner, a marketplace, or your own tooling.
+
+Turn it on in the dashboard under **Settings → Catalog Sync → Publish my catalog**. You get a
+public URL in two formats, **no API key required** to read:
+
+```
+https://api.tybritelabs.com/v1/feeds/{store}/products.json
+https://api.tybritelabs.com/v1/feeds/{store}/products.xml
+```
+
+`{store}` is your store id or short store code. The feed contains only storefront-safe fields
+(**never** cost or margins) and includes each product's **rich media gallery** and its
+**published specifications**:
+
+```json
+{
+  "products": [
+    {
+      "sku": "EARBUDS-01",
+      "name": "Wireless Earbuds",
+      "category": "Audio & Headphones",
+      "subcategory": "Wireless",
+      "brand": "Pulsewave",
+      "image": "https://cdn.example.com/earbuds.jpg",
+      "media": [
+        { "url": "https://cdn.example.com/earbuds.jpg", "type": "image", "position": 0, "is_primary": true }
+      ],
+      "price": 82.0,
+      "stock": 60,
+      "specifications": {
+        "connectivity": "Bluetooth 5.3",
+        "battery_life": "24 hours",
+        "noise_cancelling": "Active"
+      }
+    }
+  ]
+}
+```
+
+Because the feed shape matches what the ingestion endpoints accept, a **store-to-store sync is
+paste-and-go**: point one store's scheduled sync at another store's `products.json` and you're
+done — no field mapping. To keep a feed semi-private, add a token in the dashboard and append
+`?token=…` to the URL.
+
+---
+
 ## Response codes
 
 | Code | Meaning |
