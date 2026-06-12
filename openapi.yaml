@@ -1985,7 +1985,11 @@ paths:
                     currency_symbol: $
                     seo_title: Apple MacBook Pro 13" M2 - Premium Laptop
                     seo_description: 13-inch MacBook Pro with M2 chip, perfect for professionals
-                    seo_keywords: macbook, apple, laptop, m2
+                    seo_keywords:
+                      - macbook
+                      - apple
+                      - laptop
+                      - m2
                     featured: true
                     featured_order: 0
                     tags:
@@ -2017,7 +2021,11 @@ paths:
                     currency_symbol: €
                     seo_title: Sony WH-1000XM4 Wireless Noise-Cancelling Headphones
                     seo_description: Premium wireless headphones with industry-leading noise cancellation
-                    seo_keywords: sony, headphones, noise-cancelling, wireless
+                    seo_keywords:
+                      - sony
+                      - headphones
+                      - noise-cancelling
+                      - wireless
                     featured: true
                     featured_order: 1
                     tags:
@@ -13611,17 +13619,25 @@ components:
           type:
             - string
             - 'null'
-          description: SEO optimized title
+          description: SEO title for the product detail page
+          example: Sony WH-1000XM4 Wireless Noise-Cancelling Headphones
         seo_description:
           type:
             - string
             - 'null'
-          description: SEO optimized description
+          description: SEO meta description for the product detail page
+          example: Industry-leading noise cancellation with 30-hour battery life. Shop the Sony WH-1000XM4 today.
         seo_keywords:
           type:
-            - string
+            - array
             - 'null'
-          description: SEO keywords
+          items:
+            type: string
+          description: SEO keywords for the product
+          example:
+            - wireless headphones
+            - noise cancelling
+            - sony
         featured:
           type:
             - boolean
@@ -16404,8 +16420,9 @@ components:
               position:
                 type: integer
               alt:
-                type: string
-                nullable: true
+                type:
+                  - string
+                  - 'null'
               is_primary:
                 type: boolean
         variant_media:
@@ -16416,8 +16433,9 @@ components:
         price:
           type: number
         sale_price:
-          type: number
-          nullable: true
+          type:
+            - number
+            - 'null'
         stock:
           type: integer
         variant_name:
@@ -16425,6 +16443,23 @@ components:
         product_group:
           type: string
           description: Present on multi-variant products so a consumer can regroup variants.
+        seo_title:
+          type:
+            - string
+            - 'null'
+          description: SEO title, when present (omitted to keep the feed lean when null).
+        seo_description:
+          type:
+            - string
+            - 'null'
+          description: SEO meta description, when present.
+        seo_keywords:
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+          description: SEO keywords, when present.
         specifications:
           type: object
           description: Published product specifications as a flat key/value object, when present.
