@@ -92,6 +92,24 @@ const product = await client.products.getProductBySlug({
 });
 ```
 
+### SEO metadata
+
+Every product carries optional SEO metadata for rendering search-engine-friendly product
+detail pages:
+
+*   `seo_title` — the `<title>` for the product page.
+*   `seo_description` — the meta description.
+*   `seo_keywords` — an array of keywords.
+
+```typescript
+const product = await client.products.getProductBySlug({ slug: 'sony-wh-1000xm4-a089d' });
+document.title = product.seo_title ?? product.name;
+// <meta name="description" content={product.seo_description ?? product.description} />
+```
+
+These fields are also included in a store's public catalog feed, so a catalog mirrored from
+one store into another preserves its SEO metadata.
+
 ---
 
 ## 📸 Media Gallery System
