@@ -3,10 +3,10 @@ title: "Payments"
 description: "Reference for the PaymentsService class in the Tybrite SDK."
 ---
 
-The `PaymentsService` class (accessed via `client.payments`) handles the core initialization and status verification for diverse payment providers including Stripe, Paystack, M-Pesa, and Airtel Money.
+The `PaymentsService` class (accessed via `client.payments`) handles the core initialization and status verification for diverse payment providers including Stripe, PayPal, Paystack, and M-Pesa.
 
 <Note>
-  **Sandbox test mode:** When you use a `tybrite_sk_test_*` key, all payment providers are automatically switched to their test/sandbox credentials — regardless of what your store's payment settings show. Stripe uses test mode, Paystack uses test keys, M-Pesa targets the Safaricom sandbox, and Airtel targets the staging environment. No code changes are needed between sandbox and production; swap the key and the right environment follows. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment resolved.
+  **Sandbox test mode:** When you use a `tybrite_sk_test_*` key, all payment providers are automatically switched to their test/sandbox credentials — regardless of what your store's payment settings show. Stripe uses test mode, PayPal uses its sandbox, Paystack uses test keys, and M-Pesa targets the Safaricom sandbox. No code changes are needed between sandbox and production; swap the key and the right environment follows. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment resolved.
 </Note>
 
 ## 🔐 Security & Signing (HMAC & Idempotency)
@@ -64,9 +64,19 @@ Retrieve all active payment methods configured in your Tybrite Admin Panel. This
 
 ```typescript
 const { methods } = await client.payments.getPaymentMethods({
-  fields: 'provider,display_name,supported_currencies'
+  fields: 'provider,display_name,type'
 });
 ```
+
+Each method in the returned list includes:
+
+| Field | Description |
+| :--- | :--- |
+| `provider` | Provider identifier (e.g. `stripe`, `paypal`, `paystack`, `mpesa`). |
+| `display_name` | Human-friendly label to show at checkout. |
+| `type` | How the buyer completes payment: `redirect`, `popup`, `stk_push`, or `manual`. |
+| `environment` | `sandbox` or `production`, matching the key you used. |
+| `is_configured` | `true` when the provider is fully set up and ready to accept payments. |
 
 ---
 
@@ -139,16 +149,15 @@ const response = await client.payments.initializePayment({
 });
 ```
 
-```typescript Airtel Money (Mobile Money)
+```typescript PayPal (Wallet / Card)
 const paymentData = {
-  provider: 'airtel',
-  amount: 1200,
-  phone: '254733444555',
-  country: 'KE'
+  provider: 'paypal',
+  amount: 49.99,
+  currency: 'USD'
 };
 
 const timestamp = Math.floor(Date.now() / 1000);
-const idempotencyKey = `pay-airtel-${Date.now()}`;
+const idempotencyKey = `pay-paypal-${Date.now()}`;
 const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(paymentData)}`, hmacSecret);
 
 // HTTP 201 Created on first call
@@ -158,6 +167,20 @@ const response = await client.payments.initializePayment({
   xSignature: signature,
   requestBody: paymentData
 });
+
+// Example 201 response body
+// {
+//   "provider": "paypal",
+//   "type": "popup",
+//   "order_id": "ord_01HX...",
+//   "paypal_order_id": "5O190127TN364715T",
+//   "client_id": "AeA1QIZ...",
+//   "currency": "USD",
+//   "environment": "sandbox"
+// }
+
+// Use client_id + paypal_order_id to render the PayPal Buttons popup in your
+// storefront. After the buyer approves, call verifyPayment to capture.
 ```
 
 </CodeGroup>
@@ -229,18 +252,14 @@ The response shape depends on the `provider` field — one of four variants is r
 }
 ```
 
-```json Airtel
+```json PayPal
 {
-  "provider": "airtel",
-  "reference": "AIR-20260520-001",
+  "provider": "paypal",
+  "reference": "5O190127TN364715T",
   "status": "success",
-  "response": {
-    "transaction": {
-      "id": "CI220305.1207.C00001",
-      "status_code": "TS"
-    }
-  },
-  "created_at": "2026-05-20T10:24:11.000Z"
+  "amount": 49.99,
+  "currency": "USD",
+  "capture_id": "3C679366HH908993F"
 }
 ```
 
@@ -251,21 +270,21 @@ The response shape depends on the `provider` field — one of four variants is r
 - **Stripe** — `success` when the session/intent is paid, otherwise the raw Stripe `payment_status` (`unpaid`, `no_payment_required`, etc.).
 - **Paystack** — Mirrors Paystack's `status` field (`success`, `failed`, `abandoned`).
 - **M-Pesa** — Enum: `pending | success | cancelled | failed`. Result code `1032` (user cancelled on phone) maps to `cancelled`.
-- **Airtel** — Sourced from the `payment_transaction_logs` table. If no log row exists for the reference, the response is `{ "status": "not_found", "message": "..." }` instead of the shape above.
+- **PayPal** — `verify` captures the buyer-approved order and returns `success` once the capture completes. The `reference` you pass is the PayPal order id returned at initialization.
 
 ## Provider Support Matrix
 
 | Provider | Best For | Requirement | Verification Method |
 | :--- | :--- | :--- | :--- |
 | **Stripe** | International Cards | Email | Session Query |
+| **PayPal** | Global Wallet / Card | Order id | Capture |
 | **Paystack**| African Cards | Email | Ref Verification |
 | **M-Pesa** | Kenyan Mobile Money | Phone (254) | STK Query |
-| **Airtel** | Regional Mobile Money| Phone + Country | Collection Query |
 
 ---
 
 <Note>
-  **Formatting Tip:** For African mobile money (M-Pesa/Airtel), always provide the phone number in international format without the `+` prefix (e.g., `2547...`).
+  **Formatting Tip:** For M-Pesa, always provide the phone number in international format without the `+` prefix (e.g., `2547...`).
 </Note>
 
 ---
@@ -278,7 +297,7 @@ The response shape depends on the `provider` field — one of four variants is r
 | :--- | :--- |
 | `201` | Payment session created (new on first call with idempotency key). |
 | `200` | Idempotent replay — same key and identical payload, original initialization returned. |
-| `400` | Invalid request (missing `provider`/`amount`, invalid phone format for mpesa/airtel). |
+| `400` | Invalid request (missing `provider`/`amount`, invalid phone format for mpesa). |
 | `401` | Invalid API key, or invalid/expired HMAC signature (5-minute replay window). |
 | `403` | Publishable key supplied — initialize requires a secret key. |
 | `404` | `order_id` provided but no matching order exists. |

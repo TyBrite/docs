@@ -37,7 +37,7 @@ info:
     - **Order processing** with payment reconciliation and fulfillment workflows
     - **Customer analytics** with RFM segmentation and purchase history
     - **Double-entry accounting** with automatic journal entries
-    - **Multi-provider payments** (Stripe, Paystack, M-Pesa, Airtel Money)
+    - **Multi-provider payments** (Stripe, PayPal, Paystack, M-Pesa)
     - **AI-powered recommendations** using semantic embeddings
     - **Dynamic pricing** with hierarchical discount rules
       
@@ -474,7 +474,7 @@ tags:
     description: Content management (posts, lookbooks)
   - name: Payments
     description: |
-      Multi-provider payment processing (Stripe, Paystack, M-Pesa, Airtel Money).
+      Multi-provider payment processing (Stripe, PayPal, Paystack, M-Pesa).
         
       **Special Headers:**
       - `Idempotency-Key`: **REQUIRED** for `POST /v1/payments/initialize`
@@ -963,13 +963,16 @@ paths:
                         - paystack
                       methods:
                         - name: cash
-                          display_name: Cash
+                          display_name: Cash on Delivery
                           type: manual
                         - name: stripe
-                          display_name: Card (Stripe)
+                          display_name: Stripe
                           type: redirect
+                        - name: paypal
+                          display_name: PayPal
+                          type: popup
                         - name: paystack
-                          display_name: Card (Paystack)
+                          display_name: Paystack
                           type: popup
                     shipping:
                       zones:
@@ -3143,9 +3146,9 @@ paths:
                   enum:
                     - card
                     - stripe
+                    - paypal
                     - paystack
                     - mpesa
-                    - airtel_money
                     - cash
                 payment_status:
                   type: string
@@ -3974,9 +3977,9 @@ paths:
         - **Cash**: Manual payment method
         - **Bank Transfer**: Manual payment method
         - **Stripe**: Card payments with redirect to Stripe Checkout
+        - **PayPal**: Popup checkout — the buyer approves the payment in a PayPal window
         - **Paystack**: Card payments with popup integration (Africa-focused)
         - **M-Pesa**: Mobile money STK Push (Kenya)
-        - **Airtel Money**: Mobile money collection (Kenya, Uganda, Tanzania, Rwanda)
 
         **Key Type Support:**
         - ✅ Secret keys (full access)
@@ -3991,7 +3994,6 @@ paths:
               
             **Allowed Fields:**
             - `provider`, `display_name`, `type`
-            - `supported_currencies`
             - `environment`, `is_configured`
           example: provider,display_name,type
       security:
@@ -4014,45 +4016,33 @@ paths:
               example:
                 methods:
                   - provider: stripe
-                    display_name: Card (Stripe)
+                    display_name: Stripe
                     type: redirect
-                    supported_currencies:
-                      - usd
                     environment: test
                     is_configured: true
-                  - provider: paystack
-                    display_name: Card (Paystack)
+                  - provider: paypal
+                    display_name: PayPal
                     type: popup
-                    supported_currencies:
-                      - NGN
-                      - GHS
-                      - ZAR
-                      - KES
-                      - USD
+                    environment: sandbox
+                    is_configured: true
+                  - provider: paystack
+                    display_name: Paystack
+                    type: popup
                     environment: test
                     is_configured: true
                   - provider: mpesa
-                    display_name: M-Pesa
+                    display_name: M-Pesa (STK Push)
                     type: stk_push
-                    supported_currencies:
-                      - KES
                     environment: sandbox
                     is_configured: true
-                  - provider: airtel
-                    display_name: Airtel Money
-                    type: stk_push
-                    supported_currencies:
-                      - KES
-                      - UGX
-                      - TZS
-                      - RWF
-                    environment: staging
+                  - provider: mpesa_c2b
+                    display_name: M-Pesa (Till/Paybill)
+                    type: manual
+                    environment: sandbox
                     is_configured: true
                   - provider: cash
-                    display_name: Cash
+                    display_name: Cash on Delivery
                     type: manual
-                    supported_currencies:
-                      - '*'
                     environment: production
                     is_configured: true
         '400':
@@ -4115,6 +4105,12 @@ paths:
         4. Stripe redirects to success/cancel URL
         5. Verify payment status with `/v1/payments/verify`
 
+        **PayPal (popup):**
+        1. Initialize payment with amount and currency
+        2. Use the returned `client_id` and `paypal_order_id` to render the PayPal Buttons popup in your frontend
+        3. Customer approves the payment in the PayPal window
+        4. Verify payment status with `/v1/payments/verify` — this captures the approved order
+
         **Paystack (popup):**
         1. Initialize payment with amount, currency, email
         2. Use returned `public_key` and `reference` to open Paystack popup
@@ -4125,12 +4121,6 @@ paths:
         1. Initialize payment with amount and phone (254XXXXXXXXX format)
         2. Customer receives STK Push prompt on their phone
         3. Customer enters M-Pesa PIN
-        4. Verify payment status with `/v1/payments/verify`
-
-        **Airtel Money (Collection):**
-        1. Initialize payment with amount, phone, and country code
-        2. Customer receives payment prompt
-        3. Customer authorizes payment
         4. Verify payment status with `/v1/payments/verify`
 
         **Security Notes:**
@@ -4191,9 +4181,9 @@ paths:
                   type: string
                   enum:
                     - stripe
+                    - paypal
                     - paystack
                     - mpesa
-                    - airtel
                   description: Payment provider to use
                   example: stripe
                 amount:
@@ -4207,9 +4197,9 @@ paths:
                   description: |
                     Currency code (ISO 4217). Required for Stripe and Paystack.
                     - Stripe: Defaults to store's default currency
+                    - PayPal: Defaults to store's default currency
                     - Paystack: Must be one of NGN, GHS, ZAR, KES, USD
                     - M-Pesa: Always KES (ignored)
-                    - Airtel: Determined by country code
                   example: usd
                 email:
                   type: string
@@ -4219,16 +4209,9 @@ paths:
                 phone:
                   type: string
                   description: |
-                    Customer phone number (required for M-Pesa and Airtel Money)
+                    Customer phone number (required for M-Pesa)
                     - M-Pesa: Format 254XXXXXXXXX (Kenya)
-                    - Airtel: Format {country_prefix}XXXXXXXXX (e.g., 254XXXXXXXXX for Kenya)
                   example: '254712345678'
-                country:
-                  type: string
-                  description: |
-                    Country code for Airtel Money (required for Airtel)
-                    Supported: KE (Kenya), UG (Uganda), TZ (Tanzania), RW (Rwanda)
-                  example: KE
                 order_id:
                   type: string
                   format: uuid
@@ -4272,6 +4255,13 @@ paths:
                   order_id: 880e8400-e29b-41d4-a716-446655440003
                   success_url: https://example.com/payment-success
                   cancel_url: https://example.com/payment-cancelled
+              paypal:
+                summary: PayPal payment
+                value:
+                  provider: paypal
+                  amount: 49.99
+                  currency: USD
+                  order_id: 880e8400-e29b-41d4-a716-446655440003
               paystack:
                 summary: Paystack payment
                 value:
@@ -4286,14 +4276,6 @@ paths:
                   provider: mpesa
                   amount: 1000
                   phone: '254712345678'
-                  order_id: 880e8400-e29b-41d4-a716-446655440003
-              airtel:
-                summary: Airtel Money payment
-                value:
-                  provider: airtel
-                  amount: 1000
-                  phone: '254712345678'
-                  country: KE
                   order_id: 880e8400-e29b-41d4-a716-446655440003
       responses:
         '201':
@@ -4339,7 +4321,39 @@ paths:
                         type: string
                         example: test
                   - type: object
-                    description: M-Pesa/Airtel Money-specific response
+                    description: PayPal-specific response
+                    additionalProperties: true
+                    properties:
+                      success:
+                        type: boolean
+                        example: true
+                      provider:
+                        type: string
+                        example: paypal
+                      type:
+                        type: string
+                        example: popup
+                      order_id:
+                        type: string
+                        format: uuid
+                        description: Galactic Core order linked to this payment, if provided
+                        example: 880e8400-e29b-41d4-a716-446655440003
+                      paypal_order_id:
+                        type: string
+                        description: PayPal order id — pass to the PayPal Buttons popup in your frontend
+                        example: 5O190127TN364715T
+                      client_id:
+                        type: string
+                        description: PayPal client id — used to load the PayPal JS SDK in your frontend
+                        example: AeA1QIZXk...
+                      currency:
+                        type: string
+                        example: USD
+                      environment:
+                        type: string
+                        example: sandbox
+                  - type: object
+                    description: M-Pesa-specific response
                     additionalProperties: true
                     properties:
                       success:
@@ -4378,6 +4392,16 @@ paths:
                     session_id: cs_test_...
                     environment: test
                     expires_at: '2026-02-10T12:00:00Z'
+                paypal:
+                  summary: PayPal response
+                  value:
+                    provider: paypal
+                    type: popup
+                    order_id: 880e8400-e29b-41d4-a716-446655440003
+                    paypal_order_id: 5O190127TN364715T
+                    client_id: AeA1QIZXk...
+                    currency: USD
+                    environment: sandbox
                 paystack:
                   summary: Paystack response
                   value:
@@ -4527,6 +4551,11 @@ paths:
         - Returns payment status: `pending`, `paid`, `failed`, `cancelled`
         - Includes payment intent details
 
+        **PayPal:**
+        - Pass the PayPal order id as the `reference`
+        - Captures the buyer-approved order
+        - Returns status `success` once the capture completes
+
         **Paystack:**
         - Queries Paystack Transaction Verification API
         - Returns payment status and transaction details
@@ -4537,13 +4566,8 @@ paths:
         - Returns transaction status from Safaricom
         - Includes M-Pesa receipt number if successful
 
-        **Airtel Money:**
-        - Queries Airtel Money Transaction Status API
-        - Returns transaction status and details
-        - Includes Airtel transaction ID if successful
-
-        **Note:** Despite using POST method (for request body), this is a read operation that
-        queries external payment provider APIs.
+        **Note:** Despite using POST method (for request body), this is a read operation for most
+        providers; for PayPal it captures the approved order.
 
         **Key Type Support:**
         - ✅ Secret keys (full access)
@@ -4564,9 +4588,9 @@ paths:
                   type: string
                   enum:
                     - stripe
+                    - paypal
                     - paystack
                     - mpesa
-                    - airtel
                   description: Payment provider used for initialization
                   example: stripe
                 reference:
@@ -4579,6 +4603,11 @@ paths:
                 value:
                   provider: stripe
                   reference: PAY-12345678-ABC123
+              paypal:
+                summary: Verify (capture) PayPal payment
+                value:
+                  provider: paypal
+                  reference: 5O190127TN364715T
               paystack:
                 summary: Verify Paystack payment
                 value:
@@ -4714,33 +4743,34 @@ paths:
                         type: string
                         example: 12345-67890-1
                   - type: object
-                    description: Airtel Money verification response (derived from local transaction log)
+                    description: PayPal capture response
                     additionalProperties: true
                     properties:
                       provider:
                         type: string
-                        example: airtel
+                        example: paypal
                       reference:
                         type: string
-                        example: PAY-12345678-ABC123
+                        description: PayPal order id that was captured
+                        example: 5O190127TN364715T
                       status:
                         type: string
-                        description: |
-                          Status from the most recent payment_transaction_logs row.
-                          `not_found` is returned if no matching log exists.
+                        description: Normalized status (`success` once the capture completes)
                         example: success
-                      response:
-                        type: object
-                        additionalProperties: true
-                        description: Raw response_payload captured at initialization
-                      created_at:
+                      amount:
+                        type:
+                          - number
+                          - 'null'
+                        format: float
+                        description: Captured amount in major currency units
+                        example: 49.99
+                      currency:
                         type: string
-                        format: date-time
-                        example: '2026-02-10T10:30:00Z'
-                      message:
+                        example: USD
+                      capture_id:
                         type: string
-                        description: Present only when status is `not_found`
-                        example: Transaction not found. It may still be processing.
+                        description: PayPal capture id for the completed payment
+                        example: 3C679366HH908993F
               examples:
                 stripe_success:
                   summary: Stripe payment successful
@@ -4786,26 +4816,15 @@ paths:
                     result_code: '1032'
                     result_description: Request cancelled by user
                     merchant_request_id: 12345-67890-1
-                airtel_success:
-                  summary: Airtel Money verification (from log)
+                paypal_success:
+                  summary: PayPal payment captured
                   value:
-                    provider: airtel
-                    reference: PAY-12345678-ABC123
+                    provider: paypal
+                    reference: 5O190127TN364715T
                     status: success
-                    response:
-                      data:
-                        transaction:
-                          id: PAY-12345678-ABC123
-                      status:
-                        success: true
-                    created_at: '2026-02-10T10:30:00Z'
-                airtel_not_found:
-                  summary: Airtel transaction not yet logged
-                  value:
-                    provider: airtel
-                    reference: PAY-12345678-ABC123
-                    status: not_found
-                    message: Transaction not found. It may still be processing.
+                    amount: 49.99
+                    currency: USD
+                    capture_id: 3C679366HH908993F
         '400':
           description: Invalid request (missing required fields, invalid provider, provider misconfigured, or upstream provider rejected verification)
           content:
@@ -13991,9 +14010,9 @@ components:
           type: string
           enum:
             - stripe
+            - paypal
             - paystack
             - mpesa
-            - airtel
             - cash
             - bank_transfer
           description: Method used for payment
@@ -14105,31 +14124,28 @@ components:
       properties:
         provider:
           type: string
+          description: Machine identifier for the payment method — use this in code (e.g. when initializing a payment).
           enum:
             - cash
-            - bank_transfer
             - stripe
+            - paypal
             - paystack
             - mpesa
-            - airtel
+            - mpesa_c2b
           example: stripe
         display_name:
           type: string
-          example: Card (Stripe)
+          description: Human-friendly label to show the shopper on a "choose payment method" control.
+          example: Stripe
         type:
           type: string
+          description: 'How the method completes, so a storefront knows what to render: `redirect` (send the shopper to a hosted page), `popup` (render an in-page popup such as PayPal Buttons or Paystack inline), `stk_push` (a prompt is pushed to the customer''s phone), or `manual` (handled out of band, e.g. cash on delivery or paying a Till/Paybill directly).'
           enum:
             - manual
             - redirect
             - popup
             - stk_push
           example: redirect
-        supported_currencies:
-          type: array
-          items:
-            type: string
-          example:
-            - usd
         environment:
           type: string
           enum:
