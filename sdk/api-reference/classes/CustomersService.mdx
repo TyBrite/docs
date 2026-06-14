@@ -21,6 +21,8 @@ Provision a Galactic Core customer record. The customer exists immediately and c
 
 Pass `external_id` to store your upstream user identifier (Auth0 `sub`, Clerk `user.id`, etc.). It's unique per store + environment, so subsequent reads can look up the Galactic Core customer by that identifier without keeping a side-table.
 
+Pass `marketing_consent` to record whether the customer opted in to marketing communications. It defaults to `false` (opt-in) — only set it to `true` when the customer affirmatively checks a marketing opt-in box on your storefront. When `true`, the customer becomes eligible to be subscribed to the store's connected marketing tools.
+
 <Note>
   **Secret Key only.** Call this from a secure server-side environment — typically a webhook or post-signup hook in your identity provider.
 </Note>
@@ -33,11 +35,18 @@ const result = await client.customers.createCustomer({
     phone: '254711222333',
     address: '123 Business Way, Nairobi',
     external_id: 'auth0|66a3f8c2b1d9c204a1f7e3d1', // your upstream user id
+    marketing_consent: true, // they ticked the marketing opt-in box
   }
 });
 const customer = result.customer;
 // Store customer.id alongside your upstream user record for future calls.
 ```
+
+<Note>
+  The customer's marketing opt-in can be changed later via `updateCustomer` (e.g. when a
+  signed-in shopper toggles email preferences in their account). Pass
+  `requestBody: { marketing_consent: false }` to opt them out.
+</Note>
 
 <Note>
   `createCustomer` returns `{ customer }`. `getCustomer` returns the customer fields at the top level.

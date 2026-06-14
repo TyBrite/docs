@@ -40,13 +40,16 @@ Every customer-scoped operation across the SDK — on `client.customers`, `clien
 
 Create a new customer account. On success, returns **`201 Created`** along with session tokens so you can log the user in immediately.
 
+Pass `marketing_consent: true` when the sign-up form includes a marketing opt-in box and the customer checked it. It defaults to `false` (opt-in) — a customer is never subscribed to marketing without affirmative consent. The customer can change this later via `updateCustomer`.
+
 ```typescript
 const { user, customer, session, is_multi_store_customer } = await client.auth.register({
   requestBody: {
     email: 'jane@example.com',
     password: 'securePassword123',
-    name: 'Jane Doe',     // optional
-    phone: '254700111222' // optional
+    name: 'Jane Doe',          // optional
+    phone: '254700111222',     // optional
+    marketing_consent: true    // optional — they opted in to marketing
   }
 });
 

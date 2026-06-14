@@ -6291,11 +6291,20 @@ paths:
                   type: string
                   description: Phone number with country code
                   example: '+1234567890'
+                marketing_consent:
+                  type: boolean
+                  default: false
+                  description: |
+                    Whether the customer opted in to marketing communications at sign-up.
+                    Defaults to false (opt-in). Pass the state of your sign-up form's
+                    marketing opt-in checkbox.
+                  example: true
             example:
               email: jane.doe@example.com
               password: SecurePassword123!
               name: Jane Doe
               phone: '+1234567890'
+              marketing_consent: true
       responses:
         '201':
           description: Registration successful
@@ -6876,6 +6885,15 @@ paths:
                     environment. Use this to map your upstream user to a Galactic Core
                     customer record without keeping a side-table.
                   example: auth0|66a3f8c2b1d9c204a1f7e3d1
+                marketing_consent:
+                  type: boolean
+                  default: false
+                  description: |
+                    Whether the customer has opted in to marketing communications. Defaults
+                    to false (opt-in). Pass the state of your storefront's marketing opt-in
+                    checkbox. When true, the customer is eligible for subscription to the
+                    store's connected marketing tools.
+                  example: true
       responses:
         '201':
           description: Customer created
@@ -14730,6 +14748,15 @@ components:
             manage authentication outside Galactic Core and need a stable handle to map
             your upstream user back to the Galactic Core customer record.
           example: auth0|66a3f8c2b1d9c204a1f7e3d1
+        marketing_consent:
+          type: boolean
+          description: |
+            Whether the customer has opted in to marketing communications. Defaults to false
+            (opt-in). Set this from your storefront's marketing opt-in checkbox at sign-up,
+            checkout, or in the customer's account preferences. When true, the customer is
+            eligible to be subscribed to the store's connected marketing tools.
+          default: false
+          example: true
         total_purchases:
           type: integer
         last_purchase:
