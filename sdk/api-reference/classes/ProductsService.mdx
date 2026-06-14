@@ -37,6 +37,16 @@ Retrieve a paginated list of products. This method returns **flat structures** (
 *   **🔍 Intelligence**: Use the `has_variants` flag to determine if the UI should show "View Options".
 *   **⏩ Pagination**: Uses cursor-based navigation for stable, high-performance scrolling.
 
+<Note>
+**Lean by default.** The list omits heavy fields a catalog grid rarely needs — the long-form
+`description`, the SEO block (`seo_title` / `seo_description` / `seo_keywords`), raw `attributes` /
+`shipping_info`, and the full `media` arrays — so grids stay fast. Get those on the detail calls
+(`getProduct` / `getProductBySlug`), request them explicitly with `fields` (e.g.
+`fields: 'name,price,description,seo_title'`), or pass `full: true` to return the complete object
+for every row. `thumbnail_url`, `price`, `stock`, `has_variants` and the taxonomy fields are always
+present.
+</Note>
+
 ```typescript
 const { products, pagination } = await client.products.listProducts({
   search: 'Sony',
