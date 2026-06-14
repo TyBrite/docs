@@ -1,0 +1,80 @@
+---
+title: "Events"
+description: "Reference for the EventsService class in the Tybrite SDK."
+---
+
+The `EventsService` class (accessed via `client.events`) records what a shopper does on your
+storefront — which products they view, add to their cart, or add to their wishlist. These
+interactions power the **next-likely-item** recommendation (`type: 'next'` in
+[AI Recommendations](/sdk/api-reference/classes/RecommendationsService)): the products a shopper
+is most likely to look at next, given where they are in their current session.
+
+The endpoint is **publishable-key accessible**, so you can call it directly from the browser. It
+returns immediately and is processed in the background — sending an event never blocks the page.
+
+## Methods
+
+### `record`
+
+Record a single storefront interaction. Call it as the shopper browses.
+
+<CodeGroup>
+
+```typescript Product View
+// Fire when a shopper opens a product page.
+await client.events.record({
+  requestBody: {
+    event_type: 'view',
+    variant_id: 'variant-uuid',      // the variant on the page
+    session_id: 'browser-session-id' // your stable per-session identifier
+  }
+});
+```
+
+```typescript Add to Cart
+await client.events.record({
+  requestBody: {
+    event_type: 'add_to_cart',
+    variant_id: 'variant-uuid',
+    session_id: 'browser-session-id',
+    customer_id: 'customer-uuid'      // include when the shopper is signed in
+  }
+});
+```
+
+</CodeGroup>
+
+**Parameters:**
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `requestBody.event_type` | `string` | One of `view`, `add_to_cart`, `add_to_wishlist`. |
+| `requestBody.variant_id` | `string` | The product variant the shopper interacted with. Either `variant_id` or `product_id` is required; the variant is resolved to its product automatically. |
+| `requestBody.product_id` | `string` | The product the shopper interacted with. Either `variant_id` or `product_id` is required. |
+| `requestBody.session_id` | `string` | The shopper's browsing-session identifier — the same one you use for an anonymous cart. Events sharing a `session_id` form one session path. May also be sent as the `x-session-id` header. |
+| `requestBody.customer_id` | `string` | The signed-in shopper, when known. |
+
+<Note>
+  Use the **same `session_id`** for every event in a browsing session (generate one per session
+  and keep it in local storage, the way you would for an anonymous cart). The session path is what
+  lets Tybrite learn "after this product, shoppers usually look at that one."
+</Note>
+
+## How next-likely-item is built from these events
+
+Tybrite groups your events by `session_id` into ordered product paths — for example
+`[TV] → [soundbar] → [HDMI cable]`. Across many sessions it counts how often shoppers go from one
+product to another and turns those counts into probabilities (e.g. *after the TV, the soundbar is
+the most common next product*). The `next` recommendation type then returns, for a shopper's
+current product, the items most likely to come next. The model is rebuilt periodically, so it
+strengthens as more events accumulate — and until there is enough session data, `next` gracefully
+falls back to "frequently bought together," then "similar," then "trending."
+
+## Response Codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `202` | The event was accepted (`{ recorded: true }`). Beacons are fire-and-forget. |
+| `400` | Missing `event_type`, or neither `variant_id` nor `product_id` supplied. |
+| `401` | Invalid or missing API key. |
+| `429` | Rate limit exceeded. |

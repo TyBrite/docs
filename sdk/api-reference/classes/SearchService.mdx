@@ -40,6 +40,25 @@ const result = await client.search.semanticSearch({
 });
 ```
 
+#### Personalized results
+
+Pass `personalize: true` together with a signed-in customer's session token (the `x-auth-token`
+header) to nudge results toward that shopper's preferences. Query relevance stays primary —
+relevance is blended with the shopper's preference signal, not replaced — so results remain
+on-topic. Without a customer session, or for a shopper with no preference signal yet, ranking is
+by query relevance only.
+
+```typescript
+const personalized = new Tybrite({
+  apiKey: 'tybrite_pk_live_...',
+  headers: { 'x-auth-token': customerSessionToken },
+});
+
+const result = await personalized.search.semanticSearch({
+  requestBody: { query: 'gear for the gym', limit: 5, personalize: true }
+});
+```
+
 ## Comparison: Text vs. Semantic
 
 | Feature | `searchProducts` (Text) | `semanticSearch` (AI) |
