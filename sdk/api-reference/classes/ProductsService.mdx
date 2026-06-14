@@ -53,6 +53,26 @@ if (pagination.next_cursor) {
 }
 ```
 
+#### Personalized ordering
+
+Pass `personalize: true` together with a signed-in customer's session token (the `x-auth-token`
+header) and the page is ordered by how closely each product matches that shopper's preferences,
+with the default order as the tiebreak. Without a customer session — or for a shopper who has no
+preference signal yet — the order is unchanged, so it is always safe to request.
+
+```typescript
+const personalized = new Tybrite({
+  apiKey: 'tybrite_pk_live_...',
+  headers: { 'x-auth-token': customerSessionToken },
+});
+
+const { products } = await personalized.products.listProducts({
+  personalize: true,
+  limit: 20,
+  fields: 'name,price,thumbnail_url'
+});
+```
+
 ---
 
 ### `getProduct`

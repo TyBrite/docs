@@ -39,6 +39,18 @@ const { recommendations } = await client.recommendations.getRecommendations({
 });
 ```
 
+```typescript Next-Likely Item
+// What this shopper is most likely to view or add next, given their current session.
+// Anchor on the session (the most recent product they touched) and/or an explicit productId.
+const { recommendations } = await client.recommendations.getRecommendations({
+  requestBody: {
+    type: 'next',
+    sessionId: 'browser-session-id',
+    limit: 5
+  }
+});
+```
+
 ```typescript Trending
 // Currently popular products based on sales velocity
 const { recommendations } = await client.recommendations.getRecommendations({
@@ -78,11 +90,12 @@ const { recommendations } = await client.recommendations.getRecommendations({
 | Type | Description | Required Parameters |
 | :--- | :--- | :--- |
 | `similar` | Products with similar features/meaning (Embedding-based). | `productId` |
-| `also-bought` | Products frequently purchased together. | `productId` |
+| `also-bought` | Products frequently purchased together. Each item indicates whether it complements the product or is an alternative to it. | `productId` |
+| `next` | The products a shopper is most likely to view or add next, based on the path of products they have viewed/added this session. | `sessionId` and/or `productId` |
 | `trending` | Global trending products (Velocity-based). | - |
 | `new` | Recently added products. | - |
 | `personalized` | Suggestions tailored to a specific user history. | `customerId` |
-| `bundle` | Smart bundle suggestions (Semantic + Co-purchase). | `productId` |
+| `bundle` | Smart bundle suggestions (Semantic + Co-purchase). Items that complement the product are surfaced ahead of alternatives. | `productId` |
 
 **Parameters:**
 
@@ -90,7 +103,8 @@ const { recommendations } = await client.recommendations.getRecommendations({
 | :--- | :--- | :--- |
 | `requestBody` | `object` | Required. The configuration for the recommendation request. |
 | `requestBody.type` | `string` | The recommendation algorithm to use. |
-| `requestBody.productId` | `string` | Required for `similar`, `also-bought`, and `bundle`. |
+| `requestBody.productId` | `string` | Required for `similar`, `also-bought`, and `bundle`. An optional explicit anchor for `next`. |
+| `requestBody.sessionId` | `string` | Used with `next`. The shopper's current browsing-session identifier; the most recent product viewed/added in that session is used as the anchor when `productId` is omitted. |
 | `requestBody.customerId` | `string` | Required for `personalized`. |
 | `requestBody.limit` | `number` | Optional. Maximum number of suggestions to return. |
 
@@ -104,7 +118,7 @@ const { recommendations } = await client.recommendations.getRecommendations({
 
 ## Marketplace recommendations
 
-When you call this method with a **marketplace operator key**, recommendations are computed **across all merchants in the marketplace** rather than a single store. The supported types are the same: `trending`, `new`, `also-bought`, `similar`, `personalized`, and `bundle`.
+When you call this method with a **marketplace operator key**, recommendations are computed **across all merchants in the marketplace** rather than a single store. The supported types are the same: `trending`, `new`, `also-bought`, `similar`, `personalized`, `bundle`, and `next` — `next` returns the products shoppers most often go on to view next, aggregated across merchants, and `also-bought` carries the same complement/alternative distinction.
 
 Each returned item is stamped with the merchant it came from via `merchant_store_id`, so you can link straight to that merchant's shop page or product:
 
@@ -129,6 +143,7 @@ When a recommendation type cannot produce results (insufficient data, missing em
 
 | Requested Type | Fallback Order |
 | :--- | :--- |
+| `next` | `next → also-bought → similar → trending` |
 | `bundle` | `bundle → also-bought → similar → trending` |
 | `also-bought` | `also-bought → similar → trending` |
 | `similar` | `similar → trending` |

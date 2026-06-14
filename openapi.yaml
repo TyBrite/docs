@@ -468,6 +468,11 @@ tags:
         
       This restriction protects the computational resources and AI model access used for
       generating personalized recommendations.
+  - name: Events
+    description: |
+      Storefront interaction events (product views, add-to-cart, add-to-wishlist). These power the
+      `next` recommendation type — the products a shopper is most likely to view or add next based
+      on their current session. Publishable keys are accepted so events can be sent from the browser.
   - name: Taxonomy
     description: Categories and subcategories
   - name: CMS
@@ -1338,6 +1343,18 @@ paths:
             type: string
             format: uuid
           example: 3f1a2b4c-1111-2222-3333-444455556666
+        - name: personalize
+          in: query
+          required: false
+          description: |
+            When `true` and the request is made on behalf of a signed-in customer (pass the
+            customer's session token as `x-auth-token`), the returned page is ordered by how
+            closely each product matches that shopper's preferences, with the default name order
+            as the tiebreak. Without a customer session, or for a shopper with no preference
+            signal yet, the order is unchanged.
+          schema:
+            type: boolean
+          example: true
       responses:
         '200':
           description: |
@@ -5876,11 +5893,17 @@ paths:
       description: |
         AI-powered product recommendations. Supported types:
         - **similar**: Products similar to a given product
-        - **also-bought**: Frequently purchased together
+        - **also-bought**: Frequently purchased together. Each item indicates whether it is a
+          complement (commonly bought alongside) or an alternative.
+        - **next**: The products a shopper is most likely to view or add next, given what they have
+          viewed/added in the current session. Pass `sessionId` (the worker anchors on the
+          shopper's most recent product this session) and/or an explicit `productId` anchor. Falls
+          back to also-bought, then trending, when there is no session signal.
         - **trending**: Currently trending products
         - **new**: Recently added products
         - **personalized**: Based on a customer's preferences
-        - **bundle**: Bundle suggestions
+        - **bundle**: Bundle suggestions. Items that complement the product are surfaced ahead of
+          alternatives.
 
         **⚠️ SECRET KEY REQUIRED**
 
@@ -5892,7 +5915,7 @@ paths:
 
         **Marketplace operator keys.** With a marketplace operator key, recommendations are computed
         across all merchants in the marketplace; supported types: trending, new, also-bought,
-        similar, personalized, bundle. Each item is stamped with its source merchant
+        similar, personalized, bundle, next. Each item is stamped with its source merchant
         (`merchant_store_id`).
       security:
         - BearerAuth: []
@@ -5910,6 +5933,7 @@ paths:
                   enum:
                     - similar
                     - also-bought
+                    - next
                     - trending
                     - new
                     - personalized
@@ -5917,11 +5941,14 @@ paths:
                 productId:
                   type: string
                   format: uuid
-                  description: Required when type is `similar`, `also-bought`, or `bundle`. Must reference an existing product in the store; otherwise 404 is returned.
+                  description: Required when type is `similar`, `also-bought`, or `bundle`. For `next`, an optional explicit anchor. Must reference an existing product in the store; otherwise 404 is returned.
+                sessionId:
+                  type: string
+                  description: Used with type `next`. The shopper's current session identifier; the most recent product viewed/added in that session is used as the anchor when `productId` is not supplied.
                 customerId:
                   type: string
                   format: uuid
-                  description: Optional for `personalized`. When omitted, the worker falls back to trending recommendations.
+                  description: Optional for `personalized`. When omitted, the response falls back to trending recommendations.
                 limit:
                   type: integer
                   default: 10
@@ -5933,6 +5960,12 @@ paths:
                 value:
                   type: similar
                   productId: 9b2bb0c5-666d-4729-a59d-2526ec38add9
+                  limit: 5
+              next:
+                summary: Next-likely products for a session
+                value:
+                  type: next
+                  sessionId: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
                   limit: 5
               trending:
                 summary: Trending products
@@ -5974,6 +6007,88 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/events:
+    post:
+      operationId: recordEvent
+      tags:
+        - Events
+      summary: Record a storefront product event
+      description: |
+        Records a shopper interaction with a product — a product view, an add-to-cart, or an
+        add-to-wishlist. These events power the "next-likely-item" recommendation (the `next`
+        recommendation type): the products a shopper is most likely to view or add next, given
+        what they have done in the current session.
+
+        Send the event as the shopper interacts with the storefront. Provide a stable `session_id`
+        per browsing session (the same identifier you use for an anonymous cart) so events can be
+        grouped into a session path; include `customer_id` when the shopper is signed in.
+
+        The event references a product by `variant_id` (resolved to its product automatically) or
+        directly by `product_id`. Publishable keys are accepted, so the call can be made from the
+        browser. The request is processed best-effort and returns immediately; it never blocks
+        the page.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - event_type
+              properties:
+                event_type:
+                  type: string
+                  enum:
+                    - view
+                    - add_to_cart
+                    - add_to_wishlist
+                variant_id:
+                  type: string
+                  format: uuid
+                  description: The product variant the shopper interacted with. Either `variant_id` or `product_id` is required.
+                product_id:
+                  type: string
+                  format: uuid
+                  description: The product the shopper interacted with. Either `variant_id` or `product_id` is required.
+                session_id:
+                  type: string
+                  description: The shopper's browsing-session identifier (same concept as the anonymous cart session). May also be sent as the `x-session-id` header.
+                customer_id:
+                  type: string
+                  format: uuid
+                  description: The signed-in shopper, when known.
+            examples:
+              view:
+                summary: A product view
+                value:
+                  event_type: view
+                  variant_id: 9dcd3904-df53-4f79-8c29-f384c4ef06ea
+                  session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
+      responses:
+        '202':
+          description: The event was accepted.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recorded:
+                    type: boolean
+              example:
+                recorded: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -6076,6 +6191,15 @@ paths:
                   minimum: 0
                   maximum: 1
                   description: Minimum similarity score threshold (0.0 to 1.0)
+                personalize:
+                  type: boolean
+                  default: false
+                  description: |
+                    When `true` and the request is made on behalf of a signed-in customer (pass the
+                    customer's session token as `x-auth-token`), results are nudged toward the
+                    shopper's preferences while keeping query relevance primary (relevance is
+                    blended with preference, not replaced). Without a customer session, or for a
+                    shopper with no preference signal yet, ranking is by query relevance only.
             example:
               query: wireless headphones with noise cancellation
               limit: 10
