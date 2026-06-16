@@ -70,15 +70,51 @@ console.log(`Connected to: ${info.name} v${info.version}`);
 
 ### `healthCheck`
 
-Verify the operational status of the Tybrite API gateway. This is useful for monitoring or connectivity troubleshooting.
+Verify the operational status of the Tybrite API. The gateway probes all individual services in parallel and returns a per-service status map alongside an overall rollup. Useful for monitoring integrations, connectivity troubleshooting, or building your own status dashboards.
 
 ```typescript
 const health = await client.system.healthCheck();
 
-if (health.status === 'healthy') {
-  console.log('API is online and operational.');
+if (health.status === 'ok') {
+  console.log('All systems operational.');
+} else if (health.status === 'degraded') {
+  // Find which services are affected
+  const affected = Object.entries(health.workers)
+    .filter(([, w]) => w.status !== 'ok')
+    .map(([name]) => name);
+  console.warn(`Partial outage — affected services: ${affected.join(', ')}`);
+} else {
+  console.error('API is reporting a major outage.');
 }
 ```
+
+**Response shape:**
+
+```typescript
+{
+  status: 'ok' | 'degraded' | 'down';  // overall rollup
+  gateway: 'ok';                         // gateway is always ok if you received this response
+  latency_ms: number;                    // total probe time in ms
+  workers: {
+    [serviceName: string]: {
+      status: 'ok' | 'error';
+      latency_ms: number | null;         // null when the service timed out
+    };
+  };
+  timestamp: string;   // ISO 8601
+  version: string;     // API version
+}
+```
+
+**Status semantics:**
+
+| `status` | HTTP | Meaning |
+| :--- | :--- | :--- |
+| `ok` | 200 | All services healthy |
+| `degraded` | 207 | One or more services errored or timed out |
+| `down` | — | Gateway unreachable (detected externally, not self-reported) |
+
+Each service probe has a 3-second timeout. A service that exceeds it returns `{ status: 'error', latency_ms: null }`.
 
 ---
 
@@ -92,9 +128,10 @@ if (health.status === 'healthy') {
 
 | Code | Meaning |
 | :--- | :--- |
-| `200` | Service is reachable. |
+| `200` | All services operational. |
+| `207` | Partial outage — one or more services degraded. |
 
-These endpoints are unauthenticated public endpoints — no `401`, `403`, or `429` is emitted.
+These endpoints are unauthenticated — no `401`, `403`, or `429` is emitted.
 
 ### `getStoreInfo` (`GET /v1/store/info`)
 
