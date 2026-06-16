@@ -253,7 +253,7 @@ Instead of polling `getThreadMessages` on a timer, you can receive a thread's ne
 Returns the connection details needed to subscribe to a thread. The response shape depends on how the request is authenticated, indicated by the `mode` field:
 
 - **`direct`** — returned for a customer signed in through Galactic Core (pass their session token as `xAuthToken`). The response includes a short-lived `token` used to subscribe directly; the customer only ever receives updates for their own thread.
-- **`broadcast`** — returned for customers authenticated with your own identity provider (pass the signed assertion as `xExternalAuth`), for server-side integrations, and for marketplace operators. Subscribe to the named `channel` to receive the thread's message events.
+- **`broadcast`** — returned for customers authenticated with your own identity provider (pass the signed assertion as `xExternalAuth`) and for server-side integrations. Subscribe to the named `channel` to receive the thread's message events.
 
 ```typescript
 const conn = await client.messaging.getMessagingRealtimeToken({
@@ -300,41 +300,9 @@ const unsubscribe = await subscribeToThread({
 unsubscribe();
 ```
 
-For browser customers signed in through Galactic Core, pass their session `token` (the `direct` path). Customers authenticated with your own identity provider, server-side integrations, and marketplace operators all use the `broadcast` mode — the same `subscribeToThread` call works for both; just forward whichever `mode`, `channel`, and (when present) `token` the token endpoint returned.
+For browser customers signed in through Galactic Core, pass their session `token` (the `direct` path). Customers authenticated with your own identity provider and server-side integrations use the `broadcast` mode — the same `subscribeToThread` call works for both; just forward whichever `mode`, `channel`, and (when present) `token` the token endpoint returned.
 
 ---
-
-## Marketplace operator oversight
-
-These two read-only endpoints give a marketplace operator visibility into customer↔merchant conversations across every active merchant in the marketplace. They require a marketplace operator key and are not available to regular store keys.
-
-### `listOperatorMessagingThreads`
-
-Lists conversations across all active merchants. Each thread is stamped with the merchant it belongs to (`merchant_store_id` + `merchant_store_name`). Supports cursor pagination and filtering by `status`, `priority`, and `unread`.
-
-```typescript
-const { threads, pagination } = await client.messaging.listOperatorMessagingThreads({
-  status: 'active',
-  unread: true,
-  limit: 25,
-});
-```
-
-### `getOperatorMessagingThreadMessages`
-
-Returns the messages in a single conversation for oversight. The conversation must belong to an active merchant. Supports cursor pagination and sort `order`.
-
-```typescript
-const { messages, pagination } = await client.messaging.getOperatorMessagingThreadMessages({
-  id: threadId,
-  order: 'desc',
-});
-```
-
-Operators can also receive these conversations live by calling `getMessagingRealtimeToken` (which returns `broadcast` mode for an operator key) and passing the result to `subscribeToThread`.
-
----
-
 ### Response Codes
 
 | Code | Meaning |

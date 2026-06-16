@@ -56,7 +56,7 @@ const customer = result.customer;
 
 ### `getCustomer`
 
-Retrieve a customer's profile, including store metrics and purchase history. This is the endpoint your "My Account" page calls.
+Retrieve a customer's profile, including store metrics and purchase history. This is the endpoint your "My Account" page calls. The response includes `store_credit_balance` — the customer's redeemable store-credit balance, which can be applied at checkout via `apply_store_credit` on `createOrder`.
 
 Sign an `xExternalAuth` assertion in your backend (see [Customers and Auth](../../customers-and-auth) for the signing helper) and pass it through:
 

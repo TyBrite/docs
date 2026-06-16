@@ -566,6 +566,24 @@ tags:
       - `x-auth-token`: Customer session JWT — required for `POST /v1/reviews` (submit)
         and for `DELETE /v1/reviews/{id}` when using a publishable key to delete own review.
         Obtained from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`.
+  - name: Returns
+    description: |
+      Return requests a shopper lodges against their own online orders.
+
+      **Key type behavior:**
+      - The reason-code list (`GET /v1/returns/reasons`) needs only an API key — no
+        customer session — so you can build the reason picker before sign-in.
+      - Listing, getting, and creating returns require an API key **and** a customer
+        session: either `x-auth-token` (a GC-native session token) or
+        `x-external-auth` (a bring-your-own-auth assertion).
+
+      A customer can only create, list, and track their OWN returns. Approving,
+      processing refunds or store credit, restocking, and rejecting items are
+      store-management tasks handled in the merchant admin, not through this API.
+
+      **Special headers:**
+      - `x-auth-token` **or** `x-external-auth`: identifies the signed-in customer on
+        `GET /v1/returns`, `GET /v1/returns/{id}`, and `POST /v1/returns`.
   - name: Marketplace
     description: |
       Endpoints for building a multi-merchant marketplace storefront.
@@ -703,33 +721,117 @@ paths:
         - System
       summary: Health check
       description: |
-        Returns the health status of the API gateway.
+        Returns the health status of the API gateway and all individual services.
         This endpoint does not require authentication.
+
+        The gateway probes each service in parallel (3-second timeout per service) and
+        rolls up an overall status:
+        - `ok` — all services healthy (HTTP 200)
+        - `degraded` — one or more services errored or timed out (HTTP 207)
+        - `down` — gateway itself unreachable (detected externally)
       security: []
       responses:
         '200':
-          description: Service is healthy
-          headers:
-            Tybrite-Environment:
-              $ref: '#/components/headers/TybriteEnvironment'
+          description: All services healthy
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: healthy
-                  timestamp:
-                    type: string
-                    format: date-time
-                    example: '2026-02-04T13:24:14.223Z'
-                  version:
-                    type: string
-                    example: 1.0.0
-                  service:
-                    type: string
-                    example: tybrite-api-gateway
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+                gateway: ok
+                latency_ms: 112
+                workers:
+                  products:
+                    status: ok
+                    latency_ms: 38
+                  taxonomy:
+                    status: ok
+                    latency_ms: 29
+                  orders:
+                    status: ok
+                    latency_ms: 44
+                  payments:
+                    status: ok
+                    latency_ms: 51
+                  customers:
+                    status: ok
+                    latency_ms: 33
+                  promotions:
+                    status: ok
+                    latency_ms: 27
+                  gift-cards:
+                    status: ok
+                    latency_ms: 31
+                  messaging:
+                    status: ok
+                    latency_ms: 36
+                  cart-wishlist:
+                    status: ok
+                    latency_ms: 30
+                  pricing:
+                    status: ok
+                    latency_ms: 42
+                  cms:
+                    status: ok
+                    latency_ms: 28
+                  auth:
+                    status: ok
+                    latency_ms: 35
+                  recommendations:
+                    status: ok
+                    latency_ms: 47
+                  search:
+                    status: ok
+                    latency_ms: 40
+                  shipping:
+                    status: ok
+                    latency_ms: 32
+                  store-info:
+                    status: ok
+                    latency_ms: 25
+                  webhooks:
+                    status: ok
+                    latency_ms: 29
+                  gc-connect:
+                    status: ok
+                    latency_ms: 31
+                  reviews:
+                    status: ok
+                    latency_ms: 28
+                  events:
+                    status: ok
+                    latency_ms: 26
+                  returns:
+                    status: ok
+                    latency_ms: 31
+                  ingestion:
+                    status: ok
+                    latency_ms: 34
+                  marketplace-ads:
+                    status: ok
+                    latency_ms: 30
+                timestamp: '2026-06-16T18:25:18.721Z'
+                version: 1.0.0
+        '207':
+          description: One or more services are degraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: degraded
+                gateway: ok
+                latency_ms: 3089
+                workers:
+                  products:
+                    status: ok
+                    latency_ms: 38
+                  messaging:
+                    status: error
+                    latency_ms: null
+                timestamp: '2026-06-16T18:25:18.721Z'
+                version: 1.0.0
   /v1/store/info:
     get:
       operationId: getStoreInfo
@@ -3321,6 +3423,22 @@ paths:
                         format: float
                         description: Discount amount attributed to this promotion
                         example: 150
+                apply_store_credit:
+                  type: boolean
+                  description: |
+                    Apply the customer's redeemable store credit to this order. When
+                    true (and the order has a `customer_id`), store credit is spent
+                    against the order total, capped at the total. The amount actually
+                    applied is returned as `store_credit_applied`. Requires a customer.
+                  example: true
+                store_credit_amount:
+                  type: number
+                  format: float
+                  description: |
+                    Optional cap on how much store credit to apply. When omitted (and
+                    `apply_store_credit` is true) up to the full order total is applied.
+                    The applied amount never exceeds the available balance or the total.
+                  example: 25
             example:
               customer_id: c320094c-eb65-4879-804c-83d2e1dd7f99
               customer_email: john.doe@example.com
@@ -3374,6 +3492,13 @@ paths:
                 properties:
                   order:
                     $ref: '#/components/schemas/Order'
+                  store_credit_applied:
+                    type: number
+                    format: float
+                    description: |
+                      Present only when store credit was applied to this order. The
+                      amount of the customer's store credit spent against the order.
+                    example: 25
                   post_processing_warnings:
                     type: array
                     description: |
@@ -10669,170 +10794,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
-  /v1/messaging/operator/threads:
-    get:
-      operationId: listOperatorMessagingThreads
-      tags:
-        - Messaging
-      summary: List conversations across all merchants (operator oversight)
-      description: |
-        Read-only marketplace operator view of customer↔merchant conversations across every active
-        merchant in the marketplace, for oversight. Each thread is stamped with the merchant it
-        belongs to (`merchant_store_id` + `merchant_store_name`). Supports cursor-based pagination and
-        filtering by status, priority, and unread state.
-
-        Requires a marketplace operator key.
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum:
-              - active
-              - resolved
-              - closed
-              - escalated
-              - pending
-          description: Filter threads by status
-        - name: priority
-          in: query
-          required: false
-          schema:
-            type: string
-            enum:
-              - urgent
-              - high
-              - normal
-              - low
-          description: Filter by priority level
-        - name: unread
-          in: query
-          required: false
-          schema:
-            type: boolean
-          description: Set to true to return only conversations with messages the merchant has not read.
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 25
-            minimum: 1
-            maximum: 100
-        - name: cursor
-          in: query
-          description: Cursor for pagination (returned as `next_cursor` in the previous page).
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  threads:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/OperatorThread'
-                  pagination:
-                    type: object
-                    properties:
-                      limit:
-                        type: integer
-                      next_cursor:
-                        type:
-                          - string
-                          - 'null'
-                      has_more:
-                        type: boolean
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '429':
-          $ref: '#/components/responses/RateLimitError'
-        '500':
-          $ref: '#/components/responses/ServerError'
-  /v1/messaging/operator/threads/{id}/messages:
-    get:
-      operationId: getOperatorMessagingThreadMessages
-      tags:
-        - Messaging
-      summary: Get a conversation's messages (operator oversight)
-      description: |
-        Read-only marketplace operator view of the messages in a single conversation, for oversight.
-        The conversation must belong to an active merchant in the marketplace. Supports cursor-based
-        pagination and sort order.
-
-        Requires a marketplace operator key.
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: The conversation to read messages from.
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-            minimum: 1
-            maximum: 200
-        - name: cursor
-          in: query
-          description: Cursor for pagination (returned as `next_cursor` in the previous page).
-          schema:
-            type: string
-        - name: order
-          in: query
-          description: Sort order — asc (oldest first, default) or desc (newest first)
-          schema:
-            type: string
-            enum:
-              - asc
-              - desc
-            default: asc
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  messages:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Message'
-                  pagination:
-                    type: object
-                    properties:
-                      limit:
-                        type: integer
-                      next_cursor:
-                        type:
-                          - string
-                          - 'null'
-                      has_more:
-                        type: boolean
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '429':
-          $ref: '#/components/responses/RateLimitError'
-        '500':
-          $ref: '#/components/responses/ServerError'
   /v1/shipping/zones:
     get:
       operationId: getShippingZones
@@ -11886,6 +11847,674 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/reasons:
+    get:
+      operationId: listReturnReasons
+      tags:
+        - Returns
+      summary: List return reason codes
+      description: |
+        Returns the set of return reason codes accepted when lodging a return,
+        each with a human-readable label suitable for a dropdown in your
+        storefront UI.
+
+        **No customer session required** — only a valid API key. Use it to build
+        the reason picker before the shopper is asked to sign in.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Return reasons retrieved successfully
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReturnReason'
+              example:
+                data:
+                  - code: damaged
+                    label: Item arrived damaged
+                  - code: defective
+                    label: Item is defective or not working
+                  - code: wrong_item
+                    label: Received the wrong item
+                  - code: not_as_described
+                    label: Item not as described
+                  - code: wrong_size
+                    label: Wrong size or fit
+                  - code: no_longer_needed
+                    label: No longer needed
+                  - code: arrived_late
+                    label: Arrived too late
+                  - code: other
+                    label: Other
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/store-credit:
+    get:
+      operationId: getStoreCredit
+      tags:
+        - Returns
+      summary: Get the customer's store credit balance
+      description: |
+        Returns the authenticated customer's total redeemable store credit balance.
+        Store credit is issued when a customer accepts a store-credit offer on a
+        return, and can be applied at checkout (see `apply_store_credit` on
+        `POST /v1/orders`).
+
+        **Authentication:** API key in the `Authorization: Bearer` header **and** a
+        customer session — either `x-auth-token` or `x-external-auth`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Customer session token. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Bring-your-own-auth assertion. Provide this **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            **Marketplace operator key only — and required for operator keys.** The
+            merchant whose store-credit balance to read for the shopper. Ignored for
+            single-store keys.
+      responses:
+        '200':
+          description: Store credit balance retrieved
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - balance
+                    properties:
+                      balance:
+                        type: number
+                        description: Total redeemable store credit balance.
+                        example: 25
+                      currency:
+                        type:
+                          - string
+                          - 'null'
+                        description: Currency of the balance, if known.
+                        example: USD
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns:
+    get:
+      operationId: listReturns
+      tags:
+        - Returns
+      summary: List the signed-in customer's returns
+      description: |
+        Returns the authenticated customer's own return requests, newest first.
+
+        **Authentication:** API key in the `Authorization: Bearer` header **and** a
+        customer session — either `x-auth-token` (a session token from
+        `POST /v1/auth/login` or `POST /v1/auth/verify-otp`) or `x-external-auth`
+        (a bring-your-own-auth assertion).
+
+        A customer only ever sees their own returns; there is no way to read another
+        shopper's returns through this API.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Customer session token from `POST /v1/auth/login` or
+            `POST /v1/auth/verify-otp`. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Bring-your-own-auth assertion identifying the customer. Provide this
+            **or** `x-auth-token`.
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - pending
+              - approved
+              - processed
+              - cancelled
+          description: Filter to returns in this status.
+          example: pending
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Maximum number of returns to return.
+          example: 20
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            **Marketplace operator key only — and required for operator keys.** On a
+            marketplace storefront (which holds the operator key, not a single
+            merchant's key), pass the merchant the shopper is acting at, so the call
+            resolves their returns at that merchant. Ignored for single-store keys.
+      responses:
+        '200':
+          description: Returns retrieved successfully
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Return'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: createReturn
+      tags:
+        - Returns
+      summary: Lodge a return
+      description: |
+        Lodges a return request against one of the authenticated customer's own
+        online orders. The return is created with `status: "pending"` for the
+        merchant to review.
+
+        **Authentication:** API key in the `Authorization: Bearer` header **and** a
+        customer session — either `x-auth-token` or `x-external-auth`.
+
+        **Order ownership:** `order_id` must reference an online order belonging to
+        the authenticated customer, and each `items[].order_item_id` must be a line
+        on that order. An order that does not exist or does not belong to the
+        customer returns `404`.
+
+        **Reason description:** `reason_description` is required only when
+        `reason_code` is `other`; for every other reason it is optional.
+
+        **Returns availability:** if the store has returns turned off, the request
+        returns `422` with code `returns_disabled`.
+
+        After lodging a return the customer can only track its status — approving,
+        issuing refunds or store credit, restocking, and rejecting items are
+        handled by the merchant in their admin.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Customer session token from `POST /v1/auth/login` or
+            `POST /v1/auth/verify-otp`. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Bring-your-own-auth assertion identifying the customer. Provide this
+            **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            **Marketplace operator key only — and required for operator keys.** On a
+            marketplace storefront, the merchant the order belongs to. Ignored for
+            single-store keys.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - order_id
+                - reason_code
+                - items
+              properties:
+                order_id:
+                  type: string
+                  format: uuid
+                  description: The customer's online order the return is for.
+                  example: 770a0622-0401-63f6-c938-557766551111
+                reason_code:
+                  type: string
+                  enum:
+                    - damaged
+                    - defective
+                    - wrong_item
+                    - not_as_described
+                    - wrong_size
+                    - no_longer_needed
+                    - arrived_late
+                    - other
+                  description: Why the items are being returned.
+                  example: damaged
+                reason_description:
+                  type: string
+                  description: |
+                    Free-text explanation. **Required when `reason_code` is `other`**;
+                    optional otherwise.
+                  example: The box was crushed in transit.
+                return_type:
+                  type: string
+                  enum:
+                    - full_refund
+                    - partial_refund
+                    - exchange
+                    - store_credit
+                  default: full_refund
+                  description: The resolution the customer is requesting.
+                  example: full_refund
+                items:
+                  type: array
+                  minItems: 1
+                  description: The order lines being returned.
+                  items:
+                    type: object
+                    required:
+                      - order_item_id
+                      - quantity
+                    properties:
+                      order_item_id:
+                        type: string
+                        format: uuid
+                        description: A line item on the referenced order.
+                        example: 9c4f1d2e-aaaa-bbbb-cccc-1234567890ab
+                      quantity:
+                        type: integer
+                        minimum: 1
+                        description: How many units of this line are being returned.
+                        example: 1
+                      condition:
+                        type: string
+                        enum:
+                          - sellable
+                          - damaged
+                          - defective
+                          - expired
+                        default: sellable
+                        description: The condition the item is being returned in.
+                        example: damaged
+                      media:
+                        type: array
+                        items:
+                          type: string
+                          format: uri
+                        description: Optional photo or video URLs evidencing the return.
+                        example:
+                          - https://cdn.example.com/return-photo-1.jpg
+            example:
+              order_id: 770a0622-0401-63f6-c938-557766551111
+              reason_code: damaged
+              return_type: full_refund
+              items:
+                - order_item_id: 9c4f1d2e-aaaa-bbbb-cccc-1234567890ab
+                  quantity: 1
+                  condition: damaged
+                  media:
+                    - https://cdn.example.com/return-photo-1.jpg
+      responses:
+        '201':
+          description: Return lodged
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Return'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          description: Returns are not enabled for this store.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: returns_disabled
+                  message: Returns are not enabled for this store.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/{id}:
+    get:
+      operationId: getReturn
+      tags:
+        - Returns
+      summary: Get one of the customer's returns
+      description: |
+        Returns a single return request by ID, including its line items and current
+        status. A return that does not exist or does not belong to the
+        authenticated customer returns `404`.
+
+        **Authentication:** API key in the `Authorization: Bearer` header **and** a
+        customer session — either `x-auth-token` or `x-external-auth`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Return UUID.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Customer session token from `POST /v1/auth/login` or
+            `POST /v1/auth/verify-otp`. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Bring-your-own-auth assertion identifying the customer. Provide this
+            **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            **Marketplace operator key only — and required for operator keys.** The
+            merchant the return belongs to. Ignored for single-store keys.
+      responses:
+        '200':
+          description: Return found
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Return'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/{id}/accept-credit:
+    post:
+      operationId: acceptReturnCredit
+      tags:
+        - Returns
+      summary: Accept a store credit offer
+      description: |
+        Accepts a pending store-credit offer on one of the customer's own returns.
+        The store credit is issued to the customer's balance (spendable at checkout)
+        and the return is finalized.
+
+        Only valid while the return has a pending store-credit offer
+        (`credit_offer.status` is `pending`); otherwise returns `409`.
+
+        **Authentication:** API key in the `Authorization: Bearer` header **and** a
+        customer session — either `x-auth-token` or `x-external-auth`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Return UUID.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Provide this **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            **Marketplace operator key only — and required for operator keys.** The
+            merchant the return belongs to. Ignored for single-store keys.
+      responses:
+        '200':
+          description: Store credit accepted and issued
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      store_credit_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                        description: The issued store credit record.
+                      amount:
+                        type: number
+                        description: Amount of store credit issued.
+                        example: 25
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: There is no pending store-credit offer to accept on this return.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: conflict
+                  message: There is no pending store-credit offer to accept on this return.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/{id}/request-refund:
+    post:
+      operationId: requestReturnRefund
+      tags:
+        - Returns
+      summary: Request a refund instead of store credit
+      description: |
+        Declines a pending store-credit offer on one of the customer's own returns
+        and requests a refund instead. The merchant then handles the refund outside
+        of this API.
+
+        Only valid while the return has a pending store-credit offer
+        (`credit_offer.status` is `pending`); otherwise returns `409`.
+
+        **Authentication:** API key in the `Authorization: Bearer` header **and** a
+        customer session — either `x-auth-token` or `x-external-auth`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Return UUID.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Provide this **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            **Marketplace operator key only — and required for operator keys.** The
+            merchant the return belongs to. Ignored for single-store keys.
+      responses:
+        '200':
+          description: Refund requested
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        example: refund_requested
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: There is no pending store-credit offer on this return.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: conflict
+                  message: There is no pending store-credit offer on this return.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -13220,6 +13849,46 @@ components:
             
         Using a publishable key for restricted operations returns 403 Forbidden.
   schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - degraded
+            - down
+          description: Overall API status
+        gateway:
+          type: string
+          enum:
+            - ok
+          description: Gateway process status (always ok if this response is received)
+        latency_ms:
+          type: integer
+          description: Total time in milliseconds to probe all services
+        workers:
+          type: object
+          description: Per-service status map
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum:
+                  - ok
+                  - error
+              latency_ms:
+                type:
+                  - integer
+                  - 'null'
+                description: Time in milliseconds to probe this service (null if it did not respond)
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: 1.0.0
     StoreInfoResponse:
       type: object
       required:
@@ -14762,6 +15431,13 @@ components:
         last_purchase:
           type: string
           format: date-time
+        store_credit_balance:
+          type: number
+          description: |
+            The customer's total redeemable store-credit balance. Store credit is
+            issued when a customer accepts a store-credit offer on a return, and can
+            be applied at checkout (see `apply_store_credit` on `POST /v1/orders`).
+          example: 25
         created_at:
           type: string
           format: date-time
@@ -15638,81 +16314,6 @@ components:
         - realtime_url
         - channel
         - environment
-    OperatorThread:
-      type: object
-      description: A customer↔merchant conversation as seen by a marketplace operator, stamped with the merchant it belongs to.
-      properties:
-        id:
-          type: string
-          format: uuid
-        merchant_store_id:
-          type: string
-          format: uuid
-          description: The merchant this conversation belongs to.
-        merchant_store_name:
-          type:
-            - string
-            - 'null'
-          description: Display name of the merchant.
-        customer_id:
-          type:
-            - string
-            - 'null'
-          format: uuid
-        customer_name:
-          type:
-            - string
-            - 'null'
-        subject:
-          type: string
-        thread_type:
-          type: string
-          enum:
-            - general
-            - order_inquiry
-            - product_inquiry
-            - support
-            - complaint
-            - delivery
-            - return
-            - refund
-            - technical
-        status:
-          type: string
-          enum:
-            - active
-            - resolved
-            - closed
-            - escalated
-            - pending
-        priority:
-          type: string
-          enum:
-            - low
-            - normal
-            - high
-            - urgent
-        last_message_at:
-          type: string
-          format: date-time
-        last_message_by:
-          type: string
-          enum:
-            - customer
-            - store
-            - system
-        unread_count_customer:
-          type: integer
-        unread_count_store:
-          type: integer
-        is_archived:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
     DeliveryPricingTier:
       type: object
       description: Distance-based delivery pricing tier
@@ -16225,6 +16826,228 @@ components:
           type: integer
           description: Number of approved reviews marked as verified purchases.
           example: 31
+    ReturnReason:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          enum:
+            - damaged
+            - defective
+            - wrong_item
+            - not_as_described
+            - wrong_size
+            - no_longer_needed
+            - arrived_late
+            - other
+          description: Machine value to send as reason_code when lodging a return.
+          example: damaged
+        label:
+          type: string
+          description: Human-readable label suitable for a storefront dropdown.
+          example: Item arrived damaged
+    ReturnItem:
+      type: object
+      required:
+        - id
+        - order_item_id
+        - product_name
+        - quantity
+        - unit_price
+        - return_amount
+        - condition
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: e1d2c3b4-1111-2222-3333-444455556666
+        order_item_id:
+          type: string
+          format: uuid
+          description: The order line this returned item came from.
+          example: 9c4f1d2e-aaaa-bbbb-cccc-1234567890ab
+        product_name:
+          type: string
+          description: Name of the returned product at the time of the order.
+          example: Aurora Wireless Headphones
+        quantity:
+          type: integer
+          description: Number of units being returned from this line.
+          example: 1
+        unit_price:
+          type: number
+          format: float
+          description: Unit price of the item on the original order.
+          example: 129.99
+        return_amount:
+          type: number
+          format: float
+          description: Amount attributed to this line in the return.
+          example: 129.99
+        condition:
+          type: string
+          enum:
+            - sellable
+            - damaged
+            - defective
+            - expired
+          description: Condition the item is being returned in.
+          example: damaged
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - rejected
+          description: |
+            Per-item review status. Items start `pending`; the merchant approves or
+            rejects each line in their admin.
+          example: pending
+        rejection_reason:
+          type:
+            - string
+            - 'null'
+          description: Reason the merchant rejected this line, when rejected.
+          example: null
+        media:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Photo or video URLs the customer attached as evidence.
+          example:
+            - https://cdn.example.com/return-photo-1.jpg
+    Return:
+      type: object
+      required:
+        - id
+        - return_number
+        - order_id
+        - channel
+        - status
+        - return_type
+        - reason_code
+        - total_return_amount
+        - refund_amount
+        - created_at
+        - items
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 4a5b6c7d-8e9f-0123-4567-89abcdef0123
+        return_number:
+          type: string
+          description: Human-readable reference for the return.
+          example: RET-000123
+        order_id:
+          type: string
+          format: uuid
+          description: The online order this return is against.
+          example: 770a0622-0401-63f6-c938-557766551111
+        channel:
+          type: string
+          enum:
+            - online
+          description: Sales channel of the order. Returns through this API are always online orders.
+          example: online
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - processed
+            - cancelled
+          description: |
+            Lifecycle of the return. New returns are `pending`; the merchant moves
+            them to `approved`, `processed`, or `cancelled` in their admin.
+          example: pending
+        return_type:
+          type: string
+          enum:
+            - full_refund
+            - partial_refund
+            - exchange
+            - store_credit
+          description: The resolution requested for the return.
+          example: full_refund
+        reason_code:
+          type: string
+          enum:
+            - damaged
+            - defective
+            - wrong_item
+            - not_as_described
+            - wrong_size
+            - no_longer_needed
+            - arrived_late
+            - other
+          description: Why the items were returned.
+          example: damaged
+        reason_description:
+          type:
+            - string
+            - 'null'
+          description: Free-text explanation, when the customer provided one.
+          example: The box was crushed in transit.
+        total_return_amount:
+          type: number
+          format: float
+          description: Total value of the items in the return.
+          example: 129.99
+        refund_amount:
+          type: number
+          format: float
+          description: Amount refunded so far. Zero until the merchant processes the return.
+          example: 0
+        refund_method:
+          type:
+            - string
+            - 'null'
+          description: How the refund was issued, once processed.
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-06-16T10:00:00Z'
+        processed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the merchant processed the return, when applicable.
+          example: null
+        credit_offer:
+          type: object
+          description: |
+            Store-credit offer state for this return. When a merchant offers store
+            credit instead of a refund, `status` is `pending` and the shopper can
+            accept it (`POST /v1/returns/{id}/accept-credit`) or request a refund
+            instead (`POST /v1/returns/{id}/request-refund`).
+          properties:
+            status:
+              type: string
+              enum:
+                - none
+                - pending
+                - accepted
+                - refund_requested
+              description: Current state of the store-credit offer.
+              example: none
+            amount:
+              type:
+                - number
+                - 'null'
+              description: The offered store-credit amount, when an offer is present.
+              example: null
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReturnItem'
     WebhookEndpoint:
       type: object
       properties:

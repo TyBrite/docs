@@ -173,6 +173,7 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
 
 *   **Required body fields**: `customer_email`, `customer_name`, `billing_address`, `shipping_address`, `subtotal`, `total_amount`, `payment_method`, and a non-empty `items` array. Each item requires `product_id`.
 *   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `variant_id` per item (defaults to the product's primary variant), `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement).
+*   **Store credit**: pass `apply_store_credit: true` (optionally with `store_credit_amount` to cap it) to spend the customer's redeemable store-credit balance against this order. Requires a `customer_id`. The amount actually applied — capped at the order total and the available balance — is returned as `store_credit_applied`.
 *   Missing a required field returns `400` with a message naming the field.
 *   **Replay Protection**: The `X-Timestamp` must be within **5 minutes** of the server time.
 *   **Post-processing**: When `payment_status: "paid"` is set, Galactic Core applies gift card redemption, stock reduction, and customer metrics updates. See [Post-Processing Warnings](#post-processing-warnings) below — the response may include a `post_processing_warnings` array that you **must** check.
@@ -207,7 +208,7 @@ const order = result.order;
 </Tip>
 
 <Note>
-  `createOrder` returns `{ order, post_processing_warnings? }`. `getOrder`, `updateOrder`, and `listOrders` return the order resource(s) at the top level.
+  `createOrder` returns `{ order, store_credit_applied?, post_processing_warnings? }`. `store_credit_applied` is present only when store credit was applied. `getOrder`, `updateOrder`, and `listOrders` return the order resource(s) at the top level.
 </Note>
 
 ---
