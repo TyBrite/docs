@@ -305,6 +305,30 @@ const reviews = await market.reviews.listReviews({
   `storeId` only narrows results when you use an **operator** key. With a single-store key it's ignored (you're already scoped to one store). On `reviews`, an operator key **requires** `storeId` and may only read approved reviews.
 </Note>
 
+### Returns on the marketplace
+
+A return always belongs to **one merchant** — the merchant whose order is being returned. So with the operator key, every `client.returns` shopper action takes a required `storeId` (the merchant from the order) alongside the shopper's session. A shopper's returns are therefore **per-merchant**: to show "all my returns" across the marketplace, fetch each merchant the shopper ordered from and merge the lists in your storefront.
+
+```typescript
+const storeId = 'merchant-a-uuid';   // the merchant whose order this is
+
+// lodge a return for the signed-in shopper at that merchant
+const { data: lodged } = await market.returns.createReturn({
+  storeId, xAuthToken: shopperSession,
+  requestBody: { order_id, reason_code: 'damaged', items },
+});
+
+// the shopper's returns + store-credit at that merchant
+const { data: mine }    = await market.returns.listReturns({ storeId, xAuthToken: shopperSession });
+const { data: balance } = await market.returns.getStoreCredit({ storeId, xAuthToken: shopperSession });
+```
+
+The same `storeId` applies to `getReturn`, `acceptReturnCredit`, and `requestReturnRefund`. The `storeId` must be an active merchant. See the [Returns](/sdk/api-reference/classes/ReturnsService) reference for the full method set and the store-credit flow.
+
+<Note>
+  This is a shopper acting on their **own** returns at one merchant. There is no cross-merchant "all returns" feed or store-credit-owed summary in the API — operator oversight of returns is a back-office concern, handled in the operator's admin, not through the SDK.
+</Note>
+
 ---
 
 ## Curated collections (homepage merchandising)

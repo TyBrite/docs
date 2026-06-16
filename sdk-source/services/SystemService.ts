@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { HealthResponse } from '../models/HealthResponse';
 import type { StoreInfoResponse } from '../models/StoreInfoResponse';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
@@ -31,18 +32,19 @@ export class SystemService {
     }
     /**
      * Health check
-     * Returns the health status of the API gateway.
+     * Returns the health status of the API gateway and all individual services.
      * This endpoint does not require authentication.
      *
-     * @returns any Service is healthy
+     * The gateway probes each service in parallel (3-second timeout per service) and
+     * rolls up an overall status:
+     * - `ok` — all services healthy (HTTP 200)
+     * - `degraded` — one or more services errored or timed out (HTTP 207)
+     * - `down` — gateway itself unreachable (detected externally)
+     *
+     * @returns HealthResponse All services healthy
      * @throws ApiError
      */
-    public healthCheck(): CancelablePromise<{
-        status?: string;
-        timestamp?: string;
-        version?: string;
-        service?: string;
-    }> {
+    public healthCheck(): CancelablePromise<HealthResponse> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/health',

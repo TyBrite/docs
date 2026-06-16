@@ -1,0 +1,361 @@
+---
+title: "Returns"
+description: "Reference for the ReturnsService class in the Tybrite SDK."
+---
+
+The `ReturnsService` class (accessed via `client.returns`) lets a shopper lodge and track returns against their own online orders — fetching the reason codes for your UI, creating a return, listing the customer's returns, and reading one in detail.
+
+## How returns work in Galactic Core
+
+A return is a **record of a request**, not an action that immediately moves money or stock. Your storefront lodges a return for one of the customer's online orders; it is created with `status: "pending"` and the merchant resolves it from their Galactic Core admin. Through this API your storefront does two things: **create** returns and **read** their status as the merchant works through them.
+
+The split of responsibilities is deliberate:
+
+| Shopper — via this API | Merchant — in the admin, not this API |
+|---|---|
+| Lodge a return for their own order | Approve or reject the return, line by line |
+| List and track their returns | Issue a refund, store credit, or exchange |
+| Accept or decline a store-credit offer | Restock the goods and post the accounting |
+
+There is intentionally no "approve" or "refund" method on this service — those are merchant decisions. A storefront integration creates returns and reacts to the outcome.
+
+### The four ways a merchant resolves a return
+
+You don't pick the resolution, but you surface it to the shopper (`return.return_type`, and `credit_offer` when relevant):
+
+- **Refund** — the amount is returned to the original payment method.
+- **Store credit** — the shopper receives a balance to spend on a future order instead of cash. Unlike the others, **this requires the shopper's agreement** — see below.
+- **Exchange** — the returned item is swapped for a replacement of equal value (an *even swap*); the replacement ships and no money changes hands.
+- **Reject** — the merchant declines an item; nothing is refunded or restocked for it.
+
+### Store credit requires the shopper's acceptance
+
+Refunds and exchanges are settled entirely by the merchant. Store credit is the exception: a shopper may want their money back rather than a balance, so it is **offered**, not imposed. When a merchant offers store credit, the return carries a `credit_offer` object with `status: "pending"` and an `amount`. Your storefront must present the choice and call one of:
+
+- `acceptReturnCredit` — the shopper takes the credit; it is added to their balance and the return is finalized.
+- `requestReturnRefund` — the shopper declines; the merchant then arranges a refund directly (outside this API).
+
+Until the shopper chooses, the offer stays `pending`. Accepted credit becomes a redeemable balance you can read with `getStoreCredit` and spend at checkout via `client.orders.createOrder` (covered below).
+
+### Returns and their line items each carry a status
+
+A single return can contain several items, and the merchant can resolve them independently — approving two and rejecting one, for example. So both the return (`return.status`) and every line (`return.items[].status`) have their own status. Display the per-item status, not just the overall one, so the shopper sees exactly what was accepted.
+
+## Overview
+
+Returns follow a lifecycle managed by the merchant:
+
+1. A signed-in customer lodges a return. It starts as `pending`.
+2. The merchant approves, processes (refund, store credit, or exchange), or cancels it in their admin.
+3. The customer tracks the return's `status` and each item's per-line `status` through this API.
+
+**What this API covers:** a customer can only create, list, and track their **own** returns. Approving, issuing refunds or store credit, restocking, and rejecting items are merchant actions handled in the admin — they are not part of this API.
+
+**Key type behavior:**
+- **Publishable keys** — all four methods. `createReturn`, `listReturns`, and `getReturn` also need a customer session.
+- **Secret keys** — the same actions, for server-side use.
+
+<Note>
+  Returns are for **online orders only**. Every return has `channel: "online"`.
+</Note>
+
+**Customer session:** `createReturn`, `listReturns`, and `getReturn` require a customer session in addition to the API key. Pass either `xAuthToken` (a session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`) **or** `xExternalAuth` (a bring-your-own-auth assertion). `listReturnReasons` needs no customer session.
+
+---
+
+## `listReturnReasons`
+
+Returns the accepted return reason codes, each with a human-readable label for a storefront dropdown. No customer session required.
+
+```typescript
+const { data: reasons } = await client.returns.listReturnReasons();
+// reasons => [{ code: 'damaged', label: 'Item arrived damaged' }, ...]
+```
+
+**Response shape**
+
+```typescript
+{
+  data: Array<{
+    code:
+      | 'damaged'
+      | 'defective'
+      | 'wrong_item'
+      | 'not_as_described'
+      | 'wrong_size'
+      | 'no_longer_needed'
+      | 'arrived_late'
+      | 'other';
+    label: string;
+  }>;
+}
+```
+
+---
+
+## `createReturn`
+
+Lodges a return against one of the authenticated customer's own online orders. The return is created with `status: "pending"` for the merchant to review.
+
+<Note>
+  Pass the customer's session token in `xAuthToken` (or a bring-your-own-auth assertion in `xExternalAuth`). The `order_id` must belong to that customer, and each `order_item_id` must be a line on that order.
+</Note>
+
+```typescript
+const { data: lodged } = await client.returns.createReturn({
+  xAuthToken: customerSessionToken,
+  requestBody: {
+    order_id: '770a0622-0401-63f6-c938-557766551111',
+    reason_code: 'damaged',
+    return_type: 'full_refund',
+    items: [
+      {
+        order_item_id: '9c4f1d2e-aaaa-bbbb-cccc-1234567890ab',
+        quantity: 1,
+        condition: 'damaged',
+        media: ['https://cdn.example.com/return-photo-1.jpg'],
+      },
+    ],
+  },
+});
+// lodged.status === 'pending'
+```
+
+**Parameters**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `xAuthToken` | `string` | One of these | Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. |
+| `xExternalAuth` | `string` | One of these | Bring-your-own-auth assertion identifying the customer. Provide this or `xAuthToken`. |
+| `requestBody.order_id` | `string` | Yes | UUID of the customer's online order the return is for. |
+| `requestBody.reason_code` | reason enum | Yes | One of the codes from `listReturnReasons`. |
+| `requestBody.reason_description` | `string` | Conditional | Free-text explanation. **Required only when `reason_code` is `other`**; optional otherwise. |
+| `requestBody.return_type` | `'full_refund' \| 'partial_refund' \| 'exchange' \| 'store_credit'` | No | Resolution requested. Default: `full_refund`. |
+| `requestBody.items` | array | Yes | The order lines being returned (at least one). |
+| `items[].order_item_id` | `string` | Yes | UUID of a line item on the referenced order. |
+| `items[].quantity` | `number` | Yes | Units of this line being returned (≥ 1). |
+| `items[].condition` | `'sellable' \| 'damaged' \| 'defective' \| 'expired'` | No | Condition the item is returned in. Default: `sellable`. |
+| `items[].media` | `string[]` | No | Photo or video URLs evidencing the return. |
+
+**Returns availability:** if the store has returns turned off, the request returns `422` with error code `returns_disabled`.
+
+---
+
+## `listReturns`
+
+Lists the authenticated customer's own returns, newest first.
+
+```typescript
+const { data: myReturns } = await client.returns.listReturns({
+  xAuthToken: customerSessionToken,
+  status: 'pending',
+  limit: 20,
+});
+```
+
+**Parameters**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `xAuthToken` | `string` | One of these | Customer session token. |
+| `xExternalAuth` | `string` | One of these | Bring-your-own-auth assertion. Provide this or `xAuthToken`. |
+| `status` | `'pending' \| 'approved' \| 'processed' \| 'cancelled'` | No | Filter to returns in this status. |
+| `limit` | `number` | No | Maximum returns to fetch, 1–100. Default: 20. |
+
+**Response shape**
+
+```typescript
+{ data: Return[]; }
+```
+
+---
+
+## `getReturn`
+
+Returns a single return by ID, including its line items and current status. A return that does not exist or does not belong to the authenticated customer returns `404`.
+
+```typescript
+const { data: detail } = await client.returns.getReturn({
+  id: '4a5b6c7d-8e9f-0123-4567-89abcdef0123',
+  xAuthToken: customerSessionToken,
+});
+
+for (const item of detail.items) {
+  console.log(`${item.product_name} ×${item.quantity} — ${item.status}`);
+}
+```
+
+**Parameters**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `id` | `string` | Yes | UUID of the return. |
+| `xAuthToken` | `string` | One of these | Customer session token. |
+| `xExternalAuth` | `string` | One of these | Bring-your-own-auth assertion. Provide this or `xAuthToken`. |
+
+---
+
+## The `Return` object
+
+```typescript
+{
+  id: string;
+  return_number: string;            // e.g. "RET-000123"
+  order_id: string;
+  channel: 'online';
+  status: 'pending' | 'approved' | 'processed' | 'cancelled';
+  return_type: 'full_refund' | 'partial_refund' | 'exchange' | 'store_credit';
+  reason_code: string;              // one of the reason codes
+  reason_description: string | null;
+  total_return_amount: number;
+  refund_amount: number;            // 0 until the merchant processes the return
+  refund_method: string | null;
+  created_at: string;               // ISO 8601
+  processed_at: string | null;
+  items: Array<{
+    id: string;
+    order_item_id: string;
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    return_amount: number;
+    condition: 'sellable' | 'damaged' | 'defective' | 'expired';
+    status: 'pending' | 'approved' | 'rejected';
+    rejection_reason: string | null;
+    media: string[];
+  }>;
+}
+```
+
+---
+
+## Store credit & offers
+
+When a merchant resolves a return by offering **store credit** instead of a refund, the return carries a `credit_offer` (`{ status, amount }`). While `credit_offer.status` is `pending`, the shopper can accept the credit or ask for a refund instead. Accepted store credit lands in the customer's balance and can be spent at checkout.
+
+### `getStoreCredit(options)`
+
+The signed-in customer's total redeemable store credit balance.
+
+```typescript
+const { data } = await client.returns.getStoreCredit({
+  xAuthToken: customerSessionToken,
+});
+console.log(`You have ${data.balance} in store credit`);
+```
+
+### `acceptReturnCredit(options)`
+
+Accept a pending store-credit offer on one of the customer's returns. The credit is issued to their balance and the return is finalized. Returns `409` if there is no pending offer.
+
+```typescript
+const { data } = await client.returns.acceptReturnCredit({
+  id: returnId,
+  xAuthToken: customerSessionToken,
+});
+console.log(`Store credit issued: ${data.amount}`);
+```
+
+### `requestReturnRefund(options)`
+
+Decline the store-credit offer and request a refund instead (the merchant then handles the refund directly). Returns `409` if there is no pending offer.
+
+```typescript
+await client.returns.requestReturnRefund({
+  id: returnId,
+  xAuthToken: customerSessionToken,
+});
+```
+
+### Spending store credit at checkout
+
+Store credit is only useful if the shopper can spend it. When you place their next order, pass `apply_store_credit: true` to `client.orders.createOrder` and Galactic Core draws down their balance automatically:
+
+```typescript
+const { data: order } = await client.orders.createOrder({
+  xAuthToken: customerSessionToken,
+  requestBody: {
+    /* ...the usual order fields... */
+    apply_store_credit: true,
+    // store_credit_amount: 10,   // optional — cap how much to use; omit to use as much as applies
+  },
+});
+
+console.log(`Applied ${order.store_credit_applied} of store credit`);
+```
+
+You can show the shopper how much they have *before* checkout — it's on their own customer record as `store_credit_balance` (`client.customers.getCustomer({ id, xAuthToken })`).
+
+### Putting the store-credit flow together
+
+A complete "the merchant offered me store credit, what now?" screen:
+
+```typescript
+// 1. Load the return and check for a pending offer
+const { data: ret } = await client.returns.getReturn({ id: returnId, xAuthToken });
+
+if (ret.credit_offer?.status === 'pending') {
+  // 2. Show the shopper the choice
+  showOffer(`We can give you ${ret.credit_offer.amount} in store credit, or refund you.`);
+
+  // 3a. They take the credit →
+  onAccept(async () => {
+    const { data } = await client.returns.acceptReturnCredit({ id: returnId, xAuthToken });
+    toast(`Added ${data.amount} to your store credit — use it any time.`);
+  });
+
+  // 3b. They'd rather have their money →
+  onRequestRefund(async () => {
+    await client.returns.requestReturnRefund({ id: returnId, xAuthToken });
+    toast(`No problem — we'll arrange your refund.`);
+  });
+}
+```
+
+<Note>
+  After `requestReturnRefund`, the merchant settles the refund with the shopper directly — there is no automatic money movement, so don't tell the shopper the refund is already on its way.
+</Note>
+
+---
+
+## Lodging and tracking a return on a storefront
+
+```typescript
+// 1. Show the reason picker (no sign-in needed yet)
+const { data: reasons } = await client.returns.listReturnReasons();
+renderReasonDropdown(reasons);
+
+// 2. After the customer signs in and picks items, lodge the return
+const { data: lodged } = await client.returns.createReturn({
+  xAuthToken: customerSessionToken,
+  requestBody: {
+    order_id: selectedOrderId,
+    reason_code: selectedReason,
+    items: selectedLines.map((line) => ({
+      order_item_id: line.orderItemId,
+      quantity: line.quantity,
+    })),
+  },
+});
+
+// 3. Track it from the customer's account page
+const { data: history } = await client.returns.listReturns({
+  xAuthToken: customerSessionToken,
+});
+```
+
+---
+
+## Response codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Success |
+| `201` | Return lodged |
+| `400` | Invalid request — missing required field or bad UUID |
+| `401` | Missing or invalid API key, or missing customer session |
+| `403` | Operation not permitted for this key type |
+| `404` | Return or order not found, or it doesn't belong to the customer |
+| `422` | Returns are not enabled for this store (`returns_disabled`) |
+| `429` | Rate limit exceeded |
+| `500` | Unexpected error |
