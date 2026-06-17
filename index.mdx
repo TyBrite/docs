@@ -1,89 +1,144 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Galactic Core"
+description: "A global-first, headless commerce and marketplace platform — the full operating layer for a store (catalog, checkout, payments, accounting, search, recommendations, returns, analytics, and more) behind one coherent API and a typed SDK."
 ---
 
-## The Commerce Infrastructure for Galactic Scale
+**Galactic Core** is a headless commerce and marketplace platform. It exposes a complete
+store — catalog, cart, checkout, payments, customers, accounting, search, recommendations,
+promotions, gift cards, returns, messaging, content, and storefront analytics — through **one
+coherent REST API** and an **auto-generated TypeScript SDK**, served from the edge.
 
-Tybrite's **Galactic Core** is a programmable commerce infrastructure designed for businesses that outgrow traditional e-commerce platforms. It transforms complex retail operations—inventory, accounting, logistics, and search—into a unified set of high-performance APIs and SDKs.
-
-<CardGroup cols={2}>
-  <Card
-    title="Quickstart Guide"
-    icon="rocket"
-    href="/quickstart"
-  >
-    Get your first production-grade commerce API or SDK call running in minutes.
-  </Card>
-  <Card
-    title="API Reference"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Detailed documentation for our RESTful endpoints served from the edge.
-  </Card>
-</CardGroup>
-
-## Official SDKs
-
-Build your storefront or backend services using our officially supported libraries. We are working tirelessly to expand our language support.
+It's built for teams who've outgrown template platforms and want to own the storefront
+experience without rebuilding commerce from scratch: bring your own front end (web, mobile, an
+AI-generated storefront, or a backend service), call the API, and the commerce logic — inventory
+math, order lifecycle, payment capture, tax, double-entry accounting, fulfillment — is handled for
+you.
 
 <CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Make your first authenticated call and render a product in a few minutes.
+  </Card>
   <Card title="TypeScript SDK" icon="js" href="/sdk/introduction">
-    **v1.2.0 - Stable**
-    A type-safe, high-level interface for your web and Node.js applications.
+    A type-safe client covering every service, with retries, pagination, and HMAC built in.
   </Card>
-  <Card title="Next JS / React" icon="react" color="#61dafb">
-    **In Development**
-    Pre-built UI components and hooks for building storefronts at warp speed.
+  <Card title="API Reference" icon="terminal" href="/api-reference/introduction">
+    Every endpoint, request, and response — generated from the OpenAPI spec.
   </Card>
-  <Card title="Python SDK" icon="python" color="#3776ab">
-    **Coming Soon**
-    Integrating commerce logic into your AI agents and data pipelines.
-  </Card>
-  <Card title="Rust & Go" icon="r" color="#dea584">
-    **Coming Soon**
-    High-performance SDKs for systems programming and cloud-native services.
+  <Card title="Core Concepts" icon="diagram-project" href="/concepts">
+    Keys, environments, isolation, edge caching, and how money flows.
   </Card>
 </CardGroup>
 
-## Why Build on Tybrite?
+## What you can build
 
-Tybrite isn't just an API; it's a hardened operational layer for your business.
+The API spans **24 services across ~117 operations**, grouped by the job they do. A storefront
+typically touches a handful; everything is available when you need it.
+
+<CardGroup cols={3}>
+  <Card title="Catalog & Discovery" icon="magnifying-glass">
+    Products, variants, specifications, collections, categories, **AI semantic search**, and
+    **hybrid recommendations** (similar, also-bought, next-likely, trending, personalized, bundles).
+  </Card>
+  <Card title="Cart & Checkout" icon="cart-shopping">
+    Persistent carts and wishlists, dynamic pricing, promotions, gift cards, shipping rates, and
+    idempotent order creation with automatic inventory and accounting side effects.
+  </Card>
+  <Card title="Payments" icon="credit-card">
+    Multi-provider payment initiation and verification (Stripe, PayPal, and regional processors),
+    with sandbox test mode built in.
+  </Card>
+  <Card title="Customers & Auth" icon="user">
+    Customer profiles and RFM analytics, plus customer authentication via native sessions or your
+    own identity provider (bring-your-own-auth).
+  </Card>
+  <Card title="Returns & Support" icon="rotate-left">
+    Shopper-initiated returns and store credit, and real-time customer↔store messaging.
+  </Card>
+  <Card title="Content & Storefront Analytics" icon="chart-line">
+    Shoppable blog posts and lookbooks, and first-party traffic / funnel / revenue analytics
+    captured without a third-party tracking script.
+  </Card>
+  <Card title="Marketplace" icon="store">
+    Aggregate many merchants behind one storefront, with a unified cart and a single payment that
+    splits to each merchant automatically.
+  </Card>
+  <Card title="Integrations" icon="plug">
+    Outbound webhooks, catalog ingestion (push or scheduled feed pull), and "Log in with GC" for
+    third-party tools.
+  </Card>
+  <Card title="Global by default" icon="earth-americas">
+    Per-store currency, multi-currency catalogs, and geographic pricing — currency always read from
+    store info, never assumed.
+  </Card>
+</CardGroup>
+
+## Why teams choose Galactic Core
 
 <Columns cols={2}>
-  <Card
-    title="Edge-First Performance"
-    icon="bolt"
-    href="/api-reference/introduction"
-  >
-    10-50ms response times globally via our multi-tier edge caching system.
+  <Card title="One coherent contract" icon="code">
+    A single auth model, one consistent error shape (`{ error: { code, message } }`), cursor
+    pagination, and sparse field selection across every endpoint — not a decade of accreted,
+    inconsistent APIs.
   </Card>
-  <Card
-    title="Programmable Logic"
-    icon="puzzles-piece"
-    href="/sdk/api-reference/classes/PricingService"
-  >
-    Dynamic pricing, location-based currency, and real-time inventory rules.
+  <Card title="Commerce, not just storage" icon="layer-group">
+    Orders create journal entries, reduce stock, redeem gift cards, and update customer metrics
+    automatically. You call one endpoint; the operational side effects are handled.
   </Card>
-    <Card
-    title="Unified Security"
-    icon="shield-check"
-    href="/authentication"
-  >
-    Enterprise-grade authentication with Publishable/Secret keys and HMAC signing.
+  <Card title="Edge-first performance" icon="bolt">
+    Reads are served from a multi-tier edge cache, so catalog and pricing calls return in tens of
+    milliseconds worldwide.
   </Card>
-  <Card
-    title="Scalable Discovery"
-    icon="magnifying-glass"
-    href="/sdk/api-reference/classes/SearchService"
-  >
-    AI-powered semantic search and recommendations out of the box.
+  <Card title="Dedicated isolation" icon="shield-halved">
+    Each deployment runs on its own isolated stack — your data is never co-mingled with another
+    tenant's. See [Core Concepts](/concepts).
+  </Card>
+  <Card title="Built-in sandbox" icon="flask">
+    Every endpoint has a test environment keyed by your API key — build and test against realistic
+    data without touching production.
+  </Card>
+  <Card title="Generate a storefront" icon="wand-magic-sparkles">
+    The SDK is consumable by AI storefront generators, so a complete, commerce-wired storefront can
+    be produced from the API surface alone.
   </Card>
 </Columns>
 
----
+## Two ways to integrate
+
+<CardGroup cols={2}>
+  <Card title="TypeScript SDK (recommended)" icon="js" href="/sdk/introduction">
+    `npm install @tybrite-labs/sdk` → a typed `client` with a method per endpoint, automatic
+    retries, cursor pagination helpers, idempotency, and HMAC signing. Ideal for web and Node.js apps.
+  </Card>
+  <Card title="REST API" icon="server" href="/api-reference/introduction">
+    Call `https://api.tybritelabs.com` directly from any language or runtime. Bearer-key auth,
+    JSON in/out, served from the edge.
+  </Card>
+</CardGroup>
+
+Other language SDKs (Python, Go, Rust) and React storefront components are on the roadmap.
+
+## Authentication at a glance
+
+Galactic Core uses two key types — a full overview is in [Authentication](/authentication):
+
+- **Publishable keys** (`tybrite_pk_*`) — read-only, safe in the browser (catalog, search, cart writes).
+- **Secret keys** (`tybrite_sk_*`) — full read/write, server-side only (orders, payments, customer data).
+
+Shopper-specific actions add a **customer session** (a GC-issued token, or your own
+bring-your-own-auth assertion). Sensitive writes (orders, payments, ingestion) are additionally
+HMAC-signed.
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const client = new Tybrite({
+  apiKey: 'tybrite_pk_live_…', // publishable key — safe for client-side reads
+});
+
+const { data: products } = await client.products.listProducts({ limit: 12 });
+```
 
 <Note>
-  **Need Support?** Our team is available to help you design your commerce architecture. [Contact Tybrite Labs](mailto:support@tybritelabs.com).
+  **Need help designing your architecture?** Reach the team at
+  [support@tybritelabs.com](mailto:support@tybritelabs.com).
 </Note>

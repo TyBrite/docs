@@ -254,6 +254,10 @@ The SDK exposes 17 services, each accessible as a property on the `Tybrite` clie
   **Building a marketplace?** When a deployment runs as a marketplace, you authenticate the storefront with a **marketplace operator key**. The catalog services (`products`, `taxonomy`, `search`) then return data aggregated across **every active merchant** — pass `storeId` to narrow them to a single merchant's shop page. Use `client.marketplace.getMarketplaceInfo` for the marketplace's identity and branding (or one merchant's full store information), and `client.marketplace` to check out a single cart spanning multiple merchants with one payment that is split to each merchant automatically. See the [Marketplace](/sdk/api-reference/classes/MarketplaceService) reference.
 </Note>
 
+<Note>
+  **Currency.** Each store sets its own currency, returned as `store.default_currency` (with the accepted list in `store.currencies`) from `client.system.getStoreInfo`. Catalog prices are expressed in that currency, so there's no separate currency endpoint to call. See the [Currency](/currency) guide for single- and multi-currency storefronts.
+</Note>
+
 ## Next Steps
 
 Now that you have initialized the client, explore the most commonly used services:
