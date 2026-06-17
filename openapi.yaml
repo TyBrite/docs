@@ -473,6 +473,13 @@ tags:
       Storefront interaction events (product views, add-to-cart, add-to-wishlist). These power the
       `next` recommendation type — the products a shopper is most likely to view or add next based
       on their current session. Publishable keys are accepted so events can be sent from the browser.
+  - name: Analytics
+    description: |
+      First-party storefront analytics capture. Fire a lightweight page-view / session-start event
+      from the storefront on each route change; device, browser, and approximate location are derived
+      automatically from the request. These events power the merchant's Store Analytics dashboard
+      (traffic, audience, conversion funnel, and revenue-by-source). Publishable keys are accepted so
+      events can be sent directly from the browser.
   - name: Taxonomy
     description: Categories and subcategories
   - name: CMS
@@ -6235,6 +6242,122 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/analytics/collect:
+    post:
+      operationId: collectAnalyticsEvent
+      tags:
+        - Analytics
+      summary: Record a storefront analytics event
+      description: |
+        Records a first-party storefront analytics event — a page view or the start of a
+        browsing session. These events power Store Analytics: traffic, audience, the
+        conversion funnel, and revenue-by-source reporting that the merchant views in
+        their dashboard.
+
+        Fire this from the storefront on each route change. Send `session_start` for the
+        first event of a new browsing session and `page_view` for each page thereafter.
+        Provide a stable `visitor_id` (persisted in the browser, e.g. localStorage) so
+        returning visitors are recognised, and a `session_id` per browsing session (the
+        same identifier you use for an anonymous cart) so events group into a session.
+
+        The device, browser, operating system, and approximate location (country/region)
+        are derived automatically from the request — you do not send them. Pass only the
+        `path` (the pathname; query strings are ignored), the `referrer`, and any UTM
+        campaign parameters present on the landing URL. Publishable keys are accepted, so
+        the call can be made directly from the browser. The request is processed
+        best-effort and returns immediately; it never blocks the page.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - event_type
+                - visitor_id
+                - session_id
+              properties:
+                event_type:
+                  type: string
+                  enum:
+                    - page_view
+                    - session_start
+                    - page_close
+                  description: |
+                    `session_start` for the first event of a session, `page_view` on each route
+                    change, and `page_close` (with `duration_ms`) fired on page hide to capture
+                    dwell time — send it with `navigator.sendBeacon` from a `visibilitychange` /
+                    `pagehide` handler so it survives the page unload.
+                visitor_id:
+                  type: string
+                  description: A stable per-visitor identifier persisted in the browser (e.g. localStorage). Used to distinguish new vs returning visitors.
+                session_id:
+                  type: string
+                  description: The shopper's browsing-session identifier (same concept as the anonymous cart session). May also be sent as the `x-session-id` header.
+                path:
+                  type: string
+                  description: The page path being viewed. Only the pathname is stored; any query string is discarded.
+                referrer:
+                  type: string
+                  description: The document referrer, when present.
+                utm_source:
+                  type: string
+                utm_medium:
+                  type: string
+                utm_campaign:
+                  type: string
+                utm_term:
+                  type: string
+                utm_content:
+                  type: string
+                duration_ms:
+                  type: integer
+                  description: Time spent on the page in milliseconds. Send with a `page_close` event to power average time-on-page and session-duration metrics.
+                customer_id:
+                  type: string
+                  format: uuid
+                  description: The signed-in shopper, when known.
+            examples:
+              sessionStart:
+                summary: The first event of a new session (from a Google organic visit)
+                value:
+                  event_type: session_start
+                  visitor_id: v_8f2a1c
+                  session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
+                  path: /
+                  referrer: https://www.google.com/
+                  utm_source: google
+                  utm_medium: organic
+              pageView:
+                summary: A subsequent page view
+                value:
+                  event_type: page_view
+                  visitor_id: v_8f2a1c
+                  session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
+                  path: /products/wireless-headphones
+      responses:
+        '202':
+          description: The event was accepted.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recorded:
+                    type: boolean
+              example:
+                recorded: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
   /v1/search:
     get:
       operationId: searchProducts

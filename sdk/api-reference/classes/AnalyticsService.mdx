@@ -1,0 +1,112 @@
+---
+title: "Analytics"
+description: "Reference for the AnalyticsService class in the Tybrite SDK."
+---
+
+The `AnalyticsService` class (accessed via `client.analytics`) records first-party
+storefront analytics — page views and session starts. These power the merchant's
+Store Analytics: traffic and audience, the conversion funnel, top products, and
+revenue-by-source. You send only the lightweight signals a browser has; the device,
+browser, operating system, and approximate location (country/region) are derived
+automatically from the request.
+
+The endpoint is **publishable-key accessible**, so you call it directly from the
+browser. It returns immediately and is processed in the background — sending an event
+never blocks the page.
+
+## Methods
+
+### `collectAnalyticsEvent`
+
+Record one analytics event. Fire `session_start` for the first event of a new
+browsing session, then `page_view` on each route change.
+
+<CodeGroup>
+
+```typescript Session start
+// Fire once at the beginning of a browsing session (first page load).
+await client.analytics.collectAnalyticsEvent({
+  requestBody: {
+    event_type: 'session_start',
+    visitor_id: 'v_8f2a1c',                 // stable per-visitor id (localStorage)
+    session_id: 'browser-session-id',       // per-session id (same as anonymous cart)
+    path: '/',
+    referrer: document.referrer,
+    utm_source: 'google',
+    utm_medium: 'organic'
+  }
+});
+```
+
+```typescript Page view
+// Fire on each subsequent route change.
+await client.analytics.collectAnalyticsEvent({
+  requestBody: {
+    event_type: 'page_view',
+    visitor_id: 'v_8f2a1c',
+    session_id: 'browser-session-id',
+    path: '/products/wireless-headphones',
+    customer_id: 'customer-uuid'            // include once the shopper signs in
+  }
+});
+```
+
+```typescript Page close (dwell time)
+// Fire on page hide to capture time-on-page + exit pages. Use sendBeacon from a
+// visibilitychange/pagehide handler so it survives the unload.
+await client.analytics.collectAnalyticsEvent({
+  requestBody: {
+    event_type: 'page_close',
+    visitor_id: 'v_8f2a1c',
+    session_id: 'browser-session-id',
+    path: '/products/wireless-headphones',
+    duration_ms: 45000                       // ms spent on the page
+  }
+});
+```
+
+</CodeGroup>
+
+**Parameters:**
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `requestBody.event_type` | `string` | `session_start` (first event of a session), `page_view` (each route change), or `page_close` (on page hide, with `duration_ms`, to capture time-on-page and exit pages — send via `navigator.sendBeacon`). |
+| `requestBody.duration_ms` | `number` | Time on the page in milliseconds; send with `page_close` to power average time-on-page and session-duration. |
+| `requestBody.visitor_id` | `string` | A stable per-visitor identifier you persist in the browser (e.g. localStorage). Lets returning visitors be recognised. |
+| `requestBody.session_id` | `string` | The browsing-session identifier — the same one you use for an anonymous cart. May also be sent as the `x-session-id` header. |
+| `requestBody.path` | `string` | The page path. Only the pathname is stored; any query string is discarded. |
+| `requestBody.referrer` | `string` | The document referrer, when present. |
+| `requestBody.utm_source` `utm_medium` `utm_campaign` `utm_term` `utm_content` | `string` | UTM campaign parameters from the landing URL, when present. These drive revenue-by-source reporting. |
+| `requestBody.customer_id` | `string` | The signed-in shopper, when known. |
+
+<Note>
+  Persist `visitor_id` across sessions (e.g. in localStorage) and keep one
+  `session_id` per browsing session. Send `session_start` once per session and a
+  `page_view` on every route change — that's all that's needed for the full traffic,
+  funnel, and revenue picture.
+</Note>
+
+## What you don't send
+
+Device type, browser, operating system, and country/region are detected from the
+request automatically — there is no client-side tracking script to add and no
+fingerprinting. Only the pathname is stored (query strings are dropped), keeping the
+capture privacy-light.
+
+## Attributing revenue to a source
+
+To see which traffic sources actually drive revenue (not just visits), pass the
+session's first-touch attribution when you create the order — see
+[Orders](/sdk/api-reference/classes/OrdersService). The order's `attribution`
+(`session_id` + the UTM parameters) lets Store Analytics join revenue back to the
+campaign that brought the shopper in.
+
+## Response Codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `202` | The event was accepted (`{ recorded: true }`). Beacons are fire-and-forget. |
+| `400` | Missing `event_type`, `visitor_id`, or `session_id`. |
+| `401` | Invalid or missing API key. |
+| `429` | Rate limit exceeded. |
