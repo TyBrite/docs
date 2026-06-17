@@ -1,0 +1,127 @@
+---
+title: "Core Concepts"
+description: "The handful of ideas that make every Galactic Core integration predictable — keys and sessions, environments, isolation, conventions, performance, and the side effects an order triggers."
+---
+
+A short tour of how Galactic Core works. Understanding these once makes every endpoint behave the
+way you'd expect.
+
+## Storefront-facing by design
+
+The API exists to power a **storefront** — a shopper browsing a catalog, searching, managing their
+cart, checking out, paying, and tracking their own orders and returns. Merchant/admin operations
+(editing the catalog, moderating reviews, issuing refunds, changing store settings) happen in the
+Galactic Core admin, **not** through this API. The one exception is **catalog ingestion**, where a
+merchant syncs their own product feed in — see [Catalog Ingestion](/ingestion).
+
+This is why some actions are read-only over the API and others require elevated keys: the surface
+is shaped around what a storefront legitimately does.
+
+## Keys and sessions
+
+Three identities combine depending on the call:
+
+| Identity | What it is | Used for |
+| :--- | :--- | :--- |
+| **Publishable key** (`tybrite_pk_*`) | A read-only key, safe in the browser | Catalog, search, recommendations, cart/wishlist writes |
+| **Secret key** (`tybrite_sk_*`) | A full read/write key, server-side only | Orders, payments, customer data, ingestion |
+| **Customer session** | A token identifying one shopper | Acting on *that shopper's* cart, profile, orders, returns, messages |
+
+A storefront uses the publishable key for browsing, a customer session once the shopper signs in,
+and routes sensitive writes (order creation, payment, ingestion) through a server holding the
+secret key. Customer sessions come in two flavours — a **GC-issued token**, or a
+**bring-your-own-auth** assertion if you run your own identity provider. See
+[Authentication](/authentication) and [Customers & Auth](/sdk/customers-and-auth).
+
+Sensitive writes (orders, order updates, payments, ingestion) are additionally **HMAC-signed** so
+the server can verify the request body wasn't tampered with — the SDK computes and attaches the
+signature for you.
+
+## Environments: production and sandbox
+
+Every key carries an environment. A `*_test_*` key writes and reads **sandbox** data; a `*_live_*`
+key writes and reads **production** data. They share the same endpoints and the same store, but the
+data never mixes — you can build and exercise the full flow (orders, customers, carts, payments in
+provider test mode) against sandbox without touching real records. Each authenticated response also
+echoes the resolved environment in a `Tybrite-Environment` header.
+
+## Dedicated isolation
+
+Each Galactic Core deployment runs on its **own isolated stack**. A store's data lives in its own
+boundary and is never co-mingled with another tenant's — isolation is a property of the
+infrastructure, not just a row filter. For partners building on top of Galactic Core, this means
+each of their clients can be given a genuinely separate backend rather than shared multi-tenancy.
+
+## Conventions that hold everywhere
+
+Once you've learned them on one endpoint, they apply to all:
+
+- **Errors** — every error is `{ "error": { "code": "…", "message": "…", "details"?: … } }` with a
+  standard HTTP status. Codes are stable strings you can branch on.
+- **Pagination** — list endpoints are **cursor-based**: a response carries a `next_cursor`; pass it
+  back to fetch the next page. (The SDK exposes helpers for this.)
+- **Sparse fieldsets** — pass `fields=` to fetch only the columns you need (lean catalog grids), or
+  `full: true` / a detail call to get the complete object (SEO, media, specifications).
+- **Idempotency** — order creation takes an `Idempotency-Key`; a retried call with the same key and
+  body returns the original result instead of creating a duplicate.
+
+```json
+// Standard error shape
+{ "error": { "code": "not_found", "message": "Order not found" } }
+```
+
+| Status | When |
+| :--- | :--- |
+| `200` | Successful read or update |
+| `201` | A resource was created |
+| `400` | Invalid body / missing field / bad parameter |
+| `401` | Missing, invalid, or expired key |
+| `403` | Valid key, wrong type (e.g. a publishable key on a secret-only endpoint) |
+| `404` | Resource not found |
+| `409` | Conflict (duplicate, or an idempotency key reused with a different body) |
+| `429` | Rate limit exceeded |
+
+## Performance & rate limits
+
+Reads are served through a **multi-tier edge cache**, so catalog, pricing, and store-info calls
+return in tens of milliseconds globally and stay fast under load. Endpoints are rate-limited per
+key (and per IP for publishable keys); a `429` means you've exceeded the window — back off and
+retry. The SDK retries transient failures automatically.
+
+## What an order does for you
+
+Creating a paid order is a single call, but Galactic Core performs the operational work behind it
+automatically and atomically:
+
+- reduces stock for each line item (quantity- or barcode-tracked),
+- redeems any gift cards applied,
+- updates the customer's purchase metrics,
+- posts the double-entry accounting (revenue, tax, cost of goods), and
+- records attribution for analytics.
+
+If a non-fatal step partially fails (e.g. a gift-card redemption), the order is **still recorded**
+and the response includes a `post_processing_warnings` array — surface it rather than assuming
+silent success. This "call one endpoint, the side effects are handled" model is the core reason to
+build on Galactic Core rather than wiring these systems together yourself.
+
+## Currency
+
+A store defines its own currency, returned on `store.default_currency` from store info; all catalog
+prices are expressed in it. There's no separate currency call. See [Currency](/currency).
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Your first authenticated call.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Keys, sessions, and HMAC in depth.
+  </Card>
+  <Card title="TypeScript SDK" icon="js" href="/sdk/introduction">
+    The typed client and every service.
+  </Card>
+  <Card title="API Reference" icon="terminal" href="/api-reference/introduction">
+    Every endpoint and schema.
+  </Card>
+</CardGroup>

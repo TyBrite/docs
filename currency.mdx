@@ -1,0 +1,83 @@
+---
+title: "Currency"
+description: "Each store defines its own currency, returned with its store information. Catalog prices are expressed in that currency, so you format amounts with it directly."
+---
+
+Each store sets its own currency as part of its configuration. You read it from the store
+information your storefront already loads, and because every catalog price is returned in that
+currency, displaying money is just a matter of formatting.
+
+## Where currency lives
+
+Currency is part of the **store information** payload — `client.system.getStoreInfo` for a single
+store, `client.marketplace.getMarketplaceInfo` for a marketplace. Both return it on `store`:
+
+```json
+{
+  "store": {
+    "store_id": "086e8d7f-…",
+    "name": "Galactic Core Store",
+    "default_currency": "EUR",
+    "currencies": ["EUR", "KES", "CNY", "GBP", "USD"],
+    "timezone": "Africa/Nairobi"
+  },
+  "features": { "multi_currency": true, "...": "..." }
+}
+```
+
+| Field | Meaning |
+| :--- | :--- |
+| `store.default_currency` | The store's base currency. All catalog prices are returned in this currency. |
+| `store.currencies` | Every currency the store accepts. |
+| `features.multi_currency` | Whether the store offers more than one currency to shoppers. |
+
+Because currency travels with the store and catalog data, there is no standalone currency call to
+make — read `default_currency` once when your app loads and reuse it everywhere.
+
+## Single-currency store
+
+```json
+{ "store": { "default_currency": "EUR", "currencies": ["EUR"] } }
+```
+
+```typescript
+const { store } = await client.system.getStoreInfo({});
+const currency = store.default_currency; // 'EUR'
+
+const fmt = (amount: number) =>
+  new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+
+const products = await client.products.listProducts();
+products.data.forEach((p) => console.log(p.name, fmt(p.price))); // p.price is in EUR
+```
+
+## Multi-currency store
+
+```json
+{
+  "store": { "default_currency": "EUR", "currencies": ["EUR", "KES", "CNY", "GBP", "USD"] },
+  "features": { "multi_currency": true }
+}
+```
+
+Prices are returned in `default_currency`. When `features.multi_currency` is `true`, you can offer
+a currency switcher built from `store.currencies` and convert amounts for display.
+
+```typescript
+const { store, features } = await client.system.getStoreInfo({ sections: 'features' });
+const baseCurrency = store.default_currency; // 'EUR' — the currency prices are in
+const options = store.currencies;            // ['EUR','KES','CNY','GBP','USD']
+const offerSwitcher = features?.multi_currency === true;
+```
+
+## Marketplace
+
+On a marketplace deployment, read currency from `client.marketplace.getMarketplaceInfo` — the
+marketplace's own `store.default_currency` for marketplace-level pricing, or
+`getMarketplaceInfo({ storeId })` for a single merchant's store information (same shape). Each
+catalog item's price is in the currency of the store it belongs to.
+
+<Note>
+  If `default_currency` is ever absent for a store, fall back to the first entry of
+  `store.currencies`.
+</Note>
