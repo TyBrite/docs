@@ -14315,32 +14315,37 @@ components:
                   type: integer
         features:
           type: object
-          description: Feature flags (optional, included when requested)
+          description: Feature flags (optional, included when requested). Each flag reports whether a capability is actually available to this store right now. Plan-dependent capabilities (smart search & recommendations, dynamic pricing, multi-currency, content pages & lookbooks, returns) report `true` only when the store's plan includes them AND they are configured; a storefront should use these flags to decide which UI to show.
           properties:
             ai_recommendations:
               type: boolean
+              description: Smart recommendations are available (plan-dependent and configured).
             semantic_search:
               type: boolean
+              description: Smart search is available (plan-dependent and configured).
             multi_currency:
               type: boolean
+              description: Selling in multiple currencies is available (plan-dependent and configured).
             dynamic_pricing:
               type: boolean
+              description: Automatic pricing rules are available (plan-dependent and configured).
             gift_cards:
               type: boolean
             promotions:
               type: boolean
             cms:
               type: boolean
-              description: The store publishes blog/CMS posts.
+              description: The store publishes content pages (plan-dependent and configured).
             lookbooks:
               type: boolean
-              description: The store publishes shoppable lookbooks.
+              description: The store publishes shoppable lookbooks (plan-dependent and configured).
             messaging:
               type: boolean
             specifications:
               type: boolean
             collections:
               type: boolean
+              description: The store has product collections (storefront catalog groupings) to display.
         marketplace:
           type: object
           description: Indicates whether this store is part of a marketplace, so a storefront can adapt its experience accordingly.
