@@ -350,22 +350,30 @@ info:
 
     ## Pagination
 
-    List endpoints support pagination via `limit` and `offset`:
+    List endpoints are **cursor-based**. Pass a `limit` (page size), and follow the
+    `pagination.next_cursor` from each response to fetch the next page — there is no
+    numeric `offset` or page number.
 
     ```
-    GET /v1/products?limit=50&offset=100
+    GET /v1/products?limit=50
+    GET /v1/products?limit=50&cursor=eyJwcm9kdWN0X2lkIjoiZDhjZWEyNzctOWJiNi00OTQyIn0=
     ```
 
-    Response includes pagination metadata:
+    Each response carries a `pagination` object:
 
     ```json
     {
       "products": [...],
-      "total": 500,
-      "limit": 50,
-      "offset": 100
+      "pagination": {
+        "limit": 50,
+        "has_more": true,
+        "next_cursor": "eyJwcm9kdWN0X2lkIjoiZDhjZWEyNzctOWJiNi00OTQyIn0="
+      }
     }
     ```
+
+    When `has_more` is `false`, `next_cursor` is `null` and you've reached the last page.
+    Cursors are opaque — pass them back verbatim; don't construct or parse them.
   contact:
     name: Galactic Core API Support - Tybrite Labs
     email: support@tybritelabs.com
@@ -8504,13 +8512,11 @@ paths:
             minimum: 1
             maximum: 200
           description: Maximum number of products to return (1-200)
-        - name: offset
+        - name: cursor
           in: query
           schema:
-            type: integer
-            default: 0
-            minimum: 0
-          description: Number of products to skip for pagination
+            type: string
+          description: Opaque pagination cursor. Pass the `pagination.next_cursor` value from the previous response to fetch the next page.
         - name: fields
           in: query
           schema:
@@ -8735,15 +8741,21 @@ paths:
                                   type: number
                                 converted_amount:
                                   type: number
-                  total:
-                    type: integer
-                    description: Total number of products matching filters
-                  limit:
-                    type: integer
-                    description: Number of products per page
-                  offset:
-                    type: integer
-                    description: Number of products skipped
+                  pagination:
+                    type: object
+                    description: Cursor pagination metadata.
+                    properties:
+                      limit:
+                        type: integer
+                        description: Page size used for this response.
+                      has_more:
+                        type: boolean
+                        description: Whether more results are available after this page.
+                      next_cursor:
+                        type:
+                          - string
+                          - 'null'
+                        description: Opaque cursor for the next page; pass as `?cursor=`. Null when there are no more pages.
                   pricing_context:
                     type: object
                     description: |
@@ -8809,9 +8821,10 @@ paths:
                             to_currency: USD
                             rate: 1.186592
                             converted_amount: 225451.29
-                    total: 12
-                    limit: 50
-                    offset: 0
+                    pagination:
+                      limit: 50
+                      has_more: false
+                      next_cursor: null
                     pricing_context:
                       location: null
                       region: United States
@@ -8834,9 +8847,10 @@ paths:
                         display_currency: USD
                         currency_symbol: $
                         has_variants: true
-                    total: 12
-                    limit: 50
-                    offset: 0
+                    pagination:
+                      limit: 50
+                      has_more: false
+                      next_cursor: null
                     pricing_context:
                       currency: USD
                       region: United States

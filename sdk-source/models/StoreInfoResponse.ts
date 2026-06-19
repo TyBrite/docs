@@ -185,25 +185,40 @@ export type StoreInfoResponse = {
         };
     };
     /**
-     * Feature flags (optional, included when requested)
+     * Feature flags (optional, included when requested). Each flag reports whether a capability is actually available to this store right now. Plan-dependent capabilities (smart search & recommendations, dynamic pricing, multi-currency, content pages & lookbooks, returns) report `true` only when the store's plan includes them AND they are configured; a storefront should use these flags to decide which UI to show.
      */
     features?: {
+        /**
+         * Smart recommendations are available (plan-dependent and configured).
+         */
         ai_recommendations?: boolean;
+        /**
+         * Smart search is available (plan-dependent and configured).
+         */
         semantic_search?: boolean;
+        /**
+         * Selling in multiple currencies is available (plan-dependent and configured).
+         */
         multi_currency?: boolean;
+        /**
+         * Automatic pricing rules are available (plan-dependent and configured).
+         */
         dynamic_pricing?: boolean;
         gift_cards?: boolean;
         promotions?: boolean;
         /**
-         * The store publishes blog/CMS posts.
+         * The store publishes content pages (plan-dependent and configured).
          */
         cms?: boolean;
         /**
-         * The store publishes shoppable lookbooks.
+         * The store publishes shoppable lookbooks (plan-dependent and configured).
          */
         lookbooks?: boolean;
         messaging?: boolean;
         specifications?: boolean;
+        /**
+         * The store has product collections (storefront catalog groupings) to display.
+         */
         collections?: boolean;
     };
     /**
