@@ -45,12 +45,19 @@ data never mixes — you can build and exercise the full flow (orders, customers
 provider test mode) against sandbox without touching real records. Each authenticated response also
 echoes the resolved environment in a `Tybrite-Environment` header.
 
-## Dedicated isolation
+## Isolation
 
-Each Galactic Core deployment runs on its **own isolated stack**. A store's data lives in its own
-boundary and is never co-mingled with another tenant's — isolation is a property of the
-infrastructure, not just a row filter. For partners building on top of Galactic Core, this means
-each of their clients can be given a genuinely separate backend rather than shared multi-tenancy.
+Your data is scoped to your store and never co-mingled with another store's. Every key resolves to a
+single `store_id`, and the database enforces that boundary at the row level — each query is
+constrained to your store's rows by row-level security tied to the authenticated key, with no way for
+one store to read or write another's data even on a shared table. This holds for every endpoint, not
+just the ones that take a store parameter.
+
+For partners running a **marketplace deployment**, the boundary goes a step further: each operator's
+marketplace runs on its **own dedicated backend** — a separate database and API stack, not a shared
+one — so an entire marketplace (and all its merchants) is isolated at the infrastructure level from
+every other deployment. Within a deployment, individual stores are isolated from each other by the
+row-level security described above.
 
 ## Conventions that hold everywhere
 
