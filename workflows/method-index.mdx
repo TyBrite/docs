@@ -1,0 +1,399 @@
+---
+title: "Every Method by Task"
+description: "A complete, grouped index of every SDK method — each shown in a short, real call with its response — so you can find the one you need by the job it does."
+---
+
+The use-case walkthroughs cover the main flows; this page is the **completeness reference**: every
+method on every service, grouped by the task it does, each with a short call and its response shape.
+If a method isn't shown in a walkthrough, it's here. (Setup is the two-client pattern from
+[the overview](/workflows/introduction): `storefront` = publishable key, `server` = secret key.)
+
+## Catalog & taxonomy
+
+```typescript
+// A single product by slug (storefront route → product page)
+const { product } = await storefront.products.getProductBySlug({ slug: 'samsung-galaxy-watch-6-0186' });
+// → product.id === '0186665f-f0a1-4c79-976a-919b5b1c2daa', product.price === 299
+
+// Published specification groups for a product (the spec sheet)
+const specs = await storefront.products.getProductSpecifications({ id: '0186665f-f0a1-4c79-976a-919b5b1c2daa' });
+```
+
+```json Response (getProductSpecifications)
+{
+  "specifications": [
+    {
+      "group": "Display",
+      "items": [
+        { "label": "Screen Size", "value": "1.5 in" },
+        { "label": "Resolution", "value": "480 x 480" }
+      ]
+    },
+    { "group": "Battery", "items": [{ "label": "Capacity", "value": "425 mAh" }] }
+  ]
+}
+```
+
+```typescript
+// All specs across the catalog (admin-style export / spec search)
+const allSpecs = await storefront.products.listProductSpecifications({ limit: 50 });
+// → { specifications: [...], pagination: { has_more: true, next_cursor: "..." } }
+
+// Curated collections ("Best Sellers", "New Arrivals")
+const { collections } = await storefront.products.listProductCollections();
+// → collections[0] === { id: '1f0e...', name: 'Best Sellers', slug: 'best-sellers', product_count: 12 }
+
+const collection = await storefront.products.getProductCollection({ id: '1f0e8d2a-...' });
+// → { id, name: 'Best Sellers', description, slug }
+
+const items = await storefront.products.getProductCollectionItems({ id: '1f0e8d2a-...', limit: 20 });
+// → { items: [{ product_id, name, price, primary_media_url }], pagination: { has_more: false } }
+```
+
+```typescript
+// A single category, and one subcategory with its subtree
+const category = await storefront.taxonomy.getCategory({ id: '3310356e-7ca4-4056-93b4-80c612536b5d' });
+// → { id, name: 'Wearables', description: 'Smartwatches, fitness trackers, wearable tech', active: true, image: '...' }
+
+const subcategory = await storefront.taxonomy.getSubcategory({ id: '7d9b...', include: 'children' });
+// → { id, name: 'Smartwatches', parent_id, children: [{ id, name }] }
+```
+
+## Pricing & promotions
+
+```typescript
+// Price one product by slug (with geographic currency detection)
+const price = await storefront.pricing.getProductPriceBySlug({ slug: 'samsung-galaxy-watch-6-0186', latitude: 40.71, longitude: -74.0 });
+// → { product_id: '0186665f-...', price: 299, currency: 'USD', applied_rule: null }
+
+// List the store's active promotions
+const { promotions } = await storefront.promotions.listPromotions({ limit: 10 });
+```
+
+```json Response (listPromotions)
+{
+  "promotions": [
+    {
+      "id": "df290d89-0400-4b2c-aa56-11fcc486150c",
+      "name": "Spring Sale — 15% Off",
+      "type": "discount",
+      "display_type": "Percentage Discount",
+      "value": "15",
+      "min_purchase": 50,
+      "status": "active",
+      "start_date": "2026-06-19",
+      "end_date": "2026-07-20",
+      "time_zone": "America/New_York"
+    }
+  ],
+  "pagination": { "limit": 10, "has_more": true, "next_cursor": "..." }
+}
+```
+
+```typescript
+// One promotion's detail
+const promo = await storefront.promotions.getPromotion({ id: 'df290d89-0400-4b2c-aa56-11fcc486150c' });
+// → { id, name: 'Spring Sale — 15% Off', value: '15', min_purchase: 50, status: 'active' }
+
+// What a specific promotion takes off a cart (server does the math)
+const applied = await storefront.promotions.calculatePromotionDiscount({
+  id: 'df290d89-0400-4b2c-aa56-11fcc486150c',
+  requestBody: { subtotal: 120, items: [{ variant_id: 'e98631a9-...', quantity: 1, unit_price: 120 }] },
+});
+// → { applicable: true, discount_amount: 18, final_total: 102 }
+
+// The single best promotion across all active rules for this cart
+const best = await storefront.promotions.calculateBestPromotion({
+  requestBody: { subtotal: 250, items: [{ variant_id: 'e98631a9-...', quantity: 1, unit_price: 250 }] },
+});
+// → { best_promotion: { id, name: '$20 Off Orders Over $200' }, discount_amount: 20, final_total: 230 }
+```
+
+## Cart & wishlist (the rest of the surface)
+
+```typescript
+// Read a cart (anonymous by session, or a customer's)
+const cart = await storefront.cartWishlist.getCart({ xSessionId: sessionId });
+// → { items: [{ id, product_name, quantity, total_price }], session_id, customer_id: null }
+
+await storefront.cartWishlist.updateCartItem({ id: '09695de2-...', xSessionId: sessionId, requestBody: { quantity: 3 } });
+// → { items: [{ id: '09695de2-...', quantity: 3, total_price: 897 }] }
+
+await storefront.cartWishlist.removeCartItem({ id: '09695de2-...', xSessionId: sessionId });
+// → { success: true, message: 'Item removed from cart' }
+
+await storefront.cartWishlist.clearCart({ xSessionId: sessionId });
+// → { success: true, message: 'Cart cleared' }
+```
+
+```typescript
+// Wishlist (always customer-scoped → xAuthToken)
+await storefront.cartWishlist.addToWishlist({ xAuthToken: token, requestBody: { variant_id: 'e98631a9-...', customer_id: customerId } });
+// → 201 { items: [{ id, product_name: 'Samsung Galaxy Watch 6' }] }
+
+const wishlist = await storefront.cartWishlist.getWishlist({ xAuthToken: token, customerId });
+// → { items: [{ id: '...', variant_id: 'e98631a9-...', product_name: 'Samsung Galaxy Watch 6' }] }
+
+await storefront.cartWishlist.moveWishlistToCart({ xAuthToken: token, requestBody: { wishlist_item_id: '...', customer_id: customerId, quantity: 1 } });
+// → { success: true, removed_wishlist_item_id: '...', items: [...] }
+
+await storefront.cartWishlist.removeFromWishlist({ id: '...', xAuthToken: token, customerId });
+// → { success: true, message: 'Item removed from wishlist' }
+```
+
+## Customers & addresses (server-side)
+
+```typescript
+// Create a customer directly (server-driven signup)
+const customer = await server.customers.createCustomer({
+  requestBody: { name: 'John Doe', email: 'john.doe@example.com', phone: '+12125550142' },
+});
+// → 201 { id: '15ecd58f-...', name: 'John Doe', tier: 'bronze', total_purchases: 0, address: null }
+
+await server.customers.updateCustomer({ id: '15ecd58f-...', xAuthToken: token, requestBody: { phone: '+12125550199' } });
+// → 200 { id: '15ecd58f-...', phone: '+12125550199' }
+```
+
+```typescript
+// The customer's saved address book
+const { addresses } = await storefront.customers.listAddresses({ id: customerId, xAuthToken: token });
+// → { addresses: [{ id, label: 'Home', street, city: 'New York', is_default: true }] }
+
+const address = await storefront.customers.createAddress({
+  id: customerId, xAuthToken: token,
+  requestBody: { label: 'Work', street: '350 Fifth Avenue', city: 'New York', state: 'NY', zip: '10118', country: 'US' },
+});
+// → 201 { id: 'addr_...', label: 'Work', is_default: false }
+
+await storefront.customers.updateAddress({ id: customerId, addressId: 'addr_...', xAuthToken: token, requestBody: { is_default: true } });
+// → 200 { id: 'addr_...', is_default: true }
+
+await storefront.customers.deleteAddress({ id: customerId, addressId: 'addr_...', xAuthToken: token });
+// → { success: true, message: 'Address deleted' }
+```
+
+## Authentication lifecycle (server-side)
+
+```typescript
+// Register (the sign-up half of the login flow)
+const created = await server.authentication.register({
+  requestBody: { name: 'John Doe', email: 'john.doe@example.com', password: '••••••••' },
+});
+// → 201 { user: { id, email, email_confirmed: false }, customer: { id, tier: 'bronze' }, session: { access_token: 'eyJ...<redacted>.signature' } }
+
+// Who is this token? (hydrate "My Account")
+const me = await server.authentication.getCurrentUser({ xAuthToken: token });
+// → { user: { id: 'df648f68-...', email: 'john.doe@example.com' }, customer: { id: '15ecd58f-...', name: 'John Doe' } }
+
+// Rotate the session before it expires (~1h)
+const refreshed = await server.authentication.refreshToken({ requestBody: { refresh_token: '5h2g7k9m...' } });
+// → { session: { access_token: 'eyJ...<redacted>.signature', refresh_token: '...', expires_in: 3600 } }
+
+// End the session
+await server.authentication.logout({ xAuthToken: token });
+// → { message: 'Logged out successfully' }
+```
+
+```typescript
+// Password reset (request a reset email → set a new password)
+await server.authentication.resetPassword({ requestBody: { email: 'john.doe@example.com' } });
+// → { message: 'If an account exists for that email, a reset link has been sent.' }
+
+await server.authentication.updatePassword({ xAuthToken: token, requestBody: { password: '••••••••' } });
+// → { message: 'Password updated successfully' }
+
+// Passwordless: OTP verification signs the customer in (same envelope as login)
+const verified = await server.authentication.verifyOtp({ requestBody: { email: 'john.doe@example.com', token: '123456' } });
+// → { message: 'OTP verified successfully', user: {...}, customer: {...}, session: { access_token: 'eyJ...<redacted>.signature' } }
+```
+
+## Orders, payments & stock
+
+```typescript
+// Hold stock during a long checkout (optional; expires automatically)
+const hold = await server.orders.reserveStock({
+  requestBody: { items: [{ variant_id: 'e98631a9-...', quantity: 2 }], ttl_seconds: 600 },
+});
+// → { reservation_ids: ['resv_...'], expires_in_seconds: 600 }
+
+// Which payment providers + currencies are available for this store
+const methods = await storefront.payments.getPaymentMethods();
+```
+
+```json Response (getPaymentMethods)
+{
+  "methods": [
+    { "type": "stripe", "display_name": "Card" },
+    { "type": "paypal", "display_name": "PayPal" }
+  ]
+}
+```
+
+```typescript
+// Confirm a payment after the provider redirect / webhook (server, sk)
+const result = await server.payments.verifyPayment({ requestBody: { provider: 'stripe', reference: 'PAY-61713784-F4TAOI' } });
+// → { success: true, status: 'paid', order_id: '0468af54-...', amount: 603.99 }
+```
+
+## Engagement & CMS
+
+```typescript
+// One review by id, and removing your own review
+const { review } = await storefront.reviews.getReview({ id: '11bc03d9-...' });
+// → { id: '11bc03d9-...', rating: 5, status: 'approved', customer_name: 'John Doe', verified_purchase: true }
+
+await storefront.reviews.deleteReview({ id: '11bc03d9-...', xAuthToken: token });
+// → { success: true, message: 'Review deleted' }
+```
+
+```typescript
+// Messaging reads + edits not in the main flow
+const thread = await storefront.messaging.getThread({ id: 'de30ebb3-...', xAuthToken: token });
+// → { id: 'de30ebb3-...', subject: 'Question about my order', status: 'active', unread_count_store: 1 }
+
+await storefront.messaging.updateThread({ id: 'de30ebb3-...', xAuthToken: token, requestBody: { status: 'resolved' } });
+// → { id: 'de30ebb3-...', status: 'resolved' }
+
+await storefront.messaging.editMessage({ id: 'c423c11e-...', xAuthToken: token, requestBody: { message_content: 'Updated text' } });
+// → { message: { id: 'c423c11e-...', is_edited: true, edited_at: '2026-06-20T13:52:41.118+00:00' } }
+
+await storefront.messaging.deleteMessage({ id: 'c423c11e-...', xAuthToken: token });
+// → { success: true, message_id: 'c423c11e-...', deleted_at: '2026-06-20T13:53:02.704+00:00' }
+```
+
+```typescript
+// Blog + shoppable lookbooks (commerce-aware CMS)
+const { posts } = await storefront.cms.listPosts({ limit: 10 });
+// → { posts: [{ id, title: 'The Best Tech Gifts for 2026', slug: 'best-tech-gifts-2026', product_count: 2 }], pagination: {...} }
+
+const post = await storefront.cms.getPost({ slug: 'best-tech-gifts-2026' });
+// → { id, title, content: { blocks: [...] }, products: [{ product_id, name }] }
+
+const { lookbooks } = await storefront.cms.listLookbooks({ limit: 10 });
+// → { lookbooks: [{ id, title: 'Workspace Essentials', slug: 'workspace-essentials', status: 'published' }] }
+
+const lookbook = await storefront.cms.getLookbook({ slug: 'workspace-essentials' });
+// → { id, title, collection_id: null, images: [{ url, hotspots: [] }] }
+```
+
+```typescript
+// Gift cards: check a balance, or list the customer's cards
+const giftCard = await storefront.giftCards.checkGiftCard({ code: 'GTSA-1B2C-3D4E-5F6G' });
+// → { code: 'GTSA-1B2C-3D4E-5F6G', balance: 50, currency: 'USD', status: 'active' }
+
+const { gift_cards } = await storefront.giftCards.listGiftCards({ xAuthToken: token, customerId });
+// → { gift_cards: [{ code: 'GTSA-...', balance: 50, status: 'active' }] }  (empty array if none)
+```
+
+## Returns (remaining)
+
+```typescript
+// One return's detail, and escalating a pending credit offer to a cash refund
+const { data: ret } = await storefront.returns.getReturn({ id: '75eef130-...', xAuthToken: token });
+// → { id: '75eef130-...', status: 'pending', reason_code: 'damaged', credit_offer: null }
+
+const { data: refund } = await storefront.returns.requestReturnRefund({ id: '75eef130-...', xAuthToken: token });
+// → { status: 'refund_requested' }
+```
+
+## Behavior signals & shipping zones
+
+```typescript
+// Record a browsing signal (feeds next-item recommendations) — pk, fire-and-forget
+await storefront.events.recordEvent({
+  requestBody: { event_type: 'view', variant_id: 'e98631a9-...', session_id: sessionId },
+});
+// → 202 { recorded: true }
+
+// First-party analytics collector (write-only) — pk
+await storefront.analytics.collectAnalyticsEvent({
+  requestBody: { event_type: 'page_view', path: '/products/samsung-galaxy-watch-6', session_id: sessionId },
+});
+// → 202 { recorded: true }
+
+// The store's configured delivery zones (polygon + distance tiers)
+const { zones } = await storefront.shipping.getShippingZones();
+// → { zones: [{ name: 'Local (within 10 km)', type: 'distance_tier', fee: 5.99 }], total: 4 }
+```
+
+## System & store
+
+```typescript
+// API metadata (no key) — version, docs, available endpoint prefixes
+const info = await storefront.system.getApiInfo();
+// → { name: 'Galactic Core API', version: 'v1', documentation: 'https://docs.tybritelabs.com', endpoints: [...] }
+
+// Liveness probe (no key)
+const health = await storefront.system.healthCheck();
+// → { status: 'ok', timestamp: '2026-06-20T14:00:00.000Z' }
+
+// The full store profile: currency, features, taxonomy, payment + shipping config
+const store = await storefront.system.getStoreInfo();
+// → { store: { name: 'Galactic Test Store', default_currency: 'USD', timezone: 'America/New_York' }, features: { multi_currency: true, returns: true } }
+```
+
+## Marketplace (remaining)
+
+```typescript
+// Editorial collections curated by the marketplace operator
+const { collections } = await operator.marketplace.listMarketplaceCollections();
+// → { collections: [{ id, title: 'Holiday Picks', merchant_count: 6 }] }
+
+const collection = await operator.marketplace.getMarketplaceCollection({ id: 'mc_...' });
+// → { id, title: 'Holiday Picks', products: [{ product_id, merchant_store_name }] }
+```
+
+```typescript
+// Sponsored placements (marketplace ads)
+const slot = await operator.marketplace.getAdSlot({ placement: 'home_hero', context: 'electronics' });
+// → { slot: 'home_hero', context: 'electronics', placements: [{ ad_id, product_id, image_url, merchant_store_id }] }
+
+await operator.marketplace.logAdEvent({ requestBody: { ad_id: 'ad_...', event_type: 'click', session_id: sessionId } });
+// → 202 { recorded: true, billable: true }
+```
+
+## "Login with GC" connections (platform tools)
+
+```typescript
+// Validate an authorization request (public; returns the client + scopes, never an open redirect)
+const authz = await server.gcConnect.getConnectAuthorize({ clientId: 'anvil', redirectUri: 'https://yourapp.com/callback', scope: 'read orders:read', state: 'a8f3...' });
+// → { valid: true, client: { client_id: 'anvil', name: 'Anvil', description: '...' }, scopes: ['read', 'orders:read'] }
+
+// Exchange a one-time code for the sk + pk key pair (the tool's server)
+const token = await server.gcConnect.connectToken({ requestBody: { client_id: 'anvil', code: '<one-time>', redirect_uri: 'https://yourapp.com/callback' } });
+// → { secret_key: 'tybrite_sk_live_<redacted>', publishable_key: 'tybrite_pk_live_<redacted>', pair_id: '550e8400-...' }
+
+// List a store's active tool connections (sk)
+const { sessions } = await server.gcConnect.listConnectSessions();
+// → { sessions: [{ pair_id, client_id: 'anvil', created_at, revoked_at: null }] }
+
+// Approve an authorization (called by the in-browser merchant-consent page) → issues a one-time code
+const approved = await server.gcConnect.postConnectAuthorize({
+  requestBody: { client_id: 'anvil', redirect_uri: 'https://yourapp.com/callback', scope: 'read orders:read', state: 'a8f3...', approve: true },
+});
+// → { redirect_to: 'https://yourapp.com/callback?code=<one-time>&state=a8f3...' }
+
+// Disconnect a tool (the tool or merchant revokes the key pair)
+const revoked = await server.gcConnect.connectRevoke({
+  requestBody: { pair_id: '550e8400-...', client_id: 'anvil', client_secret: 'YOUR_CLIENT_SECRET' },
+});
+// → { success: true }   (or { success: true, message: 'Already revoked' })
+```
+
+## Webhooks (remaining reads)
+
+```typescript
+// One delivered event with its delivery attempts
+const event = await server.webhooks.getWebhookEvent({ id: 'evt_1781955476025_lp1jafe' });
+// → { id: 'evt_1781955476025_lp1jafe', type: 'order.created', payload: { livemode: true, data: { object: {...} } }, environment: 'production' }
+
+// Remove an endpoint
+await server.webhooks.deleteWebhookEndpoint({ id: 'ac6737d6-12b9-446d-a6c4-1077493f498f' });
+// → { success: true, message: 'Webhook endpoint deleted' }
+```
+
+---
+
+Every method on every service now appears either in a use-case walkthrough or here. For the full
+parameter list and field-by-field response of any method, jump to its
+[service reference page](/sdk/api-reference/classes/ProductsService).

@@ -13,11 +13,13 @@ Retrieve all top-level product categories. This is the starting point for buildi
 
 ```typescript
 const { categories, pagination } = await client.taxonomy.listCategories({
-  search: 'clothes',
+  search: 'audio',
   active: true,
   limit: 50,
   fields: 'id,name,image'
 });
+// → { id: "c7f18400-eec6-448d-a599-cf871cf80b31", name: "Audio & Headphones",
+//     active: true, image: "https://..." }
 
 console.log(`Has more categories: ${pagination.has_more}`);
 ```
@@ -30,11 +32,20 @@ Retrieve details for a single category, including its description and metadata.
 
 ```typescript
 const category = await client.taxonomy.getCategory({
-  id: 'electronics-uuid',
+  id: '28186b12-5790-4a50-ab87-a7b70d301d00', // e.g. "Bags & Accessories"
   fields: 'name,description,image' // Optional
 });
 
 console.log(`Category Banner: ${category.image}`);
+// → {
+//     id: "28186b12-5790-4a50-ab87-a7b70d301d00",
+//     name: "Bags & Accessories",
+//     description: "Handbags, wallets, belts",
+//     active: true,
+//     image: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&q=80",
+//     created_at: "2026-06-19T20:07:35.277495+00:00",
+//     updated_at: "2026-06-20T10:11:03.932255+00:00"
+//   }
 ```
 
 ## Subcategory Management
@@ -58,6 +69,36 @@ const { subcategories, pagination } = await client.taxonomy.listSubcategories({
   limit: 24,
   fields: 'id,name,category_id,image'
 });
+```
+
+```json Response
+{
+  "subcategories": [
+    {
+      "id": "690804ac-0cdc-4d3e-9b84-e18475fe6d16",
+      "name": "T-Shirts",
+      "description": "Graphic and plain tees",
+      "category_id": "de4df100-8080-4a32-9987-8480f0233f1b",
+      "active": true,
+      "image": "https://images.unsplash.com/...",
+      "parent_id": null,
+      "created_at": "2026-06-20T10:19:02.864081+00:00",
+      "updated_at": "2026-06-20T12:13:59.35115+00:00"
+    },
+    {
+      "id": "58061675-bdbe-4ea7-94e9-8d13b1ac61fa",
+      "name": "Graphic Tees",
+      "description": "Printed graphic t-shirts",
+      "category_id": "de4df100-8080-4a32-9987-8480f0233f1b",
+      "active": true,
+      "image": null,
+      "parent_id": "690804ac-0cdc-4d3e-9b84-e18475fe6d16",
+      "created_at": "2026-06-20T10:22:14.206787+00:00",
+      "updated_at": "2026-06-20T10:22:14.206787+00:00"
+    }
+  ],
+  "pagination": { "limit": 24, "next_cursor": null, "has_more": false }
+}
 ```
 
 **Working with the hierarchy**
@@ -84,7 +125,9 @@ const { subcategories } = await client.taxonomy.listSubcategories({
 
 // Or fetch one level at a time, lazy-loading as the shopper drills in:
 const roots = await client.taxonomy.listSubcategories({ categoryId: 'apparel-uuid', rootOnly: true });
+// → { subcategories: [ { id: 'shoes', name: 'Shoes', parent_id: null, ... } ], pagination: {...} }
 const children = await client.taxonomy.listSubcategories({ parentId: 'shoes' });
+// → { subcategories: [ { id: 'mens', name: "Men's", parent_id: 'shoes', ... } ], pagination: {...} }
 ```
 
 ---
@@ -98,6 +141,20 @@ const sub = await client.taxonomy.getSubcategory({
   id: 'macbooks-uuid',
   fields: 'name,description,image' // Optional
 });
+```
+
+```json Response
+{
+  "id": "6dbda630-ad89-4659-a5ef-3b0aae0dba7b",
+  "name": "Keyboards",
+  "description": "Mechanical and compact keyboards",
+  "category_id": "7bf671dd-f49e-492c-b89f-a2892931f88f",
+  "active": true,
+  "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&q=80",
+  "parent_id": "c62e2103-7bf1-4dc3-996d-22f937d42147",
+  "created_at": "2026-06-20T10:19:02.864081+00:00",
+  "updated_at": "2026-06-20T12:13:59.35115+00:00"
+}
 ```
 
 **Include direct children**
@@ -170,6 +227,8 @@ const products = await client.products.listProducts({
   categoryId: 'electronics-uuid',
   limit: 24
 });
+// → { products: [ { product_id, name, category_name: "Electronics", price, stock, ... } ],
+//     pagination: { limit: 24, next_cursor, has_more } }  — see ProductsService for the full row shape
 ```
 
 ### Filter by Subcategory
@@ -178,6 +237,10 @@ const products = await client.products.listProducts({
 const smartphones = await client.products.listProducts({
   subcategoryId: 'smartphones-uuid'
 });
+// → { products: [ { product_id: "2f571a46-e02a-44ea-9a68-0772381e6da2",
+//                   name: "Compact Mechanical Keyboard", subcategory_name: "Keyboards",
+//                   price: 89, ... } ], pagination: {...} }
+//   (a subcategory filter matches its whole subtree)
 ```
 
 <Note>
@@ -193,6 +256,7 @@ const results = await client.products.listProducts({
   categoryId: 'electronics-uuid',
   subcategoryId: 'smartphones-uuid'
 });
+// → { products: [...], pagination: {...} } — same row shape as above, scoped to both filters
 ```
 
 ---

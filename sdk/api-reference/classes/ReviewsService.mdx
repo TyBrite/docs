@@ -25,7 +25,7 @@ Returns reviews for a product. Includes an aggregate `summary` block (average ra
 
 ```typescript
 const { reviews, pagination, summary } = await client.reviews.listReviews({
-  productId: 'd8cea277-9bb6-4942-b9e9-2f2ac351509f',
+  productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
   status: 'approved',
   sort: 'newest',
   limit: 20,
@@ -69,6 +69,42 @@ console.log(`${summary.total_reviews} reviews, avg ${summary.average_rating}★`
 }
 ```
 
+```json Response (200)
+{
+  "reviews": [
+    {
+      "id": "11bc03d9-d1cb-4833-b9d2-f0b016104cde",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": null,
+      "order_id": null,
+      "customer_id": "73ec7ad0-d9aa-4ee2-a382-efa690eaab01",
+      "customer_name": "Jane Doe",
+      "rating": 5,
+      "title": "Outstanding quality",
+      "body": "Exactly as described — fast shipping and great build quality. Would buy again.",
+      "media_urls": [],
+      "status": "approved",
+      "rejection_reason": null,
+      "helpful_count": 0,
+      "verified_purchase": false,
+      "created_at": "2026-06-20T10:44:28.706637+00:00",
+      "updated_at": "2026-06-20T10:44:28.706637+00:00"
+    }
+  ],
+  "pagination": { "limit": 20, "has_more": false, "next_cursor": null },
+  "summary": {
+    "total_reviews": 1,
+    "average_rating": 5,
+    "five_star": 1,
+    "four_star": 0,
+    "three_star": 0,
+    "two_star": 0,
+    "one_star": 0,
+    "verified_count": 0
+  }
+}
+```
+
 ---
 
 ## `getReview`
@@ -77,9 +113,38 @@ Returns a single review by ID. Publishable keys receive `404` for pending or rej
 
 ```typescript
 const { review } = await client.reviews.getReview({
-  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+  id: '11bc03d9-d1cb-4833-b9d2-f0b016104cde',
 });
 ```
+
+**Response `200`:**
+
+```json
+{
+  "review": {
+    "id": "11bc03d9-d1cb-4833-b9d2-f0b016104cde",
+    "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+    "variant_id": null,
+    "order_id": null,
+    "customer_id": "73ec7ad0-d9aa-4ee2-a382-efa690eaab01",
+    "customer_name": "Jane Doe",
+    "rating": 5,
+    "title": "Outstanding quality",
+    "body": "Exactly as described — fast shipping and great build quality. Would buy again.",
+    "media_urls": [],
+    "status": "approved",
+    "rejection_reason": null,
+    "helpful_count": 1,
+    "verified_purchase": false,
+    "created_at": "2026-06-20T10:44:28.706637+00:00",
+    "updated_at": "2026-06-20T10:44:28.706637+00:00"
+  }
+}
+```
+
+<Note>
+  The `Review` object is scoped to a single product and customer; it carries no `store_id` field. The reviewer's `customer_name` is captured from their profile at submission time, so you never supply it.
+</Note>
 
 ---
 
@@ -99,10 +164,35 @@ const { review } = await client.reviews.submitReview({
     rating: 5,
     title: 'Absolutely love it',
     body: "Best purchase I've made this year. Quality is outstanding.",
-    order_id: '770a0622-0401-63f6-c938-557766551111', // enables verified_purchase
+    order_id: yourOrderId, // optional — a matching order unlocks verified_purchase
   },
 });
 // review.status === 'pending' — awaiting merchant approval
+```
+
+**Response `201`** — the review is created `pending` and `customer_name` is filled in from the account:
+
+```json
+{
+  "review": {
+    "id": "11bc03d9-d1cb-4833-b9d2-f0b016104cde",
+    "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+    "variant_id": null,
+    "order_id": null,
+    "customer_id": "73ec7ad0-d9aa-4ee2-a382-efa690eaab01",
+    "customer_name": "Jane Doe",
+    "rating": 5,
+    "title": "Absolutely love it",
+    "body": "Best purchase I've made this year. Quality is outstanding.",
+    "media_urls": [],
+    "status": "pending",
+    "rejection_reason": null,
+    "helpful_count": 0,
+    "verified_purchase": false,
+    "created_at": "2026-06-20T10:44:28.706637+00:00",
+    "updated_at": "2026-06-20T10:44:28.706637+00:00"
+  }
+}
 ```
 
 **Parameters**
@@ -135,9 +225,10 @@ Requires the review author's customer session token in `xAuthToken`.
 ```typescript
 // Customer deletes their own review
 await client.reviews.deleteReview({
-  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+  id: '11bc03d9-d1cb-4833-b9d2-f0b016104cde',
   xAuthToken: customerSessionToken,
 });
+// → { success: true, message: 'Review deleted' }
 ```
 
 **Parameters**
@@ -155,8 +246,9 @@ Increments the `helpful_count` on an approved review. Use this to surface the mo
 
 ```typescript
 const { helpful_count } = await client.reviews.markReviewHelpful({
-  id: 'aabbccdd-1234-5678-abcd-ef0123456789',
+  id: '11bc03d9-d1cb-4833-b9d2-f0b016104cde',
 });
+// → { helpful_count: 1 }
 console.log(`${helpful_count} people found this helpful`);
 ```
 

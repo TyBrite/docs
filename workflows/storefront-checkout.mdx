@@ -1,0 +1,237 @@
+---
+title: "Storefront Checkout"
+description: "The core shopper journey end to end — browse the catalog, build a cart, sign in, quote shipping, place the order, and take payment."
+---
+
+This is the flow most integrations start with: a shopper goes from browsing to a paid order. Steps
+1–5 run with the **publishable** client in the browser; the order and payment in steps 6–7 run with
+the **secret** client on your server. (See [Workflow Examples](/workflows/introduction) for the
+client setup.)
+
+## 1. Browse the catalog
+
+```typescript
+const { products } = await storefront.products.listProducts({ limit: 20 });
+```
+
+```json Response
+{
+  "products": [
+    {
+      "id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "name": "Samsung Galaxy Watch 6",
+      "slug": "samsung-galaxy-watch-6-0186",
+      "price": 299,
+      "sale_price": null,
+      "currency": "USD",
+      "primary_media_url": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400",
+      "variants": [
+        { "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a", "sku": "SAM-WATCH-6-44-0186", "price": 299, "stock": 150 }
+      ]
+    }
+  ],
+  "pagination": { "limit": 20, "next_cursor": "MjAyNi0wNi0xOVQyMDow...", "has_more": true }
+}
+```
+
+<Tip>
+  Build navigation with `storefront.taxonomy.listCategories()`, or wire a search box with
+  `storefront.search.searchProducts({ q: 'wireless headphones' })`. All read-only, all
+  publishable-key — see [Search & discovery](/workflows/search-and-discovery).
+</Tip>
+
+## 2. Add to an anonymous cart
+
+A shopper who isn't signed in gets a **session cart** keyed by an `X-Session-Id` you generate and
+persist (a UUID in a cookie). No customer token needed yet.
+
+```typescript
+const sessionId = crypto.randomUUID(); // generate once, store in a cookie
+
+const cart = await storefront.cartWishlist.addToCart({
+  xSessionId: sessionId,
+  requestBody: { variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a', quantity: 2 },
+});
+```
+
+```json Response
+{
+  "items": [
+    {
+      "id": "09695de2-73ac-45ea-b2cb-76f9751b9846",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "product_name": "Samsung Galaxy Watch 6",
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "quantity": 2,
+      "unit_price": 299,
+      "selling_price": 299,
+      "total_price": 598,
+      "stock_available": 150,
+      "has_variants": true
+    }
+  ],
+  "session_id": "1f8d2c44-...",
+  "customer_id": null
+}
+```
+
+## 3. Sign the shopper in
+
+When the shopper is ready to check out, mint a session for them. Registration / login runs on your
+**server** with the secret client — these are `sk`-only endpoints.
+
+```typescript
+// On your server
+const { customer, session } = await server.authentication.login({
+  requestBody: { email: 'john.doe@example.com', password: '••••••••' },
+});
+// Hand session.access_token back to the browser to use as xAuthToken.
+```
+
+```json Response
+{
+  "message": "Login successful",
+  "user": { "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b", "email": "john.doe@example.com", "email_confirmed": true },
+  "customer": { "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9", "name": "John Doe", "email": "john.doe@example.com", "tier": "bronze", "total_purchases": 0 },
+  "session": { "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature", "refresh_token": "5h2g7k9m1n3p...", "expires_in": 3600 }
+}
+```
+
+<Tip>
+  Passwordless? Use `server.authentication.sendMagicLink(...)` or the OTP pair
+  (`sendMagicLink` → `verifyOtp`) — both return the same `{ user, customer, session }` envelope.
+</Tip>
+
+## 4. Merge the anonymous cart into the customer
+
+Carry everything the shopper added before logging in onto their account.
+
+```typescript
+const merged = await storefront.cartWishlist.mergeCart({
+  xAuthToken: session.access_token,
+  requestBody: { session_id: sessionId, customer_id: customer.id },
+});
+// merged.customer_id === customer.id  → the cart now belongs to the signed-in shopper
+```
+
+## 5. Quote shipping
+
+Quote delivery for the shopper's address before you total the order. Read-only — publishable key.
+
+```typescript
+const quote = await storefront.shipping.calculateShipping({
+  requestBody: { latitude: 40.6782, longitude: -73.9442, order_total: 598 },
+});
+```
+
+```json Response
+{
+  "shipping_cost": 5.99,
+  "currency": "USD",
+  "tier_name": "Local (within 10 km)",
+  "distance_meters": 8548,
+  "is_free": false,
+  "coordinates": { "latitude": 40.6782, "longitude": -73.9442 }
+}
+```
+
+## 6. Place the order (server, signed)
+
+Order creation is a **secret-key** call and must be **HMAC-signed** with an **idempotency key** —
+this is what makes a retried checkout safe (the same key returns the original order, never a
+duplicate). See [HMAC Signing](/authentication#advanced-security-hmac-signing) for the helper.
+
+```typescript
+import { createHmac } from 'crypto';
+
+const timestamp = Math.floor(Date.now() / 1000);
+const orderData = {
+  customer_email: 'john.doe@example.com',
+  customer_name: 'John Doe',
+  shipping_address: { street: '350 Fifth Avenue', city: 'New York', state: 'NY', zip: '10118', country: 'US' },
+  items: [
+    { product_id: '0186665f-f0a1-4c79-976a-919b5b1c2daa', variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a', quantity: 2, unit_price: 299, total_price: 598 },
+  ],
+  subtotal: 598,
+  shipping_amount: 5.99,
+  total_amount: 603.99,
+  payment_status: 'pending',
+};
+
+const body = JSON.stringify(orderData);
+const signature = createHmac('sha256', process.env.TYBRITE_HMAC_SECRET)
+  .update(`${timestamp}.${body}`)
+  .digest('base64');
+
+const { order } = await server.orders.createOrder({
+  idempotencyKey: `order-${customer.id}-${timestamp}`,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: orderData,
+});
+```
+
+```json Response
+{
+  "order": {
+    "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
+    "order_number": "ORD-1781955469360",
+    "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "order_status": "pending",
+    "payment_status": "pending",
+    "total_amount": 603.99,
+    "currency": "USD",
+    "created_at": "2026-06-20T11:37:49.360+00:00"
+  },
+  "post_processing_warnings": []
+}
+```
+
+## 7. Take payment (server, signed)
+
+Initialize a payment for the order — also `sk` + HMAC + idempotency. The shopper is redirected to the
+returned `checkout_url`; you finalize the order from the provider's webhook.
+
+```typescript
+const payment = await server.payments.initializePayment({
+  idempotencyKey: `pay-${order.id}`,
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: paymentSignature, // sign the payment body the same way as the order
+  requestBody: {
+    provider: 'stripe',
+    amount: 603.99,
+    currency: 'usd',
+    email: 'john.doe@example.com',
+    success_url: 'https://yourstore.com/payment-success',
+    cancel_url: 'https://yourstore.com/payment-cancelled',
+  },
+});
+
+// Redirect the shopper to payment.checkout_url
+```
+
+```json Response
+{
+  "success": true,
+  "provider": "stripe",
+  "type": "redirect",
+  "reference": "PAY-61713784-F4TAOI",
+  "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_a1wk...",
+  "session_id": "cs_test_a1wkhnXDJL6XPIzS3rjHUeF0PxUb7yu6Nxw8WJsXpjIg...",
+  "expires_at": "2026-06-21T13:21:54.000Z"
+}
+```
+
+<Note>
+  When the provider confirms payment, your webhook handler patches the order to `paid`
+  (`server.orders.updateOrder(...)`). Galactic Core then reduces stock, books the sale, and updates
+  the customer's metrics automatically — you don't orchestrate those yourself. Wire this up in
+  [Webhooks & automation](/workflows/webhooks-automation).
+</Note>
+
+## What's next
+
+- The shopper can now [track the order and lodge returns](/workflows/returning-customer).
+- Encourage a [review and open a support thread](/workflows/reviews-and-messaging).
+- Building a multi-merchant storefront? See the [Marketplace](/workflows/marketplace) split checkout.

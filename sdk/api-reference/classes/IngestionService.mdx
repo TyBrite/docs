@@ -37,10 +37,11 @@ Push or sync a batch of products into your store.
 | `sku` | Yes | Your unique stock-keeping unit — the identity used for matching. |
 | `name` | Yes | Product name. |
 | `price` | Yes | Selling price. Must be greater than 0. |
-| `product_group` | — | Groups rows into one multi-variant product. Omit for a standalone product. |
+| `category` | Yes | The product's category, matched to an existing category by name (or id). Categories are **not** created from a feed — a row whose category doesn't exist is rejected (an inactive one is reactivated automatically). |
+| `product_group` | — | Groups rows into one multi-variant product. Omit (or `null`) for a standalone product. |
 | `variant_name` | — | Label for this variant (e.g. a size or colour). Defaults to `"Default"`. |
 | `description` | — | Product description. |
-| `category` / `subcategory` | — | Matched to your existing categories by name or id. |
+| `subcategory` | — | Optional subcategory under the category. Unlike categories, **subcategories are created automatically** if missing. Use ` > ` to nest, e.g. `Audio > Headphones > Wireless`. |
 | `brand` | — | Brand name. |
 | `image` | — | Public image URL. |
 | `cost_price` | — | Unit cost. |
@@ -95,6 +96,23 @@ console.log(result.summary);  // { rows_total, rows_created, rows_updated, rows_
 console.log(result.errors);   // [] when everything imported cleanly
 ```
 
+```json Response
+{
+  "status": "success",
+  "dry_run": false,
+  "format": "json",
+  "strategy": "upsert_by_sku",
+  "summary": {
+    "rows_total": 2,
+    "rows_created": 2,
+    "rows_updated": 0,
+    "rows_skipped": 0,
+    "rows_failed": 0
+  },
+  "errors": []
+}
+```
+
 <Note>
   The SDK signs the request when initialized with your secret key. To push a raw body yourself (curl, another language, a serverless handler), add the `X-Timestamp`, `X-Signature`, and `Idempotency-Key` headers — see [Signing a request](/ingestion#signing-a-request).
 </Note>
@@ -146,6 +164,38 @@ const sample = await client.ingestion.getIngestSample({ format: 'json' });
 console.log(sample.products); // model rows you can adapt to your own catalog
 ```
 
+```json Response
+{
+  "products": [
+    {
+      "sku": "SAMPLE-LAMP-01",
+      "name": "Aurora LED Desk Lamp",
+      "description": "Dimmable desk lamp with USB-C.",
+      "category": "Home",
+      "brand": "Lumio",
+      "price": 36.9,
+      "cost_price": 17.2,
+      "stock": 40,
+      "threshold": 5,
+      "barcode": "0850000100017",
+      "barcode_type": "EAN13"
+    },
+    {
+      "sku": "SAMPLE-TEE-BLK-S",
+      "product_group": "SAMPLE-TEE",
+      "name": "Classic Cotton Tee",
+      "variant_name": "Black / S",
+      "category": "Apparel",
+      "brand": "Northwind",
+      "price": 22,
+      "cost_price": 8.4,
+      "stock": 30,
+      "threshold": 5
+    }
+  ]
+}
+```
+
 ---
 
 ## `testIngest`
@@ -162,7 +212,7 @@ Parses and validates a feed **without writing anything** to your store, returnin
 const check = await client.ingestion.testIngest({
   requestBody: {
     products: [
-      { sku: 'MUG-CERAMIC-WHITE', name: 'Ceramic Mug', price: 12.0, stock: 120 },
+      { sku: 'MUG-CERAMIC-WHITE', name: 'Ceramic Mug', category: 'Kitchenware', price: 12.0, stock: 120 },
     ],
   },
 });
@@ -170,6 +220,42 @@ const check = await client.ingestion.testIngest({
 console.log(check.status);              // 'valid' | 'partial' | 'invalid'
 console.log(check.normalized_preview);  // how each row was interpreted
 console.log(check.errors);              // rows that would be rejected
+```
+
+```json Response
+{
+  "status": "valid",
+  "format": "json",
+  "validate_only": true,
+  "summary": {
+    "rows_total": 1,
+    "rows_created": 1,
+    "rows_updated": 0,
+    "rows_skipped": 0,
+    "rows_failed": 0
+  },
+  "errors": [],
+  "normalized_preview": [
+    {
+      "sku": "MUG-CERAMIC-WHITE",
+      "product_group": null,
+      "name": "Ceramic Mug",
+      "description": null,
+      "category": "Kitchenware",
+      "subcategory": null,
+      "brand": null,
+      "image": null,
+      "variant_name": null,
+      "price": 12,
+      "cost_price": null,
+      "stock": 120,
+      "threshold": null,
+      "barcode": null,
+      "barcode_type": null,
+      "tracking_mode": null
+    }
+  ]
+}
 ```
 
 **Response fields:**
@@ -182,6 +268,75 @@ console.log(check.errors);              // rows that would be rejected
 | `summary` | The same per-batch counts as a real import. |
 | `errors` | Rows that would be rejected, with row / SKU / field / reason. |
 | `normalized_preview` | How each row was interpreted after normalization. |
+
+---
+
+## Publishing your own catalog (the inverse of ingestion)
+
+Ingestion pulls products **in**. The two feed methods below expose your catalog **out** as a stable, public URL — so another store, a partner, or a script can pull it the same way ingestion accepts it (a store-to-store sync is a direct pull-and-ingest, no field mapping). Opt in from the admin under **Catalog Sync → "Publish my catalog"**, optionally protecting it with a token. Only storefront-safe fields are exposed — never cost or margin.
+
+<Note>
+  **No API key required** for either feed method — they read a public, opt-in feed. If the store set a private token, pass it as `token`.
+</Note>
+
+### `getStoreCatalogFeedJson`
+
+Returns a store's published catalog as JSON.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `store` | `string` | Yes | The store's id or its short store code. |
+| `token` | `string` | — | Required only if the store protected its feed with a token. |
+
+```typescript
+const feed = await client.ingestion.getStoreCatalogFeedJson({
+  store: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61',
+});
+
+console.log(feed.products.length);
+// feed.products[0] => {
+//   sku: '4K Action Camera SKU…', name: '4K Action Camera',
+//   category: 'Cameras & Photography', subcategory: null,  // nullable
+//   brand: 'Pulsewave', price: 149, sale_price: 129, stock: 148,
+//   media: [], seo_title: '…', seo_keywords: ['4k action camera', …]
+// }
+```
+
+**`FeedProduct` fields** (superset of the ingestion input shape, plus media + published specifications):
+
+| Field | Description |
+| :--- | :--- |
+| `sku`, `name`, `description`, `category` | Core product fields. |
+| `subcategory` | Subcategory name, or `null` when the product has none. |
+| `brand` | Brand, or `null`. |
+| `image` | A single primary image URL (convenience for simple consumers). |
+| `media` | The full product-level media gallery. |
+| `variant_name` | Variant label, or `null`. |
+| `product_group` | Present on multi-variant products so a consumer can regroup variants; `null` otherwise. |
+| `price` | Selling price. |
+| `sale_price` | Sale price, or `null` when not on sale. |
+| `stock` | On-hand quantity. |
+| `seo_title`, `seo_description`, `seo_keywords` | SEO fields, when present (omitted/`null` to keep the feed lean). |
+| `specifications` | Published specifications as a flat key/value object, when present. |
+
+<Note>
+  Cost, margin, and any other internal fields are **never** included in the public feed.
+</Note>
+
+### `getStoreCatalogFeedXml`
+
+The XML form of the same public feed. Same opt-in and token rules; returns the catalog as an XML string.
+
+```typescript
+const xml = await client.ingestion.getStoreCatalogFeedXml({
+  store: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61',
+});
+// xml is a string you can serve or re-parse.
+```
+
+**Feed response codes:** `200` (the catalog), `404` (no public feed — not opted in, or a wrong/missing token), `429` (rate limit exceeded).
 
 ---
 

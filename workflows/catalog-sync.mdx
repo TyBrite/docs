@@ -1,0 +1,322 @@
+---
+title: "Catalog Sync"
+description: "Push your external catalog into Galactic Core — sample a feed, dry-run validate it, ingest it under the strictest auth, and publish your catalog back out for anyone to pull."
+---
+
+Ingestion is the **one merchant-facing write surface** in the whole API. Everything else is
+storefront-only; this is how *you, the merchant* push your own external catalog **into** Galactic
+Core (JSON, XML, or CSV) and keep it in sync. Because it writes to your store, it's the
+**strictest-authed endpoint** in the platform: the live import requires a **secret key AND an HMAC
+signature** — both, every time.
+
+The flow below is a complete sync: grab a sample feed to model yours after, **dry-run** it to catch
+problems before they matter, **ingest** it for real, then publish your catalog back out so other
+systems can pull it.
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+// These are server-side flows — use a secret key, kept in an environment variable.
+const server = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+```
+
+<Info>
+  The `/sample`, `/test`, and public-feed reads need **no key at all**. Only the live import
+  (`ingestProducts`) needs `sk` + HMAC. See
+  [Key Usage by Endpoint](/authentication#key-usage-by-endpoint).
+</Info>
+
+## 1. Get a sample feed to model yours after
+
+Before you build anything, pull a real, valid sample feed. It shows the exact field names and
+demonstrates both a **single-variant** product and a **multi-variant** product (variants share a
+`product_group`). No key required.
+
+```typescript
+const sample = await server.ingestion.getIngestSample({ format: 'json' });
+```
+
+```json Response
+{
+  "products": [
+    {
+      "sku": "SAMPLE-LAMP-01",
+      "name": "Aurora LED Desk Lamp",
+      "description": "Dimmable desk lamp with USB-C.",
+      "category": "Home",
+      "brand": "Lumio",
+      "price": 36.9,
+      "cost_price": 17.2,
+      "stock": 40,
+      "threshold": 5,
+      "barcode": "0850000100017",
+      "barcode_type": "EAN13"
+    },
+    {
+      "sku": "SAMPLE-TEE-BLK-S",
+      "product_group": "SAMPLE-TEE",
+      "name": "Classic Cotton Tee",
+      "variant_name": "Black / S",
+      "category": "Apparel",
+      "brand": "Northwind",
+      "price": 22,
+      "cost_price": 8.4,
+      "stock": 30,
+      "threshold": 5
+    },
+    {
+      "sku": "SAMPLE-TEE-BLK-M",
+      "product_group": "SAMPLE-TEE",
+      "name": "Classic Cotton Tee",
+      "variant_name": "Black / M",
+      "category": "Apparel",
+      "brand": "Northwind",
+      "price": 22,
+      "cost_price": 8.4,
+      "stock": 25,
+      "threshold": 5
+    }
+  ]
+}
+```
+
+<Tip>
+  Pass `format: 'csv'` or `format: 'xml'` to get the same sample as a CSV header row + rows, or an
+  XML `<products>` document. The shapes are interchangeable — pick whatever your source system emits.
+</Tip>
+
+## 2. Dry-run validate your feed
+
+Send your feed to the validator first. It parses every row, returns the same `summary` and `errors`
+you'd get from a real import, and adds a `normalized_preview` showing exactly how Galactic Core
+interpreted each row — **without writing anything**. No key required, so you can perfect the format
+before you ever sign a request.
+
+```typescript
+const check = await server.ingestion.testIngest({
+  requestBody: {
+    products: [
+      {
+        sku: 'GTS-INGEST-LAMP-01',
+        name: 'Aurora Pro Desk Lamp',
+        category: 'Lighting',
+        brand: 'Lumitech',
+        price: 54.99,
+        cost: 22,
+        stock: 40,
+        description: 'Adjustable LED desk lamp with wireless charging base.',
+      },
+      {
+        sku: 'GTS-INGEST-MAT-01',
+        name: 'Studio Yoga Mat',
+        category: 'Sports Equipment',
+        brand: 'Trailhead',
+        price: 44.99,
+        cost: 18,
+        stock: 60,
+        description: 'Non-slip 6mm yoga mat.',
+      },
+    ],
+  },
+});
+```
+
+```json Response
+{
+  "status": "valid",
+  "format": "json",
+  "validate_only": true,
+  "summary": {
+    "rows_total": 2,
+    "rows_created": 2,
+    "rows_updated": 0,
+    "rows_skipped": 0,
+    "rows_failed": 0
+  },
+  "errors": [],
+  "normalized_preview": [
+    {
+      "sku": "GTS-INGEST-LAMP-01",
+      "product_group": null,
+      "name": "Aurora Pro Desk Lamp",
+      "description": "Adjustable LED desk lamp with wireless charging base.",
+      "category": "Lighting",
+      "subcategory": null,
+      "brand": "Lumitech",
+      "image": null,
+      "variant_name": null,
+      "price": 54.99,
+      "cost_price": 22,
+      "stock": 40,
+      "threshold": null,
+      "barcode": null,
+      "barcode_type": null,
+      "tracking_mode": null
+    }
+  ]
+}
+```
+
+<Note>
+  `status` is `valid` (no failures), `partial` (some rows rejected), or `invalid` (all rejected).
+  Each entry in `errors` names the offending `row`, `sku`, `field`, and a human-readable `reason`
+  (e.g. `price must be a positive number`) — fix those, re-run, and only sign the live request once
+  you see `status: valid`.
+</Note>
+
+## 3. Push the catalog (secret key + HMAC)
+
+This is the real write. It is **upsert-by-SKU**: a `sku` that already exists is **updated**, a new
+one is **created**. Rows are applied independently — one bad row never fails the batch — and the
+response carries created / updated / skipped / failed counts plus an `errors` array for any
+rejections.
+
+It requires three signing headers, the **same scheme as orders and payments**: an
+`Idempotency-Key` (retrying with the same key returns the original result instead of re-importing),
+an `X-Timestamp` (unix seconds, within 5 minutes of server time), and an `X-Signature` — the base64
+HMAC-SHA256 of `` `${timestamp}.${body}` `` signed with your store's signing secret (Settings →
+Integration Settings).
+
+```typescript
+import { createHmac } from 'crypto';
+
+const payload = {
+  products: [
+    {
+      sku: 'GTS-INGEST-LAMP-01',
+      name: 'Aurora Pro Desk Lamp',
+      category: 'Lighting',
+      brand: 'Lumitech',
+      price: 54.99,
+      cost: 22,
+      stock: 40,
+      description: 'Adjustable LED desk lamp with wireless charging base.',
+    },
+    {
+      sku: 'GTS-INGEST-MAT-01',
+      name: 'Studio Yoga Mat',
+      category: 'Sports Equipment',
+      brand: 'Trailhead',
+      price: 44.99,
+      cost: 18,
+      stock: 60,
+      description: 'Non-slip 6mm yoga mat.',
+    },
+  ],
+};
+
+const timestamp = Math.floor(Date.now() / 1000);
+const body = JSON.stringify(payload);
+const signature = createHmac('sha256', process.env.TYBRITE_HMAC_SECRET)
+  .update(`${timestamp}.${body}`)
+  .digest('base64');
+
+const result = await server.ingestion.ingestProducts({
+  idempotencyKey: `ingest-${timestamp}`,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: payload,
+});
+```
+
+```json Response
+{
+  "status": "success",
+  "dry_run": false,
+  "format": "json",
+  "strategy": "upsert_by_sku",
+  "summary": {
+    "rows_total": 2,
+    "rows_created": 2,
+    "rows_updated": 0,
+    "rows_skipped": 0,
+    "rows_failed": 0
+  },
+  "errors": []
+}
+```
+
+<Warning>
+  This is the only place in the API where `sk` **and** HMAC are both mandatory. A publishable key
+  returns `403`; a missing or invalid signature returns `401` (`invalid_signature`). If **every** row
+  fails validation, nothing is written and the status is `422`.
+</Warning>
+
+A few rules worth knowing before your first import:
+
+- **Category must already exist.** Categories are a fixed platform-level set — a row whose `category`
+  doesn't match one of your enabled categories is rejected (it is **never** auto-created). Match a
+  real category name exactly.
+- **Subcategory is auto-created.** Subcategories are yours to define freely; an unknown one is
+  created on the fly. Nest with ` > ` (e.g. `category: "Electronics"`, `subcategory: "Audio > Headphones"`).
+- **Variants group by `product_group`.** Rows sharing a `product_group` become variants of one
+  product; each still needs its own unique `sku`.
+- **CSV / XML work identically.** Pass `format: 'csv'` (or `'xml'`) and a string body; the upsert and
+  partial-success rules are the same.
+
+## 4. Publish your catalog back out
+
+The inverse direction: opt in (admin → Catalog Sync → **"Publish my catalog"**) and your catalog
+becomes readable at a stable public URL — **no key required** — so any system can pull it: another
+store's scheduled sync, a partner integration, a script. Only storefront-safe fields are exposed,
+never cost or margin.
+
+```typescript
+const feed = await server.ingestion.getStoreCatalogFeedJson({
+  store: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61', // store id or short store code
+});
+```
+
+```json Response
+{
+  "products": [
+    {
+      "sku": "ELEC-ACTIONCAM-01-de4a",
+      "name": "4K Action Camera",
+      "description": "Waterproof 4K action camera with image stabilization and dual screens.",
+      "category": "Cameras & Photography",
+      "subcategory": null,
+      "brand": "Pulsewave",
+      "image": "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400",
+      "media": [],
+      "price": 149,
+      "sale_price": 129,
+      "stock": 148,
+      "seo_title": "4K Action Camera Waterproof Image Stabilization",
+      "seo_description": "Waterproof 4K action camera with dual screens and advanced image stabilization for adventure sports.",
+      "seo_keywords": ["4k action camera", "waterproof camera", "image stabilization", "dual screen"]
+    },
+    {
+      "sku": "API-CHARGER-01-afbf",
+      "name": "65W USB-C GaN Charger",
+      "description": "Compact 65W USB-C GaN wall charger with foldable prongs.",
+      "category": "Accessories & Cables",
+      "subcategory": "Charging & Power",
+      "brand": "Pulsewave",
+      "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=400",
+      "media": [],
+      "price": 39.99,
+      "sale_price": null,
+      "stock": 69,
+      "seo_title": "65W USB-C GaN Charger Compact Fast Charging",
+      "seo_description": "Compact 65W USB-C GaN wall charger with foldable prongs for fast, portable charging.",
+      "seo_keywords": ["65w usb-c charger", "gan charger"]
+    }
+  ]
+}
+```
+
+<Note>
+  `subcategory` and `brand` are nullable — a product not assigned a subcategory shows `subcategory: null`.
+  The feed shape **matches what the ingestion endpoints accept**, so a store-to-store sync is a
+  direct pull-and-ingest with no field mapping. Need XML? Use
+  `server.ingestion.getStoreCatalogFeedXml({ store })` for the same data as an XML document. If you
+  protected the feed with a token, pass it as `{ store, token: 'YOUR_FEED_TOKEN' }`.
+</Note>
+
+## What's next
+
+- Want to know the instant an inbound feed-pull finishes? Subscribe to `feed.sync.completed` in
+  [Webhooks & automation](/workflows/webhooks-automation).
+- Once products are in, wire up [Search & discovery](/workflows/search-and-discovery) and the
+  [Storefront checkout](/workflows/storefront-checkout).

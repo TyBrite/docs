@@ -14,7 +14,7 @@ returns immediately and is processed in the background — sending an event neve
 
 ## Methods
 
-### `record`
+### `recordEvent`
 
 Record a single storefront interaction. Call it as the shopper browses.
 
@@ -22,27 +22,31 @@ Record a single storefront interaction. Call it as the shopper browses.
 
 ```typescript Product View
 // Fire when a shopper opens a product page.
-await client.events.record({
+await client.events.recordEvent({
   requestBody: {
     event_type: 'view',
-    variant_id: 'variant-uuid',      // the variant on the page
-    session_id: 'browser-session-id' // your stable per-session identifier
+    variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a', // the variant on the page
+    session_id: 'browser-session-id'                     // your stable per-session identifier
   }
 });
+// → 202 { recorded: true }
 ```
 
 ```typescript Add to Cart
-await client.events.record({
+await client.events.recordEvent({
   requestBody: {
     event_type: 'add_to_cart',
-    variant_id: 'variant-uuid',
+    variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a',
     session_id: 'browser-session-id',
     customer_id: 'customer-uuid'      // include when the shopper is signed in
   }
 });
+// → 202 { recorded: true }
 ```
 
 </CodeGroup>
+
+The call returns `{ recorded: true }` with a `202 Accepted`.
 
 **Parameters:**
 

@@ -105,20 +105,57 @@ Lodges a return against one of the authenticated customer's own online orders. T
 const { data: lodged } = await client.returns.createReturn({
   xAuthToken: customerSessionToken,
   requestBody: {
-    order_id: '770a0622-0401-63f6-c938-557766551111',
+    order_id: 'a80a5298-eba4-41b3-8e87-a26ff89b493d',
     reason_code: 'damaged',
     return_type: 'full_refund',
     items: [
       {
-        order_item_id: '9c4f1d2e-aaaa-bbbb-cccc-1234567890ab',
+        order_item_id: '585eaedb-fde2-4452-b101-33173741578a',
         quantity: 1,
         condition: 'damaged',
-        media: ['https://cdn.example.com/return-photo-1.jpg'],
+        media: ['https://example.com/return-photo-1.jpg'],
       },
     ],
   },
 });
 // lodged.status === 'pending'
+```
+
+**Response `201`:**
+
+```json
+{
+  "data": {
+    "id": "75eef130-2aba-414b-b6ef-3c19b71205b6",
+    "return_number": "RET-20260620-d41309",
+    "order_id": "a80a5298-eba4-41b3-8e87-a26ff89b493d",
+    "channel": "online",
+    "status": "pending",
+    "return_type": "full_refund",
+    "reason_code": "damaged",
+    "reason_description": null,
+    "total_return_amount": 299,
+    "refund_amount": 299,
+    "refund_method": null,
+    "created_at": "2026-06-20T10:48:26.132147+00:00",
+    "processed_at": null,
+    "credit_offer": { "status": "none", "amount": null },
+    "items": [
+      {
+        "id": "8b7c00d4-b557-4697-8933-3ed891295e39",
+        "order_item_id": "585eaedb-fde2-4452-b101-33173741578a",
+        "product_name": "Samsung Galaxy Watch 6",
+        "quantity": 1,
+        "unit_price": 299,
+        "return_amount": 299,
+        "condition": "damaged",
+        "status": "pending",
+        "rejection_reason": null,
+        "media": []
+      }
+    ]
+  }
+}
 ```
 
 **Parameters**
@@ -168,6 +205,43 @@ const { data: myReturns } = await client.returns.listReturns({
 { data: Return[]; }
 ```
 
+```json Response (200)
+{
+  "data": [
+    {
+      "id": "75eef130-2aba-414b-b6ef-3c19b71205b6",
+      "return_number": "RET-20260620-d41309",
+      "order_id": "a80a5298-eba4-41b3-8e87-a26ff89b493d",
+      "channel": "online",
+      "status": "pending",
+      "return_type": "full_refund",
+      "reason_code": "damaged",
+      "reason_description": null,
+      "total_return_amount": 299,
+      "refund_amount": 299,
+      "refund_method": null,
+      "created_at": "2026-06-20T10:48:26.132147+00:00",
+      "processed_at": null,
+      "credit_offer": { "status": "none", "amount": null },
+      "items": [
+        {
+          "id": "8b7c00d4-b557-4697-8933-3ed891295e39",
+          "order_item_id": "585eaedb-fde2-4452-b101-33173741578a",
+          "product_name": "Samsung Galaxy Watch 6",
+          "quantity": 1,
+          "unit_price": 299,
+          "return_amount": 299,
+          "condition": "damaged",
+          "status": "pending",
+          "rejection_reason": null,
+          "media": []
+        }
+      ]
+    }
+  ]
+}
+```
+
 ---
 
 ## `getReturn`
@@ -176,12 +250,49 @@ Returns a single return by ID, including its line items and current status. A re
 
 ```typescript
 const { data: detail } = await client.returns.getReturn({
-  id: '4a5b6c7d-8e9f-0123-4567-89abcdef0123',
+  id: '75eef130-2aba-414b-b6ef-3c19b71205b6',
   xAuthToken: customerSessionToken,
 });
 
 for (const item of detail.items) {
   console.log(`${item.product_name} ×${item.quantity} — ${item.status}`);
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "data": {
+    "id": "75eef130-2aba-414b-b6ef-3c19b71205b6",
+    "return_number": "RET-20260620-d41309",
+    "order_id": "a80a5298-eba4-41b3-8e87-a26ff89b493d",
+    "channel": "online",
+    "status": "pending",
+    "return_type": "full_refund",
+    "reason_code": "damaged",
+    "reason_description": null,
+    "total_return_amount": 299,
+    "refund_amount": 299,
+    "refund_method": null,
+    "created_at": "2026-06-20T10:48:26.132147+00:00",
+    "processed_at": null,
+    "credit_offer": { "status": "none", "amount": null },
+    "items": [
+      {
+        "id": "8b7c00d4-b557-4697-8933-3ed891295e39",
+        "order_item_id": "585eaedb-fde2-4452-b101-33173741578a",
+        "product_name": "Samsung Galaxy Watch 6",
+        "quantity": 1,
+        "unit_price": 299,
+        "return_amount": 299,
+        "condition": "damaged",
+        "status": "pending",
+        "rejection_reason": null,
+        "media": []
+      }
+    ]
+  }
 }
 ```
 
@@ -212,6 +323,10 @@ for (const item of detail.items) {
   refund_method: string | null;
   created_at: string;               // ISO 8601
   processed_at: string | null;
+  credit_offer: {                   // status is "none" until the merchant offers store credit
+    status: 'none' | 'pending' | 'accepted' | 'declined';
+    amount: number | null;
+  };
   items: Array<{
     id: string;
     order_item_id: string;
@@ -244,6 +359,17 @@ const { data } = await client.returns.getStoreCredit({
 console.log(`You have ${data.balance} in store credit`);
 ```
 
+**Response `200`** (`currency` is `null` when the customer has no credit yet):
+
+```json
+{
+  "data": {
+    "balance": 0,
+    "currency": null
+  }
+}
+```
+
 ### `acceptReturnCredit(options)`
 
 Accept a pending store-credit offer on one of the customer's returns. The credit is issued to their balance and the return is finalized. Returns `409` if there is no pending offer.
@@ -256,6 +382,17 @@ const { data } = await client.returns.acceptReturnCredit({
 console.log(`Store credit issued: ${data.amount}`);
 ```
 
+**Response `200`:**
+
+```json
+{
+  "data": {
+    "store_credit_id": "90cfe13f-2486-4be7-947a-db299ff241c3",
+    "amount": 24.95
+  }
+}
+```
+
 ### `requestReturnRefund(options)`
 
 Decline the store-credit offer and request a refund instead (the merchant then handles the refund directly). Returns `409` if there is no pending offer.
@@ -265,6 +402,7 @@ await client.returns.requestReturnRefund({
   id: returnId,
   xAuthToken: customerSessionToken,
 });
+// → { data: { status: 'refund_requested' } }
 ```
 
 ### Spending store credit at checkout
@@ -280,6 +418,7 @@ const { data: order } = await client.orders.createOrder({
     // store_credit_amount: 10,   // optional — cap how much to use; omit to use as much as applies
   },
 });
+// → { data: { id, order_number, total, store_credit_applied: 24.95, payment_status, ... } }
 
 console.log(`Applied ${order.store_credit_applied} of store credit`);
 ```
@@ -293,6 +432,7 @@ A complete "the merchant offered me store credit, what now?" screen:
 ```typescript
 // 1. Load the return and check for a pending offer
 const { data: ret } = await client.returns.getReturn({ id: returnId, xAuthToken });
+// → { data: { ...the Return object, credit_offer: { status: 'pending', amount: 24.95 } } }
 
 if (ret.credit_offer?.status === 'pending') {
   // 2. Show the shopper the choice
@@ -301,12 +441,14 @@ if (ret.credit_offer?.status === 'pending') {
   // 3a. They take the credit →
   onAccept(async () => {
     const { data } = await client.returns.acceptReturnCredit({ id: returnId, xAuthToken });
+    // → { data: { store_credit_id: '90cfe13f-...', amount: 24.95 } }
     toast(`Added ${data.amount} to your store credit — use it any time.`);
   });
 
   // 3b. They'd rather have their money →
   onRequestRefund(async () => {
     await client.returns.requestReturnRefund({ id: returnId, xAuthToken });
+    // → { data: { status: 'refund_requested' } }
     toast(`No problem — we'll arrange your refund.`);
   });
 }
@@ -323,6 +465,7 @@ if (ret.credit_offer?.status === 'pending') {
 ```typescript
 // 1. Show the reason picker (no sign-in needed yet)
 const { data: reasons } = await client.returns.listReturnReasons();
+// → { data: [ { code: 'damaged', label: 'Arrived damaged' }, ... ] }
 renderReasonDropdown(reasons);
 
 // 2. After the customer signs in and picks items, lodge the return
@@ -337,11 +480,13 @@ const { data: lodged } = await client.returns.createReturn({
     })),
   },
 });
+// → { data: { id, return_number, status: 'pending', items: [...] } }
 
 // 3. Track it from the customer's account page
 const { data: history } = await client.returns.listReturns({
   xAuthToken: customerSessionToken,
 });
+// → { data: [ { id, return_number, status, items: [...] }, ... ] }
 ```
 
 ---

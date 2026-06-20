@@ -1,0 +1,346 @@
+---
+title: "Returning Customer"
+description: "The post-purchase journey for a signed-in shopper — sign in, review order history and profile, lodge and track a return, and spend store credit on the next order."
+---
+
+This is the flow for a shopper who already has an account and an order behind them: they sign back
+in, look at their history and profile, lodge a return, and redeem the store credit they're offered
+on their next purchase. Customer-self reads (profile, returns) run with the **publishable** client
+plus the shopper's session token; order history and sign-in run with the **secret** client on your
+server. (See [Workflow Examples](/workflows/introduction) for the client setup.)
+
+## 1. Sign the shopper back in
+
+Login is a **secret-key** call on your server (a publishable key returns `403`). It returns the
+customer record and a `session` whose `access_token` is the shopper's session token — you hand that
+back to the browser to use as `xAuthToken` on the customer-self calls below.
+
+```typescript
+// On your server — secret client
+const { customer, session } = await server.authentication.login({
+  requestBody: { email: 'john.doe@example.com', password: '••••••••' },
+});
+// session.access_token  → the shopper's x-auth-token for steps 3–5
+```
+
+```json Response
+{
+  "message": "Login successful",
+  "user": { "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b", "email": "john.doe@example.com", "email_confirmed": true },
+  "customer": {
+    "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "phone": "+12125550142",
+    "tier": "bronze",
+    "total_purchases": 0,
+    "created_at": "2026-06-20T11:36:54.174303+00:00"
+  },
+  "session": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature",
+    "refresh_token": "5h2g7k9m1n3p...",
+    "expires_in": 3600
+  }
+}
+```
+
+<Tip>
+  Passwordless? `server.authentication.sendMagicLink(...)` and the OTP pair (`sendMagicLink` →
+  `verifyOtp`) return the same `{ user, customer, session }` envelope. Token expiring? Refresh it
+  with `server.authentication.refreshSession(...)`.
+</Tip>
+
+## 2. Show order history
+
+Order history is a **secret-key** read on your server. `listOrders` returns the customer's orders
+newest-first; filter by `payment_status` or page with the cursor. (A publishable key returns `403`
+here — order data never leaves your server.)
+
+```typescript
+// On your server — secret client
+const { orders } = await server.orders.listOrders({ limit: 5 });
+```
+
+```json Response
+{
+  "orders": [
+    {
+      "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
+      "order_number": "ORD-1781955469360",
+      "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+      "customer_email": "john.doe@example.com",
+      "customer_name": "John Doe",
+      "subtotal": 598,
+      "shipping_amount": 5.99,
+      "discount_amount": 0,
+      "total_amount": 603.99,
+      "currency": "USD",
+      "payment_method": "card",
+      "payment_status": "paid",
+      "order_status": "shipped",
+      "tracking_number": "1Z999AA10123456784",
+      "created_at": "2026-06-20T11:37:50.273614+00:00"
+    }
+  ]
+}
+```
+
+Drill into one order — line items included — with `getOrder`:
+
+```typescript
+const order = await server.orders.getOrder({ id: '0468af54-5f6b-4be5-a4e6-3aa7a79450ba' });
+// order.items[0].product_name === 'Samsung Galaxy Watch 6'  ·  order.order_status === 'shipped'
+```
+
+```json Response
+{
+  "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
+  "order_number": "ORD-1781955469360",
+  "payment_status": "paid",
+  "order_status": "shipped",
+  "total_amount": 603.99,
+  "tracking_number": "1Z999AA10123456784",
+  "items": [
+    {
+      "id": "d72a3cbe-2232-4e84-a25c-fe1245c5e5e0",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "product_name": "Samsung Galaxy Watch 6",
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "quantity": 2,
+      "unit_price": 299,
+      "total_price": 598
+    }
+  ]
+}
+```
+
+## 3. Show the customer's profile
+
+The shopper can read their own profile with the **publishable** client plus their session token.
+`getCustomer` requires the `{id}` to match the resolved session — a mismatch returns `403`, so a
+shopper can only ever read their own record. Note the nullable fields (`address`, `last_purchase`,
+`store_metrics`) and the loyalty `tier`.
+
+```typescript
+const profile = await storefront.customers.getCustomer({
+  id: '15ecd58f-a8f8-49e4-9098-96f1fa8308e9',
+  xAuthToken: session.access_token,
+});
+```
+
+```json Response
+{
+  "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+  "name": "John Doe",
+  "email": "john.doe@example.com",
+  "phone": "+12125550142",
+  "address": null,
+  "status": "active",
+  "join_date": "2026-06-20",
+  "external_id": null,
+  "marketing_consent": true,
+  "total_purchases": 0,
+  "last_purchase": null,
+  "store_credit_balance": 0,
+  "created_at": "2026-06-20T11:36:54.174303+00:00",
+  "updated_at": "2026-06-20T11:36:54.174303+00:00",
+  "store_metrics": null
+}
+```
+
+<Note>
+  Stores that run their own identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO) pass a
+  signed `xExternalAuth` assertion instead of `xAuthToken` — the same customer-self endpoints accept
+  either. See [Authentication](/authentication) for the assertion format.
+</Note>
+
+## 4. Lodge a return
+
+A shopper returns part or all of a delivered order with `createReturn` (publishable client +
+session token). Pick a `reason_code` from the public reason list, a `return_type`, and the order
+line(s) to send back. The return lands in `pending` for the merchant to review.
+
+First, fetch the reason codes to populate the form — no session needed:
+
+```typescript
+const { data: reasons } = await storefront.returns.listReturnReasons();
+```
+
+```json Response
+{
+  "data": [
+    { "code": "damaged", "label": "Arrived damaged" },
+    { "code": "defective", "label": "Defective / not working" },
+    { "code": "wrong_item", "label": "Wrong item received" },
+    { "code": "not_as_described", "label": "Not as described" },
+    { "code": "wrong_size", "label": "Wrong size / fit" },
+    { "code": "no_longer_needed", "label": "No longer needed" },
+    { "code": "arrived_late", "label": "Arrived too late" },
+    { "code": "other", "label": "Other (please describe)" }
+  ]
+}
+```
+
+Then lodge the return:
+
+```typescript
+const { data: ret } = await storefront.returns.createReturn({
+  xAuthToken: session.access_token,
+  requestBody: {
+    order_id: 'a80a5298-eba4-41b3-8e87-a26ff89b493d',
+    reason_code: 'damaged',
+    return_type: 'full_refund',
+    items: [
+      { order_item_id: '585eaedb-fde2-4452-b101-33173741578a', quantity: 1, condition: 'damaged' },
+    ],
+  },
+});
+// ret.status === 'pending'  ·  ret.return_number === 'RET-20260620-d41309'
+```
+
+```json Response
+{
+  "data": {
+    "id": "75eef130-2aba-414b-b6ef-3c19b71205b6",
+    "return_number": "RET-20260620-d41309",
+    "order_id": "a80a5298-eba4-41b3-8e87-a26ff89b493d",
+    "channel": "online",
+    "status": "pending",
+    "return_type": "full_refund",
+    "reason_code": "damaged",
+    "reason_description": null,
+    "total_return_amount": 299,
+    "refund_amount": 299,
+    "refund_method": null,
+    "created_at": "2026-06-20T10:48:26.132147+00:00",
+    "processed_at": null,
+    "credit_offer": { "status": "none", "amount": null },
+    "items": [
+      {
+        "id": "8b7c00d4-b557-4697-8933-3ed891295e39",
+        "order_item_id": "585eaedb-fde2-4452-b101-33173741578a",
+        "product_name": "Samsung Galaxy Watch 6",
+        "quantity": 1,
+        "unit_price": 299,
+        "return_amount": 299,
+        "condition": "damaged",
+        "status": "pending",
+        "rejection_reason": null,
+        "media": []
+      }
+    ]
+  }
+}
+```
+
+<Note>
+  Returns must be enabled for the store. If the merchant has them turned off, `createReturn` returns
+  `422` with `{ error: { code: "returns_disabled" } }`. Approving a return and reviewing the items is
+  a merchant action done in admin — not via this API.
+</Note>
+
+## 5. Track the return
+
+The shopper watches their returns with `listReturns` (all of their own returns) or `getReturn` (one
+by id) — publishable client + session token.
+
+```typescript
+const { data: myReturns } = await storefront.returns.listReturns({
+  xAuthToken: session.access_token,
+});
+// myReturns[0].status moves pending → approved → processing → completed as the merchant works it
+```
+
+```json Response
+{
+  "data": [
+    {
+      "id": "75eef130-2aba-414b-b6ef-3c19b71205b6",
+      "return_number": "RET-20260620-d41309",
+      "order_id": "a80a5298-eba4-41b3-8e87-a26ff89b493d",
+      "channel": "online",
+      "status": "pending",
+      "return_type": "full_refund",
+      "reason_code": "damaged",
+      "total_return_amount": 299,
+      "refund_amount": 299,
+      "credit_offer": { "status": "none", "amount": null },
+      "created_at": "2026-06-20T10:48:26.132147+00:00"
+    }
+  ]
+}
+```
+
+## 6. Accept a store-credit offer
+
+Instead of a cash refund, a merchant can offer **store credit** as the return resolution. When they
+do, the return's `credit_offer.status` flips to `offered` with an `amount`, and the shopper accepts
+it with `acceptReturnCredit`. Galactic Core issues the credit to the customer's balance.
+
+```typescript
+const { data: credit } = await storefront.returns.acceptReturnCredit({
+  id: '75eef130-2aba-414b-b6ef-3c19b71205b6',
+  xAuthToken: session.access_token,
+});
+```
+
+```json Response
+{
+  "data": { "store_credit_id": "90cfe13f-2486-4be7-947a-db299ff241c3", "amount": 24.95 }
+}
+```
+
+Check the running balance any time with `getStoreCredit`:
+
+```typescript
+const { data: balance } = await storefront.returns.getStoreCredit({
+  xAuthToken: session.access_token,
+});
+```
+
+```json Response
+{ "data": { "balance": 24.95, "currency": "USD" } }
+```
+
+## 7. Spend the credit on the next order
+
+On the shopper's next checkout, apply their store credit at order creation: set
+`apply_store_credit: true` on the order body (optionally cap it with `store_credit_amount`). The
+amount actually applied comes back as `store_credit_applied`. This runs on your server — order
+creation is a secret-key, HMAC-signed call (see [Storefront checkout](/workflows/storefront-checkout#6-place-the-order-server-signed)
+for the signing recipe).
+
+```typescript
+const { order } = await server.orders.createOrder({
+  idempotencyKey: `order-${customer.id}-${Date.now()}`,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: {
+    customer_email: 'john.doe@example.com',
+    customer_name: 'John Doe',
+    items: [
+      { product_id: '0186665f-f0a1-4c79-976a-919b5b1c2daa', variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a', quantity: 1, unit_price: 299, total_price: 299 },
+    ],
+    subtotal: 299,
+    shipping_amount: 5.99,
+    total_amount: 304.99,
+    payment_status: 'pending',
+    apply_store_credit: true,
+  },
+});
+// order.store_credit_applied → the credit Galactic Core deducted toward this order
+```
+
+<Tip>
+  Store credit is deducted from the order total automatically — you don't move money yourself. The
+  remaining balance is charged through the normal payment step.
+</Tip>
+
+## What's next
+
+- Find more to buy: [Search & discovery](/workflows/search-and-discovery) covers search,
+  recommendations, and dynamic pricing.
+- New shopper instead? Walk the full guest-to-paid path in
+  [Storefront checkout](/workflows/storefront-checkout).
+- Encourage a [review and open a support thread](/workflows/reviews-and-messaging) after the return
+  resolves.

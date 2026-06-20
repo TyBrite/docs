@@ -15,7 +15,7 @@ The cart and wishlist APIs support full variant tracking and a unified media gal
 
 ## Security Model
 
-Cart and wishlist endpoints accept **publishable keys** (storefronts run in browsers), so a leaked publishable key alone is not enough to access another customer's cart. When the request claims a `customer_id` (query or body), the gateway requires an `xAuthToken` header — the customer's session JWT from `client.authentication.login` or `verifyOtp`. The resolved customer must match the claimed `customer_id`, otherwise the gateway returns `403 forbidden`. Anonymous (session-only) carts skip this check and rely on the secrecy of `X-Session-Id`.
+Cart and wishlist endpoints accept **publishable keys** (storefronts run in browsers), so a leaked publishable key alone is not enough to access another customer's cart. When the request claims a `customer_id` (query or body), Galactic Core requires an `xAuthToken` header — the customer's session JWT from `client.authentication.login` or `verifyOtp`. The resolved customer must match the claimed `customer_id`, otherwise the request returns `403 forbidden`. Anonymous (session-only) carts skip this check and rely on the secrecy of `X-Session-Id`.
 
 <Note>
   All wishlist endpoints (and `mergeCart`) always require `xAuthToken` because they are inherently customer-scoped. Only cart reads/writes that omit `customer_id` and rely solely on `xSessionId` may proceed unauthenticated.
@@ -44,6 +44,33 @@ console.log(`Item: ${firstItem.product_name} (${firstItem.variant_name})`);
 console.log(`Thumbnail: ${firstItem.thumbnail_url}`);
 ```
 
+```json Response (200)
+{
+  "items": [
+    {
+      "id": "09695de2-73ac-45ea-b2cb-76f9751b9846",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "product_name": "Samsung Galaxy Watch 6",
+      "variant_name": "Default",
+      "variant_attributes": {},
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "thumbnail_url": "https://cdn.tybritelabs.com/stores/.../primary-1774785167560.jpg",
+      "quantity": 2,
+      "unit_price": 299.99,
+      "selling_price": 299.99,
+      "total_price": 599.98,
+      "stock_available": 183,
+      "has_variants": false
+    }
+  ]
+}
+```
+
+<Note>
+  See [Response Objects](#response-objects) below for the full `CartItem` shape, including the `media[]` gallery.
+</Note>
+
 ### `addToCart`
 
 Add a specific product variant to the cart. If the same variant already exists, its quantity will be incremented.
@@ -71,6 +98,7 @@ await client.cartWishlist.addToCart({
     customer_id: 'customer-uuid'
   }
 });
+// → { items: [...] } — the full updated cart (same shape as getCart)
 ```
 
 ### `updateCartItem`
@@ -96,6 +124,7 @@ await client.cartWishlist.updateCartItem({
     customer_id: 'customer-uuid'
   }
 });
+// → { items: [...] } — the full updated cart with the new quantity + recomputed total_price
 ```
 
 ### `clearCart`
@@ -113,6 +142,7 @@ await client.cartWishlist.clearCart({
   xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
+// → { items: [] } — the now-empty cart
 ```
 
 ### `removeCartItem`
@@ -132,6 +162,7 @@ await client.cartWishlist.removeCartItem({
   xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
+// → { items: [...] } — the cart with that item removed
 ```
 
 ### `mergeCart`
@@ -139,7 +170,7 @@ await client.cartWishlist.removeCartItem({
 Combine an anonymous guest cart with a customer's permanent cart. Carts are matched by both `product_id` and `variant_id` to prevent merging different variants of the same product.
 
 <Note>
-  `mergeCart` always requires `xAuthToken` — it links a guest session to a customer record, so the gateway must verify the caller actually owns that customer.
+  `mergeCart` always requires `xAuthToken` — it links a guest session to a customer record, so Galactic Core must verify the caller actually owns that customer.
 </Note>
 
 ```typescript
@@ -150,6 +181,7 @@ await client.cartWishlist.mergeCart({
     customer_id: 'authenticated-customer-uuid'
   }
 });
+// → { items: [...] } — the merged customer cart (guest lines folded in)
 ```
 
 ## Wishlist Management
@@ -169,6 +201,26 @@ const { items } = await client.cartWishlist.getWishlist({
 });
 ```
 
+```json Response (200)
+{
+  "items": [
+    {
+      "id": "2dac3a23-afec-4b6a-a369-e7bdb1f3bc32",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "product_name": "Samsung Galaxy Watch 6",
+      "variant_name": "Default",
+      "variant_attributes": {},
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "product_price": 299,
+      "thumbnail_url": "https://cdn.tybritelabs.com/stores/.../primary-1774785167560.jpg",
+      "stock_available": 183,
+      "has_variants": false
+    }
+  ]
+}
+```
+
 ### `addToWishlist`
 
 Save a specific product variant for later. Wishlists require an authenticated `customer_id`.
@@ -181,6 +233,8 @@ await client.cartWishlist.addToWishlist({
     customer_id: 'customer-uuid'
   }
 });
+// → 201 { items: [...] } — the full wishlist including the newly saved item
+//   (adding a variant already on the wishlist returns 409)
 ```
 
 ### `removeFromWishlist`
@@ -193,6 +247,7 @@ await client.cartWishlist.removeFromWishlist({
   xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
+// → { items: [...] } — the wishlist with that item removed
 ```
 
 ### `moveWishlistToCart`
@@ -208,6 +263,28 @@ await client.cartWishlist.moveWishlistToCart({
     quantity: 1
   }
 });
+```
+
+```json Response (200)
+{
+  "success": true,
+  "message": "Item moved from wishlist to cart",
+  "removed_wishlist_item_id": "2dac3a23-afec-4b6a-a369-e7bdb1f3bc32",
+  "items": [
+    {
+      "id": "845e8724-a3dc-432c-9771-26a4173ec48c",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "product_name": "Samsung Galaxy Watch 6",
+      "variant_name": "Default",
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "quantity": 1,
+      "unit_price": 299.99,
+      "selling_price": 299.99,
+      "total_price": 299.99
+    }
+  ]
+}
 ```
 
 ---
@@ -262,9 +339,9 @@ Both cart and wishlist items include structured data for optimized frontend rend
         }
     ],
     "quantity": 2,
-    "unit_price": 99999,
-    "selling_price": 99999,
-    "total_price": 199998,
+    "unit_price": 799.99,
+    "selling_price": 799.99,
+    "total_price": 1599.98,
     "stock_available": 49,
     "has_variants": false,
     "created_at": "2026-04-11T10:54:23Z",
@@ -282,7 +359,7 @@ Both cart and wishlist items include structured data for optimized frontend rend
     "variant_name": "Default",
     "variant_attributes": {},
     "product_sku": "SMG-S21-BLK",
-    "product_price": 99999,
+    "product_price": 799.99,
     "thumbnail_url": "https://cdn.tybritelabs.com/stores/.../primary-1774785162626.jpg",
     "media": [
         {
@@ -328,7 +405,7 @@ const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
   try {
     if (customerSession?.access_token) {
       // Authenticated path — JWT must resolve to customer_id
-      await client.cartWishlist.addToCart({
+      const { items } = await client.cartWishlist.addToCart({
         xAuthToken: customerSession.access_token,
         requestBody: {
           variant_id: selectedVariant.variant_id,
@@ -336,15 +413,17 @@ const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
           customer_id: customerSession.customer_id
         }
       });
+      // → { items: [...] } — re-render the cart badge from items.length
     } else {
       // Anonymous path — session-only cart
-      await client.cartWishlist.addToCart({
+      const { items } = await client.cartWishlist.addToCart({
         xSessionId: sessionId,
         requestBody: {
           variant_id: selectedVariant.variant_id,
           quantity
         }
       });
+      // → { items: [...] }
     }
   } catch (error) {
     if (error.code === 'insufficient_stock') {

@@ -31,6 +31,43 @@ const { promotions, pagination } = await client.promotions.listPromotions({
 console.log(`Available promotions: ${promotions.length}`);
 ```
 
+```json Response
+{
+  "promotions": [
+    {
+      "id": "df290d89-0400-4b2c-aa56-11fcc486150c",
+      "type": "discount",
+      "display_type": "Percentage Discount",
+      "name": "Spring Sale — 15% Off",
+      "value": "15",
+      "min_purchase": 50,
+      "start_date": "2026-06-19",
+      "end_date": "2026-07-20",
+      "status": "active",
+      "conditions": "Minimum spend $50",
+      "has_time_restrictions": false,
+      "start_time": null,
+      "end_time": null,
+      "time_zone": "America/New_York",
+      "apply_to_days": null
+    },
+    {
+      "id": "b43fd2cc-622a-454a-965f-18323d11c346",
+      "type": "fixed",
+      "display_type": "Fixed amount off",
+      "name": "$20 Off Orders Over $200",
+      "value": "20",
+      "min_purchase": 200,
+      "start_date": "2026-06-19",
+      "end_date": "2026-07-20",
+      "status": "active",
+      "time_zone": "America/New_York"
+    }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
+```
+
 **Filter: `cartTotal`**
 Providing a `cartTotal` allows the engine to pre-filter promotions that the customer is actually eligible for based on their current shopping bag value (compared against each promotion's `min_purchase`).
 
@@ -48,6 +85,26 @@ const promo = await client.promotions.getPromotion({
 
 if (promo.image) {
   console.log(`Promotion Banner: ${promo.image}`);
+}
+```
+
+```json Response
+{
+  "id": "df290d89-0400-4b2c-aa56-11fcc486150c",
+  "type": "discount",
+  "display_type": "Percentage Discount",
+  "name": "Spring Sale — 15% Off",
+  "value": "15",
+  "min_purchase": 50,
+  "start_date": "2026-06-19",
+  "end_date": "2026-07-20",
+  "status": "active",
+  "conditions": "Minimum spend $50",
+  "has_time_restrictions": false,
+  "start_time": null,
+  "end_time": null,
+  "time_zone": "America/New_York",
+  "apply_to_days": null
 }
 ```
 
@@ -84,10 +141,43 @@ if (promo.type === 'bogo') {
 }
 ```
 
+```json Response
+{
+  "id": "46e746e2-6ef3-4091-ae4e-6bc8d405a1a2",
+  "type": "bundle",
+  "display_type": "Bundle promotion",
+  "name": "Audio + Wearable Bundle",
+  "value": "0",
+  "min_purchase": 0,
+  "status": "active",
+  "time_zone": "America/New_York",
+  "bundle_products": [
+    { "productId": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", "quantity": 1, "discountedPrice": 299.99 },
+    { "productId": "0186665f-f0a1-4c79-976a-919b5b1c2daa", "quantity": 1, "discountedPrice": 249 }
+  ],
+  "bundle_products_resolved": [
+    {
+      "productId": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8",
+      "quantity": 1,
+      "discountedPrice": 299.99,
+      "product": {
+        "product_id": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8",
+        "name": "Sony WH-1000XM4",
+        "price": 349.99,
+        "image": "https://cdn.example.com/products/sony-wh1000xm4.jpg",
+        "category": "Audio & Headphones"
+      }
+    }
+  ]
+}
+```
+
 **The manual way.** Without `expand`, the product fields hold product **ids** — fetch each one's full detail with `client.products.getProduct(...)` yourself:
 
 ```typescript
 const promo = await client.promotions.getPromotion({ id: 'promotion_uuid' });
+// without expand, products are ids only:
+// → promo.bundle_products = [{ productId, quantity, discountedPrice }]
 
 if (promo.type === 'bundle') {
   const items = await Promise.all(
@@ -192,6 +282,7 @@ const promo = await client.promotions.getPromotion({
   storeId: merchant_store_id,
   expand: 'products',
 });
+// → same Promotion shape as above, scoped to merchant_store_id
 
 // Compute the discount against that merchant's cart:
 const result = await client.promotions.calculatePromotionDiscount({
@@ -199,12 +290,14 @@ const result = await client.promotions.calculatePromotionDiscount({
   storeId: merchant_store_id,
   requestBody: { cart: [{ product_id: 'prod_a', quantity: 1, price: 25.0 }] },
 });
+// → { promotion_id, type, eligible, discount, reason }
 
 // Or find the best deal among that merchant's promotions:
 const best = await client.promotions.calculateBestPromotion({
   storeId: merchant_store_id,
   requestBody: { cart: [{ product_id: 'prod_a', quantity: 1, price: 25.0 }] },
 });
+// → { promotion: { id, name, type } | null, discount }
 ```
 
 A marketplace key may read and calculate a single merchant's promotions this way; it cannot list promotions.

@@ -1,0 +1,69 @@
+---
+title: "Workflow Examples"
+description: "End-to-end, real-world flows that wire the Galactic Core SDK services together — pick the use case closest to what you're building and copy the sequence."
+---
+
+The per-service reference pages document each method in isolation. This section shows how the
+services **compose** into the flows you actually ship — a checkout, a returns flow, a search
+experience, a marketplace storefront, a catalog sync. Each page is a self-contained, runnable
+sequence using real data shapes, so you can copy a block, swap in your own ids, and go.
+
+## How these examples work
+
+Every snippet uses the TypeScript SDK and follows the same conventions as the rest of the docs:
+
+- **Real shapes.** Request and response bodies mirror what the live API actually returns — real
+  field names, real structure. Ids/names/emails are illustrative (`John Doe`, `example.com`) but
+  the shape is exact.
+- **Two clients.** Read endpoints (catalog, search, pricing) take a **publishable** key and are
+  safe in the browser. Writes that touch money or another customer's data (orders, payments) take a
+  **secret** key and run on your server. Each step notes which client it uses.
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+// Browser / storefront — read-only, safe to ship in client code
+const storefront = new Tybrite({ apiKey: 'tybrite_pk_live_YOUR_KEY' });
+
+// Server — full read/write, kept in an environment variable, never exposed
+const server = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+```
+
+<Info>
+  Not sure which key a given call needs? The
+  [Key Usage by Endpoint](/authentication#key-usage-by-endpoint) table maps every endpoint to
+  `pk` / `sk` / customer-session / HMAC. The walkthroughs below call it out at each step.
+</Info>
+
+## Pick your use case
+
+<CardGroup cols={2}>
+  <Card title="Storefront checkout" icon="cart-shopping" href="/workflows/storefront-checkout">
+    The core journey: browse the catalog, build a cart, sign the shopper in, quote shipping, place
+    the order, and take payment — guest-to-paid in one sequence.
+  </Card>
+  <Card title="Search & discovery" icon="magnifying-glass" href="/workflows/search-and-discovery">
+    Text + semantic search, AI recommendations, browsing behavior capture, and dynamic pricing —
+    the discovery surfaces that get shoppers to the cart.
+  </Card>
+  <Card title="Returning customer" icon="arrow-rotate-left" href="/workflows/returning-customer">
+    Sign-in, order history, lodging and tracking a return, and applying store credit on the next
+    order.
+  </Card>
+  <Card title="Reviews & messaging" icon="comments" href="/workflows/reviews-and-messaging">
+    Post-purchase engagement: submit and vote on reviews, and run a real-time customer ↔ store
+    conversation.
+  </Card>
+  <Card title="Marketplace" icon="store" href="/workflows/marketplace">
+    Operator flows for a multi-merchant marketplace: aggregated discovery, a unified split
+    checkout, and a shopper's cross-merchant profile.
+  </Card>
+  <Card title="Catalog sync" icon="arrows-rotate" href="/workflows/catalog-sync">
+    Push your external catalog into Galactic Core (and publish it back out) — feed formats,
+    validation, and the secure ingestion handshake.
+  </Card>
+  <Card title="Webhooks & automation" icon="bolt" href="/workflows/webhooks-automation">
+    React to commerce events in real time — register an endpoint, verify deliveries, and handle
+    `order.paid` end to end.
+  </Card>
+</CardGroup>
