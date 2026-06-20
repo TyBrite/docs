@@ -6,7 +6,7 @@ description: "Reference for the RecommendationsService class in the Tybrite SDK.
 The `RecommendationsService` class (accessed via `client.recommendations`) allows you to integrate AI-driven product suggestions into your storefront to increase discovery and conversion.
 
 <Warning>
-  **Secret Key Required.** This service requires a **Secret Key** (`sk_live_*` / `sk_test_*`). AI inference is computationally expensive and consumes AI recommendation quota — gating to `sk` prevents abuse from scraped publishable keys. Requests authenticated with a publishable key receive `403 Forbidden`.
+  **Secret Key Required.** This service requires a **Secret Key** (`tybrite_sk_live_*` / `tybrite_sk_test_*`). AI inference is computationally expensive and consumes AI recommendation quota — gating to `sk` prevents abuse from scraped publishable keys. Requests authenticated with a publishable key receive `403 Forbidden`.
 </Warning>
 
 ## Methods
@@ -22,10 +22,12 @@ Retrieve curated product suggestions based on various AI models. Use the example
 const { recommendations } = await client.recommendations.getRecommendations({
   requestBody: {
     type: 'similar',
-    productId: 'current-product-uuid',
-    limit: 4
+    productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
+    limit: 5
   }
 });
+// recommendations[0] => { productId: '3422935b-88ee-43ad-a7df-c03161a35cb4',
+//                         score: 0.87, reason: 'Similar product based on description and attributes' }
 ```
 
 ```typescript Also Bought
@@ -33,10 +35,12 @@ const { recommendations } = await client.recommendations.getRecommendations({
 const { recommendations } = await client.recommendations.getRecommendations({
   requestBody: {
     type: 'also-bought',
-    productId: 'current-product-uuid',
-    limit: 4
+    productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
+    limit: 5
   }
 });
+// recommendations[0] => { productId: '3422935b-88ee-43ad-a7df-c03161a35cb4',
+//                         score: 0.87, reason: 'Similar product based on description and attributes' }
 ```
 
 ```typescript Next-Likely Item
@@ -49,6 +53,8 @@ const { recommendations } = await client.recommendations.getRecommendations({
     limit: 5
   }
 });
+// recommendations[0] => { productId: '068aa59d-1adf-4685-adf5-9793b1ffb9c9',
+//                         score: 0.6, reason: 'Customers viewed this next' }
 ```
 
 ```typescript Trending
@@ -59,6 +65,8 @@ const { recommendations } = await client.recommendations.getRecommendations({
     limit: 10
   }
 });
+// recommendations[0] => { productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
+//                         score: 1, reason: 'Trending #1 - 2.1 units/day' }
 ```
 
 ```typescript Personalized
@@ -70,17 +78,22 @@ const { recommendations } = await client.recommendations.getRecommendations({
     limit: 6
   }
 });
+// recommendations[0] => { productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
+//                         score: 1, reason: 'Trending #1 - 2.1 units/day' }
+// (when a shopper has little history, personalized falls back to trending — see fallbackUsed)
 ```
 
 ```typescript Smart Bundles
-// Semantic + Co-purchase analysis for bundle suggestions
+// AI embeddings + co-purchase analysis for bundle suggestions
 const { recommendations } = await client.recommendations.getRecommendations({
   requestBody: {
     type: 'bundle',
-    productId: 'current-product-uuid',
-    limit: 3
+    productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
+    limit: 5
   }
 });
+// recommendations[0] => { productId: '068aa59d-1adf-4685-adf5-9793b1ffb9c9',
+//                         score: 0.33, reason: 'Pairs well together (0% co-purchased)' }
 ```
 
 </CodeGroup>

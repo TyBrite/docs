@@ -13,7 +13,7 @@ The `WebhooksService` class (accessed via `client.webhooks`) manages outbound we
 
 Webhooks allow your systems to receive real-time push notifications when events occur in your store — eliminating the need to poll the API. Every delivery is HMAC-signed so you can verify authenticity before acting on the payload.
 
-**Supported event categories:** Orders, Payments, Customers, Inventory, Cart, Gift Cards, Promotions.
+**Supported event categories:** Orders, Payments, Customers, Inventory, Cart, Gift Cards, Promotions, Catalog Sync.
 
 **Delivery contract:**
 - **At-least-once** — your endpoint must be idempotent. Use `event.id` for deduplication.
@@ -103,6 +103,22 @@ const signingSecret = webhook_endpoint.signing_secret;
 console.log('Store this secret:', signingSecret);
 ```
 
+```json Response
+{
+  "webhook_endpoint": {
+    "id": "ca8e7b1e-86e4-46a3-a716-eab9e5ffc168",
+    "store_id": "store-uuid",
+    "url": "https://yourapp.com/webhooks/tybrite",
+    "events": ["order.paid", "order.fulfilled", "payment.succeeded", "payment.failed"],
+    "enabled": true,
+    "metadata": { "label": "production-erp", "team": "platform" },
+    "created_at": "2026-06-20T11:30:48.673+00:00",
+    "updated_at": "2026-06-20T11:30:48.673+00:00",
+    "signing_secret": "6c08d77c…09103824"
+  }
+}
+```
+
 <Warning>
   The `signing_secret` is shown **once** at creation. It cannot be retrieved again. Store it in your secrets manager (e.g. AWS Secrets Manager, Doppler, Infisical) immediately.
 </Warning>
@@ -116,6 +132,7 @@ await client.webhooks.createWebhookEndpoint({
     events: ['*'], // receive everything
   }
 });
+// → { webhook_endpoint: { id, url, events: ['*'], enabled: true, signing_secret, … } }
 ```
 
 **Supported event types:**
@@ -129,6 +146,7 @@ await client.webhooks.createWebhookEndpoint({
 | Cart | `cart.created`, `cart.updated`, `cart.abandoned` |
 | Gift Cards | `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired` |
 | Promotions | `promotion.applied` |
+| Catalog Sync | `feed.sync.completed` (a scheduled inbound feed-pull finished — carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished — carries pushed/rejected counts) |
 
 ---
 
@@ -139,6 +157,31 @@ const { webhook_endpoints, pagination } = await client.webhooks.listWebhookEndpo
   limit: 20,
 });
 ```
+
+```json Response
+{
+  "webhook_endpoints": [
+    {
+      "id": "ca8e7b1e-86e4-46a3-a716-eab9e5ffc168",
+      "store_id": "store-uuid",
+      "url": "https://yourapp.com/webhooks/tybrite",
+      "events": ["order.created", "order.updated", "customer.created"],
+      "enabled": true,
+      "metadata": {},
+      "last_success_at": null,
+      "last_failure_at": null,
+      "consecutive_failures": 0,
+      "disabled_reason": null,
+      "disabled_at": null,
+      "created_at": "2026-06-20T11:30:48.673+00:00",
+      "updated_at": "2026-06-20T11:30:48.673+00:00"
+    }
+  ],
+  "pagination": { "limit": 20, "next_cursor": null, "has_more": false }
+}
+```
+
+<Note>The `signing_secret` is **not** included on list or get — it's returned only once, at creation.</Note>
 
 ---
 
@@ -179,6 +222,7 @@ await client.webhooks.updateWebhookEndpoint({
   id: 'endpoint-uuid',
   requestBody: { enabled: true } // resets consecutive_failures, clears disabled_reason
 });
+// → { webhook_endpoint: { …, enabled: true, consecutive_failures: 0, disabled_reason: null, disabled_at: null } }
 ```
 
 ---
@@ -193,14 +237,37 @@ await client.webhooks.updateWebhookEndpoint({
   id: 'endpoint-uuid',
   requestBody: { enabled: false }
 });
+// → { webhook_endpoint: { …, enabled: false } }
 
 // Change subscribed events
-await client.webhooks.updateWebhookEndpoint({
+const { webhook_endpoint } = await client.webhooks.updateWebhookEndpoint({
   id: 'endpoint-uuid',
   requestBody: {
     events: ['order.paid', 'order.cancelled', 'payment.failed']
   }
 });
+```
+
+The updated endpoint is returned (without `signing_secret`):
+
+```json Response
+{
+  "webhook_endpoint": {
+    "id": "ca8e7b1e-86e4-46a3-a716-eab9e5ffc168",
+    "store_id": "store-uuid",
+    "url": "https://yourapp.com/webhooks/tybrite",
+    "events": ["order.paid", "order.cancelled", "payment.failed"],
+    "enabled": true,
+    "metadata": {},
+    "last_success_at": null,
+    "last_failure_at": null,
+    "consecutive_failures": 0,
+    "disabled_reason": null,
+    "disabled_at": null,
+    "created_at": "2026-06-20T11:30:48.673+00:00",
+    "updated_at": "2026-06-20T11:30:51.468343+00:00"
+  }
+}
 ```
 
 ---
@@ -211,6 +278,7 @@ Soft-deletes the endpoint. In-flight deliveries are not cancelled.
 
 ```typescript
 await client.webhooks.deleteWebhookEndpoint({ id: 'endpoint-uuid' });
+// → { success: true, message: 'Webhook endpoint deleted' }
 ```
 
 ---
@@ -231,7 +299,18 @@ console.log(result.success);     // true
 console.log(result.status_code); // 200
 ```
 
-Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `gift_card.issued`, `promotion.applied`.
+```json Response
+{
+  "success": true,
+  "event_id": "evt_test_1781955051835_uuib0s8",
+  "event_type": "order.created",
+  "endpoint_url": "https://yourapp.com/webhooks/tybrite",
+  "status_code": 200,
+  "response_body": "{\"received\":true}"
+}
+```
+
+Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `gift_card.issued`, `promotion.applied`, `feed.sync.completed`, `channel.sync.completed`.
 
 ---
 
@@ -258,6 +337,42 @@ const { webhook_events: liveEvents } = await client.webhooks.listWebhookEvents({
 });
 ```
 
+Each call returns the same shape — a `webhook_events` array plus a `pagination` cursor:
+
+```json Response
+{
+  "webhook_events": [
+    {
+      "id": "evt_1781955476025_lp1jafe",
+      "type": "order.created",
+      "environment": "production",
+      "payload": {
+        "id": "evt_1781955476025_lp1jafe",
+        "type": "order.created",
+        "api_version": "v1",
+        "livemode": true,
+        "created_at": "2026-06-20T11:37:56.025Z",
+        "data": {
+          "object": {
+            "id": "e7d28e96-e9e0-45ce-be28-51812f63eb4b",
+            "order_number": "ORD-1781955473455",
+            "order_status": "pending",
+            "payment_status": "paid",
+            "total_amount": 603.99
+          }
+        }
+      },
+      "created_at": "2026-06-20T11:37:56.025+00:00"
+    }
+  ],
+  "pagination": {
+    "limit": 50,
+    "next_cursor": "MjAyNi0wNi0yMFQxMTozNzo1Mi4wMjYrMDA6MDA=",
+    "has_more": true
+  }
+}
+```
+
 Each event also carries an `environment` field (`production` or `sandbox`) so you can tell live and test events apart in the log.
 
 ---
@@ -277,6 +392,38 @@ for (const delivery of webhook_event.deliveries) {
 }
 ```
 
+```json Response
+{
+  "webhook_event": {
+    "id": "evt_1781955476025_lp1jafe",
+    "store_id": "store-uuid",
+    "type": "order.created",
+    "environment": "production",
+    "payload": {
+      "id": "evt_1781955476025_lp1jafe",
+      "type": "order.created",
+      "api_version": "v1",
+      "livemode": true,
+      "created_at": "2026-06-20T11:37:56.025Z",
+      "data": { "object": { "id": "e7d28e96-e9e0-45ce-be28-51812f63eb4b", "order_number": "ORD-1781955473455", "payment_status": "paid", "total_amount": 603.99 } }
+    },
+    "created_at": "2026-06-20T11:37:56.025+00:00",
+    "deliveries": [
+      {
+        "id": "d0d430c6-9544-4009-ad55-285b49678a9e",
+        "endpoint_id": "58da9a58-6ac3-49ce-9150-0350519141b1",
+        "attempt_number": 1,
+        "status_code": 200,
+        "response_body": "{\"received\":true}",
+        "latency_ms": 275,
+        "success": true,
+        "attempted_at": "2026-06-20T11:37:56.496+00:00"
+      }
+    ]
+  }
+}
+```
+
 ---
 
 ### `retryWebhookEvent` 🔒
@@ -291,6 +438,17 @@ const result = await client.webhooks.retryWebhookEvent({
 console.log(`Retried to ${result.retried} endpoint(s)`);
 for (const r of result.results) {
   console.log(r.endpoint_id, r.success, r.status_code);
+}
+```
+
+```json Response
+{
+  "event_id": "evt_1781955476025_lp1jafe",
+  "retried": 2,
+  "results": [
+    { "endpoint_id": "2b755d69-7627-40b3-b0b6-4458e23d64bc", "success": true, "status_code": 200 },
+    { "endpoint_id": "58da9a58-6ac3-49ce-9150-0350519141b1", "success": true, "status_code": 200 }
+  ]
 }
 ```
 

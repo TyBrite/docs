@@ -1,0 +1,371 @@
+---
+title: "Reviews & Messaging"
+description: "Post-purchase engagement — submit and vote on product reviews, then run a real-time customer ↔ store conversation end to end."
+---
+
+This flow covers the two surfaces that keep a shopper engaged after they buy: **product reviews**
+(write a review, list the approved ones, vote them helpful) and **messaging** (open a support
+thread, exchange messages, and stream replies live). Both act on a **signed-in shopper's own
+data**, so every call here pairs an API key with the shopper's session token in `xAuthToken`. (See
+[Workflow Examples](/workflows/introduction) for the client setup, and
+[Storefront Checkout](/workflows/storefront-checkout#3-sign-the-shopper-in) for how to mint that
+session token.)
+
+<Info>
+  Reviews and messaging writes are **browser-origin storefront writes**, so the **publishable**
+  client is fine for them — the shopper's `xAuthToken` is what proves ownership. Only the merchant
+  admin can moderate reviews or reply from the store side; those are not API actions.
+</Info>
+
+## Reviews
+
+### 1. Submit a review
+
+A logged-in shopper submits a review for a product. It is created `status: "pending"` and only
+appears in public listings once the merchant approves it in their admin. Pass an `order_id` that
+belongs to the shopper to have the review flagged `verified_purchase: true`.
+
+```typescript
+const { review } = await storefront.reviews.submitReview({
+  xAuthToken: session.access_token,
+  requestBody: {
+    product_id: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
+    rating: 5,
+    title: 'Outstanding quality',
+    body: 'Exactly as described — fast shipping and great build quality. Would buy again.',
+  },
+});
+```
+
+```json Response
+{
+  "review": {
+    "id": "11bc03d9-d1cb-4833-b9d2-f0b016104cde",
+    "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+    "variant_id": null,
+    "order_id": null,
+    "customer_id": "73ec7ad0-d9aa-4ee2-a382-efa690eaab01",
+    "customer_name": "Jane Doe",
+    "rating": 5,
+    "title": "Outstanding quality",
+    "body": "Exactly as described — fast shipping and great build quality. Would buy again.",
+    "media_urls": [],
+    "status": "pending",
+    "rejection_reason": null,
+    "helpful_count": 0,
+    "verified_purchase": false,
+    "created_at": "2026-06-20T10:44:28.706637+00:00",
+    "updated_at": "2026-06-20T10:44:28.706637+00:00"
+  }
+}
+```
+
+<Note>
+  A shopper may have only **one** non-rejected review per product — a second submission returns
+  `409 Conflict`. The review stays hidden from `listReviews` (below) on a publishable key until the
+  merchant approves it.
+</Note>
+
+### 2. List approved reviews
+
+Render the review section of a product page. On a **publishable** key this returns only `approved`
+reviews and always includes a `summary` block with the average rating and star distribution. No
+customer token needed — this is public catalog data.
+
+```typescript
+const { reviews, summary } = await storefront.reviews.listReviews({
+  productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
+});
+```
+
+```json Response
+{
+  "reviews": [
+    {
+      "id": "11bc03d9-d1cb-4833-b9d2-f0b016104cde",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": null,
+      "order_id": null,
+      "customer_id": "73ec7ad0-d9aa-4ee2-a382-efa690eaab01",
+      "customer_name": "Jane Doe",
+      "rating": 5,
+      "title": "Outstanding quality",
+      "body": "Exactly as described — fast shipping and great build quality. Would buy again.",
+      "media_urls": [],
+      "status": "approved",
+      "rejection_reason": null,
+      "helpful_count": 0,
+      "verified_purchase": false,
+      "created_at": "2026-06-20T10:44:28.706637+00:00",
+      "updated_at": "2026-06-20T10:44:28.706637+00:00"
+    }
+  ],
+  "pagination": { "limit": 20, "has_more": false, "next_cursor": null },
+  "summary": {
+    "total_reviews": 1,
+    "average_rating": 5,
+    "five_star": 1,
+    "four_star": 0,
+    "three_star": 0,
+    "two_star": 0,
+    "one_star": 0,
+    "verified_count": 0
+  }
+}
+```
+
+<Tip>
+  Filter and sort with `rating`, `sort` (`newest` / `oldest` / `highest` / `lowest`), and page with
+  the `cursor` from `pagination.next_cursor`. Fetch one review by id with
+  `storefront.reviews.getReview({ id })`.
+</Tip>
+
+### 3. Mark a review helpful
+
+Let shoppers upvote the reviews they found useful so you can surface them first. Only approved
+reviews accept votes; there's no built-in dedup, so track per-shopper voting in your own UI if you
+need it.
+
+```typescript
+const { helpful_count } = await storefront.reviews.markReviewHelpful({
+  id: '11bc03d9-d1cb-4833-b9d2-f0b016104cde',
+});
+// → helpful_count === 1
+```
+
+```json Response
+{ "helpful_count": 1 }
+```
+
+<Note>
+  A shopper can remove their own review with
+  `storefront.reviews.deleteReview({ id, xAuthToken: session.access_token })` — it returns
+  `{ "success": true, "message": "Review deleted" }`. Deleting someone else's review returns `403`.
+</Note>
+
+## Messaging
+
+### 4. Start a conversation
+
+Open a thread with the store and post the shopper's first message in one call. `thread_type`
+classifies the inquiry (`general`, `order_inquiry`, `product_inquiry`, `support`, `complaint`,
+`delivery`, `return`, `refund`, `technical`). When you pass `customer_id`, include the matching
+`xAuthToken`.
+
+```typescript
+const { thread } = await storefront.messaging.createConversation({
+  xAuthToken: session.access_token,
+  requestBody: {
+    customer_id: '88ad3683-d291-4c70-8f8b-9903a42bde1b',
+    customer_name: 'Jane Doe',
+    customer_email: 'jane.doe@example.com',
+    subject: 'Question about my order',
+    message: 'Hi — I placed an order and wanted to check the expected delivery window.',
+    thread_type: 'order_inquiry',
+  },
+});
+// → thread.id is the conversation you send follow-ups to
+```
+
+```json Response
+{
+  "thread": {
+    "id": "06084af6-7334-43d6-82c0-935f92335a25",
+    "subject": "Question about my order",
+    "status": "active",
+    "priority": "normal"
+  },
+  "message": {
+    "id": "c423c11e-ab5f-40ab-8e17-429a39710d60",
+    "created_at": "2026-06-20T11:28:58.245993+00:00"
+  }
+}
+```
+
+### 5. Send a message
+
+Append the shopper's next message to the open thread. The token must own the thread, otherwise the
+call returns `403`. (The message text goes in `message`.)
+
+```typescript
+const { message } = await storefront.messaging.sendMessage({
+  xAuthToken: session.access_token,
+  id: '06084af6-7334-43d6-82c0-935f92335a25',
+  requestBody: { message: 'Thanks! Also, can I add gift wrapping to this order?' },
+});
+```
+
+```json Response
+{
+  "message": {
+    "id": "33e2c744-37a9-42df-a9df-447715526a41",
+    "created_at": "2026-06-20T11:29:02.467216+00:00"
+  }
+}
+```
+
+### 6. List threads and read the conversation
+
+Show the shopper's inbox with `listThreads` (filter by `customer_id`; pinned threads come first),
+then load a single conversation's messages with `getThreadMessages` (oldest-first by default).
+
+```typescript
+const { threads } = await storefront.messaging.listThreads({
+  xAuthToken: session.access_token,
+  customerId: '88ad3683-d291-4c70-8f8b-9903a42bde1b',
+});
+```
+
+```json Response
+{
+  "threads": [
+    {
+      "id": "06084af6-7334-43d6-82c0-935f92335a25",
+      "subject": "Question about my order",
+      "status": "active",
+      "priority": "normal",
+      "thread_type": "order_inquiry",
+      "last_message_at": "2026-06-20T11:28:58.338+00:00",
+      "last_message_by": "customer",
+      "unread_count_customer": 0,
+      "unread_count_store": 1,
+      "is_archived": false,
+      "is_muted": false,
+      "is_pinned": false
+    }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
+```
+
+```typescript
+const { messages } = await storefront.messaging.getThreadMessages({
+  xAuthToken: session.access_token,
+  id: '06084af6-7334-43d6-82c0-935f92335a25',
+});
+```
+
+```json Response
+{
+  "messages": [
+    {
+      "id": "c423c11e-ab5f-40ab-8e17-429a39710d60",
+      "message_content": "Hi — I placed an order and wanted to check the expected delivery window.",
+      "message_type": "text",
+      "sender_type": "customer",
+      "sender_id": "88ad3683-d291-4c70-8f8b-9903a42bde1b",
+      "sender_name": "Jane Doe",
+      "attachments": [],
+      "metadata": {},
+      "message_status": "sent",
+      "read_at": null,
+      "is_edited": false,
+      "is_deleted": false,
+      "created_at": "2026-06-20T11:28:58.245993+00:00",
+      "updated_at": "2026-06-20T11:28:58.245993+00:00"
+    },
+    {
+      "id": "33e2c744-37a9-42df-a9df-447715526a41",
+      "message_content": "Thanks! Also, can I add gift wrapping to this order?",
+      "message_type": "text",
+      "sender_type": "customer",
+      "sender_id": "88ad3683-d291-4c70-8f8b-9903a42bde1b",
+      "sender_name": "Jane Doe",
+      "attachments": [],
+      "metadata": {},
+      "message_status": "sent",
+      "read_at": null,
+      "is_edited": false,
+      "is_deleted": false,
+      "created_at": "2026-06-20T11:29:02.467216+00:00",
+      "updated_at": "2026-06-20T11:29:02.467216+00:00"
+    }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
+```
+
+### 7. Mark the thread read
+
+When the shopper opens a conversation, clear their unread state.
+
+```typescript
+const result = await storefront.messaging.markThreadRead({
+  xAuthToken: session.access_token,
+  id: '06084af6-7334-43d6-82c0-935f92335a25',
+});
+```
+
+```json Response
+{
+  "success": true,
+  "thread_id": "06084af6-7334-43d6-82c0-935f92335a25"
+}
+```
+
+### 8. Stream replies in real time
+
+Polling for new messages is wasteful. Instead, request **realtime connection details** for the
+thread, then hand them to the `subscribeToThread` helper to receive the store's replies the moment
+they're sent — no polling loop.
+
+```typescript
+const conn = await storefront.messaging.getMessagingRealtimeToken({
+  xAuthToken: session.access_token,
+  requestBody: { thread_id: '06084af6-7334-43d6-82c0-935f92335a25' },
+});
+```
+
+```json Response
+{
+  "mode": "direct",
+  "realtime_url": "wss://realtime.tybritelabs.com",
+  "realtime_key": "rt_pub_8f3c1a9e4b2d",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature",
+  "channel": "thread:06084af6-7334-43d6-82c0-935f92335a25",
+  "thread_id": "06084af6-7334-43d6-82c0-935f92335a25",
+  "environment": "production"
+}
+```
+
+The fields are neutral connection details — `mode`, `realtime_url`, `realtime_key`, `channel`, and
+(for `direct` mode) a short-lived `token`. Pass them straight into the SDK helper:
+
+```typescript
+import { subscribeToThread } from '@tybrite-labs/sdk';
+
+const unsubscribe = await subscribeToThread({
+  mode: conn.mode,                 // 'direct' | 'broadcast'
+  realtimeUrl: conn.realtime_url,
+  realtimeKey: conn.realtime_key,
+  channel: conn.channel,
+  token: conn.token,               // required for 'direct', ignored for 'broadcast'
+  onMessage: (msg) => {
+    console.log('New message:', msg.message_content);
+  },
+});
+
+// later, when the shopper closes the thread:
+unsubscribe();
+```
+
+<Note>
+  The `mode` tells you how the shopper was identified:
+  - **`direct`** — a shopper signed in through Galactic Core (`xAuthToken`). The `token` authorizes
+    a direct subscription to **their own** thread.
+  - **`broadcast`** — a shopper authenticated with your own identity provider (`xExternalAuth`),
+    server-side integrations, and marketplace operators. Subscribe to the named `channel`; no
+    `token` is used.
+
+  The helper handles both — you just forward the fields. Want to bring your own identity provider?
+  See [Customer authentication](/authentication#customer-sessions).
+</Note>
+
+## What's next
+
+- The shopper came from a [storefront checkout](/workflows/storefront-checkout) — wire reviews and a
+  support thread in after the order is paid.
+- A returning shopper can [track orders and lodge a return](/workflows/returning-customer), often
+  opening a `return`-type thread from the same inbox.
+- Building a multi-merchant storefront? Reviews and messaging carry over — see the
+  [Marketplace](/workflows/marketplace) split checkout and unified shopper profile.

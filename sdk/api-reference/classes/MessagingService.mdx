@@ -7,7 +7,7 @@ The `MessagingService` class (accessed via `client.messaging`) handles real-time
 
 ## Security Model
 
-Messaging threads carry sensitive customer information — order inquiries, complaints, contact details, and uploaded attachments. To prevent one customer from reading or changing another customer's conversation, **every customer-facing messaging endpoint requires a signed customer session token** (`xAuthToken`) issued by `client.auth`. Ownership is enforced on every call:
+Messaging threads carry sensitive customer information — order inquiries, complaints, contact details, and uploaded attachments. To prevent one customer from reading or changing another customer's conversation, **every customer-facing messaging endpoint requires a signed customer session token** (`xAuthToken`) issued by `client.authentication`. Ownership is enforced on every call:
 
 | Applies to | Rule |
 | :--- | :--- |
@@ -15,7 +15,7 @@ Messaging threads carry sensitive customer information — order inquiries, comp
 | Thread reads & writes | The thread must belong to the customer on the session token. Applies to `getThread`, `updateThread`, `getThreadMessages`, `sendMessage`, and `markThreadRead`. |
 | Per-message edit & delete | You can only edit or delete messages the customer personally authored — not store or system messages. |
 
-Obtain a customer session via `client.auth.login(...)` or `client.auth.verifyOtp(...)` and pass `customerSession.access_token` as `xAuthToken` on every call below.
+Obtain a customer session via `client.authentication.login(...)` or `client.authentication.verifyOtp(...)` and pass `customerSession.access_token` as `xAuthToken` on every call below.
 
 <Tip>
   Each `Thread` object returned by `listThreads` and `getThread` includes an `unread_count_customer` field. Sum these client-side to compute a customer's total unread count — no separate endpoint is needed.
@@ -40,7 +40,29 @@ const { threads, pagination } = await client.messaging.listThreads({
 });
 ```
 
-<Note>Gated by `gateByCustomerId` — the `customerId` query parameter must match the `customer_id` claim on `xAuthToken`.</Note>
+```json Response
+{
+  "threads": [
+    {
+      "id": "06084af6-7334-43d6-82c0-935f92335a25",
+      "subject": "Question about my order",
+      "status": "active",
+      "priority": "normal",
+      "thread_type": "order_inquiry",
+      "last_message_at": "2026-06-20T11:28:58.338+00:00",
+      "last_message_by": "customer",
+      "unread_count_customer": 0,
+      "unread_count_store": 1,
+      "is_archived": false,
+      "is_muted": false,
+      "is_pinned": false
+    }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
+```
+
+<Note>The `customerId` query parameter must match the `customer_id` on `xAuthToken`, otherwise the request is rejected.</Note>
 
 #### Computing total unread
 
@@ -53,6 +75,7 @@ const { threads } = await client.messaging.listThreads({
 });
 
 const totalUnread = threads.reduce((sum, t) => sum + (t.unread_count_customer || 0), 0);
+// → e.g. 3   (each thread carries its own unread_count_customer)
 ```
 
 To fetch only threads with unread messages, pass `?unread=true` as a filter.
@@ -71,6 +94,31 @@ const thread = await client.messaging.getThread({
 });
 ```
 
+```json Response
+{
+  "id": "06084af6-7334-43d6-82c0-935f92335a25",
+  "customer_id": "88ad3683-d291-4c70-8f8b-9903a42bde1b",
+  "customer_name": "Jane Doe",
+  "customer_email": "jane.doe@example.com",
+  "customer_phone": null,
+  "store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+  "store_name": "Galactic Test Store",
+  "order_id": null,
+  "product_id": null,
+  "subject": "Question about my order",
+  "thread_type": "order_inquiry",
+  "status": "active",
+  "priority": "normal",
+  "last_message_at": "2026-06-20T11:28:58.338+00:00",
+  "last_message_by": "customer",
+  "unread_count_customer": 0,
+  "unread_count_store": 1,
+  "is_archived": false,
+  "is_muted": false,
+  "is_pinned": false
+}
+```
+
 <Note>The thread must belong to the customer on your session token, otherwise the request is rejected.</Note>
 
 ---
@@ -79,7 +127,7 @@ const thread = await client.messaging.getThread({
 
 Update thread state including status, priority, or lifecycle flags.
 
-<Note>Requires a **Secret Key** (for merchant lifecycle changes) **or** a customer `xAuthToken` belonging to the thread owner (for customer-driven actions like muting or archiving their own conversation). Customer requests are additionally gated by `gateByThreadId`.</Note>
+<Note>Requires a **Secret Key** (for merchant lifecycle changes) **or** a customer `xAuthToken` belonging to the thread owner (for customer-driven actions like muting or archiving their own conversation). A customer request must own the thread, otherwise it is rejected.</Note>
 
 ```typescript
 await client.messaging.updateThread({
@@ -93,6 +141,7 @@ await client.messaging.updateThread({
     muted: true
   }
 });
+// → { thread: { id, status: 'resolved', priority: 'normal', is_archived: true, is_muted: true, is_pinned: false, … } }
 ```
 
 ---
@@ -106,9 +155,10 @@ await client.messaging.markThreadRead({
   xAuthToken: customerSession.access_token, // Must own this thread
   id: 'thread-uuid-123'
 });
+// → { success: true, thread_id: '06084af6-7334-43d6-82c0-935f92335a25' }
 ```
 
-<Note>Gated by `gateByThreadId`. The `id` must be a valid UUID — malformed values return `400`.</Note>
+<Note>The caller must own the thread. The `id` must be a valid UUID — malformed values return `400`.</Note>
 
 ---
 
@@ -133,7 +183,31 @@ const { messages, pagination } = await client.messaging.getThreadMessages({
 });
 ```
 
-<Note>Gated by `gateByThreadId` — only the thread's owning customer (or a Secret Key holder) can read its messages.</Note>
+```json Response
+{
+  "messages": [
+    {
+      "id": "33e2c744-37a9-42df-a9df-447715526a41",
+      "message_content": "Thanks! Also, can I add gift wrapping to this order?",
+      "message_type": "text",
+      "sender_type": "customer",
+      "sender_id": "88ad3683-d291-4c70-8f8b-9903a42bde1b",
+      "sender_name": "Jane Doe",
+      "attachments": [],
+      "metadata": {},
+      "message_status": "sent",
+      "read_at": null,
+      "is_edited": false,
+      "is_deleted": false,
+      "created_at": "2026-06-20T11:29:02.467216+00:00",
+      "updated_at": "2026-06-20T11:29:02.467216+00:00"
+    }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
+```
+
+<Note>Only the thread's owning customer (or a Secret Key holder) can read its messages.</Note>
 
 ---
 
@@ -149,9 +223,10 @@ await client.messaging.sendMessage({
     message: "We've received your request and are looking into it."
   }
 });
+// → { message: { id: '33e2c744-37a9-42df-a9df-447715526a41', created_at: '2026-06-20T11:29:02.467216+00:00' } }
 ```
 
-<Note>Gated by `gateByThreadId`. Returns `201` with the newly persisted message body on success.</Note>
+<Note>The caller must own the thread. Returns `201` with the newly persisted message body on success.</Note>
 
 ---
 
@@ -167,6 +242,7 @@ await client.messaging.editMessage({
     message_content: "Correction: The delivery will arrive by 5 PM today."
   }
 });
+// → { message: { id: 'msg-uuid-456', is_edited: true, message_content: 'Correction: …', updated_at: '…' } }
 ```
 
 <Note>You can only edit or delete messages the customer personally authored. Store and system messages cannot be modified.</Note>
@@ -182,9 +258,10 @@ await client.messaging.deleteMessage({
   xAuthToken: customerSession.access_token, // Must be the original sender
   id: 'msg-uuid-456'
 });
+// → { success: true, message: 'Message deleted' }
 ```
 
-<Note>Gated by `gateByMessageId` — same ownership check as `editMessage`. Soft delete only; the row is retained for audit.</Note>
+<Note>Same ownership check as `editMessage` — you can only delete a message you authored. Soft delete only; the row is retained for audit.</Note>
 
 ---
 
@@ -209,7 +286,22 @@ const { thread, message } = await client.messaging.createConversation({
 });
 ```
 
-<Note>Gated by `gateByCustomerId` whenever `body.customer_id` is supplied — the value must match the `customer_id` claim on `xAuthToken`. Returns `201` with both the new `thread` and the initial `message`.</Note>
+```json Response
+{
+  "thread": {
+    "id": "06084af6-7334-43d6-82c0-935f92335a25",
+    "subject": "Missing Item - Order #8821",
+    "status": "active",
+    "priority": "high"
+  },
+  "message": {
+    "id": "c423c11e-ab5f-40ab-8e17-429a39710d60",
+    "created_at": "2026-06-20T11:28:58.245993+00:00"
+  }
+}
+```
+
+<Note>Whenever `body.customer_id` is supplied, it must match the `customer_id` on `xAuthToken`. Returns `201` with both the new `thread` and the initial `message`.</Note>
 
 ---
 
@@ -311,7 +403,7 @@ For browser customers signed in through Galactic Core, pass their session `token
 | `201` | Success on `createConversation` and `sendMessage` — a new resource was persisted. |
 | `400` | Invalid request body, or a malformed UUID supplied to `markThreadRead` (or any thread/message ID path param). |
 | `401` | Missing or invalid `xAuthToken`, or missing/invalid API key. |
-| `403` | Customer token does not own the target thread or message (gate failure). |
+| `403` | Customer token does not own the target thread or message. |
 | `404` | Thread or message not found (or filtered out by store scoping). |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error — safe to retry idempotent reads. |

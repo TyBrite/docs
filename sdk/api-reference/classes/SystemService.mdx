@@ -36,6 +36,61 @@ if (features.ai_recommendations) {
 const freshData = await client.system.getStoreInfo({ cache: false });
 ```
 
+```json Response (trimmed — the `store` block is always present; other blocks reflect the requested sections)
+{
+  "store": {
+    "store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+    "name": "Galactic Test Store",
+    "logo_url": "https://cdn.tybritelabs.com/store-logo/…/gc-bag-blue.png",
+    "description": null,
+    "website": "https://gc.tybritelabs.com",
+    "phone": "+1 555 0100",
+    "email": "store@example.com",
+    "address": null,
+    "default_currency": "USD",
+    "currencies": ["USD", "GBP", "EUR"],
+    "timezone": "America/New_York",
+    "created_at": "2026-06-19T19:59:48.799138+00:00"
+  },
+  "marketplace": { "mode": "standard", "marketplace_enabled": false },
+  "catalog": {
+    "products": {
+      "total": 53,
+      "has_variants": 13,
+      "simple_products": 40,
+      "active": 53,
+      "inactive": 0,
+      "featured": 1,
+      "with_images": 13,
+      "low_stock": 0,
+      "sample": [
+        {
+          "id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+          "name": "Apple MacBook Pro",
+          "category": "Laptops",
+          "price": 1999,
+          "image": "https://cdn.tybritelabs.com/…/primary-1774785153522.jpg",
+          "featured": true
+        }
+      ]
+    }
+  },
+  "features": {
+    "ai_recommendations": true,
+    "semantic_search": true,
+    "multi_currency": true,
+    "dynamic_pricing": true,
+    "gift_cards": true,
+    "promotions": true,
+    "cms": true,
+    "lookbooks": true,
+    "messaging": true,
+    "specifications": true,
+    "collections": true
+  }
+}
+```
+
 **Available Sections:**
 
 | Section | Description |
@@ -63,7 +118,18 @@ Retrieve basic information about the API, including the current version and list
 ```typescript
 const info = await client.system.getApiInfo();
 
-console.log(`Connected to: ${info.name} v${info.version}`);
+console.log(`Connected to: ${info.name} ${info.version}`);
+// {
+//   name: "TyBrite API",
+//   version: "v1",
+//   documentation: "https://docs.tybritelabs.com/api",
+//   endpoints: [
+//     { prefix: "/v1/products", description: "Product catalog" },
+//     { prefix: "/v1/feeds",    description: "Public outbound catalog feed (no key)" },
+//     { prefix: "/v1/orders",   description: "Orders" },
+//     // …one entry per available endpoint prefix
+//   ]
+// }
 ```
 
 ---
@@ -124,14 +190,20 @@ Each service probe has a 3-second timeout. A service that exceeds it returns `{ 
 
 ## Response Codes
 
-### `getApiInfo` (`GET /`) and `healthCheck` (`GET /v1/health`)
+### `getApiInfo` (`GET /`)
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | API metadata returned. |
+
+### `healthCheck` (`GET /v1/health`)
 
 | Code | Meaning |
 | :--- | :--- |
 | `200` | All services operational. |
 | `207` | Partial outage — one or more services degraded. |
 
-These endpoints are unauthenticated — no `401`, `403`, or `429` is emitted.
+Both endpoints are unauthenticated — no `401`, `403`, or `429` is emitted.
 
 ### `getStoreInfo` (`GET /v1/store/info`)
 

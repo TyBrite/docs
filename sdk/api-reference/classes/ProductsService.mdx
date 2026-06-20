@@ -63,6 +63,26 @@ if (pagination.next_cursor) {
 }
 ```
 
+```json Response
+{
+  "products": [
+    {
+      "name": "Sony WH-1000XM4",
+      "price": 349.99,
+      "stock": 79,
+      "has_variants": true,
+      "product_slug": "sony-wh-1000xm4-a089d-7d425c0a",
+      "thumbnail_url": "https://cdn.example.com/.../primary-1774785176485.jpg"
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "next_cursor": "MGM0OThhYzItNGI3Ny00YjAzLWE5YjgtZGJkNDY2MWVmYTU0",
+    "has_more": true
+  }
+}
+```
+
 #### Personalized ordering
 
 Pass `personalize: true` together with a signed-in customer's session token (the `x-auth-token`
@@ -81,6 +101,8 @@ const { products } = await personalized.products.listProducts({
   limit: 20,
   fields: 'name,price,thumbnail_url'
 });
+// → products re-ordered by how closely each matches this shopper; same row shape as above:
+//   [ { name: "Sony WH-1000XM4", price: 349.99, thumbnail_url: "https://cdn.example.com/..." }, ... ]
 ```
 
 ---
@@ -95,17 +117,39 @@ Retrieve complete details for a single item. This method handles **Multi-Variant
 
 ```typescript
 const product = await client.products.getProduct({
-  id: 'sony-wh-1000xm4-uuid',
-  fields: 'name,thumbnail_url,media,price_range,total_stock,variants.sku,variants.media'
+  id: '7d425c0a-50e7-4e39-af79-6f7945f9dfa8', // a multi-variant product (Sony WH-1000XM4)
+  fields: 'name,thumbnail_url,media,price_range,total_stock,variants.sku,variants.media,variants.variant_attributes'
 });
 
 if (product.has_variants) {
   console.log(`Variants available: ${product.variant_count}`);
   console.log(`Price Range: ${product.price_range.min} - ${product.price_range.max}`);
-  
+
   // Access variant-specific media (e.g., if user selects 'Grey' color)
-  const greyVariant = product.variants.find(v => v.variant_attributes.color === 'Grey');
-  console.log(`Grey variation images: ${greyVariant.media.length}`);
+  const greyVariant = product.variants.find(v => v.variant_attributes?.color === 'Grey');
+  console.log(`Grey variation images: ${greyVariant?.media.length}`);
+}
+```
+
+A multi-variant detail response (here shown for the "Nebula Ceramic Mug", a 3-variant
+product) — root metadata plus aggregate `price_range` / `total_stock` and a clean `variants[]`
+array, each with its own SKU, attributes, and isolated `media`:
+
+```json Response
+{
+  "product_id": "2b6a066a-25df-4238-9e90-50a4400fc21e",
+  "name": "Nebula Ceramic Mug",
+  "thumbnail_url": "https://cdn.example.com/seed/apimugblue/400",
+  "media": [],
+  "has_variants": true,
+  "variant_count": 3,
+  "total_stock": 397,
+  "price_range": { "min": 14.99, "max": 15.55 },
+  "variants": [
+    { "sku": "API-MUG-WHT-2b6a", "variant_attributes": null, "variant_name": "White", "is_default": true,  "media": [] },
+    { "sku": "API-MUG-BLU-2b6a", "variant_attributes": null, "variant_name": "Blue",  "is_default": false, "media": [] },
+    { "sku": "API-MUG-BLK-2b6a", "variant_attributes": null, "variant_name": "Black", "is_default": false, "media": [] }
+  ]
 }
 ```
 
@@ -117,9 +161,11 @@ Retrieve a product using its SEO-friendly slug. Identical to `getProduct` in res
 
 ```typescript
 const product = await client.products.getProductBySlug({
-  slug: 'sony-wh-1000xm4-a089d',
+  slug: 'sony-wh-1000xm4-a089d-7d425c0a',
   fields: 'seo_title,seo_description,thumbnail_url,media,price_range,variants.*'
 });
+// → identical structure to getProduct: root metadata + (for multi-variant products)
+//   price_range, total_stock, and a variants[] array. See the getProduct response above.
 ```
 
 ### SEO metadata
@@ -132,7 +178,10 @@ detail pages:
 *   `seo_keywords` — an array of keywords.
 
 ```typescript
-const product = await client.products.getProductBySlug({ slug: 'sony-wh-1000xm4-a089d' });
+const product = await client.products.getProductBySlug({ slug: 'sony-wh-1000xm4-a089d-7d425c0a' });
+// → product.seo_title, product.seo_description, and product.seo_keywords (string[]) are present
+//   when set, e.g. seo_title: "Nebula Ceramic Mug | 350ml Dishwasher Safe",
+//   seo_keywords: ["ceramic mug", "stoneware mug", "coffee mug", "dishwasher safe mug"]
 document.title = product.seo_title ?? product.name;
 // <meta name="description" content={product.seo_description ?? product.description} />
 ```
@@ -197,10 +246,33 @@ fields=name,variants.sku,variants.media,variants.variant_attributes
 Retrieve structured technical specifications.
 
 ```typescript
-const { id, specification_data } = await client.products.getProductSpecifications({ 
-  id: 'product-uuid'
+const { id, specification_data } = await client.products.getProductSpecifications({
+  id: '0186665f-f0a1-4c79-976a-919b5b1c2daa' // a product UUID
 });
 ```
+
+```json Response
+{
+  "id": "3b16b560-418f-4fe5-a35e-7ce9c214d795",
+  "variant_id": "9a47e047-b1b6-4c35-9617-820629e22e04",
+  "template_id": "599b4ff3-bda4-463d-a22e-e631d834875a",
+  "specification_data": {
+    "brand": "Sony",
+    "color": "Black",
+    "model": "WH-1000XM4",
+    "product_type": "Accessory",
+    "storage_type": "HDD"
+  },
+  "status": "published",
+  "version": 1,
+  "created_at": "2026-06-20T10:05:26.106528+00:00",
+  "updated_at": "2026-06-20T10:05:26.106528+00:00"
+}
+```
+
+<Note>
+  Returns `404` if the product has no published specification.
+</Note>
 
 ---
 
@@ -214,13 +286,28 @@ const { collections } = await client.products.listProductCollections({
   showOnHomepage: 'true',
   limit: 20
 });
+// → collections: [
+//     { id: "45e28d12-9381-45f6-98bb-cb3a34c0a215", name: "Featured", slug: "featured",
+//       description: "Hand-picked products to highlight on your storefront.",
+//       collection_type: "featured_collections", is_active: true,
+//       show_on_homepage: true, display_priority: 0 },
+//     { id: "e9810818-5051-4b74-a53b-2ff843b4f435", name: "New Arrivals", slug: "new-arrivals",
+//       collection_type: "new_arrivals", is_active: true, ... }
+//   ]
 
-// Get items in a specific collection
+// Get items in a specific collection (returns all items, ordered by sort_order)
 // Each item has: product_id, sort_order, and an embedded product object
-const { items } = await client.products.getProductCollectionItems({ 
-  id: 'flash-sale-uuid',
-  limit: 10
+const { items } = await client.products.getProductCollectionItems({
+  id: '45e28d12-9381-45f6-98bb-cb3a34c0a215' // e.g. the "Featured" collection
 });
+// → items: [
+//     { product_id: "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", sort_order: 0,
+//       product: { id: "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", name: "Sony WH-1000XM4",
+//                  slug: "sony-wh-1000xm4-a089d-7d425c0a", brand: "Sony",
+//                  has_variants: true, is_active: true } },
+//     ...
+//   ]
+// (an empty collection returns { items: [] })
 
 for (const item of items) {
   console.log(`${item.product.name} — sort order: ${item.sort_order}`);

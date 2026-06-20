@@ -1,0 +1,323 @@
+---
+title: "Search & Discovery"
+description: "The discovery surfaces that get shoppers to the cart — text and semantic search, AI recommendations, behavior capture, dynamic multi-currency pricing, and category browsing."
+---
+
+Before a shopper can check out, they have to *find* the product. This page wires together the
+read-side discovery surfaces: a search box (keyword and natural-language), recommendation rails,
+behavior capture that sharpens those rails, and location-aware pricing. Every call here is
+read-only and runs with the **publishable** client in the browser — except recommendations, which
+run server-side with the **secret** client (see step 2). (See
+[Workflow Examples](/workflows/introduction) for the client setup.)
+
+## 1. Search the catalog
+
+There are two search surfaces, and they answer different questions.
+
+### Text search (keyword)
+
+`searchProducts` matches the literal query against product names and attributes — fast, exact, and
+the right default for a search box where the shopper types a brand or model. Publishable key.
+
+```typescript
+const results = await storefront.search.searchProducts({ q: 'headphones' });
+```
+
+```json Response
+{
+  "query": "headphones",
+  "results": [
+    { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 1, "matchReason": "Text match" }
+  ],
+  "totalResults": 1,
+  "searchTimeMs": 983
+}
+```
+
+### Semantic search (natural language)
+
+`semanticSearch` understands *intent* using AI embeddings — it matches the meaning of a
+conversational query against product meaning, not literal keyword overlap. Use it when the shopper
+describes what they want ("wireless earbuds for the gym") rather than naming it. Each hit carries a
+similarity `score`; tune the floor with `minScore` (default `0.3`).
+
+```typescript
+const results = await storefront.search.semanticSearch({
+  requestBody: { query: 'wireless earbuds for the gym', limit: 8, minScore: 0.2 },
+});
+```
+
+```json Response
+{
+  "query": "wireless earbuds for the gym",
+  "results": [
+    { "productId": "f4992a40-38a1-4ebd-9390-3ecfb9d10093", "score": 0.89 },
+    { "productId": "f6a2629e-f899-4615-b17a-e78e2e4c35a4", "score": 0.88 },
+    { "productId": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", "score": 0.85 },
+    { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 0.83 },
+    { "productId": "3422935b-88ee-43ad-a7df-c03161a35cb4", "score": 0.81 }
+  ],
+  "totalResults": 50,
+  "searchTimeMs": 1269
+}
+```
+
+<Tip>
+  Both return product **ids** and relevance scores — not full product objects. Hydrate the cards by
+  passing the ids to `storefront.products.getProduct({ id })`, or quote prices for the whole result
+  set with `storefront.pricing.getProductPrices(...)` (step 4).
+</Tip>
+
+## 2. Show recommendation rails
+
+Recommendations power the "you might also like" / "frequently bought together" rails. This is the
+one discovery call that is **secret-key only** — it runs on your server (a publishable key returns
+`403`). One method, `getRecommendations`, serves every rail via the `type` field, and the engine
+**cascades through fallbacks** so a rail is never empty: a cold product with no co-purchase history
+still falls back to similar → trending → new.
+
+### Similar products
+
+```typescript
+// On your server — secret client
+const similar = await server.recommendations.getRecommendations({
+  requestBody: { type: 'similar', productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa', limit: 5 },
+});
+```
+
+```json Response
+{
+  "type": "similar",
+  "recommendations": [
+    { "productId": "3422935b-88ee-43ad-a7df-c03161a35cb4", "score": 0.87, "reason": "Similar product based on description and attributes" },
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.82, "reason": "Similar product based on description and attributes" },
+    { "productId": "7c378f6b-6c4b-4608-882e-6b6c6cc0a3e8", "score": 0.81, "reason": "Similar product based on description and attributes" }
+  ],
+  "fromCache": true,
+  "computedAt": "2026-06-20T10:53:58.158Z"
+}
+```
+
+### Frequently bought together & bundle pairings
+
+`also-bought` ranks products co-purchased with the anchor; `bundle` surfaces *complementary*
+products that pair well (a case for a watch), not substitutes. Both take a `productId`.
+
+```typescript
+const alsoBought = await server.recommendations.getRecommendations({
+  requestBody: { type: 'also-bought', productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa', limit: 5 },
+});
+```
+
+```json Response
+{
+  "type": "also-bought",
+  "recommendations": [
+    { "productId": "3422935b-88ee-43ad-a7df-c03161a35cb4", "score": 0.87, "reason": "Similar product based on description and attributes" },
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.82, "reason": "Similar product based on description and attributes" },
+    { "productId": "7c378f6b-6c4b-4608-882e-6b6c6cc0a3e8", "score": 0.81, "reason": "Similar product based on description and attributes" }
+  ],
+  "fromCache": false,
+  "computedAt": "2026-06-20T10:53:58.158Z"
+}
+```
+
+### Trending (no anchor needed)
+
+`trending` and `new` need no `productId` — they're store-wide rails for the homepage. Trending
+ranks by recent sales velocity.
+
+```typescript
+const trending = await server.recommendations.getRecommendations({
+  requestBody: { type: 'trending', limit: 10 },
+});
+```
+
+```json Response
+{
+  "type": "trending",
+  "recommendations": [
+    { "productId": "0186665f-f0a1-4c79-976a-919b5b1c2daa", "score": 1, "reason": "Trending #1 - 2.1 units/day" },
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.2009345794392523, "reason": "Trending #2 - 0.4 units/day" },
+    { "productId": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 0.2009345794392523, "reason": "Trending #3 - 0.4 units/day" }
+  ],
+  "fromCache": true,
+  "computedAt": "2026-06-20T10:53:58.158Z"
+}
+```
+
+<Note>
+  Other `type` values: `next` (the next-likely item for a session — see step 3), `personalized`
+  (re-ranked for a known `customerId`, falling back to trending when there's no signal yet), and
+  `new` (new arrivals). All return the same `{ recommendations, fromCache, computedAt }` envelope.
+</Note>
+
+## 3. Capture browsing behavior
+
+To sharpen the `next`-item rail, tell Galactic Core what the shopper is doing as they browse.
+`recordEvent` logs a `view`, `add_to_cart`, or `add_to_wishlist` against a `variant_id` (or
+`product_id`), grouped by the same `session_id` you use for the anonymous cart. It's
+publishable-key (safe in the browser), fire-and-forget, and returns immediately — it never blocks
+the page.
+
+```typescript
+await storefront.events.recordEvent({
+  requestBody: {
+    event_type: 'view',
+    variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a',
+    session_id: '7c1f0e8a-2b3c-4d5e-9f01-23456789abcd',
+  },
+});
+```
+
+```json Response
+{ "recorded": true }
+```
+
+These events feed the session-sequence model. Once you've logged a few views in a session, ask for
+what's likely next:
+
+```typescript
+const next = await server.recommendations.getRecommendations({
+  requestBody: { type: 'next', sessionId: '7c1f0e8a-2b3c-4d5e-9f01-23456789abcd', limit: 5 },
+});
+```
+
+```json Response
+{
+  "type": "next",
+  "recommendations": [
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.6, "reason": "Customers viewed this next" },
+    { "productId": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 0.4, "reason": "Customers viewed this next" }
+  ],
+  "fromCache": true,
+  "computedAt": "2026-06-20T10:53:58.158Z"
+}
+```
+
+## 4. Quote dynamic, location-aware prices
+
+Search and recommendations give you product ids — now show prices in the shopper's currency.
+`getProductPrices` resolves each product's display price from the shopper's location: pass
+coordinates (`latitude`/`longitude`) or a `placeName`, and Galactic Core matches it to a region and
+converts from the store's base currency. USD is the store default; GBP and EUR are enabled here.
+
+### New York → USD (store base, rate 1)
+
+```typescript
+const usd = await storefront.pricing.getProductPrices({
+  limit: 3, latitude: 40.7128, longitude: -74.006,
+});
+```
+
+```json Response
+{
+  "products": [
+    {
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "name": "Samsung Galaxy Watch 6",
+      "category_name": "Wearables",
+      "brand": "Samsung",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "sku": "SAM-WATCH-6-44-0186",
+      "price": 299,
+      "sale_price": null,
+      "display_currency": "USD",
+      "currency_symbol": "$",
+      "base_price": 299,
+      "base_currency": "USD",
+      "display_price": 299,
+      "exchange_rate": 1,
+      "price_breakdown": { "base_price": 299, "discounts": [], "final_price": 299, "currency_conversion": null }
+    }
+  ]
+}
+```
+
+### London → GBP (rate 0.79)
+
+Pass `placeName: 'London, UK'` (or London coordinates) and the same product comes back priced in
+GBP, with the conversion shown in `price_breakdown.currency_conversion`.
+
+```typescript
+const gbp = await storefront.pricing.getProductPrices({
+  limit: 3, placeName: 'London, UK',
+});
+// gbp.products[0].display_price === 236.21  ·  display_currency 'GBP'  ·  exchange_rate 0.79
+```
+
+```json Response
+{
+  "products": [
+    {
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "name": "Samsung Galaxy Watch 6",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "sku": "SAM-WATCH-6-44-0186",
+      "price": 299,
+      "display_currency": "GBP",
+      "currency_symbol": "£",
+      "base_price": 299,
+      "base_currency": "USD",
+      "display_price": 236.21,
+      "exchange_rate": 0.79,
+      "price_breakdown": {
+        "base_price": 299,
+        "discounts": [],
+        "final_price": 299,
+        "currency_conversion": { "from_currency": "USD", "to_currency": "GBP", "rate": 0.79, "converted_amount": 236.21 }
+      }
+    }
+  ]
+}
+```
+
+<Tip>
+  A single product? Use `storefront.pricing.getProductPrice({ id, placeName: 'Berlin' })` — for a
+  multi-variant product it returns a `price_range` (`{ min, max }`) plus a per-variant
+  `display_price`. Berlin resolves to EUR at rate `0.92` (e.g. a `$14.99` mug → `€13.79`).
+</Tip>
+
+## 5. Browse by category
+
+For a navigation menu or a category landing page, list the store's categories with
+`listCategories` (publishable key), then filter the catalog or pricing by `categoryId`.
+
+```typescript
+const { categories } = await storefront.taxonomy.listCategories();
+```
+
+```json Response
+{
+  "categories": [
+    { "id": "28186b12-5790-4a50-ab87-a7b70d301d00", "name": "Bags & Accessories", "description": "Handbags, wallets, belts", "active": true, "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&q=80" },
+    { "id": "3310356e-7ca4-4056-93b4-80c612536b5d", "name": "Wearables", "description": "Smartwatches, fitness trackers, wearable tech", "active": true, "image": "https://images.unsplash.com/photo-1434493789847-2f02dc6ca35d?w=800&q=80" }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
+```
+
+Then scope a catalog read to that category — both `listProducts` and `getProductPrices` accept a
+`categoryId`:
+
+```typescript
+const wearables = await storefront.pricing.getProductPrices({
+  categoryId: '3310356e-7ca4-4056-93b4-80c612536b5d', limit: 20,
+});
+// every product in wearables.products has category_name === 'Wearables'
+```
+
+<Note>
+  Categories are a fixed, store-wide set. For deeper navigation, merchants nest **subcategories** to
+  any depth — fetch them as a tree with `storefront.taxonomy.listSubcategories({ tree: true })` or a
+  single level with `{ rootOnly: true }` / `{ parentId }`.
+</Note>
+
+## What's next
+
+- Send the shopper into the [storefront checkout](/workflows/storefront-checkout) once they've found
+  a product — add to cart, sign in, and pay.
+- A signed-in shopper coming back? See [Returning customer](/workflows/returning-customer) for order
+  history, returns, and store credit.
+- Building a multi-merchant storefront? Search, recommendations, and pricing all accept a marketplace
+  operator key — see [Marketplace](/workflows/marketplace).

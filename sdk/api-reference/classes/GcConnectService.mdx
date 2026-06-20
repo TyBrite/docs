@@ -29,7 +29,7 @@ Construct the URL yourself and redirect the merchant's browser to it. The SDK pr
 ```typescript
 const params = new URLSearchParams({
   client_id: 'your-client-id',
-  redirect_uri: 'https://yourapp.com/callback',
+  redirect_uri: 'https://example.com/callback',
   scope: 'read orders:read',
   state: crypto.randomUUID(), // store this in the user's session for CSRF check
   environment: 'production',  // or 'sandbox' during development
@@ -66,13 +66,19 @@ Validates an authorization request and returns the information the consent page 
 ```typescript
 const data = await client.gcConnect.getConnectAuthorize({
   clientId: 'your-client-id',
-  redirectUri: 'https://yourapp.com/callback',
+  redirectUri: 'https://example.com/callback',
   scope: 'read orders:read',
   state: 'a8f3d2e1c9b7',
   environment: 'sandbox',
 });
 
-console.log(data.client.name);          // "Your App"
+// {
+//   valid: true,
+//   client:  { client_id: "your-client-id", name: "Your App", description: "...", logo_url: "..." },
+//   request: { redirect_uri: "https://example.com/callback",
+//              scopes: ["read", "orders:read"], state: "a8f3d2e1c9b7", environment: "sandbox" }
+// }
+console.log(data.client.name);          // your application's display name
 console.log(data.request.scopes);       // ["read", "orders:read"]
 console.log(data.request.environment);  // "sandbox"
 ```
@@ -102,7 +108,7 @@ async function handleCallback(req, res) {
       code,
       client_id: 'your-client-id',
       client_secret: process.env.GC_CLIENT_SECRET,
-      redirect_uri: 'https://yourapp.com/callback',
+      redirect_uri: 'https://example.com/callback',
     },
   });
 
@@ -116,6 +122,18 @@ async function handleCallback(req, res) {
   });
 
   res.redirect('/dashboard?connected=true');
+}
+```
+
+```json Response
+{
+  "sk": "tybrite_sk_live_…",
+  "pk": "tybrite_pk_live_…",
+  "pair_id": "550e8400-e29b-41d4-a716-446655440000",
+  "store_id": "660f9511-f30c-52e5-b827-557766551111",
+  "environment": "production",
+  "scopes": ["read", "orders:read"],
+  "client_id": "your-client-id"
 }
 ```
 
@@ -161,6 +179,8 @@ await client.gcConnect.connectRevoke({
     revoke_reason: 'subscription_cancelled', // optional
   },
 });
+// → { success: true }
+// (an already-revoked connection returns { success: true, message: 'Already revoked' })
 ```
 
 <Note>
@@ -179,13 +199,15 @@ Returns all active connections for the authenticated store. This powers the Conn
 const { sessions } = await client.gcConnect.listConnectSessions();
 
 for (const session of sessions) {
-  console.log(session.client_name);    // "Fantastic"
+  console.log(session.client_name);    // e.g. "Anvil"
   console.log(session.environment);   // "production"
   console.log(session.scopes);        // ["read", "orders:read"]
   console.log(session.connected_at);  // "2026-05-28T10:00:00Z"
   console.log(session.last_used_at);  // "2026-05-28T14:30:00Z"
   console.log(session.pair_id);       // UUID — use to revoke
 }
+
+// A store with no connected apps returns { sessions: [] }.
 ```
 
 ---
@@ -193,11 +215,11 @@ for (const session of sessions) {
 ## Complete Integration Example
 
 ```typescript
-import Tybrite from 'tybrite-typescript-sdk';
+import { Tybrite } from '@tybrite-labs/sdk';
 
 // Initialize without a global API key — for the Connect flow,
 // auth is per-merchant and handled at exchange time.
-const client = new Tybrite({ BASE: 'https://api.tybritelabs.com' });
+const client = new Tybrite();
 
 // Step 1 — build the authorization URL and redirect the merchant
 export function buildAuthUrl(state: string): string {
@@ -229,10 +251,7 @@ export async function handleCallback(code: string, state: string, sessionState: 
 
 // Step 3 — use the sk to call the API on behalf of the merchant
 export function merchantClient(sk: string): Tybrite {
-  return new Tybrite({
-    BASE: 'https://api.tybritelabs.com',
-    TOKEN: sk,
-  });
+  return new Tybrite({ apiKey: sk });
 }
 ```
 

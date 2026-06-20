@@ -3,7 +3,7 @@ title: "Authenticated Session"
 description: "Reference for the AuthenticationService class in the Tybrite SDK."
 ---
 
-The `AuthenticationService` (accessed via `client.auth`) is the **gateway to obtaining customer session tokens**. It handles customer registration, login, passwordless flows, password management, and session refresh.
+The `AuthenticationService` (accessed via `client.authentication`) is the **gateway to obtaining customer session tokens**. It handles customer registration, login, passwordless flows, password management, and session refresh.
 
 Every customer-scoped operation across the SDK — on `client.customers`, `client.cartWishlist`, `client.giftCards`, and `client.messaging` — requires the `access_token` minted here to be passed as the `xAuthToken` header.
 
@@ -43,12 +43,12 @@ Create a new customer account. On success, returns **`201 Created`** along with 
 Pass `marketing_consent: true` when the sign-up form includes a marketing opt-in box and the customer checked it. It defaults to `false` (opt-in) — a customer is never subscribed to marketing without affirmative consent. The customer can change this later via `updateCustomer`.
 
 ```typescript
-const { user, customer, session, is_multi_store_customer } = await client.auth.register({
+const { user, customer, session, is_multi_store_customer } = await client.authentication.register({
   requestBody: {
-    email: 'jane@example.com',
+    email: 'jane.doe@example.com',
     password: 'securePassword123',
     name: 'Jane Doe',          // optional
-    phone: '254700111222',     // optional
+    phone: '+12125550142',     // optional
     marketing_consent: true    // optional — they opted in to marketing
   }
 });
@@ -56,7 +56,32 @@ const { user, customer, session, is_multi_store_customer } = await client.auth.r
 if (is_multi_store_customer) {
   console.log('Linked existing Tybrite identity to this store');
 } else {
-  console.log('Created a brand-new auth.users record');
+  console.log('Created a brand-new login identity');
+}
+```
+
+```json Response (201)
+{
+  "message": "Registration successful",
+  "user": {
+    "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
+    "email": "jane.doe@example.com",
+    "email_confirmed": true
+  },
+  "customer": {
+    "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "name": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "phone": "+12125550142",
+    "tier": "bronze",
+    "created_at": "2026-06-20T11:36:54.174303+00:00"
+  },
+  "session": {
+    "access_token": "eyJ...<redacted>.signature",
+    "refresh_token": "v1.MROK...<redacted>",
+    "expires_in": 3600,
+    "expires_at": 1781959013
+  }
 }
 ```
 
@@ -64,7 +89,7 @@ if (is_multi_store_customer) {
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `user` | `object` | The `auth.users` record (id, email, metadata). |
+| `user` | `object` | The login identity record (id, email, metadata). |
 | `customer` | `object` | The store-scoped customer profile row. |
 | `session` | `object` | `{ access_token, refresh_token, expires_in, expires_at }` |
 | `is_multi_store_customer` | `boolean` | `true` when an existing Tybrite identity (from another store) was linked rather than newly created. |
@@ -80,9 +105,9 @@ if (is_multi_store_customer) {
 Authenticate an existing customer using their email and password. Returns **`200 OK`**.
 
 ```typescript
-const { message, user, customer, session } = await client.auth.login({
+const { message, user, customer, session } = await client.authentication.login({
   requestBody: {
-    email: 'user@example.com',
+    email: 'jane.doe@example.com',
     password: 'securePassword123'
   }
 });
@@ -110,7 +135,9 @@ localStorage.setItem('tybrite_refresh_token', session.refresh_token);
 Invalidate the current session. Revokes both the access and refresh tokens on the server. Returns **`200 OK`**.
 
 ```typescript
-await client.auth.logout();
+await client.authentication.logout();
+// → { message: 'Logout successful' }
+
 // Then clear local storage
 localStorage.removeItem('tybrite_access_token');
 localStorage.removeItem('tybrite_refresh_token');
@@ -125,9 +152,9 @@ localStorage.removeItem('tybrite_refresh_token');
 Send a passwordless authentication link **and** a 6-digit OTP code to the customer's email. Codes are valid for **15 minutes**. Returns **`200 OK`** with a hint to check email.
 
 ```typescript
-const { message } = await client.auth.sendMagicLink({
+const { message } = await client.authentication.sendMagicLink({
   requestBody: {
-    email: 'user@example.com'
+    email: 'jane.doe@example.com'
   }
 });
 // message → "Check your email for the magic link / OTP"
@@ -140,12 +167,14 @@ const { message } = await client.auth.sendMagicLink({
 Verify the 6-digit OTP code emitted by `sendMagicLink` to complete authentication. Returns **`200 OK`** with the **same response shape as `login`** (`message`, `user`, `customer`, `session`).
 
 ```typescript
-const { user, customer, session } = await client.auth.verifyOtp({
+const { user, customer, session } = await client.authentication.verifyOtp({
   requestBody: {
-    email: 'user@example.com',
+    email: 'jane.doe@example.com',
     token: '123456' // The 6-digit code from email
   }
 });
+// → same shape as login: { message, user, customer, session }
+//   session.access_token is the JWT you pass as xAuthToken thereafter
 ```
 
 ---
@@ -157,12 +186,13 @@ const { user, customer, session } = await client.auth.verifyOtp({
 Trigger a password reset email for a customer who has forgotten their password. Returns **`200 OK`**.
 
 ```typescript
-await client.auth.resetPassword({
+await client.authentication.resetPassword({
   requestBody: {
-    email: 'user@example.com',
+    email: 'jane.doe@example.com',
     redirect_to: 'https://shop.example.com/reset-callback' // optional
   }
 });
+// → { message: 'Password reset email sent', email: 'jane.doe@example.com' }
 ```
 
 ---
@@ -172,18 +202,22 @@ await client.auth.resetPassword({
 Update the password for the currently authenticated user. Returns **`200 OK`**.
 
 <Warning>
-  `xAuthToken` is **mandatory** here and must be the customer's **own** session JWT (the `access_token` returned from `login` / `verifyOtp` / `register`). Server keys cannot stand in — this endpoint mutates `auth.users` and requires per-customer authorization.
+  `xAuthToken` is **mandatory** here and must be the customer's **own** session JWT (the `access_token` returned from `login` / `verifyOtp` / `register`). Server keys cannot stand in — this endpoint mutates the customer's login credentials and requires per-customer authorization.
 </Warning>
 
 ```typescript
 const token = localStorage.getItem('tybrite_access_token')!;
 
-await client.auth.updatePassword({
+await client.authentication.updatePassword({
   xAuthToken: token,
   requestBody: {
     password: 'newSecurePassword456'
   }
 });
+// → {
+//     message: 'Password updated successfully',
+//     user: { id: 'df648f68-39b3-4ba6-9be2-ff0a9393c02b', email: 'jane.doe@example.com' }
+//   }
 ```
 
 ---
@@ -195,11 +229,17 @@ await client.auth.updatePassword({
 Exchange a refresh token for a fresh access token. Returns **`200 OK`** with a brand-new session object (including a rotated `refresh_token`).
 
 ```typescript
-const { session } = await client.auth.refreshToken({
+const { session } = await client.authentication.refreshToken({
   requestBody: {
     refresh_token: localStorage.getItem('tybrite_refresh_token')!
   }
 });
+// → { message: 'Token refreshed successfully', session: {
+//       access_token: 'eyJ...<redacted>.signature',
+//       refresh_token: 'v1.MROK...<redacted>',  // rotated — supersedes the old one
+//       expires_in: 3600,
+//       expires_at: 1781966861
+//   } }
 
 localStorage.setItem('tybrite_access_token', session.access_token);
 localStorage.setItem('tybrite_refresh_token', session.refresh_token);
@@ -222,11 +262,31 @@ Retrieve the lightweight identity of the currently authenticated user — useful
 ```typescript
 const token = localStorage.getItem('tybrite_access_token')!;
 
-const { user, customer } = await client.auth.getCurrentUser({
+const { user, customer } = await client.authentication.getCurrentUser({
   xAuthToken: token
 });
 
 console.log(`Logged in as: ${user.email} (customer id: ${customer.id})`);
+```
+
+```json Response (200)
+{
+  "user": {
+    "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
+    "email": "jane.doe@example.com",
+    "email_confirmed": true,
+    "created_at": "2026-06-20T11:36:53.593963Z"
+  },
+  "customer": {
+    "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "name": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "phone": "+12125550142",
+    "tier": "bronze",
+    "total_purchases": 0,
+    "created_at": "2026-06-20T11:36:54.174303+00:00"
+  }
+}
 ```
 
 <Note>
@@ -240,17 +300,18 @@ console.log(`Logged in as: ${user.email} (customer id: ${customer.id})`);
 This walks the customer from sign-in, through a cart mutation and checkout, to logout — showing where `xAuthToken` flows.
 
 ```typescript
-import { Tybrite } from '@tybrite/sdk';
+import { Tybrite } from '@tybrite-labs/sdk';
 
 const client = new Tybrite({ apiKey: process.env.TYBRITE_PUBLISHABLE_KEY });
 
 // 1. LOGIN — mint the session
-const { customer, session } = await client.auth.login({
+const { customer, session } = await client.authentication.login({
   requestBody: {
-    email: 'jane@example.com',
+    email: 'jane.doe@example.com',
     password: 'securePassword123'
   }
 });
+// → { message: 'Login successful', user, customer, session }
 
 const token = session.access_token;
 
@@ -259,10 +320,11 @@ await client.cartWishlist.addToCart({
   xAuthToken: token,
   requestBody: {
     customer_id: customer.id,
-    product_id: 'prod_abc123',
+    variant_id: '9a47e047-b1b6-4c35-9617-820629e22e04', // Sony WH-1000XM4 default variant
     quantity: 2
   }
 });
+// → { items: [ { product_name, variant_name, quantity, unit_price, total_price, ... } ] }
 
 // 3. CHECKOUT — order creation is sk-only + idempotent + HMAC-signed
 //    (uses your server-side secret key, not the customer JWT)
@@ -272,14 +334,17 @@ const order = await serverClient.orders.createOrder({
   xSignature: signature,
   requestBody: { customer_id: customer.id, items: [...] }
 });
+// → { data: { id, order_number, payment_status: 'paid', total, ... } }
 
 // 4. REFRESH — if the access_token is near expiry
-const { session: refreshed } = await client.auth.refreshToken({
+const { session: refreshed } = await client.authentication.refreshToken({
   requestBody: { refresh_token: session.refresh_token }
 });
+// → { message: 'Token refreshed successfully', session: { access_token, refresh_token, ... } }
 
 // 5. LOGOUT — revoke tokens server-side
-await client.auth.logout();
+await client.authentication.logout();
+// → { message: 'Logout successful' }
 ```
 
 ---

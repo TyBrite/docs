@@ -20,6 +20,20 @@ const { pricing_tiers, delivery_zones } = await client.shipping.getShippingZones
 console.log(`Configured ${delivery_zones.length} custom delivery zones.`);
 ```
 
+A store configured with distance tiers returns them ordered by `priority`:
+
+```json
+{
+  "pricing_tiers": [
+    { "tier_name": "Local (within 10 km)", "min_distance_meters": 0, "max_distance_meters": 10000, "delivery_fee": 5.99, "free_delivery_threshold": 75, "is_active": true, "priority": 1 },
+    { "tier_name": "Metro (10–50 km)", "min_distance_meters": 10000, "max_distance_meters": 50000, "delivery_fee": 9.99, "free_delivery_threshold": 150, "is_active": true, "priority": 2 },
+    { "tier_name": "Regional (50–500 km)", "min_distance_meters": 50000, "max_distance_meters": 500000, "delivery_fee": 14.99, "free_delivery_threshold": 250, "is_active": true, "priority": 3 },
+    { "tier_name": "National (500 km+)", "min_distance_meters": 500000, "max_distance_meters": 20000000, "delivery_fee": 24.99, "free_delivery_threshold": 400, "is_active": true, "priority": 4 }
+  ],
+  "delivery_zones": []
+}
+```
+
 ---
 
 ### `calculateShipping`
@@ -33,24 +47,32 @@ Calculate the exact delivery fee for a customer based on their location and orde
 // Tybrite internally geocodes this to find the best matching zone or tier.
 const shipping = await client.shipping.calculateShipping({
   requestBody: {
-   place_name: "Westlands, Nairobi, Kenya",
-   order_total: 100000
+    place_name: "Brooklyn, New York",
+    order_total: 50
   }
 });
+// → { fee: 9.99, tier_name: "Metro (10–50 km)", is_free: false, applied_rule: "distance", ... }
 ```
 
 ```typescript Via Coordinates
 // Calculate using exact GPS coordinates (recommended)
 const shipping = await client.shipping.calculateShipping({
   requestBody: {
-    latitude: -1.286389,
-    longitude: 36.817223,
-    order_total: 100000 // In smallest unit ($10.00)
+    latitude: 40.6782,
+    longitude: -73.9442,
+    order_total: 50 // Order subtotal in the store's currency (USD)
   }
 });
+// → { fee: 5.99, tier_name: "Local (within 10 km)", is_free: false, applied_rule: "distance", ... }
 ```
 
 </CodeGroup>
+
+<Note>
+  `order_total` is the order subtotal in the store's currency (e.g. `50` = $50.00), **not** a
+  minor-unit (cents) value. It is used only to decide whether the order reaches a tier's or zone's
+  free-delivery threshold.
+</Note>
 
 **Response Fields:**
 

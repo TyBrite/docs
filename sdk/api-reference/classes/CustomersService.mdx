@@ -30,10 +30,10 @@ Pass `marketing_consent` to record whether the customer opted in to marketing co
 ```typescript
 const result = await client.customers.createCustomer({
   requestBody: {
-    email: 'jane@example.com',
+    email: 'jane.doe@example.com',
     name: 'Jane Doe',
-    phone: '254711222333',
-    address: '123 Business Way, Nairobi',
+    phone: '+12125550123',
+    address: '350 Fifth Avenue, New York, NY 10118',
     external_id: 'auth0|66a3f8c2b1d9c204a1f7e3d1', // your upstream user id
     marketing_consent: true, // they ticked the marketing opt-in box
   }
@@ -41,6 +41,35 @@ const result = await client.customers.createCustomer({
 const customer = result.customer;
 // Store customer.id alongside your upstream user record for future calls.
 ```
+
+**Response `201`:**
+
+```json
+{
+  "customer": {
+    "id": "0adffe56-ccc7-4868-bb4c-0f0ca5db117f",
+    "name": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "phone": "+12125550123",
+    "address": "350 Fifth Avenue, New York, NY 10118",
+    "status": "active",
+    "tier": "bronze",
+    "join_date": "2026-06-20",
+    "external_id": "auth0|66a3f8c2b1d9c204a1f7e3d1",
+    "marketing_consent": true,
+    "total_purchases": 0,
+    "last_purchase": null,
+    "store_credit_balance": 0,
+    "created_at": "2026-06-20T11:37:12.876998+00:00",
+    "updated_at": "2026-06-20T11:37:12.876998+00:00",
+    "store_metrics": null
+  }
+}
+```
+
+<Note>
+  A newly created customer starts at the `bronze` `tier` with no purchase history, so `last_purchase` and `store_metrics` are `null` until their first order. The `tier` rises through `silver`, `gold`, and `platinum` as the customer's lifetime spend grows.
+</Note>
 
 <Note>
   The customer's marketing opt-in can be changed later via `updateCustomer` (e.g. when a
@@ -83,6 +112,33 @@ const customer = await client.customers.getCustomer({
   Provide exactly one of `xAuthToken` or `xExternalAuth`. Both → `400`. Mismatch with the path `id` → `403`.
 </Accordion>
 
+**Response `200`** — the customer fields are returned at the top level (not wrapped in a `customer` key):
+
+```json
+{
+  "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+  "name": "Jane Doe",
+  "email": "jane.doe@example.com",
+  "phone": "+12125550142",
+  "address": null,
+  "status": "active",
+  "tier": "bronze",
+  "join_date": "2026-06-20",
+  "external_id": null,
+  "marketing_consent": true,
+  "total_purchases": 0,
+  "last_purchase": null,
+  "store_credit_balance": 0,
+  "created_at": "2026-06-20T11:36:54.174303+00:00",
+  "updated_at": "2026-06-20T11:36:54.174303+00:00",
+  "store_metrics": null
+}
+```
+
+<Note>
+  `address`, `last_purchase`, and `store_metrics` are `null` until the customer has supplied an address and made a purchase. `tier` is one of `bronze` / `silver` / `gold` / `platinum`, derived from purchase history.
+</Note>
+
 ---
 
 ### `updateCustomer`
@@ -96,11 +152,35 @@ const result = await client.customers.updateCustomer({
   id: gcCustomerId,
   xExternalAuth: assertion,
   requestBody: {
-    address: '123 Business Way, Nairobi',
-    name: 'Jane Updated'
+    address: '350 Fifth Avenue, New York, NY 10118',
+    name: 'Jane Doe'
   }
 });
 const updated = result.customer;
+```
+
+**Response `200`** — the updated profile, wrapped in a `customer` key:
+
+```json
+{
+  "customer": {
+    "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "name": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "phone": "+12125550199",
+    "address": "350 Fifth Avenue, New York, NY 10118",
+    "status": "active",
+    "join_date": "2026-06-20",
+    "external_id": null,
+    "marketing_consent": true,
+    "total_purchases": 0,
+    "last_purchase": null,
+    "store_credit_balance": 0,
+    "created_at": "2026-06-20T11:36:54.174303+00:00",
+    "updated_at": "2026-06-20T11:36:54.174303+00:00",
+    "store_metrics": null
+  }
+}
 ```
 
 <Accordion title="Using Galactic Core auth instead?">
@@ -108,8 +188,9 @@ const updated = result.customer;
   const result = await client.customers.updateCustomer({
     id: gcCustomerId,
     xAuthToken: customerSession.access_token,
-    requestBody: { address: '123 Business Way, Nairobi' }
+    requestBody: { address: '350 Fifth Avenue, New York, NY 10118' }
   });
+  // → { customer: { ... } } — same response shape as above
   ```
 
   Provide exactly one of `xAuthToken` or `xExternalAuth`. Both → `400`. Mismatch with the path `id` → `403`.
@@ -143,6 +224,31 @@ const { addresses } = await client.customers.listAddresses({
 const defaultShipping = addresses.find(a => a.is_default_shipping);
 ```
 
+```json Response (200)
+{
+  "addresses": [
+    {
+      "id": "2cef8df9-29d3-4a66-8b79-c9fab8609b63",
+      "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+      "address_type": "both",
+      "label": "Home",
+      "full_name": "Jane Doe",
+      "phone": "+12125550142",
+      "line1": "350 Fifth Avenue",
+      "line2": "Floor 21",
+      "city": "New York",
+      "state": "NY",
+      "postal_code": "10118",
+      "country": "US",
+      "is_default_shipping": true,
+      "is_default_billing": true,
+      "created_at": "2026-06-20T11:37:14.253168+00:00",
+      "updated_at": "2026-06-20T11:37:14.253168+00:00"
+    }
+  ]
+}
+```
+
 ### `createAddress`
 
 Save a new address to the shopper's address book. `full_name`, `line1`, `city`, and `country` are required; everything else is optional. `address_type` is one of `shipping`, `billing`, or `both` (default `both`).
@@ -167,6 +273,29 @@ const { address } = await client.customers.createAddress({
 // Save address.id to reference this address at checkout.
 ```
 
+```json Response (201)
+{
+  "address": {
+    "id": "2cef8df9-29d3-4a66-8b79-c9fab8609b63",
+    "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "address_type": "both",
+    "label": "Home",
+    "full_name": "Jane Doe",
+    "phone": "+12125550142",
+    "line1": "123 Main St",
+    "line2": "Apt 4B",
+    "city": "New York",
+    "state": "NY",
+    "postal_code": "10001",
+    "country": "US",
+    "is_default_shipping": true,
+    "is_default_billing": false,
+    "created_at": "2026-06-20T11:37:14.253168+00:00",
+    "updated_at": "2026-06-20T11:37:14.253168+00:00"
+  }
+}
+```
+
 ### `updateAddress`
 
 Partially update a saved address — only the fields you supply are changed. Pass the address `id` as `addressId`.
@@ -181,6 +310,8 @@ const { address } = await client.customers.updateAddress({
     is_default_billing: true,
   },
 });
+// → { address: { id, customer_id, line2: 'Suite 200', is_default_billing: true, ... } }
+//   (the full updated address, same shape as createAddress)
 ```
 
 ### `deleteAddress`
@@ -214,14 +345,17 @@ The `getCustomer` and `updateCustomer` methods require a customer session JWT (`
 ```typescript
 // 1. Customer logs in via AuthenticationService
 const session = await client.authentication.login({
-  requestBody: { email: 'jane@example.com', password: '...' }
+  requestBody: { email: 'jane.doe@example.com', password: '...' }
 });
+// → { message: 'Login successful', user, customer, session }
 
 // 2. Use the returned access_token for subsequent customer-scoped calls
 const profile = await client.customers.getCustomer({
   id: session.customer.id,
   xAuthToken: session.session.access_token
 });
+// → { id, name, email, tier: 'bronze', address, store_credit_balance, store_metrics, ... }
+//   (customer fields at the top level — not wrapped in a `customer` key)
 ```
 
 <Note>

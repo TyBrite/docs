@@ -68,6 +68,27 @@ const { methods } = await client.payments.getPaymentMethods({
 });
 ```
 
+```json Response
+{
+  "methods": [
+    {
+      "provider": "cash",
+      "display_name": "Cash on Delivery",
+      "type": "manual",
+      "environment": "production",
+      "is_configured": true
+    },
+    {
+      "provider": "stripe",
+      "display_name": "Stripe",
+      "type": "redirect",
+      "environment": "test",
+      "is_configured": true
+    }
+  ]
+}
+```
+
 Each method in the returned list includes:
 
 | Field | Description |
@@ -99,9 +120,9 @@ const paymentData = {
   provider: 'stripe',
   amount: 5000,
   currency: 'USD',
-  email: 'customer@email.com',
-  success_url: 'https://store.com/thanks',
-  cancel_url: 'https://store.com/checkout'
+  email: 'john.doe@example.com',
+  success_url: 'https://example.com/thanks',
+  cancel_url: 'https://example.com/checkout'
 };
 
 const timestamp = Math.floor(Date.now() / 1000);
@@ -118,11 +139,14 @@ const response = await client.payments.initializePayment({
 
 // Example 201 response body
 // {
+//   "success": true,
 //   "provider": "stripe",
-//   "reference": "pi_3Q...",
-//   "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_...",
-//   "status": "pending",
-//   "idempotent": false
+//   "type": "redirect",
+//   "reference": "PAY-61713784-F4TAOI",
+//   "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_a1wkhn...",
+//   "session_id": "cs_test_a1wkhnXDJL6XPIzS3rjHUeF0PxUb7yu6Nxw8WJsXpjIgzNG6lSe8x3uue0",
+//   "environment": "test",
+//   "expires_at": "2026-06-21T13:21:54.000Z"
 // }
 
 // Redirect to Stripe Checkout
@@ -147,6 +171,17 @@ const response = await client.payments.initializePayment({
   xSignature: signature,
   requestBody: paymentData
 });
+
+// Example 201 response body — an STK push prompt is sent to the phone:
+// {
+//   "success": true,
+//   "provider": "mpesa",
+//   "type": "stk_push",
+//   "reference": "PAY-12345678-ABC123",
+//   "checkout_request_id": "ws_CO_123456789",
+//   "merchant_request_id": "12345-67890-1",
+//   "customer_message": "Success. Request accepted for processing"
+// }
 ```
 
 ```typescript PayPal (Wallet / Card)
@@ -217,7 +252,7 @@ The response shape depends on the `provider` field — one of four variants is r
   "status": "success",
   "amount": 5000,
   "currency": "USD",
-  "customer_email": "customer@email.com",
+  "customer_email": "john.doe@example.com",
   "payment_intent": "pi_3Q...",
   "metadata": {
     "order_id": "ord_01HX..."
@@ -233,7 +268,7 @@ The response shape depends on the `provider` field — one of four variants is r
   "amount": 250000,
   "currency": "NGN",
   "channel": "card",
-  "customer_email": "customer@email.com",
+  "customer_email": "john.doe@example.com",
   "paid_at": "2026-05-20T10:24:11.000Z",
   "metadata": {
     "order_id": "ord_01HX..."

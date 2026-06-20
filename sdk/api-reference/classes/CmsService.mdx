@@ -9,38 +9,78 @@ The `CmsService` class (accessed via `client.cms`) provides access to content-dr
 
 ### `listPosts`
 
-Retrieve a paginated list of blog posts. This is ideal for building a "News" or "Magazine" section on your storefront.
+Retrieve a paginated list of published blog posts, newest first. This is ideal for building a
+"News" or "Magazine" section on your storefront. Only published posts are returned — there is no
+status filter. Filter by category with the category **slug** (`category: 'buying-guides'`).
 
 ```typescript
 const { posts, pagination } = await client.cms.listPosts({
-  status: 'published',
-  category: 'summer-trends',
+  category: 'buying-guides',
   limit: 10,
-  fields: 'id,title,slug,excerpt,featured_image'
+  fields: 'id,title,slug,excerpt,featured_image,published_at'
 });
 
 posts.forEach(post => {
   console.log(`${post.title} - Published on ${post.published_at}`);
 });
+// { title: "The Best Tech Gifts for 2026", slug: "best-tech-gifts-2026",
+//   category_name: "Buying Guides", status: "published", product_count: 2, view_count: 128, ... }
 ```
 
 **Post Metadata:**
-The listing response includes light metadata like `excerpt`, `featured_image`, and `slug`. For the full content, use `getPost`.
+The listing response includes light metadata like `excerpt`, `featured_image`, `slug`, and
+`product_count` (how many products a shoppable post links to). For the full `content`, use `getPost`.
 
 ---
 
 ### `getPost`
 
-Retrieve the full content and tags for a specific blog post.
+Retrieve the full content of a specific published blog post by its slug, including any linked
+products for shoppable posts (each entry in the `products` array carries the product's `name`,
+`sku`, `price`, `images`, and `display_type`). Returns `404` if no published post matches the slug.
 
 ```typescript
 const post = await client.cms.getPost({
-  slug: 'sustainable-fashion-trends',
-  fields: 'title,content,author_name,published_at' // Optional
+  slug: 'best-tech-gifts-2026',
+  fields: 'title,content,products,published_at' // Optional
 });
 
-// Accessing localized HTML content
-console.log(post.content); 
+// `content` is a structured block document ({ blocks: [...] })
+console.log(post.content.blocks);
+
+// Shoppable products embedded in the post
+post.products?.forEach(p => console.log(`Featured: ${p.name} ($${p.price})`));
+```
+
+```json Response
+{
+  "title": "The Best Tech Gifts for 2026",
+  "slug": "best-tech-gifts-2026",
+  "content": {
+    "blocks": [
+      { "type": "heading", "level": 2, "text": "Top picks this season" },
+      { "type": "paragraph", "text": "Whether you are shopping for a commuter, a home-office hero, or a fitness fan, these are the gadgets our team keeps coming back to." },
+      { "type": "heading", "level": 3, "text": "For the music lover" },
+      { "type": "paragraph", "text": "The Sony WH-1000XM4 remains the reference for noise cancellation." }
+    ]
+  },
+  "products": [
+    {
+      "embed_id": "278c7e72-58b5-44c8-bf73-d8608daea80a",
+      "display_type": "card",
+      "position": 1,
+      "product_id": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8",
+      "name": "Sony WH-1000XM4",
+      "sku": "SNY-WH1000-7d42",
+      "price": 349.99,
+      "sale_price": null,
+      "images": ["https://cdn.example.com/.../primary-1774785176485.jpg"],
+      "stock": 79,
+      "category": "Audio & Headphones",
+      "subcategory": "Active Noise Cancelling"
+    }
+  ]
+}
 ```
 
 ## Lookbooks
@@ -49,34 +89,63 @@ Lookbooks are curated collections of lifestyle images linked to specific product
 
 ### `listLookbooks`
 
-Retrieve a list of available lookbooks.
+Retrieve a list of published lookbooks, newest first. Only published lookbooks are returned —
+there is no status filter.
 
 ```typescript
 const { lookbooks, pagination } = await client.cms.listLookbooks({
-  status: 'published',
   limit: 12,
-  fields: 'id,title,slug,featured_image'
+  fields: 'id,title,slug,featured_image,status'
 });
+// { title: "Workspace Essentials", slug: "workspace-essentials", status: "published", ... }
 ```
 
 ---
 
 ### `getLookbook`
 
-Retrieve the full details of a lookbook, including its image gallery and **linked products**.
+Retrieve the full details of a published lookbook by its slug, including its ordered image gallery
+and the shoppable **hotspots** placed on each image. Returns `404` if no published lookbook matches
+the slug.
+
+Each lookbook exposes `status` (always `"published"` from the public API) and `collection_id` — the
+product collection that backs the lookbook, or `null` if it is standalone. The gallery lives under
+`images[]`, where each image has a `url` and a `hotspots[]` array tagging the products featured at
+specific points in the photo (your "Shop the Look" markers).
 
 ```typescript
 const lookbook = await client.cms.getLookbook({
-  slug: 'autumn-collection-2025',
-  fields: 'title,description,images,collection_id' // Optional
+  slug: 'workspace-essentials',
+  fields: 'title,description,images,collection_id,status' // Optional
 });
 
-// The 'products' array contains full Product models,
-// making it easy to render "Shop the Look" cards immediately.
-lookbook.products.forEach(product => {
-  console.log(`Includes: ${product.name}`);
+// Render each gallery image and its shoppable hotspots
+lookbook.images.forEach(image => {
+  console.log(`Image: ${image.url} — ${image.hotspots.length} hotspot(s)`);
 });
 ```
+
+```json Response
+{
+  "id": "2a78a917-656f-4826-9968-86a2de64cfb9",
+  "title": "Workspace Essentials",
+  "slug": "workspace-essentials",
+  "description": "A shoppable edit of desk upgrades for a calmer, more productive day.",
+  "featured_image": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80",
+  "collection_id": null,
+  "published_at": "2026-06-19T11:00:52.880415+00:00",
+  "images": [
+    { "url": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80", "hotspots": [] },
+    { "url": "https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=1200&q=80", "hotspots": [] }
+  ]
+}
+```
+
+<Note>
+  `status` is always `"published"` from the public API. `collection_id` is the backing product
+  collection, or `null` when the lookbook is standalone (as above). Each `images[]` entry carries a
+  `hotspots[]` array — empty here, otherwise one marker per tagged product.
+</Note>
 
 ---
 

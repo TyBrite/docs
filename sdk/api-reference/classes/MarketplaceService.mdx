@@ -124,8 +124,8 @@ const order = await client.marketplace.marketplaceCheckout({
       { product_id: 'p1', variant_id: 'v1', merchant_store_id: 'merchant-a-uuid', quantity: 1 },
       { product_id: 'p2', variant_id: 'v2', merchant_store_id: 'merchant-b-uuid', quantity: 2 },
     ],
-    customer_email: 'shopper@example.com',
-    customer_name: 'Alex Shopper',
+    customer_email: 'john.doe@example.com',
+    customer_name: 'John Doe',
     currency: 'USD',
     shipping_address: { line1: '1 Market St', city: 'San Francisco', country: 'US' },
     billing_address:  { line1: '1 Market St', city: 'San Francisco', country: 'US' },
@@ -227,7 +227,7 @@ This requires the shopper's session token (from sign-in) in the `X-Customer-Toke
 ```typescript
 // 1. Sign the shopper in (operator key) to get a session token:
 const { session } = await client.authentication.login({
-  requestBody: { email: 'shopper@example.com', password: '...' },
+  requestBody: { email: 'john.doe@example.com', password: '...' },
 });
 
 // 2. Fetch their unified profile:
@@ -356,6 +356,29 @@ collections
   });
 ```
 
+```json Response
+{
+  "collections": [
+    {
+      "slug": "trending-now",
+      "name": "Trending now",
+      "description": "The most popular products across the marketplace this week.",
+      "placement_kind": "product",
+      "display_priority": 10,
+      "show_on_homepage": true
+    },
+    {
+      "slug": "featured-shops",
+      "name": "Featured shops",
+      "description": "Merchants worth a look.",
+      "placement_kind": "merchant",
+      "display_priority": 20,
+      "show_on_homepage": true
+    }
+  ]
+}
+```
+
 | Param | Required | Notes |
 |---|---|---|
 | `placementKind` | no | Return only sections of this kind: `product`, `merchant`, or `promotion`. |
@@ -375,6 +398,26 @@ for (const item of section.items) {
   // item.merchant_store_id — the merchant this member belongs to
   // item.product_id        — for 'product' sections (else null)
   // item.promotion_id      — for 'promotion' sections (else null)
+}
+```
+
+```json Response
+{
+  "slug": "trending-now",
+  "name": "Trending now",
+  "description": "The most popular products across the marketplace this week.",
+  "placement_kind": "product",
+  "curated": true,
+  "items": [
+    {
+      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5"
+    },
+    {
+      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "product_id": "9cd6e472-de84-435c-be43-957b56682f43"
+    }
+  ]
 }
 ```
 
@@ -449,6 +492,31 @@ for (const p of placements) {
 }
 ```
 
+```json Response
+{
+  "slot": "home_hero",
+  "context": null,
+  "placements": [
+    {
+      "booking_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "placement_kind": "product",
+      "product_ids": [
+        "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+        "9cd6e472-de84-435c-be43-957b56682f43"
+      ],
+      "creative": {
+        "headline": "Summer audio sale",
+        "image_url": "https://cdn.example.com/ads/acme-hero.png",
+        "cta": "Shop now"
+      },
+      "sponsored": true,
+      "disclosure_label": "Sponsored"
+    }
+  ]
+}
+```
+
 | Param | Required | Notes |
 |---|---|---|
 | `slotKey` | yes | The slot to fill, e.g. `home_hero`, `category_top`. |
@@ -494,6 +562,7 @@ await market.marketplace.logAdEvent({
     session_id: storefrontSessionId,   // optional, helps de-duplicate
   },
 });
+// → 202 { recorded: true, billable: true }
 
 // When the shopper clicks it:
 await market.marketplace.logAdEvent({
@@ -504,6 +573,7 @@ await market.marketplace.logAdEvent({
     session_id: storefrontSessionId,
   },
 });
+// → 202 { recorded: true, billable: true }
 ```
 
 The response is `{ recorded: true, billable }`. `billable` tells you whether the event counted toward billing after de-duplication and invalid-traffic filtering — it's informational, so you don't need to act on it.
@@ -544,14 +614,14 @@ const cart = [
 
 // 4. Sign in (or register) the shopper:
 const { session } = await market.authentication.login({
-  requestBody: { email: 'shopper@example.com', password: '...' },
+  requestBody: { email: 'john.doe@example.com', password: '...' },
 });
 
 // 5. Checkout → one payment, auto-split:
 const order = await market.marketplace.marketplaceCheckout({
   requestBody: {
     items: cart,
-    customer_email: 'shopper@example.com',
+    customer_email: 'john.doe@example.com',
     currency: 'USD',
   },
 });

@@ -1,0 +1,307 @@
+---
+title: "Webhooks & Automation"
+description: "React to commerce events in real time instead of polling — register an endpoint, verify deliveries cryptographically, and handle order.paid end to end."
+---
+
+Webhooks let your systems **react to commerce events the moment they happen** — a new order, a
+successful payment, a completed catalog sync — instead of polling the API on a timer. You register an
+HTTPS endpoint, subscribe it to the events you care about, and Galactic Core POSTs a signed envelope
+to it on every matching event.
+
+All webhook management is **secret-key only** (`sk`). A publishable key returns `403`. These calls
+run on your server.
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const server = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+```
+
+## 1. Register an endpoint
+
+Create an endpoint pointed at your handler URL and list the events to subscribe to (or `["*"]` for
+all of them). The response includes a **`signing_secret` returned exactly once** — store it
+immediately; it cannot be retrieved again. If you lose it, delete the endpoint and re-create it.
+
+```typescript
+const { webhook_endpoint } = await server.webhooks.createWebhookEndpoint({
+  requestBody: {
+    url: 'https://yourapp.com/webhooks/tybrite',
+    events: ['order.created', 'order.paid', 'payment.succeeded'],
+    description: 'Production ERP sync',
+  },
+});
+
+// Persist webhook_endpoint.signing_secret now — you won't see it again.
+```
+
+```json Response
+{
+  "webhook_endpoint": {
+    "id": "ca8e7b1e-86e4-46a3-a716-eab9e5ffc168",
+    "store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+    "url": "https://yourapp.com/webhooks/tybrite",
+    "events": ["order.created", "order.paid", "payment.succeeded"],
+    "enabled": true,
+    "metadata": {},
+    "created_at": "2026-06-20T11:30:48.673+00:00",
+    "updated_at": "2026-06-20T11:30:48.673+00:00",
+    "signing_secret": "whsec_REDACTED_64_HEX_CHARACTERS_STORE_THIS_NOW"
+  }
+}
+```
+
+<Warning>
+  The **create** response is the only one that ever includes `signing_secret`. `getWebhookEndpoint`
+  and `listWebhookEndpoints` deliberately omit it — there is no way to read it back. Capture it at
+  creation.
+</Warning>
+
+## 2. List and inspect endpoints (and their health)
+
+`listWebhookEndpoints` returns every endpoint with its **delivery-health fields** —
+`last_success_at`, `last_failure_at`, `consecutive_failures`, and `disabled_reason`. (Note the
+mirror-image: these health fields appear on list/get but **not** on the create response, while
+`signing_secret` appears **only** on create.)
+
+```typescript
+const { webhook_endpoints } = await server.webhooks.listWebhookEndpoints();
+```
+
+```json Response
+{
+  "webhook_endpoints": [
+    {
+      "id": "ca8e7b1e-86e4-46a3-a716-eab9e5ffc168",
+      "store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "url": "https://yourapp.com/webhooks/tybrite",
+      "events": ["order.created", "order.paid", "payment.succeeded"],
+      "enabled": true,
+      "metadata": {},
+      "last_success_at": null,
+      "last_failure_at": null,
+      "consecutive_failures": 0,
+      "disabled_reason": null,
+      "disabled_at": null,
+      "created_at": "2026-06-20T11:30:48.673+00:00",
+      "updated_at": "2026-06-20T11:30:48.673+00:00"
+    }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
+```
+
+`getWebhookEndpoint` adds aggregate `delivery_stats` for a single endpoint:
+
+```typescript
+const { webhook_endpoint } = await server.webhooks.getWebhookEndpoint({
+  id: 'ca8e7b1e-86e4-46a3-a716-eab9e5ffc168',
+});
+// → webhook_endpoint.delivery_stats === { total: 0, successful: 0, failed: 0 }
+```
+
+<Note>
+  Failed deliveries are retried automatically with exponential backoff. If an endpoint fails 20
+  deliveries in a row, Galactic Core disables it (`enabled: false`) and stamps a `disabled_reason`.
+  Re-enable it once it's healthy by patching `enabled: true` — that also resets the failure counter:
+  `server.webhooks.updateWebhookEndpoint({ id, requestBody: { enabled: true } })`.
+</Note>
+
+## 3. The event envelope
+
+Every delivery is a POST of the same envelope shape. The `data.object` holds the resource that
+triggered the event; the top-level fields tell you how to handle it:
+
+- **`type`** — the event type (e.g. `order.created`).
+- **`livemode`** — `true` for a live key, `false` for a test key. Branch on this so test events never
+  touch production systems.
+- **`api_version`** — the contract version (`v1`).
+- **`environment`** — `production` or `sandbox`.
+
+Here's a real `order.created` envelope as it lands in your handler (lifted from the event log):
+
+```json
+{
+  "id": "evt_1781955476025_lp1jafe",
+  "type": "order.created",
+  "api_version": "v1",
+  "livemode": true,
+  "created_at": "2026-06-20T11:37:56.025Z",
+  "data": {
+    "object": {
+      "id": "e7d28e96-e9e0-45ce-be28-51812f63eb4b",
+      "customer_id": "8c958f7c-918f-488a-a7cc-71497f677a53",
+      "order_number": "ORD-1781955473455",
+      "order_status": "pending",
+      "payment_status": "paid",
+      "total_amount": 603.99
+    }
+  }
+}
+```
+
+## 4. Verify the signature in your handler
+
+This is **your** server code, so it's free to name your own stack. Galactic Core signs every delivery
+and sends the signature in the `X-Tybrite-Signature` header as `t=<timestamp>,v1=<hex hmac>`.
+Recompute the HMAC over `` `${t}.${rawBody}` `` with your stored `signing_secret` and compare in
+constant time **before** trusting the payload:
+
+```typescript
+// Your webhook handler (Express example) — verify before you act.
+import { createHmac, timingSafeEqual } from 'crypto';
+import express from 'express';
+
+const app = express();
+const SIGNING_SECRET = process.env.TYBRITE_WEBHOOK_SECRET; // the value from step 1
+
+// Capture the RAW body — you must sign the exact bytes, not a re-serialized object.
+app.post('/webhooks/tybrite', express.raw({ type: 'application/json' }), (req, res) => {
+  const header = req.get('X-Tybrite-Signature') || '';
+  const parts = Object.fromEntries(header.split(',').map((p) => p.split('=')));
+  const rawBody = req.body.toString('utf8');
+
+  const expected = createHmac('sha256', SIGNING_SECRET)
+    .update(`${parts.t}.${rawBody}`)
+    .digest('hex');
+
+  const ok =
+    parts.v1 &&
+    expected.length === parts.v1.length &&
+    timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1));
+
+  if (!ok) return res.status(400).send('invalid signature');
+
+  const event = JSON.parse(rawBody);
+  // event.type, event.data.object — now safe to act on.
+  res.status(200).json({ received: true });
+});
+```
+
+<Tip>
+  Acknowledge fast (`200` immediately) and process asynchronously. A slow handler causes timeouts,
+  which count as delivery failures and push the endpoint toward auto-disable.
+</Tip>
+
+## 5. Test, audit, and retry deliveries
+
+**Send a test event** to verify connectivity and your signature check end to end. The payload carries
+`test: true` and placeholder data — your handler should no-op on it (don't fulfil or charge).
+
+```typescript
+const test = await server.webhooks.sendTestWebhookEvent({
+  id: 'ca8e7b1e-86e4-46a3-a716-eab9e5ffc168',
+  requestBody: { event_type: 'order.created' },
+});
+```
+
+```json Response
+{
+  "success": true,
+  "event_id": "evt_test_1781955051835_uuib0s8",
+  "event_type": "order.created",
+  "endpoint_url": "https://yourapp.com/webhooks/tybrite",
+  "status_code": 200,
+  "response_body": "{\"received\":true,\"event_id\":\"evt_test_1781955051835_uuib0s8\"}"
+}
+```
+
+**Audit the event log** to debug deliveries or replay history. Reverse-chronological, cursor-paged,
+filterable by `type` and `environment`:
+
+```typescript
+const { webhook_events } = await server.webhooks.listWebhookEvents({ limit: 10, type: 'order.paid' });
+```
+
+```json Response
+{
+  "webhook_events": [
+    {
+      "id": "evt_1781955476025_lp1jafe",
+      "type": "order.created",
+      "payload": {
+        "id": "evt_1781955476025_lp1jafe",
+        "type": "order.created",
+        "api_version": "v1",
+        "livemode": true,
+        "created_at": "2026-06-20T11:37:56.025Z",
+        "data": {
+          "object": {
+            "id": "e7d28e96-e9e0-45ce-be28-51812f63eb4b",
+            "customer_id": "8c958f7c-918f-488a-a7cc-71497f677a53",
+            "order_number": "ORD-1781955473455",
+            "order_status": "pending",
+            "payment_status": "paid",
+            "total_amount": 603.99
+          }
+        }
+      },
+      "environment": "production",
+      "created_at": "2026-06-20T11:37:56.025+00:00"
+    }
+  ],
+  "pagination": { "limit": 10, "next_cursor": "MjAyNi0wNi0yMFQxMTozNzo1Mi4wMjYrMDA6MDA=", "has_more": true }
+}
+```
+
+**Manually re-deliver** an event to every enabled, subscribed endpoint — each retry is logged as a
+new attempt:
+
+```typescript
+const retry = await server.webhooks.retryWebhookEvent({ id: 'evt_1781955476025_lp1jafe' });
+```
+
+```json Response
+{
+  "event_id": "evt_1781955476025_lp1jafe",
+  "retried": 2,
+  "results": [
+    { "endpoint_id": "2b755d69-7627-40b3-b0b6-4458e23d64bc", "success": true, "status_code": 200 },
+    { "endpoint_id": "58da9a58-6ac3-49ce-9150-0350519141b1", "success": true, "status_code": 200 }
+  ]
+}
+```
+
+## 6. Handling `order.paid` end to end
+
+Here's the important mental model: **you do not patch the order to `paid` from the webhook.** When a
+payment confirms, Galactic Core already marks the order paid, reduces stock, books the sale, and
+updates the customer's metrics — automatically. The `order.paid` webhook fires **so that *your* other
+systems can react** — push the order into your ERP, send a custom confirmation email, update your
+analytics warehouse, notify a fulfilment partner.
+
+```typescript
+// Inside your verified handler (after the signature check in step 4):
+const event = JSON.parse(rawBody);
+
+if (event.type === 'order.paid' && event.livemode) {
+  const order = event.data.object;
+  await pushToErp(order);              // your system of record
+  await sendConfirmationEmail(order);  // your email provider
+  await trackRevenue(order);           // your analytics
+}
+// Do NOT re-mark the order paid — Galactic Core already did, including stock + accounting.
+```
+
+## Supported event types
+
+Subscribe to any of these (or `["*"]` for everything):
+
+- **Order lifecycle** — `order.created`, `order.paid`, `order.fulfilled`, `order.cancelled`,
+  `order.refunded`, `order.updated`
+- **Payment** — `payment.succeeded`, `payment.failed`, `payment.refunded`
+- **Customer** — `customer.created`, `customer.updated`, `customer.deleted`
+- **Inventory & catalog** — `product.created`, `product.updated`, `product.stock_low`,
+  `product.out_of_stock`
+- **Cart & checkout** — `cart.created`, `cart.updated`, `cart.abandoned`
+- **Gift cards** — `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired`
+- **Promotions** — `promotion.applied`
+- **Catalog sync & syndication** — `feed.sync.completed` (a scheduled inbound feed-pull finished —
+  carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished —
+  carries pushed/rejected counts)
+
+## What's next
+
+- Pair `feed.sync.completed` with the inbound importer in [Catalog Sync](/workflows/catalog-sync) to
+  close the loop on scheduled syncs.
+- See where `order.paid` comes from in the [Storefront checkout](/workflows/storefront-checkout) flow.

@@ -163,6 +163,19 @@ const result = await client.orders.createOrder({
     reservation_ids, // converts the hold into the actual stock deduction
   }
 });
+// → { order: { id, order_number, payment_status: 'paid', total_amount, … }, post_processing_warnings? }
+```
+
+The `reserveStock` call itself returns:
+
+```json Response
+{
+  "reservations": [
+    { "reservation_id": "a81b3a3d-f810-47f4-ac50-592c3f22482f", "variant_id": "variant-uuid", "quantity": 1 }
+  ],
+  "reservation_ids": ["a81b3a3d-f810-47f4-ac50-592c3f22482f"],
+  "expires_in_seconds": 900
+}
 ```
 
 ---
@@ -201,6 +214,36 @@ const result = await client.orders.createOrder({
 const order = result.order;
 // order.id is the new order UUID
 // result.post_processing_warnings is undefined OR present with details
+```
+
+```json Response
+{
+  "order": {
+    "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
+    "order_number": "ORD-1781955469360",
+    "customer_id": "d6f46dad-189f-489a-a1a9-6d63cf103fbe",
+    "customer_email": "jane.doe@example.com",
+    "customer_name": "Jane Doe",
+    "subtotal": 598,
+    "shipping_amount": 5.99,
+    "discount_amount": 0,
+    "total_amount": 603.99,
+    "payment_method": "card",
+    "payment_status": "paid",
+    "order_status": "pending",
+    "created_at": "2026-06-20T11:37:50.273614+00:00",
+    "items": [
+      {
+        "id": "d72a3cbe-2232-4e84-a25c-fe1245c5e5e0",
+        "product_id": "product-uuid",
+        "product_name": "Samsung Galaxy Watch 6",
+        "quantity": 2,
+        "unit_price": 299,
+        "total_price": 598
+      }
+    ]
+  }
+}
 ```
 
 <Tip>
@@ -285,6 +328,44 @@ const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
 const order = await client.orders.getOrder({ id: 'order-uuid' });
 ```
 
+```json Response
+{
+  "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
+  "order_number": "ORD-1781955469360",
+  "customer_id": "d6f46dad-189f-489a-a1a9-6d63cf103fbe",
+  "customer_email": "john.doe@example.com",
+  "customer_phone": "+12125550142",
+  "customer_name": "John Doe",
+  "billing_address": { "street": "350 Fifth Avenue", "city": "New York", "state": "NY", "zip": "10118", "country": "US" },
+  "shipping_address": { "street": "350 Fifth Avenue", "city": "New York", "state": "NY", "zip": "10118", "country": "US" },
+  "subtotal": 598,
+  "tax_amount": null,
+  "shipping_amount": 5.99,
+  "discount_amount": 0,
+  "total_amount": 603.99,
+  "payment_method": "card",
+  "payment_status": "paid",
+  "order_status": "pending",
+  "notes": "Leave with front desk",
+  "tracking_number": null,
+  "created_at": "2026-06-20T11:37:50.273614+00:00",
+  "updated_at": "2026-06-20T11:37:50.273614+00:00",
+  "items": [
+    {
+      "id": "d72a3cbe-2232-4e84-a25c-fe1245c5e5e0",
+      "order_id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "product_name": "Samsung Galaxy Watch 6",
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "quantity": 2,
+      "unit_price": 299,
+      "total_price": 598,
+      "product_options": null
+    }
+  ]
+}
+```
+
 ---
 
 ### `updateOrder`
@@ -306,6 +387,22 @@ const updated = await client.orders.updateOrder({
     tracking_number: 'CARGO-123-ABC'
   }
 });
+```
+
+The full updated order is returned at the top level:
+
+```json Response
+{
+  "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
+  "order_number": "ORD-1781955469360",
+  "payment_status": "paid",
+  "order_status": "shipped",
+  "tracking_number": "1Z999AA10123456784",
+  "shipped_at": "2026-06-20T11:37:42.557+00:00",
+  "delivered_at": null,
+  "total_amount": 603.99,
+  "updated_at": "2026-06-20T11:37:50.273614+00:00"
+}
 ```
 
 ## Security & Error Handling

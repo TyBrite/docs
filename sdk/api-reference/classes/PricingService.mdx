@@ -3,7 +3,7 @@ title: "Dynamic Pricing"
 description: "Reference for the PricingService class in the Tybrite SDK."
 ---
 
-The `PricingService` class (accessed via `client.pricing`) provides high-performance price calculations. It acts as a single source of truth, enriching product data with real-time regional discounts, tax adjustments, and multi-currency conversion.
+The `PricingService` class (accessed via `client.pricing`) provides high-performance price calculations. It acts as a single source of truth, enriching product data with real-time regional discounts, segment/volume pricing rules, and multi-currency conversion.
 
 <Note>
   **Customer Segment & Tier are determined automatically.** `customer_segment` and `customer_tier` are **not** accepted as request parameters — they are resolved automatically from the `customer_id` you provide. Sending them as parameters has no effect. To apply segment-specific pricing, pass `customerId` only.
@@ -25,16 +25,31 @@ The `PricingService` class (accessed via `client.pricing`) provides high-perform
 Retrieve resolved prices for a list of products. Optimized for catalog browsing, this returns a **flat structure** using the default variant for each product. Includes `thumbnail_url` for fast rendering.
 
 ```typescript
+// New York shopper → prices resolve to USD (the store's base currency, rate 1.0)
 const { products, pagination, pricing_context } = await client.pricing.getProductPrices({
-  categoryId: 'electronics-uuid',
-  placeName: 'London, UK',
+  latitude: 40.7128,
+  longitude: -74.006,
   limit: 20,
   fields: 'name,display_price,display_currency,currency_symbol,has_variants,thumbnail_url'
 });
 
+// → { name: "Samsung Galaxy Watch 6", display_price: 299, display_currency: "USD", currency_symbol: "$", ... }
+
 // Access global pricing context
-console.log(`Region: ${pricing_context.region}`);
+console.log(`Currency: ${pricing_context.currency}`); // "USD"
 console.log(`Has more: ${pagination.has_more}`);
+```
+
+Pass a non-US location to convert into that region's currency — Galactic Core detects the currency
+from the coordinates (or a `placeName` like `'London, UK'`) and applies the exchange rate:
+
+```typescript
+// London shopper → same catalog, prices converted to GBP
+const uk = await client.pricing.getProductPrices({
+  placeName: 'London, UK',
+  fields: 'name,display_price,display_currency,currency_symbol'
+});
+// → { name: "Samsung Galaxy Watch 6", display_price: 236.21, display_currency: "GBP", currency_symbol: "£", ... }
 ```
 
 ---
@@ -48,18 +63,19 @@ Retrieve an ultra-detailed price breakdown for a single item. Handles both simpl
 *   **Media Resolution**: Includes both root-level gallery `media` and variant-specific media proxies.
 
 ```typescript
+// Multi-variant product (the "Nebula Ceramic Mug"), Berlin shopper → detects EUR (€)
 const pricing = await client.pricing.getProductPrice({
-  id: 'sony-wh-1000xm4-uuid',
-  placeName: 'Paris, France', // Detects EUR (€)
+  id: '2b6a066a-25df-4238-9e90-50a4400fc21e',
+  placeName: 'Berlin, Germany',
   fields: 'name,thumbnail_url,media,price_range,variants.sku,variants.display_price,variants.media'
 });
 
 if (pricing.has_variants) {
-  console.log(`Range: €${pricing.price_range.min} - €${pricing.price_range.max}`);
-  
-  // Access specific variant's isolated media and price
+  console.log(`Range: €${pricing.price_range.min} - €${pricing.price_range.max}`); // €13.79 - €14.31
+
+  // Access a specific variant's isolated media and converted price
   const v1 = pricing.variants[0];
-  console.log(`Sku: ${v1.sku} | Price: €${v1.display_price}`);
+  console.log(`Sku: ${v1.sku} | Price: €${v1.display_price}`); // API-MUG-WHT-2b6a | €13.79
   console.log(`Images for this variant: ${v1.media.length}`);
 }
 ```
@@ -72,10 +88,13 @@ Retrieve pricing using an SEO-friendly slug. Identical to `getProductPrice` but 
 
 ```typescript
 const pricing = await client.pricing.getProductPriceBySlug({
-  slug: 'sony-wh-1000xm4-a089d',
-  latitude: 51.5074,
+  slug: 'nebula-ceramic-mug-5c7f1-2b6a066a',
+  latitude: 51.5074,  // London → GBP
   longitude: -0.1278
 });
+// → identical shape to getProductPrice: root metadata + price_range + variants[], each variant
+//   carrying base_price, resolved_price, display_price, and a price_breakdown with the
+//   currency_conversion applied. For a London shopper display_currency is "GBP" (symbol "£").
 ```
 
 ---
@@ -97,7 +116,7 @@ Tybrite calculates prices in a specific waterfall priority:
 
 1.  **Direct Overrides**: Manual price overrides set on specific product variants.
 2.  **Customer Segments**: Price rules targeting groups like "Wholesalers" (Champions, Loyal, etc.).
-3.  **Regional Rules**: Tax adjustments or regional discounts (e.g., UK 8% discount, France 10% discount).
+3.  **Regional Rules**: Region-specific discounts or markups (e.g., a UK promotional discount, an EU regional rule).
 4.  **Volume Tiers**: Price reductions triggered by the `quantity` parameter.
 
 <Note>

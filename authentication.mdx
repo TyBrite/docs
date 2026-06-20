@@ -131,7 +131,7 @@ While API keys authenticate **your application** to Galactic Core, **customer se
 
 ```typescript
 // 1. Customer logs in — mint the session JWT
-const { customer, session } = await client.auth.login({
+const { customer, session } = await client.authentication.login({
   requestBody: { email: 'user@example.com', password: '...' }
 });
 
@@ -149,7 +149,7 @@ await client.customers.getCustomer({
 });
 
 // 3. Refresh before expiry (~1 hour)
-const { session: fresh } = await client.auth.refreshToken({
+const { session: fresh } = await client.authentication.refreshToken({
   requestBody: { refresh_token: session.refresh_token }
 });
 ```
@@ -164,14 +164,101 @@ const { session: fresh } = await client.auth.refreshToken({
 
 ---
 
+## Key Usage by Endpoint
+
+Every endpoint accepts one (or a combination) of the credentials above. Use this table to pick the right key before you call. The legend:
+
+- **`pk` or `sk`** — either a publishable or a secret key works.
+- **`sk` only** — a secret key is required; a publishable key returns **`403 Forbidden`**.
+- **`pk` (browser)** — a publishable key is enough; safe to call directly from the browser.
+- **+ session** — *also* requires a [customer session token](#customer-session-tokens-xauthtoken) (`xAuthToken`, or `x-external-auth` for bring-your-own-auth).
+- **+ HMAC** — *also* requires a [request signature](#advanced-security-hmac-signing).
+- **Public** — no key required.
+- **Operator** — a marketplace operator key (marketplace deployments only).
+
+### Discovery & catalog (read)
+
+| Endpoints | Key |
+| --- | --- |
+| Products, collections, specifications (`client.products.*`) | `pk` or `sk` |
+| Categories & subcategories (`client.taxonomy.*`) | `pk` or `sk` |
+| Prices (`client.pricing.*`) | `pk` or `sk` |
+| Search — text & semantic (`client.search.*`) | `pk` or `sk` |
+| Recommendations (`client.recommendations.*`) | **`sk` only** |
+| Event capture (`client.events.recordEvent`) | `pk` (browser) |
+| Blog posts & lookbooks (`client.cms.*`) | `pk` or `sk` |
+| Store info (`client.system.getStoreInfo`) | `pk` or `sk` |
+| API info `/`, health `/v1/health` | Public |
+| Public catalog feed `/v1/feeds/{store}/products.json\|xml` | Public (per-store opt-in) |
+
+### Cart & wishlist (storefront writes)
+
+| Endpoints | Key |
+| --- | --- |
+| Cart read/write (`client.cartWishlist` cart methods) | `pk` (browser) — anonymous via session id; **+ session** when a `customer_id` is supplied |
+| Cart merge (`mergeCart`) | `pk` (browser) **+ session** |
+| Wishlist (`getWishlist`, `addToWishlist`, …) | `pk` (browser) **+ session** |
+
+### Customers & authentication
+
+| Endpoints | Key |
+| --- | --- |
+| Auth — register / login / logout / magic-link / verify-otp / reset / refresh / me (`client.authentication.*`) | **`sk` only** |
+| Create customer (`client.customers.createCustomer`) | **`sk` only** |
+| Customer self — profile & addresses (`getCustomer`, `updateCustomer`, address methods) | `pk` (browser) **+ session** |
+
+### Checkout — orders & payments
+
+| Endpoints | Key |
+| --- | --- |
+| List / get orders (`client.orders.listOrders`, `getOrder`) | **`sk` only** |
+| Create / update order (`createOrder`, `updateOrder`) | **`sk` only + HMAC** (idempotency key required on create) |
+| Payment methods (`client.payments.getPaymentMethods`) | `pk` or `sk` |
+| Initialize payment (`initializePayment`) | **`sk` only + HMAC** (idempotency key required) |
+| Verify payment (`verifyPayment`) | **`sk` only** |
+
+### Engagement
+
+| Endpoints | Key |
+| --- | --- |
+| List reviews (`client.reviews.listReviews`) | `pk` or `sk` (publishable sees approved only) |
+| Submit / delete own review, mark helpful | `pk` (browser) **+ session** (helpful vote needs no session) |
+| Returns — lodge / list / track / accept-credit / request-refund (`client.returns.*`) | `pk` (browser) **+ session** (`listReturnReasons` needs no session) |
+| Messaging — threads, messages, realtime token (`client.messaging.*`) | `pk` (browser) **+ session** |
+| Gift card check by code (`checkGiftCard`) | `pk` or `sk` |
+| List my gift cards (`listGiftCards`) | `pk` (browser) **+ session** |
+| Promotions — list & calculate (`client.promotions.*`) | `pk` or `sk` |
+| Shipping — zones & calculate (`client.shipping.*`) | `pk` or `sk` |
+
+### Platform & integrations
+
+| Endpoints | Key |
+| --- | --- |
+| Webhook endpoints & events (`client.webhooks.*`) | **`sk` only** |
+| Catalog ingestion — push (`client.ingestion.ingestProducts`) | **`sk` only + HMAC** (idempotency key required) |
+| Ingestion sample / dry-run test (`getIngestSample`, `testIngest`) | **`sk` only** |
+| Connect — authorize validate, token, revoke (`client.gcConnect.*`) | Public (OAuth-style client credentials) |
+| Connect — list sessions (`listConnectSessions`) | **`sk` only** |
+
+### Marketplace (operator deployments)
+
+| Endpoints | Key |
+| --- | --- |
+| Unified split checkout (`/v1/cart/checkout`) | Operator |
+| Unified shopper profile (`client.marketplace.getMarketplaceCustomer`) | Operator **+ `X-Customer-Token`** |
+| Marketplace info (`client.marketplace.getMarketplaceInfo`) | Operator |
+| Any discovery endpoint with an operator key | Operator (aggregates across merchants; narrow with `storeId`) |
+
+---
+
 ## Session Management
 
 When building authenticated customer experiences (like "My Account" or "Quick Checkout"), the Tybrite SDK handles session persistence via `xAuthToken`.
 
-1.  **Login**: Call `client.auth.login()` to receive a session and user object.
+1.  **Login**: Call `client.authentication.login()` to receive a session and user object.
 2.  **Persistence**: Store the `session.access_token` securely (httpOnly cookies preferred).
 3.  **Requests**: Provide the token via the `xAuthToken` SDK parameter (or `x-auth-token` header for raw REST) on protected endpoints.
-4.  **Refresh**: Call `client.auth.refreshToken()` ~60s before `expires_at` to rotate to a fresh session.
+4.  **Refresh**: Call `client.authentication.refreshToken()` ~60s before `expires_at` to rotate to a fresh session.
 
 <Tip>
   Our TypeScript SDK exposes `refreshToken` so you can wire up a scheduled rotation. See the [Authentication Service](/sdk/api-reference/classes/AuthenticationService) for the full method reference and lifecycle diagram.

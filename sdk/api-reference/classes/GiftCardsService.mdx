@@ -12,7 +12,7 @@ The `GiftCardsService` class (accessed via `client.giftCards`) manages the check
 Retrieve all gift cards owned by a specific customer. This is used for displaying a user's digital wallet in their account dashboard.
 
 <Note>
-  `customerId` is **strictly required** for this endpoint to identify which wallet to retrieve. In addition, an `xAuthToken` (the customer's session JWT) must be supplied so the gateway can verify the requester owns that wallet.
+  `customerId` is **strictly required** for this endpoint to identify which wallet to retrieve. In addition, an `xAuthToken` (the customer's session token) must be supplied so Galactic Core can verify the requester owns that wallet.
 </Note>
 
 ```typescript
@@ -27,8 +27,23 @@ gift_cards.forEach(gc => {
 });
 ```
 
+```json Response
+{
+  "gift_cards": [
+    {
+      "code": "GTSA-1B2C-3D4E-5F6G",
+      "balance": 100,
+      "status": "active",
+      "expiry_date": "2027-06-20"
+    }
+  ]
+}
+```
+
+<Note>Customers with no gift cards get `{ "gift_cards": [] }`.</Note>
+
 <Note>
-  When listing gift cards for a customer, the resolved `xAuthToken` JWT must match the `customerId` parameter. Otherwise the gateway returns 403. This means a leaked publishable key alone cannot enumerate another customer's gift cards — the customer's session token is required.
+  When listing gift cards for a customer, the resolved `xAuthToken` session must match the `customerId` parameter. Otherwise the request returns 403. This means a leaked publishable key alone cannot enumerate another customer's gift cards — the customer's session token is required.
 </Note>
 
 ---
@@ -41,13 +56,36 @@ This allows both registered users and **guest checkout** users to check balances
 
 ```typescript
 const details = await client.giftCards.checkGiftCard({
-  code: 'TYB-GIFT-123-456',
+  code: 'GTSA-1B2C-3D4E-5F6G',
   fields: 'balance,status,expiry_date' // Optional
 });
 
 console.log(`Remaining Balance: ${details.balance}`);
 console.log(`Valid: ${details.valid}`);   // true only when active, has balance, and not expired
 console.log(`Status: ${details.status}`); // 'active' while redeemable
+```
+
+```json Response
+{
+  "valid": true,
+  "balance": 100,
+  "status": "active",
+  "expiry_date": "2027-06-20",
+  "maximum_usage_percentage": 100,
+  "gift_card": {
+    "id": "c91a7…",
+    "code": "GTSA-1B2C-3D4E-5F6G",
+    "value": 100,
+    "balance": 100,
+    "status": "active",
+    "expiry_date": "2027-06-20",
+    "type": "promotional",
+    "minimum_purchase_amount": 0,
+    "maximum_usage_percentage": 100,
+    "redemption_count": 0,
+    "max_redemptions": null
+  }
+}
 ```
 
 <Note>
@@ -70,11 +108,13 @@ const order = await client.orders.createOrder({
   requestBody: {
     // ...other order details...
     gift_card_redemption: { 
-      code: 'TYB-GIFT-123-456', 
+      code: 'GTSA-1B2C-3D4E-5F6G', 
       amount: 5000 
     }
   }
 });
+// → { order: { id, total_amount, payment_status, … }, post_processing_warnings? }
+// A failed redemption surfaces as a post_processing_warnings entry — see OrdersService.
 ```
 
 This ensures the gift card balance is only deducted if the main order succeeds.
@@ -103,21 +143,23 @@ Once the balance reaches zero or the `expiry_date` passes, the card is no longer
 
 ```typescript
 // 1. Sign the customer in (magic link, OTP, or password)
-const session = await client.authentication.signIn({
+const result = await client.authentication.login({
   requestBody: {
-    email: 'customer@example.com',
+    email: 'john.doe@example.com',
     password: 'their-password'
   }
 });
+// → { user: { id, email, … }, session: { access_token, refresh_token, expires_at } }
 
-// 2. Use the returned access token to list their gift cards
+// 2. Use the returned session access token to list their gift cards
 const { gift_cards } = await client.giftCards.listGiftCards({
-  customerId: session.user.id,
-  xAuthToken: session.access_token
+  customerId: result.user.id,
+  xAuthToken: result.session.access_token
 });
+// → { gift_cards: [{ code, balance, status, expiry_date }, …] }
 ```
 
-The gateway validates that the JWT's subject matches the requested `customerId` before returning any wallet contents.
+The customer's session token must match the requested `customerId` before any wallet contents are returned.
 
 ### Response Codes
 

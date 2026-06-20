@@ -13,18 +13,30 @@ Fast, keyword-based search optimized for exact matches, SKUs, and product names.
 
 ```typescript
 const result = await client.search.searchProducts({
-  q: 'iPhone 15', // You can use 'q' or 'query'
+  q: 'headphones', // You can use 'q' or 'query'
   limit: 10
 });
 
 console.log(`Found ${result.totalResults} results in ${result.searchTimeMs}ms`);
+// Each result: { productId, score, matchReason: "Text match" }
+```
+
+```json Response
+{
+  "query": "headphones",
+  "results": [
+    { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 1, "matchReason": "Text match" }
+  ],
+  "totalResults": 1,
+  "searchTimeMs": 983
+}
 ```
 
 ---
 
 ### `semanticSearch`
 
-Leverage LLM-powered semantic search that understands intent and context. This allows customers to find products using natural language descriptions even if they don't know the exact product name.
+AI-powered, meaning-based search that understands intent and context. This allows customers to find products using natural language descriptions even if they don't know the exact product name.
 
 <Note>
   **Key Support:** Both **Secret Keys** and **Publishable Keys** are supported for semantic search, allowing you to implement AI-powered search directly in your frontend.
@@ -33,11 +45,28 @@ Leverage LLM-powered semantic search that understands intent and context. This a
 ```typescript
 const result = await client.search.semanticSearch({
   requestBody: {
-    query: 'something waterproof for hiking in cold weather',
-    limit: 5,
-    minScore: 0.7 // Optional: tune relevance threshold
+    query: 'wireless earbuds for the gym',
+    limit: 8,
+    minScore: 0.5 // Optional: raise the similarity floor to return only strong matches (default 0.3)
   }
 });
+
+// Each result: { productId, score } ranked by semantic similarity
+result.results.forEach(r => console.log(`${r.productId} — score ${r.score}`));
+```
+
+```json Response
+{
+  "query": "wireless earbuds for the gym",
+  "results": [
+    { "productId": "f4992a40-38a1-4ebd-9390-3ecfb9d10093", "score": 0.89 },
+    { "productId": "f6a2629e-f899-4615-b17a-e78e2e4c35a4", "score": 0.88 },
+    { "productId": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", "score": 0.85 },
+    { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 0.83 }
+  ],
+  "totalResults": 50,
+  "searchTimeMs": 1269
+}
 ```
 
 #### Personalized results
@@ -57,16 +86,18 @@ const personalized = new Tybrite({
 const result = await personalized.search.semanticSearch({
   requestBody: { query: 'gear for the gym', limit: 5, personalize: true }
 });
+// → same { query, results: [{ productId, score }], totalResults, searchTimeMs } shape as above,
+//   re-ranked to blend query relevance with this shopper's preference signal.
 ```
 
 ## Comparison: Text vs. Semantic
 
 | Feature | `searchProducts` (Text) | `semanticSearch` (AI) |
 | :--- | :--- | :--- |
-| **Logic** | ILIKE Pattern matching | Vector Cosine Similarity |
+| **Logic** | Case-insensitive keyword matching | Meaning-based matching via AI embeddings |
 | **Best For** | SKUs, Model numbers, Exact names | Natural language, Intent, "Vibes" |
 | **Example** | "MacBook Pro", "SKU-990" | "a laptop for professional video editing" |
-| **Speed** | Ultra-fast (< 50ms) | Fast (< 250ms) |
+| **Speed** | Ultra-fast | Fast |
 
 ---
 
