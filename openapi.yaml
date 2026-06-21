@@ -3334,19 +3334,23 @@ paths:
                   minItems: 1
                   items:
                     type: object
-                    required:
-                      - product_id
+                    description: Provide **`variant_id` OR `product_id`** (at least one). Prefer `variant_id` — it is the exact variant (SKU) the shopper chose, so pass the same `variant_id` you put in the cart straight through to the order. If you send only `product_id`, the order is placed against the product's **default** variant — convenient for single-variant products, but for a product with multiple variants it may not be the one the shopper selected. When both are sent, `variant_id` wins (and `product_id` is resolved from it).
+                    anyOf:
+                      - required:
+                          - variant_id
+                      - required:
+                          - product_id
                     properties:
-                      product_id:
-                        type: string
-                        format: uuid
-                        description: Product UUID (required)
-                        example: 715b8c10-eb11-4289-8c0e-2966e78cf9a5
                       variant_id:
                         type: string
                         format: uuid
-                        description: Variant UUID (optional - uses default variant if not provided)
+                        description: Variant (SKU) UUID. Preferred. Identifies the exact variant to order. If omitted, the product's default variant is used.
                         example: 7a1aa0b4-555c-3618-a48c-1415db27bcc8
+                      product_id:
+                        type: string
+                        format: uuid
+                        description: Product UUID. Optional when `variant_id` is given (it is resolved from the variant); when sent alone, the product's default variant is ordered.
+                        example: 715b8c10-eb11-4289-8c0e-2966e78cf9a5
                       product_name:
                         type: string
                         description: Product name captured on the line item. Optional — if omitted, it is resolved from the product automatically.
@@ -3660,12 +3664,12 @@ paths:
                     error:
                       code: invalid_request
                       message: At least one order item is required
-                missing_product_id:
-                  summary: Missing product_id in items
+                missing_item_ref:
+                  summary: Item missing both variant_id and product_id
                   value:
                     error:
                       code: invalid_request
-                      message: Each order item must include product_id
+                      message: Each order item must include variant_id or product_id
                 tax_exclusive_missing_breakdown:
                   summary: Store uses tax-exclusive pricing without subtotal/tax_amount
                   value:
