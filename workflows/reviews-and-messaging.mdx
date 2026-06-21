@@ -1,29 +1,176 @@
 ---
-title: "Reviews & Messaging"
-description: "Post-purchase engagement — submit and vote on product reviews, then run a real-time customer ↔ store conversation end to end."
+title: "Shopper Engagement: Wishlist, Reviews & Messaging"
+description: "Everything that keeps a shopper engaged around a purchase — saving items to a wishlist and moving them to the cart, writing and voting on reviews (including the duplicate-review conflict), and running a real-time support conversation (both realtime modes, plus edit/delete)."
 ---
 
-This flow covers the two surfaces that keep a shopper engaged after they buy: **product reviews**
-(write a review, list the approved ones, vote them helpful) and **messaging** (open a support
-thread, exchange messages, and stream replies live). Both act on a **signed-in shopper's own
-data**, so every call here pairs an API key with the shopper's session token in `xAuthToken`. (See
-[Workflow Examples](/workflows/introduction) for the client setup, and
-[Storefront Checkout](/workflows/storefront-checkout#3-sign-the-shopper-in) for how to mint that
-session token.)
+This flow follows **one signed-in shopper** through the three surfaces that surround a purchase:
+they **save the Watch to their wishlist**, then move it into the cart; later they **review** the
+product they bought; and they open a **support thread** to ask about the order. Each step shows the
+real variant cases an integrator must handle — the atomic wishlist→cart move, a *second* review
+hitting a `409`, a deleted message, and the two different realtime connection shapes — threaded as
+one continuous story.
+
+Every call here acts on a **signed-in shopper's own data**, so it pairs an API key with the
+shopper's session token in `xAuthToken`. (See [Workflow Examples](/workflows/introduction) for the
+client setup, and [Storefront Checkout](/workflows/storefront-checkout#3-sign-the-shopper-in) for how
+to mint that session token.) We carry one shopper — **Jane Doe**, customer
+`9489529e-69b0-4e84-bea7-62c499085bd9` — and one product, the **Samsung Galaxy Watch 6**
+(`0186665f-…`, variant `e98631a9-…`), throughout.
 
 <Info>
-  Reviews and messaging writes are **browser-origin storefront writes**, so the **publishable**
-  client is fine for them — the shopper's `xAuthToken` is what proves ownership. Only the merchant
-  admin can moderate reviews or reply from the store side; those are not API actions.
+  Wishlist, review, and messaging writes are **browser-origin storefront writes**, so the
+  **publishable** client is fine — the shopper's `xAuthToken` is what proves ownership. Only the
+  merchant admin can moderate reviews or reply from the store side; those are not API actions.
 </Info>
+
+## Wishlist
+
+The shopper isn't ready to buy — they **save the Watch for later**. Wishlists are always
+customer-scoped, so every call carries `customer_id` **and** the matching `xAuthToken`.
+
+### 1. Add to the wishlist
+
+`addToWishlist` saves a variant and returns the refreshed wishlist (`201 Created`). Note the items
+carry `product_price` (the wishlist quotes the saved price) — a field the cart's items don't have.
+
+```typescript
+const wishlist = await storefront.cartWishlist.addToWishlist({
+  xAuthToken: session.access_token,
+  requestBody: {
+    variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a',
+    customer_id: '9489529e-69b0-4e84-bea7-62c499085bd9',
+  },
+});
+```
+
+```json Response
+{
+  "items": [
+    {
+      "id": "2dac3a23-afec-4b6a-a369-e7bdb1f3bc32",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "product_name": "Samsung Galaxy Watch 6",
+      "variant_name": "Default",
+      "variant_attributes": {},
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "product_price": 299,
+      "thumbnail_url": "https://cdn.tybritelabs.com/.../samsung-galaxy-watch-6.jpg"
+    }
+  ]
+}
+```
+
+<Note>
+  A variant can be saved **once** per customer — adding the same variant again returns `409
+  Conflict` (`{ "error": { "code": "conflict", "message": "Item already exists in wishlist" } }`)
+  rather than creating a duplicate. Check membership in your UI, or treat the `409` as "already
+  saved."
+</Note>
+
+### 2. Read the wishlist
+
+`getWishlist` lists the customer's saved items — same item shape as the add response. `customer_id`
+is required (anonymous wishlists are not supported).
+
+```typescript
+const { items } = await storefront.cartWishlist.getWishlist({
+  xAuthToken: session.access_token,
+  customerId: '9489529e-69b0-4e84-bea7-62c499085bd9',
+});
+// → items[0].product_name === 'Samsung Galaxy Watch 6', items[0].product_price === 299
+```
+
+```json Response
+{
+  "items": [
+    {
+      "id": "2dac3a23-afec-4b6a-a369-e7bdb1f3bc32",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "product_name": "Samsung Galaxy Watch 6",
+      "variant_name": "Default",
+      "variant_attributes": {},
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "product_price": 299,
+      "thumbnail_url": "https://cdn.tybritelabs.com/.../samsung-galaxy-watch-6.jpg"
+    }
+  ]
+}
+```
+
+### 3. Move a saved item to the cart (atomic)
+
+The shopper decides to buy. `moveWishlistToCart` does it in **one atomic step**: it validates stock,
+adds the item to (or merges it with) the cart, removes it from the wishlist, and returns the
+**refreshed cart**. The response echoes `removed_wishlist_item_id` so you know which saved item is
+gone, and the returned cart item has a *new* id (it's a cart row now, not the wishlist row).
+
+```typescript
+const cart = await storefront.cartWishlist.moveWishlistToCart({
+  xAuthToken: session.access_token,
+  requestBody: {
+    wishlist_item_id: '2dac3a23-afec-4b6a-a369-e7bdb1f3bc32',
+    customer_id: '9489529e-69b0-4e84-bea7-62c499085bd9',
+    quantity: 1,
+  },
+});
+```
+
+```json Response
+{
+  "success": true,
+  "message": "Item moved from wishlist to cart",
+  "removed_wishlist_item_id": "2dac3a23-afec-4b6a-a369-e7bdb1f3bc32",
+  "items": [
+    {
+      "id": "845e8724-a3dc-432c-9771-26a4173ec48c",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "product_name": "Samsung Galaxy Watch 6",
+      "variant_name": "Default",
+      "variant_attributes": {},
+      "product_sku": "SAM-WATCH-6-44-0186",
+      "quantity": 1
+    }
+  ]
+}
+```
+
+### 4. Remove a saved item
+
+If instead the shopper just discards a saved item, `removeFromWishlist` deletes it by id (the
+`customer_id` query param is required so the delete is ownership-scoped).
+
+```typescript
+const removed = await storefront.cartWishlist.removeFromWishlist({
+  xAuthToken: session.access_token,
+  id: '2dac3a23-afec-4b6a-a369-e7bdb1f3bc32',
+  customerId: '9489529e-69b0-4e84-bea7-62c499085bd9',
+});
+// → { success: true, message: 'Item removed from wishlist' }
+```
+
+```json Response
+{ "success": true, "message": "Item removed from wishlist" }
+```
+
+<Tip>
+  The wishlist sits next to the cart in the same `cartWishlist` service. From here the shopper carries
+  the Watch into the [storefront checkout](/workflows/storefront-checkout) and pays — then comes back
+  to review it.
+</Tip>
 
 ## Reviews
 
-### 1. Submit a review
+The shopper received the Watch and wants to review it. Reviews start hidden and only go public once
+the merchant approves them.
 
-A logged-in shopper submits a review for a product. It is created `status: "pending"` and only
-appears in public listings once the merchant approves it in their admin. Pass an `order_id` that
-belongs to the shopper to have the review flagged `verified_purchase: true`.
+### 5. Submit a review (starts `pending`)
+
+`submitReview` creates the review `status: "pending"`; it appears in public listings only after the
+merchant approves it in their admin. Pass an `order_id` that belongs to the shopper to have the
+review flagged `verified_purchase: true`.
 
 ```typescript
 const { review } = await storefront.reviews.submitReview({
@@ -60,22 +207,49 @@ const { review } = await storefront.reviews.submitReview({
 }
 ```
 
-<Note>
-  A shopper may have only **one** non-rejected review per product — a second submission returns
-  `409 Conflict`. The review stays hidden from `listReviews` (below) on a publishable key until the
-  merchant approves it.
-</Note>
+### 6. The duplicate-review variant → `409 Conflict`
 
-### 2. List approved reviews
+A shopper may hold only **one** non-rejected review per product. If Jane tries to submit a *second*
+review for the same Watch, the call returns `409` — handle it by editing the existing review in your
+UI, not by retrying the submit.
 
-Render the review section of a product page. On a **publishable** key this returns only `approved`
-reviews and always includes a `summary` block with the average rating and star distribution. No
-customer token needed — this is public catalog data.
+```typescript
+try {
+  await storefront.reviews.submitReview({
+    xAuthToken: session.access_token,
+    requestBody: {
+      product_id: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
+      rating: 4,
+      title: 'Changed my mind a little',
+      body: 'Still good, but the battery drains faster than I expected.',
+    },
+  });
+} catch (err) {
+  // err.status === 409 — the shopper already reviewed this product
+}
+```
+
+```json Response (409)
+{
+  "error": {
+    "code": "conflict",
+    "message": "You have already reviewed this product"
+  }
+}
+```
+
+### 7. List approved reviews (public, with summary)
+
+Once the merchant approves the first review, render the product page's review section with
+`listReviews`. On a **publishable** key this returns only `approved` reviews and always includes a
+`summary` block (average rating + star distribution). No customer token needed — this is public
+catalog data.
 
 ```typescript
 const { reviews, summary } = await storefront.reviews.listReviews({
   productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
 });
+// → summary.average_rating === 5, summary.five_star === 1
 ```
 
 ```json Response
@@ -120,11 +294,10 @@ const { reviews, summary } = await storefront.reviews.listReviews({
   `storefront.reviews.getReview({ id })`.
 </Tip>
 
-### 3. Mark a review helpful
+### 8. Mark a review helpful
 
-Let shoppers upvote the reviews they found useful so you can surface them first. Only approved
-reviews accept votes; there's no built-in dedup, so track per-shopper voting in your own UI if you
-need it.
+Let shoppers upvote reviews they found useful so you can surface them first. Only approved reviews
+accept votes; there's no built-in dedup, so track per-shopper voting in your own UI if you need it.
 
 ```typescript
 const { helpful_count } = await storefront.reviews.markReviewHelpful({
@@ -138,19 +311,22 @@ const { helpful_count } = await storefront.reviews.markReviewHelpful({
 ```
 
 <Note>
-  A shopper can remove their own review with
+  A shopper can remove their **own** review with
   `storefront.reviews.deleteReview({ id, xAuthToken: session.access_token })` — it returns
   `{ "success": true, "message": "Review deleted" }`. Deleting someone else's review returns `403`.
 </Note>
 
 ## Messaging
 
-### 4. Start a conversation
+The shopper opens a support thread about the order — and we keep it live so the store's replies
+stream in without polling.
 
-Open a thread with the store and post the shopper's first message in one call. `thread_type`
-classifies the inquiry (`general`, `order_inquiry`, `product_inquiry`, `support`, `complaint`,
-`delivery`, `return`, `refund`, `technical`). When you pass `customer_id`, include the matching
-`xAuthToken`.
+### 9. Start a conversation
+
+`createConversation` opens a thread **and** posts the shopper's first message in one call.
+`thread_type` classifies the inquiry (`general`, `order_inquiry`, `product_inquiry`, `support`,
+`complaint`, `delivery`, `return`, `refund`, `technical`). When you pass `customer_id`, include the
+matching `xAuthToken`.
 
 ```typescript
 const { thread } = await storefront.messaging.createConversation({
@@ -182,10 +358,10 @@ const { thread } = await storefront.messaging.createConversation({
 }
 ```
 
-### 5. Send a message
+### 10. Send a follow-up message
 
-Append the shopper's next message to the open thread. The token must own the thread, otherwise the
-call returns `403`. (The message text goes in `message`.)
+`sendMessage` appends to the thread we just opened. The token must own the thread, otherwise the call
+returns `403`. (The message text goes in `message`.)
 
 ```typescript
 const { message } = await storefront.messaging.sendMessage({
@@ -204,10 +380,10 @@ const { message } = await storefront.messaging.sendMessage({
 }
 ```
 
-### 6. List threads and read the conversation
+### 11. List threads and read the conversation
 
 Show the shopper's inbox with `listThreads` (filter by `customer_id`; pinned threads come first),
-then load a single conversation's messages with `getThreadMessages` (oldest-first by default).
+then load one conversation's messages with `getThreadMessages` (oldest-first by default).
 
 ```typescript
 const { threads } = await storefront.messaging.listThreads({
@@ -243,6 +419,7 @@ const { messages } = await storefront.messaging.getThreadMessages({
   xAuthToken: session.access_token,
   id: '06084af6-7334-43d6-82c0-935f92335a25',
 });
+// → the two messages we sent, oldest-first, with is_edited/is_deleted flags
 ```
 
 ```json Response
@@ -285,9 +462,52 @@ const { messages } = await storefront.messaging.getThreadMessages({
 }
 ```
 
-### 7. Mark the thread read
+### 12. Edit or delete a message
 
-When the shopper opens a conversation, clear their unread state.
+The shopper can revise or retract a message they sent. **Both require a secret key** (run them
+server-side). `editMessage` rewrites the content and stamps `is_edited: true` + `edited_at`;
+`deleteMessage` **soft-deletes** (the row stays, marked `is_deleted` and excluded from the default
+message list) and returns the `deleted_at` timestamp.
+
+```typescript
+const edited = await server.messaging.editMessage({
+  xAuthToken: session.access_token,
+  id: 'c423c11e-ab5f-40ab-8e17-429a39710d60',
+  requestBody: { message_content: 'Hi — checking the delivery window (order ORD-1781955473455).' },
+});
+```
+
+```json Response
+{
+  "message": {
+    "id": "c423c11e-ab5f-40ab-8e17-429a39710d60",
+    "message_content": "Hi — checking the delivery window (order ORD-1781955473455).",
+    "is_edited": true,
+    "edited_at": "2026-06-20T13:52:41.118+00:00",
+    "updated_at": "2026-06-20T13:52:41.118+00:00"
+  }
+}
+```
+
+```typescript
+const deleted = await server.messaging.deleteMessage({
+  xAuthToken: session.access_token,
+  id: 'c423c11e-ab5f-40ab-8e17-429a39710d60',
+});
+// → { success: true, message_id: '...', deleted_at: '...' } — soft delete, row is hidden not gone
+```
+
+```json Response
+{
+  "success": true,
+  "message_id": "c423c11e-ab5f-40ab-8e17-429a39710d60",
+  "deleted_at": "2026-06-20T13:53:02.704+00:00"
+}
+```
+
+### 13. Mark the thread read
+
+When the shopper opens the conversation, clear their unread state.
 
 ```typescript
 const result = await storefront.messaging.markThreadRead({
@@ -303,20 +523,27 @@ const result = await storefront.messaging.markThreadRead({
 }
 ```
 
-### 8. Stream replies in real time
+### 14. Stream replies in real time — both modes
 
 Polling for new messages is wasteful. Instead, request **realtime connection details** for the
 thread, then hand them to the `subscribeToThread` helper to receive the store's replies the moment
-they're sent — no polling loop.
+they're sent. The response shape depends on **how the shopper was authenticated**, indicated by the
+`mode` field — and your code must handle both.
+
+#### `direct` — a shopper signed in through Galactic Core (`xAuthToken`)
+
+The response carries a short-lived `token` the storefront uses to subscribe directly to *their own*
+thread.
 
 ```typescript
 const conn = await storefront.messaging.getMessagingRealtimeToken({
   xAuthToken: session.access_token,
   requestBody: { thread_id: '06084af6-7334-43d6-82c0-935f92335a25' },
 });
+// → conn.mode === 'direct', conn.token is present
 ```
 
-```json Response
+```json Response (direct)
 {
   "mode": "direct",
   "realtime_url": "wss://realtime.tybritelabs.com",
@@ -328,8 +555,37 @@ const conn = await storefront.messaging.getMessagingRealtimeToken({
 }
 ```
 
+#### `broadcast` — bring-your-own-auth, server integrations & operators
+
+For a shopper authenticated with **your own** identity provider (pass the signed assertion via
+`xExternalAuth` instead of `xAuthToken`), for server-side integrations, and for marketplace
+operators, the response comes back in `broadcast` mode. There's **no `token`** (it's `null`) — you
+subscribe to the named `channel` directly.
+
+```typescript
+const conn = await storefront.messaging.getMessagingRealtimeToken({
+  xExternalAuth: signedAssertion, // your IdP's HMAC-signed identity assertion
+  requestBody: { thread_id: '06084af6-7334-43d6-82c0-935f92335a25' },
+});
+// → conn.mode === 'broadcast', conn.token is null — subscribe to conn.channel
+```
+
+```json Response (broadcast)
+{
+  "mode": "broadcast",
+  "realtime_url": "wss://realtime.tybritelabs.com",
+  "realtime_key": "rt_pub_8f3c1a9e4b2d",
+  "token": null,
+  "channel": "thread:06084af6-7334-43d6-82c0-935f92335a25",
+  "thread_id": "06084af6-7334-43d6-82c0-935f92335a25",
+  "environment": "production"
+}
+```
+
+#### Subscribe with one helper, either mode
+
 The fields are neutral connection details — `mode`, `realtime_url`, `realtime_key`, `channel`, and
-(for `direct` mode) a short-lived `token`. Pass them straight into the SDK helper:
+(for `direct` only) `token`. Forward them straight into the SDK helper; it handles both shapes.
 
 ```typescript
 import { subscribeToThread } from '@tybrite-labs/sdk';
@@ -339,7 +595,7 @@ const unsubscribe = await subscribeToThread({
   realtimeUrl: conn.realtime_url,
   realtimeKey: conn.realtime_key,
   channel: conn.channel,
-  token: conn.token,               // required for 'direct', ignored for 'broadcast'
+  token: conn.token,               // required for 'direct', null/ignored for 'broadcast'
   onMessage: (msg) => {
     console.log('New message:', msg.message_content);
   },
@@ -351,21 +607,25 @@ unsubscribe();
 
 <Note>
   The `mode` tells you how the shopper was identified:
-  - **`direct`** — a shopper signed in through Galactic Core (`xAuthToken`). The `token` authorizes
-    a direct subscription to **their own** thread.
+  - **`direct`** — a shopper signed in through Galactic Core (`xAuthToken`). The `token` authorizes a
+    direct subscription to **their own** thread.
   - **`broadcast`** — a shopper authenticated with your own identity provider (`xExternalAuth`),
-    server-side integrations, and marketplace operators. Subscribe to the named `channel`; no
-    `token` is used.
+    server-side integrations, and marketplace operators. Subscribe to the named `channel`; `token` is
+    `null`.
 
-  The helper handles both — you just forward the fields. Want to bring your own identity provider?
-  See [Customer authentication](/authentication#customer-sessions).
+  Want to bring your own identity provider? See
+  [Customer authentication](/authentication#customer-sessions).
 </Note>
 
 ## What's next
 
-- The shopper came from a [storefront checkout](/workflows/storefront-checkout) — wire reviews and a
-  support thread in after the order is paid.
+- The shopper came from a [storefront checkout](/workflows/storefront-checkout) — wire the wishlist,
+  reviews, and a support thread in around the order.
 - A returning shopper can [track orders and lodge a return](/workflows/returning-customer), often
   opening a `return`-type thread from the same inbox.
-- Building a multi-merchant storefront? Reviews and messaging carry over — see the
+- Discovery feeds this flow: [Search & Discovery](/workflows/search-and-discovery) captures the
+  `add_to_wishlist` event that put the Watch on the wishlist in the first place.
+- Building a multi-merchant storefront? Wishlist, reviews, and messaging carry over — see the
   [Marketplace](/workflows/marketplace) split checkout and unified shopper profile.
+</content>
+</invoke>

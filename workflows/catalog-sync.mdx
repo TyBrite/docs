@@ -1,6 +1,6 @@
 ---
 title: "Catalog Sync"
-description: "Push your external catalog into Galactic Core — sample a feed, dry-run validate it, ingest it under the strictest auth, and publish your catalog back out for anyone to pull."
+description: "Push your external catalog into Galactic Core — sample a feed, dry-run validate it (valid AND invalid rows), ingest it under the strictest auth, and publish your catalog back out for anyone to pull."
 ---
 
 Ingestion is the **one merchant-facing write surface** in the whole API. Everything else is
@@ -9,9 +9,10 @@ Core (JSON, XML, or CSV) and keep it in sync. Because it writes to your store, i
 **strictest-authed endpoint** in the platform: the live import requires a **secret key AND an HMAC
 signature** — both, every time.
 
-The flow below is a complete sync: grab a sample feed to model yours after, **dry-run** it to catch
-problems before they matter, **ingest** it for real, then publish your catalog back out so other
-systems can pull it.
+This page follows **one continuous sync** and shows every shape ingestion actually returns — not just
+the happy path: grab a sample feed to model yours after, **dry-run** a feed that has a good row *and*
+a bad one (so you see the partial-failure shape), **ingest** it for real, then publish your catalog
+back out so other systems can pull it.
 
 ```typescript
 import { Tybrite } from '@tybrite-labs/sdk';
@@ -85,36 +86,34 @@ const sample = await server.ingestion.getIngestSample({ format: 'json' });
   XML `<products>` document. The shapes are interchangeable — pick whatever your source system emits.
 </Tip>
 
-## 2. Dry-run validate your feed
+## 2. Dry-run validate your feed — including a bad row
 
 Send your feed to the validator first. It parses every row, returns the same `summary` and `errors`
 you'd get from a real import, and adds a `normalized_preview` showing exactly how Galactic Core
 interpreted each row — **without writing anything**. No key required, so you can perfect the format
 before you ever sign a request.
 
+To see the shape that actually teaches the contract, send a feed with **one valid row and one invalid
+row** (a negative price). The validator accepts the good one and rejects the bad one — `status`
+becomes `partial`:
+
 ```typescript
 const check = await server.ingestion.testIngest({
   requestBody: {
     products: [
       {
-        sku: 'GTS-INGEST-LAMP-01',
-        name: 'Aurora Pro Desk Lamp',
-        category: 'Lighting',
-        brand: 'Lumitech',
-        price: 54.99,
-        cost: 22,
-        stock: 40,
-        description: 'Adjustable LED desk lamp with wireless charging base.',
+        sku: 'DEMO-1',
+        name: 'Demo Widget',
+        category: 'General',
+        price: 19.99,
+        stock: 10,
       },
       {
-        sku: 'GTS-INGEST-MAT-01',
-        name: 'Studio Yoga Mat',
-        category: 'Sports Equipment',
-        brand: 'Trailhead',
-        price: 44.99,
-        cost: 18,
-        stock: 60,
-        description: 'Non-slip 6mm yoga mat.',
+        sku: 'DEMO-BAD',
+        name: 'No Price',
+        category: 'General',
+        price: -5, // invalid — price must be positive
+        stock: 3,
       },
     ],
   },
@@ -123,46 +122,56 @@ const check = await server.ingestion.testIngest({
 
 ```json Response
 {
-  "status": "valid",
+  "status": "partial",
   "format": "json",
   "validate_only": true,
   "summary": {
     "rows_total": 2,
-    "rows_created": 2,
+    "rows_created": 1,
     "rows_updated": 0,
     "rows_skipped": 0,
-    "rows_failed": 0
+    "rows_failed": 1
   },
-  "errors": [],
+  "errors": [
+    {
+      "row": 2,
+      "sku": "DEMO-BAD",
+      "field": "price",
+      "reason": "price must be a positive number"
+    }
+  ],
   "normalized_preview": [
     {
-      "sku": "GTS-INGEST-LAMP-01",
-      "product_group": null,
-      "name": "Aurora Pro Desk Lamp",
-      "description": "Adjustable LED desk lamp with wireless charging base.",
-      "category": "Lighting",
-      "subcategory": null,
-      "brand": "Lumitech",
-      "image": null,
-      "variant_name": null,
-      "price": 54.99,
-      "cost_price": 22,
-      "stock": 40,
-      "threshold": null,
-      "barcode": null,
-      "barcode_type": null,
-      "tracking_mode": null
+      "sku": "DEMO-1",
+      "name": "Demo Widget",
+      "category": "General",
+      "price": 19.99,
+      "stock": 10
+    },
+    {
+      "sku": "DEMO-BAD",
+      "name": "No Price",
+      "category": "General",
+      "price": -5,
+      "stock": 3
     }
   ]
 }
 ```
 
-<Note>
-  `status` is `valid` (no failures), `partial` (some rows rejected), or `invalid` (all rejected).
-  Each entry in `errors` names the offending `row`, `sku`, `field`, and a human-readable `reason`
-  (e.g. `price must be a positive number`) — fix those, re-run, and only sign the live request once
-  you see `status: valid`.
-</Note>
+This is the key teaching shape. Read it field by field:
+
+- **`status`** — `valid` (no failures), `partial` (some rows rejected), or `invalid` (all rejected).
+- **`summary`** — the exact counts a real import would produce: `rows_total` / `rows_created` /
+  `rows_updated` / `rows_skipped` / `rows_failed`.
+- **`errors[]`** — one entry per rejected row, naming the 1-based `row`, the offending `sku`, the
+  `field` that failed, and a human-readable `reason` (here, `price must be a positive number`).
+- **`normalized_preview[]`** — every row exactly as Galactic Core interpreted it (`category`/`brand`
+  resolved, fields it couldn't infer left `null`), so you can confirm the mapping before signing.
+
+A feed with **only** valid rows comes back `status: valid`, `rows_failed: 0`, and an empty `errors`
+array. Fix the flagged rows, re-run, and only sign the live request once you're happy with the
+counts.
 
 ## 3. Push the catalog (secret key + HMAC)
 
@@ -219,6 +228,8 @@ const result = await server.ingestion.ingestProducts({
 });
 ```
 
+Both SKUs are new, so they're created — `rows_created: 2`, `errors: []`:
+
 ```json Response
 {
   "status": "success",
@@ -236,10 +247,19 @@ const result = await server.ingestion.ingestProducts({
 }
 ```
 
+Re-sign and send the **same** two SKUs and they're recognized as existing — `rows_updated: 2`,
+nothing duplicated (this is what makes the import safe to run on a schedule). And a batch with a mix
+of good and bad rows returns `status: partial` with the per-row `errors` array, exactly like the
+dry-run above — the good rows are still written.
+
 <Warning>
-  This is the only place in the API where `sk` **and** HMAC are both mandatory. A publishable key
-  returns `403`; a missing or invalid signature returns `401` (`invalid_signature`). If **every** row
-  fails validation, nothing is written and the status is `422`.
+  This is the only place in the API where `sk` **and** HMAC are both mandatory. The variant responses
+  you must handle:
+  - **A publishable key → `403`** (`forbidden`) — `ingestProducts` rejects `pk`.
+  - **Missing or invalid signature → `401`** (`invalid_signature`, message: *"Ingestion requires
+    X-Timestamp + X-Signature (HMAC-SHA256 over `${timestamp}.${body}`)"*).
+  - **Every row fails validation → `422`** — nothing is written; the body is the same `IngestResult`
+    shape with `rows_failed === rows_total` and the full `errors` array.
 </Warning>
 
 A few rules worth knowing before your first import:
@@ -252,7 +272,20 @@ A few rules worth knowing before your first import:
 - **Variants group by `product_group`.** Rows sharing a `product_group` become variants of one
   product; each still needs its own unique `sku`.
 - **CSV / XML work identically.** Pass `format: 'csv'` (or `'xml'`) and a string body; the upsert and
-  partial-success rules are the same.
+  partial-success rules are the same. A CSV body is the header row plus data rows as a single string:
+
+```typescript
+const csv = await server.ingestion.ingestProducts({
+  idempotencyKey: `ingest-csv-${timestamp}`,
+  xTimestamp: timestamp,
+  xSignature: signature, // signed over the CSV string body
+  format: 'csv',
+  requestBody:
+    'sku,name,category,brand,price,cost,stock\n' +
+    'GTS-INGEST-BTL-01,Trail Bottle 750ml,Sports Equipment,Trailhead,24.99,9.5,80',
+});
+// → { status: "success", format: "csv", summary: { rows_total: 1, rows_created: 1, rows_failed: 0 }, errors: [] }
+```
 
 ## 4. Publish your catalog back out
 
@@ -307,11 +340,13 @@ const feed = await server.ingestion.getStoreCatalogFeedJson({
 ```
 
 <Note>
-  `subcategory` and `brand` are nullable — a product not assigned a subcategory shows `subcategory: null`.
-  The feed shape **matches what the ingestion endpoints accept**, so a store-to-store sync is a
-  direct pull-and-ingest with no field mapping. Need XML? Use
+  `subcategory`, `brand`, and `sale_price` are nullable — the first product has `subcategory: null`
+  and a `sale_price` of 129 (on sale), while the second has `sale_price: null` (not on sale). The feed
+  shape **matches what the ingestion endpoints accept**, so a store-to-store sync is a direct
+  pull-and-ingest with no field mapping. Need XML? Use
   `server.ingestion.getStoreCatalogFeedXml({ store })` for the same data as an XML document. If you
-  protected the feed with a token, pass it as `{ store, token: 'YOUR_FEED_TOKEN' }`.
+  protected the feed with a token, pass it as `{ store, token: 'YOUR_FEED_TOKEN' }`; a wrong/missing
+  token or a store that hasn't opted in returns `404`.
 </Note>
 
 ## What's next
@@ -320,3 +355,5 @@ const feed = await server.ingestion.getStoreCatalogFeedJson({
   [Webhooks & automation](/workflows/webhooks-automation).
 - Once products are in, wire up [Search & discovery](/workflows/search-and-discovery) and the
   [Storefront checkout](/workflows/storefront-checkout).
+</content>
+</invoke>

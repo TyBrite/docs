@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const SOURCE_DIR = __dirname;
 const TARGET_DIR = 'C:/Users/HP PC/OneDrive/Desktop/Git Projects/anvil/anvil-extensions/galactic-sdk';
@@ -7,6 +8,9 @@ const TARGET_DIR = 'C:/Users/HP PC/OneDrive/Desktop/Git Projects/anvil/anvil-ext
 const syncItems = [
     { src: 'sdk-source', dest: 'SDK-Source' },
     { src: 'sdk', dest: 'SDK-Documentations' },
+    // openapi.yaml is the response-shapes generator's fallback source — keep it in the mirror
+    // so the Anvil grounding (SDK_RESPONSE_SHAPES + the inlined digest) stays in step with the spec.
+    { src: 'openapi.yaml', dest: 'openapi.yaml' },
     { src: 'authentication.mdx', dest: 'authentication.mdx' },
     { src: 'quickstart.mdx', dest: 'quick-start.mdx' },
     { src: 'custom-integrations.mdx', dest: 'custom-integrations.mdx' }
@@ -60,6 +64,20 @@ function sync() {
             console.warn(`Source item not found: ${srcPath}`);
         }
     });
+
+    // Regenerate the Anvil response-shapes grounding from the freshly-synced SDK docs +
+    // openapi.yaml. This keeps SDK_RESPONSE_SHAPES.generated.md (the on-disk deep reference)
+    // AND SDK_RESPONSE_DIGEST.generated.md (the compact digest inlined into the Anvil prompt)
+    // in step with every spec/SDK change — no manual step.
+    try {
+        const gen = path.join(TARGET_DIR, 'generate-response-shapes.mjs');
+        if (fs.existsSync(gen)) {
+            console.log('Regenerating Anvil response shapes + digest (auto-inlines into prompts.ts)...');
+            execFileSync(process.execPath, [gen], { cwd: TARGET_DIR, stdio: 'inherit' });
+        }
+    } catch (err) {
+        console.error(`Response-shapes generation failed (non-fatal): ${err.message}`);
+    }
 
     console.log('Sync completed successfully!');
 }

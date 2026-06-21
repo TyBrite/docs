@@ -4,9 +4,11 @@ description: "The core shopper journey end to end — browse the catalog, build 
 ---
 
 This is the flow most integrations start with: a shopper goes from browsing to a paid order. Steps
-1–5 run with the **publishable** client in the browser; the order and payment in steps 6–7 run with
-the **secret** client on your server. (See [Workflow Examples](/workflows/introduction) for the
-client setup.)
+1–6 run with the **publishable** client in the browser (catalog, cart, shipping, an optional stock
+reservation); the order and payment in steps 7–8 run with the **secret** client on your server. We
+build the *same* order three ways in step 7 — base, with a promotion, with a promotion **and** a gift
+card — so you see every response shape and the two failure variants you'll actually hit. (See
+[Workflow Examples](/workflows/introduction) for the client setup.)
 
 ## 1. Browse the catalog
 
@@ -136,11 +138,48 @@ const quote = await storefront.shipping.calculateShipping({
 }
 ```
 
-## 6. Place the order (server, signed)
+## 6. (Optional) Reserve stock before you check out
+
+If checkout might take a while — an async payment flow, a multi-page wizard — hold the stock so the
+shopper can't be oversold mid-checkout. Each hold expires automatically after `ttl_seconds`. This is
+a publishable-key call (it originates in the browser). Carry the `variant_id` forward from the cart.
+
+```typescript
+const { reservation_ids } = await storefront.orders.reserveStock({
+  requestBody: {
+    items: [{ variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a', quantity: 2 }],
+    ttl_seconds: 900,
+  },
+});
+```
+
+```json Response
+{
+  "reservations": [
+    { "reservation_id": "a81b3a3d-f810-47f4-ac50-592c3f22482f", "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a", "quantity": 1 }
+  ],
+  "reservation_ids": ["a81b3a3d-f810-47f4-ac50-592c3f22482f"],
+  "expires_in_seconds": 900
+}
+```
+
+<Note>
+  If the requested quantity isn't available, **nothing** is reserved and the call returns `409`.
+  Reserving is optional — skip it for a fast synchronous checkout; the order itself still validates
+  stock at creation.
+</Note>
+
+## 7. Place the order (server, signed)
 
 Order creation is a **secret-key** call and must be **HMAC-signed** with an **idempotency key** —
 this is what makes a retried checkout safe (the same key returns the original order, never a
 duplicate). See [HMAC Signing](/authentication#advanced-security-hmac-signing) for the helper.
+
+We'll build up the **same order three ways** so you see every shape: the base order, then the same
+cart with a promotion, then a promotion *and* a gift card. Each one carries the 2 Galaxy Watches
+from the cart in step 2 forward.
+
+### 7a. The base order
 
 ```typescript
 import { createHmac } from 'crypto';
@@ -155,19 +194,21 @@ const orderData = {
   ],
   subtotal: 598,
   shipping_amount: 5.99,
+  discount_amount: 0,
   total_amount: 603.99,
   payment_status: 'pending',
 };
 
-const body = JSON.stringify(orderData);
-const signature = createHmac('sha256', process.env.TYBRITE_HMAC_SECRET)
-  .update(`${timestamp}.${body}`)
-  .digest('base64');
+// Sign with `${timestamp}.${JSON.stringify(body)}`, HMAC-SHA256, base64.
+const sign = (body: object, ts: number) =>
+  createHmac('sha256', process.env.TYBRITE_HMAC_SECRET)
+    .update(`${ts}.${JSON.stringify(body)}`)
+    .digest('base64');
 
 const { order } = await server.orders.createOrder({
   idempotencyKey: `order-${customer.id}-${timestamp}`,
   xTimestamp: timestamp,
-  xSignature: signature,
+  xSignature: sign(orderData, timestamp),
   requestBody: orderData,
 });
 ```
@@ -178,6 +219,9 @@ const { order } = await server.orders.createOrder({
     "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
     "order_number": "ORD-1781955469360",
     "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "subtotal": 598,
+    "shipping_amount": 5.99,
+    "discount_amount": 0,
     "order_status": "pending",
     "payment_status": "pending",
     "total_amount": 603.99,
@@ -188,23 +232,184 @@ const { order } = await server.orders.createOrder({
 }
 ```
 
-## 7. Take payment (server, signed)
+<Warning>
+  **Always inspect `post_processing_warnings` on every create** — even on a `201`. It's empty here,
+  but a paid order can succeed while a downstream step (gift card redemption, stock reduction) fails;
+  those surface here, not as an HTTP error. We hit that case in **7d** below.
+</Warning>
+
+### 7b. The same order WITH a promotion applied
+
+The shopper's cart subtotal is **$598**, which clears the **Spring Sale — 15% off (min $50)**
+promotion (`df290d89-0400-4b2c-aa56-11fcc486150c`). Quote the discount first with
+`storefront.promotions.calculatePromotionDiscount(...)`, then send it on the order as
+`discount_amount` plus a `promotion_usages` entry so the usage is tracked.
+
+15% of $598 = **$89.70**. The total recomputes: `subtotal − discount + shipping` = `598 − 89.70 +
+5.99` = **$514.29**.
+
+```typescript
+const ts2 = Math.floor(Date.now() / 1000);
+const orderWithPromo = {
+  ...orderData,
+  discount_amount: 89.70,
+  total_amount: 514.29, // 598 − 89.70 + 5.99
+  promotion_usages: [
+    { promotion_id: 'df290d89-0400-4b2c-aa56-11fcc486150c', discount_amount: 89.70 },
+  ],
+};
+
+const { order: promoOrder } = await server.orders.createOrder({
+  idempotencyKey: `order-${customer.id}-${ts2}`,
+  xTimestamp: ts2,
+  xSignature: sign(orderWithPromo, ts2),
+  requestBody: orderWithPromo,
+});
+// promoOrder.discount_amount === 89.7  ·  promoOrder.total_amount === 514.29
+```
+
+```json Response
+{
+  "order": {
+    "id": "f3a91c27-7b04-4e2a-9c6d-2d8e51a8b9c4",
+    "order_number": "ORD-1781955470112",
+    "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "subtotal": 598,
+    "shipping_amount": 5.99,
+    "discount_amount": 89.7,
+    "total_amount": 514.29,
+    "currency": "USD",
+    "order_status": "pending",
+    "payment_status": "pending",
+    "created_at": "2026-06-20T11:37:50.112+00:00"
+  },
+  "post_processing_warnings": []
+}
+```
+
+### 7c. The same order WITH a gift card too — and the total-math gotcha that trips everyone
+
+Now the shopper also redeems gift card **`GTSA-1B2C-3D4E-5F6G`** ($100 balance) for **$50** toward
+this order. Add a `gift_card_redemption: { code, amount }` block.
+
+<Warning>
+  **The gift card is a *payment*, not a line discount — `total_amount` does NOT subtract it.** The
+  server's price guard validates `total_amount === subtotal + tax + shipping − discount`. With
+  subtotal 598, discount 89.70, shipping 5.99, the correct `total_amount` is **`514.29`** — the
+  *same* as 7b. The $50 gift card is settled as a payment against that total; it never lowers it.
+  Sending `464.29` (514.29 − 50) is the classic mistake and is rejected — see 7d.
+</Warning>
+
+```typescript
+const ts3 = Math.floor(Date.now() / 1000);
+const orderWithGiftCard = {
+  ...orderWithPromo,
+  total_amount: 514.29, // NOT 464.29 — the gift card does not reduce total_amount
+  gift_card_redemption: { code: 'GTSA-1B2C-3D4E-5F6G', amount: 50 },
+};
+
+const { order: gcOrder, post_processing_warnings } = await server.orders.createOrder({
+  idempotencyKey: `order-${customer.id}-${ts3}`,
+  xTimestamp: ts3,
+  xSignature: sign(orderWithGiftCard, ts3),
+  requestBody: orderWithGiftCard,
+});
+// gcOrder.total_amount === 514.29  ·  post_processing_warnings === []  (gift card + stock OK)
+```
+
+```json Response
+{
+  "order": {
+    "id": "1c7e2a90-4d63-4f18-bb2a-9a3f0e6d5471",
+    "order_number": "ORD-1781955471004",
+    "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "subtotal": 598,
+    "shipping_amount": 5.99,
+    "discount_amount": 89.7,
+    "total_amount": 514.29,
+    "currency": "USD",
+    "order_status": "pending",
+    "payment_status": "paid",
+    "created_at": "2026-06-20T11:37:51.004+00:00"
+  },
+  "post_processing_warnings": []
+}
+```
+
+### 7d. The two failure variants you'll actually hit
+
+**Wrong total → `400 price_mismatch`.** If you "help" by subtracting the gift card and send
+`total_amount: 464.29`, the price guard rejects it before the order is ever created:
+
+```typescript
+const bad = { ...orderWithGiftCard, total_amount: 464.29 }; // wrong — subtracted the gift card
+await server.orders.createOrder({ /* …signed… */, requestBody: bad });
+```
+
+```json Response (400)
+{
+  "error": {
+    "code": "price_mismatch",
+    "message": "total_amount does not match subtotal + tax + shipping − discount",
+    "details": "expected 514.29, got 464.29"
+  }
+}
+```
+
+**Bad gift card → still `201`, but with `post_processing_warnings`.** A *paid* order that redeems a
+gift card the store doesn't recognize is **not** rolled back — the order is created and the warning
+is surfaced (and stamped onto `order.notes`). This is exactly why step 7's `<Warning>` says to
+inspect `post_processing_warnings` every time.
+
+```typescript
+const withBadCard = { ...orderWithPromo, payment_status: 'paid', gift_card_redemption: { code: 'NOPE-0000-0000-0000', amount: 50 } };
+const { order, post_processing_warnings } = await server.orders.createOrder({ /* …signed… */, requestBody: withBadCard });
+// order.id exists (201) — but post_processing_warnings is NON-empty. Handle it.
+```
+
+```json Response (201)
+{
+  "order": {
+    "id": "8a44f0d2-1e9b-4c5a-bf03-77a2c6e91b8d",
+    "order_number": "ORD-1781955472200",
+    "payment_status": "paid",
+    "total_amount": 514.29,
+    "notes": "[GIFT_CARD_REDEMPTION_FAILED] Gift card not found for this store"
+  },
+  "post_processing_warnings": [
+    {
+      "stage": "gift_card_redemption",
+      "message": "Gift card redemption failed: Gift card not found for this store. The order was created but no gift card credit was applied. Please contact support."
+    }
+  ]
+}
+```
+
+<Note>
+  Stock reduction fails the same way: a paid order short on inventory still returns `201` with a
+  `{ "stage": "stock_reduction", ... }` warning and a `[STOCK_REDUCTION_PARTIAL]` note. Treat a
+  non-empty `post_processing_warnings` as "order placed, but a human needs to follow up."
+</Note>
+
+## 8. Take payment (server, signed)
 
 Initialize a payment for the order — also `sk` + HMAC + idempotency. The shopper is redirected to the
-returned `checkout_url`; you finalize the order from the provider's webhook.
+returned `checkout_url`; you finalize the order from the provider's webhook. Charge the order's
+`total_amount` — here the promo+gift-card order from **7c**, **$514.29** (the gift card is settled as
+part of that payment, it doesn't change the amount charged).
 
 ```typescript
 const payment = await server.payments.initializePayment({
-  idempotencyKey: `pay-${order.id}`,
+  idempotencyKey: `pay-${gcOrder.id}`,
   xTimestamp: Math.floor(Date.now() / 1000),
   xSignature: paymentSignature, // sign the payment body the same way as the order
   requestBody: {
     provider: 'stripe',
-    amount: 603.99,
+    amount: 514.29, // gcOrder.total_amount from step 7c
     currency: 'usd',
     email: 'john.doe@example.com',
-    success_url: 'https://yourstore.com/payment-success',
-    cancel_url: 'https://yourstore.com/payment-cancelled',
+    success_url: 'https://example.com/payment-success',
+    cancel_url: 'https://example.com/payment-cancelled',
   },
 });
 
