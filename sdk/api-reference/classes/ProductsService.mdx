@@ -243,11 +243,13 @@ fields=name,variants.sku,variants.media,variants.variant_attributes
 
 ### `getProductSpecifications`
 
-Retrieve structured technical specifications.
+Retrieve the latest published specifications for a single **variant**. Specifications are stored per
+variant, so pass a **variant id** (e.g. a `variant_id` from `getProduct().variants[]`) — **not** a
+product id. A product id returns `404`.
 
 ```typescript
-const { id, specification_data } = await client.products.getProductSpecifications({
-  id: '0186665f-f0a1-4c79-976a-919b5b1c2daa' // a product UUID
+const { specification_data } = await client.products.getProductSpecifications({
+  id: '9a47e047-b1b6-4c35-9617-820629e22e04' // a VARIANT UUID (not a product id)
 });
 ```
 
@@ -271,7 +273,9 @@ const { id, specification_data } = await client.products.getProductSpecification
 ```
 
 <Note>
-  Returns `404` if the product has no published specification.
+  Returns `404` ("No specifications found for this product") if the variant has no published
+  specification — or if you passed a product id instead of a variant id. To browse all specs across
+  the catalog (each tagged with its `variant_id`), use `listProductSpecifications`.
 </Note>
 
 ---

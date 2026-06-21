@@ -2174,15 +2174,28 @@ paths:
       operationId: getProductSpecifications
       tags:
         - Products
-      summary: Get product specifications
-      description: Retrieves the latest specification version for a specific product
+      summary: Get a variant's specifications
+      description: |
+        Returns the latest published specification version for a single product **variant**.
+
+        **Important — this endpoint is keyed by VARIANT id, not product id.** Specifications are
+        stored per variant, so the `{id}` path segment must be a **variant** UUID (e.g. the
+        `variant_id` from a product detail, or an `id` from `GET /v1/product-specifications`).
+        Passing a *product* id (or a variant that has no published specifications) returns
+        `404 not_found` — "No specifications found for this product". To browse all specifications
+        across the catalog, use `GET /v1/product-specifications` (which lists them with their
+        `variant_id`).
+
+        Read access — works with a publishable or secret key.
       security:
         - BearerAuth: []
       parameters:
         - name: id
           in: path
           required: true
-          description: Product UUID
+          description: |
+            The **variant** UUID whose specifications to fetch (NOT a product id). A product id
+            returns 404 — specifications are variant-keyed.
           schema:
             type: string
             format: uuid
@@ -2258,13 +2271,19 @@ paths:
       summary: List product specifications
       description: |
         Returns a paginated list of product specifications for the authenticated store,
-        ordered by most recently updated. Supports filtering by `product_id` and `status`.
+        ordered by most recently updated. Each row carries the `variant_id` it belongs to
+        (specifications are stored per variant). Supports filtering by `product_id` (which
+        matches on `variant_id` — pass a variant UUID) and `status`.
+
+        Read access — works with a publishable or secret key.
       security:
         - BearerAuth: []
       parameters:
         - name: product_id
           in: query
-          description: Filter specifications by product UUID
+          description: |
+            Filter to a single variant's specifications. Despite the name, this matches on
+            `variant_id` — pass a **variant** UUID.
           schema:
             type: string
             format: uuid
@@ -3189,6 +3208,26 @@ paths:
         - Regenerate secret immediately if compromised
         - Requests with invalid/missing signatures return 401 Unauthorized
         - Timestamps older than 5 minutes are rejected to prevent replay attacks
+
+        **🛡️ Server-side price validation (anti-tampering)**
+
+        HMAC proves the body wasn't altered in transit; it does **not** prove the amounts are honest.
+        So the server independently recomputes the order from authoritative data and rejects any
+        mismatch — you cannot set your own prices or discounts:
+
+        - **Item prices** are recomputed from the live catalog. `unit_price` / `total_price` that don't
+          match the catalog price → **`400 price_mismatch`**. (The stored order always uses the catalog
+          price, never the value you send.)
+        - **`subtotal`, `tax_amount`, `total_amount`** must reconcile to `subtotal + tax + shipping −
+          discount` over those catalog prices → otherwise **`400 price_mismatch`**.
+        - **`discount_amount`** is validated against the discount the promotions / gift card you claim
+          actually grant (computed server-side from `promotion_usages` + `gift_card_redemption`). A
+          `discount_amount` greater than that legitimate maximum → **`400 discount_invalid`**. A discount
+          with no real promotion/gift card behind it → max is `0`. (You may apply *less* than the maximum.)
+        - **`shipping_amount`** may not be negative → **`400 price_mismatch`**.
+
+        In short: send the **real catalog prices** and the **actual promotions/gift card** the shopper is
+        entitled to. Don't compute or invent prices/discounts client-side — the server is the authority.
       security:
         - BearerAuth: []
       parameters:
@@ -4290,6 +4329,15 @@ paths:
         - Must be unique per payment attempt
         - Prevents duplicate charges on network retries
         - Returns existing payment if key already used
+
+        **🛡️ Amount validation (anti-tampering)**
+
+        When you pass an `order_id`, the server validates `amount` against that order's **authoritative
+        total** — a `amount` that doesn't match the order total is rejected with **`400 amount_mismatch`**.
+        The order total was itself validated against the catalog + the shopper's real promotions/gift card
+        at order creation (see the order endpoint's server-side price validation), so you cannot charge
+        less than the order is worth. Pass the order's real `total_amount`; don't compute or alter it
+        client-side.
 
         **Provider-Specific Flows:**
 
@@ -7631,45 +7679,64 @@ paths:
               example:
                 customer:
                   ids:
-                    - 15ecd58f-a8f8-49e4-9098-96f1fa8308e9
-                    - 7c2a1b94-3e6d-4f81-9a02-d5b8e1c0f234
+                    - 9dd91fcc-4ca9-4d5d-a477-cd661baa4c49
+                    - 0bd714c2-89ab-46fb-b6a5-ad0dd9ffae74
                   email: john.doe@example.com
                   name: John Doe
-                  phone: '+12125550142'
+                  phone: ''
                   address: null
                   status: active
-                  join_date: '2026-05-02T00:00:00+00:00'
+                  join_date: '2026-06-21'
                 stores:
+                  - merchant_store_id: 086e8d7f-b84d-41bc-8acd-3f5740ea61dc
+                    merchant_store_name: Galactic Core Store
+                    affiliation_date: '2026-06-21T10:22:34.714838+00:00'
+                    first_purchase_date: null
+                    last_purchase_date: null
+                    total_purchases: 0
+                    total_spent: 0
+                    status: active
+                    preferred_store: false
                   - merchant_store_id: ef7b07d3-424b-4b03-b1d4-30a2d2073b61
                     merchant_store_name: Galactic Test Store
-                    affiliation_date: '2026-05-02T14:11:09.220+00:00'
-                    first_purchase_date: '2026-05-09T18:42:00.000+00:00'
-                    last_purchase_date: '2026-06-18T10:15:30.000+00:00'
-                    total_purchases: 3
-                    total_spent: 612.47
-                    status: active
-                    preferred_store: true
-                  - merchant_store_id: a91c33e7-2f04-4b6a-8c19-77d2b5e90c41
-                    merchant_store_name: Northwind Outfitters
-                    affiliation_date: '2026-05-21T09:03:55.110+00:00'
-                    first_purchase_date: '2026-05-21T09:30:00.000+00:00'
-                    last_purchase_date: '2026-05-21T09:30:00.000+00:00'
-                    total_purchases: 1
-                    total_spent: 89
+                    affiliation_date: '2026-06-21T10:22:35.523993+00:00'
+                    first_purchase_date: null
+                    last_purchase_date: null
+                    total_purchases: 0
+                    total_spent: 0
                     status: active
                     preferred_store: false
                 orders:
-                  - id: e7d28e96-e9e0-45ce-be28-51812f63eb4b
-                    order_number: ORD-1781955473455
+                  - id: 102209e8-ebf5-4cfd-9228-23a559b6b769
+                    order_number: MKT-2026-000039-ef7b07d3
                     merchant_store_id: ef7b07d3-424b-4b03-b1d4-30a2d2073b61
                     merchant_store_name: Galactic Test Store
                     order_status: pending
                     payment_status: paid
-                    total_amount: 603.99
-                    subtotal: 579
+                    total_amount: 24.99
+                    subtotal: 24.99
                     tax_amount: 0
-                    shipping_amount: 24.99
+                    shipping_amount: 0
                     discount_amount: 0
+                    tracking_number: null
+                    estimated_delivery: null
+                    created_at: '2026-06-21T10:22:35.556122+00:00'
+                    updated_at: '2026-06-21T10:22:35.556122+00:00'
+                  - id: dcadfcfe-3022-4586-adc4-62def105d4e8
+                    order_number: MKT-2026-000039-086e8d7f
+                    merchant_store_id: 086e8d7f-b84d-41bc-8acd-3f5740ea61dc
+                    merchant_store_name: Galactic Core Store
+                    order_status: pending
+                    payment_status: paid
+                    total_amount: 4.5
+                    subtotal: 4.5
+                    tax_amount: 0
+                    shipping_amount: 0
+                    discount_amount: 0
+                    tracking_number: null
+                    estimated_delivery: null
+                    created_at: '2026-06-21T10:22:34.752356+00:00'
+                    updated_at: '2026-06-21T10:22:34.752356+00:00'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -11575,8 +11642,12 @@ paths:
         - Messaging
       summary: Edit message
       description: |
-        Edits the content of an existing message. Sets `is_edited = true` and records `edited_at`.
-        Cannot edit a soft-deleted message. Requires a secret key.
+        Edits the content of one of the customer's **own** messages. Sets `is_edited = true` and
+        records `edited_at`. Cannot edit a soft-deleted message.
+
+        This is a customer-self write: it works with a **publishable** key plus the customer's session
+        token in `x-auth-token` (the same browser-origin pattern as cart/wishlist writes). The session
+        token proves ownership of the message; a customer can only edit messages they sent.
       security:
         - BearerAuth: []
       parameters:
@@ -11635,11 +11706,11 @@ paths:
                         format: date-time
               example:
                 message:
-                  id: c423c11e-ab5f-40ab-8e17-429a39710d60
-                  message_content: Hi — I placed an order and wanted to check the expected delivery window (order ORD-1781955473455).
+                  id: cc64ce9a-51ba-4860-ba1a-85f14899f5bf
+                  message_content: Thanks! Also — can I add gift wrapping and a note?
                   is_edited: true
-                  edited_at: '2026-06-20T13:52:41.118+00:00'
-                  updated_at: '2026-06-20T13:52:41.118+00:00'
+                  edited_at: '2026-06-21T10:16:33.064+00:00'
+                  updated_at: '2026-06-21T10:16:33.082663+00:00'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -11658,7 +11729,12 @@ paths:
         - Messaging
       summary: Delete message
       description: |
-        Deletes a message. Requires a secret key.
+        Soft-deletes one of the customer's **own** messages (returns `success`, `message_id`, and the
+        `deleted_at` timestamp).
+
+        This is a customer-self write: it works with a **publishable** key plus the customer's session
+        token in `x-auth-token` (the same browser-origin pattern as cart/wishlist writes). The session
+        token proves ownership; a customer can only delete messages they sent.
       security:
         - BearerAuth: []
       parameters:
@@ -11696,8 +11772,8 @@ paths:
                     format: date-time
               example:
                 success: true
-                message_id: c423c11e-ab5f-40ab-8e17-429a39710d60
-                deleted_at: '2026-06-20T13:53:02.704+00:00'
+                message_id: cc64ce9a-51ba-4860-ba1a-85f14899f5bf
+                deleted_at: '2026-06-21T10:16:33.419Z'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -11779,8 +11855,8 @@ paths:
                 realtime_url: wss://realtime.tybritelabs.com
                 realtime_key: rt_pub_8f3c1a9e4b2d
                 token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature
-                channel: thread:de30ebb3-d8d0-4b55-9ca6-e2f2d9ac2383
-                thread_id: de30ebb3-d8d0-4b55-9ca6-e2f2d9ac2383
+                thread_id: 6c78f23c-ecba-4783-8b0c-6df2412707b3
+                channel: thread:6c78f23c-ecba-4783-8b0c-6df2412707b3
                 environment: production
         '400':
           $ref: '#/components/responses/BadRequestError'
@@ -12058,10 +12134,10 @@ paths:
               example:
                 valid: true
                 client:
-                  client_id: fantastic-storefront
-                  name: Fantastic
-                  description: Storefront generator for GC merchants
-                  logo_url: https://fantastic.app/logo.png
+                  client_id: anvil
+                  name: Anvil
+                  description: AI-powered storefront generation — connect your store to generate a fully functional storefront in minutes.
+                  logo_url: https://anvil.tybritelabs.com/logo.png
                 request:
                   redirect_uri: https://yourapp.com/callback
                   scopes:
@@ -14399,6 +14475,31 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique key per batch; retrying with the same key returns the original result instead of re-importing.
+          schema:
+            type: string
+          example: ingest-1771523993-abc123
+        - name: X-Timestamp
+          in: header
+          required: true
+          description: |
+            Unix timestamp in seconds (current time). Must be within 5 minutes of server time.
+            Used to prevent replay attacks.
+          schema:
+            type: integer
+          example: 1771523993
+        - name: X-Signature
+          in: header
+          required: true
+          description: |
+            Base64-encoded HMAC-SHA256 of the payload (`${X-Timestamp}.${raw_body}`), signed with your
+            HMAC secret from Settings → Integration Settings. Required in addition to the secret key.
+          schema:
+            type: string
+          example: IqdgKXgloLzL5akDgFEwPaK6wviozf+3U0Q2eeevl494gpFUIdwMwALs+6bRn...
         - name: format
           in: query
           required: false
@@ -17013,7 +17114,7 @@ components:
               type:
                 - string
                 - 'null'
-              format: date-time
+              format: date
         stores:
           type: array
           description: The merchants this shopper has a relationship with.

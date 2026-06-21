@@ -336,7 +336,14 @@ const { order: gcOrder, post_processing_warnings } = await server.orders.createO
 }
 ```
 
-### 7d. The two failure variants you'll actually hit
+### 7d. The failure variants you'll actually hit
+
+<Note>
+  **The server is the price authority — don't compute or invent amounts client-side.** Order creation
+  recomputes every item price from the live catalog and validates your `discount_amount` against the
+  promotions / gift card you actually claim. Send the **real catalog prices** and the shopper's **real
+  entitlements**; the guards below are what you hit if you don't.
+</Note>
 
 **Wrong total → `400 price_mismatch`.** If you "help" by subtracting the gift card and send
 `total_amount: 464.29`, the price guard rejects it before the order is ever created:
@@ -352,6 +359,27 @@ await server.orders.createOrder({ /* …signed… */, requestBody: bad });
     "code": "price_mismatch",
     "message": "total_amount does not match subtotal + tax + shipping − discount",
     "details": "expected 514.29, got 464.29"
+  }
+}
+```
+
+**Fabricated / over-stated discount → `400 discount_invalid`.** The total math being *consistent*
+isn't enough — the server recomputes the maximum discount your claimed promotions + gift card actually
+grant, and rejects a `discount_amount` that exceeds it (a discount with no real promotion behind it →
+max is `0`). So you can't lower the price with a made-up discount:
+
+```typescript
+// $598 cart, but claim a $290 discount with no promotion (or an over-stated one)
+const bogus = { ...orderData, discount_amount: 290, total_amount: 308 };
+await server.orders.createOrder({ /* …signed… */, requestBody: bogus });
+```
+
+```json Response (400)
+{
+  "error": {
+    "code": "discount_invalid",
+    "message": "discount_amount exceeds the discount the claimed promotions/gift card actually grant",
+    "details": "max legitimate discount 0.00, claimed 290.00"
   }
 }
 ```

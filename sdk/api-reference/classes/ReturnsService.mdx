@@ -359,12 +359,26 @@ const { data } = await client.returns.getStoreCredit({
 console.log(`You have ${data.balance} in store credit`);
 ```
 
-**Response `200`** (`currency` is `null` when the customer has no credit yet):
+**Response `200`** — `balance` is `0` for a shopper with no credit. After a credit is issued (e.g. via
+`acceptReturnCredit`) the `balance` is populated; `currency` stays `null` either way (the ledger does
+not stamp a currency code — the balance is always in the store's own currency):
 
 ```json
 {
   "data": {
     "balance": 0,
+    "currency": null
+  }
+}
+```
+
+After accepting a $299 store-credit offer, the same call returns the populated balance (verified live
+2026-06-21):
+
+```json
+{
+  "data": {
+    "balance": 299,
     "currency": null
   }
 }

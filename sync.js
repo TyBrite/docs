@@ -8,6 +8,9 @@ const TARGET_DIR = 'C:/Users/HP PC/OneDrive/Desktop/Git Projects/anvil/anvil-ext
 const syncItems = [
     { src: 'sdk-source', dest: 'SDK-Source' },
     { src: 'sdk', dest: 'SDK-Documentations' },
+    // The end-to-end Workflow Examples (browse→cart→order→pay, marketplace, catalog-sync, …)
+    // — the richest "how the services compose" reference for the generator.
+    { src: 'workflows', dest: 'SDK-Documentations/workflows' },
     // openapi.yaml is the response-shapes generator's fallback source — keep it in the mirror
     // so the Anvil grounding (SDK_RESPONSE_SHAPES + the inlined digest) stays in step with the spec.
     { src: 'openapi.yaml', dest: 'openapi.yaml' },

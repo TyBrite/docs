@@ -15,29 +15,36 @@ If a method isn't shown in a walkthrough, it's here. (Setup is the two-client pa
 const { product } = await storefront.products.getProductBySlug({ slug: 'samsung-galaxy-watch-6-0186' });
 // → product.id === '0186665f-f0a1-4c79-976a-919b5b1c2daa', product.price === 299
 
-// Published specification groups for a product (the spec sheet)
-const specs = await storefront.products.getProductSpecifications({ id: '0186665f-f0a1-4c79-976a-919b5b1c2daa' });
+// The latest published specifications for a VARIANT (the spec sheet).
+// NOTE: this endpoint is keyed by VARIANT id, not product id — pass a variant_id
+// (e.g. from getProduct().variants[].variant_id). A product id returns 404.
+const specs = await storefront.products.getProductSpecifications({ id: '9a47e047-b1b6-4c35-9617-820629e22e04' });
 ```
 
 ```json Response (getProductSpecifications)
 {
-  "specifications": [
-    {
-      "group": "Display",
-      "items": [
-        { "label": "Screen Size", "value": "1.5 in" },
-        { "label": "Resolution", "value": "480 x 480" }
-      ]
-    },
-    { "group": "Battery", "items": [{ "label": "Capacity", "value": "425 mAh" }] }
-  ]
+  "id": "3b16b560-418f-4fe5-a35e-7ce9c214d795",
+  "variant_id": "9a47e047-b1b6-4c35-9617-820629e22e04",
+  "template_id": "599b4ff3-bda4-463d-a22e-e631d834875a",
+  "specification_data": {
+    "brand": "Sony",
+    "color": "Black",
+    "model": "WH-1000XM4",
+    "product_type": "Accessory",
+    "storage_type": "HDD"
+  },
+  "status": "published",
+  "version": 1,
+  "created_at": "2026-06-20T10:05:26.106528+00:00",
+  "updated_at": "2026-06-20T10:05:26.106528+00:00"
 }
 ```
 
 ```typescript
-// All specs across the catalog (admin-style export / spec search)
+// All specs across the catalog (admin-style export / spec search). Each row carries
+// the variant_id it belongs to (specs are variant-keyed).
 const allSpecs = await storefront.products.listProductSpecifications({ limit: 50 });
-// → { specifications: [...], pagination: { has_more: true, next_cursor: "..." } }
+// → { specifications: [{ id, variant_id, template_id, specification_data, status, version, ... }], pagination: { has_more: true, next_cursor: "..." } }
 
 // Curated collections ("Best Sellers", "New Arrivals")
 const { collections } = await storefront.products.listProductCollections();
@@ -47,7 +54,8 @@ const collection = await storefront.products.getProductCollection({ id: '1f0e8d2
 // → { id, name: 'Best Sellers', description, slug }
 
 const items = await storefront.products.getProductCollectionItems({ id: '1f0e8d2a-...', limit: 20 });
-// → { items: [{ product_id, name, price, primary_media_url }], pagination: { has_more: false } }
+// → { items: [] } — collections are rule-based; members resolve server-side, so items is empty
+//    unless the collection has explicitly materialized members.
 ```
 
 ```typescript
@@ -62,9 +70,13 @@ const subcategory = await storefront.taxonomy.getSubcategory({ id: '7d9b...', in
 ## Pricing & promotions
 
 ```typescript
-// Price one product by slug (with geographic currency detection)
-const price = await storefront.pricing.getProductPriceBySlug({ slug: 'samsung-galaxy-watch-6-0186', latitude: 40.71, longitude: -74.0 });
-// → { product_id: '0186665f-...', price: 299, currency: 'USD', applied_rule: null }
+// Price one product by slug (with geographic currency detection). Returns the full
+// product object plus pricing fields: base_price (USD), display_price + display_currency
+// (after rules + currency conversion), price_breakdown, and pricing_context.
+const price = await storefront.pricing.getProductPriceBySlug({ slug: 'samsung-galaxy-watch-6-0186', placeName: 'London' });
+// → { product_id: '0186665f-...', base_price: 299, base_currency: 'USD',
+//     resolved_price: 269.1, display_price: 212.59, display_currency: 'GBP',
+//     exchange_rate: 0.79, price_breakdown: { ... }, pricing_context: { region: 'United Kingdom', currency: 'GBP', ... } }
 
 // List the store's active promotions
 const { promotions } = await storefront.promotions.listPromotions({ limit: 10 });
@@ -95,18 +107,19 @@ const { promotions } = await storefront.promotions.listPromotions({ limit: 10 })
 const promo = await storefront.promotions.getPromotion({ id: 'df290d89-0400-4b2c-aa56-11fcc486150c' });
 // → { id, name: 'Spring Sale — 15% Off', value: '15', min_purchase: 50, status: 'active' }
 
-// What a specific promotion takes off a cart (server does the math)
+// What a specific promotion takes off a cart (server does the math).
+// The cart lines are { product_id, quantity, price }.
 const applied = await storefront.promotions.calculatePromotionDiscount({
   id: 'df290d89-0400-4b2c-aa56-11fcc486150c',
-  requestBody: { subtotal: 120, items: [{ variant_id: 'e98631a9-...', quantity: 1, unit_price: 120 }] },
+  requestBody: { cart: [{ product_id: '7d425c0a-50e7-4e39-af79-6f7945f9dfa8', quantity: 1, price: 349.99 }] },
 });
-// → { applicable: true, discount_amount: 18, final_total: 102 }
+// → { promotion_id: 'df290d89-...', type: 'discount', eligible: true, discount: 52.5, reason: null }
 
 // The single best promotion across all active rules for this cart
 const best = await storefront.promotions.calculateBestPromotion({
-  requestBody: { subtotal: 250, items: [{ variant_id: 'e98631a9-...', quantity: 1, unit_price: 250 }] },
+  requestBody: { cart: [{ product_id: '7d425c0a-...', quantity: 1, price: 349.99 }, { product_id: '0186665f-...', quantity: 1, price: 299 }] },
 });
-// → { best_promotion: { id, name: '$20 Off Orders Over $200' }, discount_amount: 20, final_total: 230 }
+// → { promotion: { id, name: 'Audio + Wearable Bundle', type: 'bundle' }, discount: 100 }
 ```
 
 ## Cart & wishlist (the rest of the surface)
@@ -155,20 +168,21 @@ await server.customers.updateCustomer({ id: '15ecd58f-...', xAuthToken: token, r
 ```
 
 ```typescript
-// The customer's saved address book
+// The customer's saved address book. Address fields are line1/line2/postal_code,
+// with separate is_default_shipping / is_default_billing flags.
 const { addresses } = await storefront.customers.listAddresses({ id: customerId, xAuthToken: token });
-// → { addresses: [{ id, label: 'Home', street, city: 'New York', is_default: true }] }
+// → { addresses: [{ id, label: 'Home', line1: '350 Fifth Avenue', city: 'New York', is_default_shipping: true, is_default_billing: true }] }
 
-const address = await storefront.customers.createAddress({
+const { address } = await storefront.customers.createAddress({
   id: customerId, xAuthToken: token,
-  requestBody: { label: 'Work', street: '350 Fifth Avenue', city: 'New York', state: 'NY', zip: '10118', country: 'US' },
+  requestBody: { full_name: 'John Doe', label: 'Work', line1: '350 Fifth Avenue', city: 'New York', state: 'NY', postal_code: '10118', country: 'US', address_type: 'both', is_default_shipping: true, is_default_billing: true },
 });
-// → 201 { id: 'addr_...', label: 'Work', is_default: false }
+// → 201 { address: { id, customer_id, address_type: 'both', label: 'Work', full_name: 'John Doe', line1, city, state, postal_code, country, is_default_shipping: true, is_default_billing: true, created_at, updated_at } }
 
-await storefront.customers.updateAddress({ id: customerId, addressId: 'addr_...', xAuthToken: token, requestBody: { is_default: true } });
-// → 200 { id: 'addr_...', is_default: true }
+await storefront.customers.updateAddress({ id: customerId, addressId: address.id, xAuthToken: token, requestBody: { label: 'Office', line2: 'Suite 2100' } });
+// → 200 { address: { id, label: 'Office', line2: 'Suite 2100', ... } }
 
-await storefront.customers.deleteAddress({ id: customerId, addressId: 'addr_...', xAuthToken: token });
+await storefront.customers.deleteAddress({ id: customerId, addressId: address.id, xAuthToken: token });
 // → { success: true, message: 'Address deleted' }
 ```
 
@@ -187,20 +201,20 @@ const me = await server.authentication.getCurrentUser({ xAuthToken: token });
 
 // Rotate the session before it expires (~1h)
 const refreshed = await server.authentication.refreshToken({ requestBody: { refresh_token: '5h2g7k9m...' } });
-// → { session: { access_token: 'eyJ...<redacted>.signature', refresh_token: '...', expires_in: 3600 } }
+// → { message: 'Token refreshed successfully', session: { access_token: 'eyJ...<redacted>.signature', refresh_token: '...', expires_in: 3600, expires_at: 1782040572 } }
 
 // End the session
 await server.authentication.logout({ xAuthToken: token });
-// → { message: 'Logged out successfully' }
+// → { message: 'Logout successful' }
 ```
 
 ```typescript
 // Password reset (request a reset email → set a new password)
 await server.authentication.resetPassword({ requestBody: { email: 'john.doe@example.com' } });
-// → { message: 'If an account exists for that email, a reset link has been sent.' }
+// → { message: 'Password reset email sent', email: 'john.doe@example.com' }
 
 await server.authentication.updatePassword({ xAuthToken: token, requestBody: { password: '••••••••' } });
-// → { message: 'Password updated successfully' }
+// → { message: 'Password updated successfully', user: { id: 'df648f68-...', email: 'john.doe@example.com' } }
 
 // Passwordless: OTP verification signs the customer in (same envelope as login)
 const verified = await server.authentication.verifyOtp({ requestBody: { email: 'john.doe@example.com', token: '123456' } });
@@ -214,7 +228,7 @@ const verified = await server.authentication.verifyOtp({ requestBody: { email: '
 const hold = await server.orders.reserveStock({
   requestBody: { items: [{ variant_id: 'e98631a9-...', quantity: 2 }], ttl_seconds: 600 },
 });
-// → { reservation_ids: ['resv_...'], expires_in_seconds: 600 }
+// → { reservations: [{ reservation_id, variant_id: 'e98631a9-...', quantity: 2 }], reservation_ids: ['16c3c2dc-...'], expires_in_seconds: 600 }
 
 // Which payment providers + currencies are available for this store
 const methods = await storefront.payments.getPaymentMethods();
@@ -230,9 +244,10 @@ const methods = await storefront.payments.getPaymentMethods();
 ```
 
 ```typescript
-// Confirm a payment after the provider redirect / webhook (server, sk)
-const result = await server.payments.verifyPayment({ requestBody: { provider: 'stripe', reference: 'PAY-61713784-F4TAOI' } });
-// → { success: true, status: 'paid', order_id: '0468af54-...', amount: 603.99 }
+// Confirm a payment after the provider redirect / webhook (server, sk).
+// For Stripe, pass the Checkout Session id (cs_test_...) as the reference.
+const result = await server.payments.verifyPayment({ requestBody: { provider: 'stripe', reference: 'cs_test_a1GBZkvLEkbsaotrzgHrtKzWKekeLe1bGzXw2xp6lKzMRZkjNiVMprvqS6' } });
+// → { provider: 'stripe', reference: 'cs_test_...', status: 'success', amount: 603.99, currency: 'usd', customer_email: 'john.doe@example.com', payment_intent: 'pi_3ABC...', metadata: {} }
 ```
 
 ## Engagement & CMS
@@ -355,13 +370,15 @@ await operator.marketplace.logAdEvent({ requestBody: { ad_id: 'ad_...', event_ty
 ## "Login with GC" connections (platform tools)
 
 ```typescript
-// Validate an authorization request (public; returns the client + scopes, never an open redirect)
+// Validate an authorization request (public; returns the client + the echoed request, never an open redirect)
 const authz = await server.gcConnect.getConnectAuthorize({ clientId: 'anvil', redirectUri: 'https://yourapp.com/callback', scope: 'read orders:read', state: 'a8f3...' });
-// → { valid: true, client: { client_id: 'anvil', name: 'Anvil', description: '...' }, scopes: ['read', 'orders:read'] }
+// → { valid: true, client: { client_id: 'anvil', name: 'Anvil', description: '...', logo_url: '...' },
+//     request: { redirect_uri: 'https://yourapp.com/callback', scopes: ['read', 'orders:read'], state: 'a8f3...', environment: 'sandbox' } }
 
-// Exchange a one-time code for the sk + pk key pair (the tool's server)
-const token = await server.gcConnect.connectToken({ requestBody: { client_id: 'anvil', code: '<one-time>', redirect_uri: 'https://yourapp.com/callback' } });
-// → { secret_key: 'tybrite_sk_live_<redacted>', publishable_key: 'tybrite_pk_live_<redacted>', pair_id: '550e8400-...' }
+// Exchange a one-time code for the sk + pk key pair (the tool's server). Requires the
+// app's client_secret; only completes after the merchant approves on the consent page.
+const token = await server.gcConnect.connectToken({ requestBody: { client_id: 'anvil', client_secret: '<your secret>', code: '<one-time>', redirect_uri: 'https://yourapp.com/callback' } });
+// → { sk: 'tybrite_sk_live_<redacted>', pk: 'tybrite_pk_live_<redacted>', pair_id: '550e8400-...', store_id: '660f9511-...', environment: 'production', scopes: ['read', 'orders:read'], client_id: 'anvil' }
 
 // List a store's active tool connections (sk)
 const { sessions } = await server.gcConnect.listConnectSessions();

@@ -1,14 +1,20 @@
 ---
 title: "Marketplace"
-description: "Operator flows for a multi-merchant marketplace — aggregated discovery across merchants, a unified split checkout, a shopper's cross-merchant profile, and sponsored placements — followed end to end as one scenario."
+description: "Operator flows for a multi-merchant marketplace — aggregated discovery across merchants, a unified split checkout, per-merchant commission and fulfillment, a shopper's cross-merchant profile, and sponsored placements — followed end to end as one scenario."
 ---
 
 A **marketplace** is a Galactic Core deployment that aggregates the catalogs of many independent
 merchants into one storefront — think a curated multi-vendor shop where a single shopper basket can
-span several sellers. This page follows **one continuous operator scenario** and shows every shape an
-operator integration actually hits — not just the happy path: discovering the combined catalog (and
-narrowing it to a single merchant), checking out a cart that crosses **two** merchants in one
-payment, reading a shopper's unified profile, and rendering sponsored placements.
+span several sellers. This page follows **one continuous operator + shopper scenario** and shows
+every shape an operator integration actually hits — not just the happy path: discovering the combined
+catalog (and narrowing it to a single merchant), checking out a cart that crosses **two** merchants in
+one payment, watching that one payment split into **per-merchant child orders** with commission taken
+out, reading the shopper's unified cross-merchant profile, and rendering sponsored placements.
+
+We carry two real merchants through the whole scenario:
+
+- **Galactic Core Store** — `086e8d7f-b84d-41bc-8acd-3f5740ea61dc` (we call it merchant **A**)
+- **Galactic Test Store** — `ef7b07d3-424b-4b03-b1d4-30a2d2073b61` (merchant **B**)
 
 ## Operator keys vs. store keys
 
@@ -22,19 +28,69 @@ There are two kinds of API key, and the difference drives everything on this pag
   with its source `merchant_store_id`), and the operator can run a unified checkout that fans a
   single basket out to the right merchants.
 
+The operator key comes in both flavours too. Use the **publishable** operator key
+(`tybrite_pk_*`) for the read surfaces a storefront calls from the browser — discovery, marketplace
+info, collections, ad slots — and the **secret** operator key (`tybrite_sk_*`) on your server for the
+unified checkout (it starts a payment) and the unified shopper profile.
+
 ```typescript
 import { Tybrite } from '@tybrite-labs/sdk';
 
-// The marketplace operator client — aggregates across all merchants in the marketplace.
-const client = new Tybrite({ apiKey: 'tybrite_pk_live_OPERATOR_KEY' });
+// Browser-safe operator client — discovery, info, collections, ad slots.
+const storefront = new Tybrite({ apiKey: 'tybrite_pk_live_OPERATOR_KEY' });
+
+// Server-side operator client — unified checkout + unified shopper profile.
+const server = new Tybrite({ apiKey: 'tybrite_sk_live_OPERATOR_KEY' });
 ```
 
 <Info>
   Operator keys work on the **discovery and marketplace** surfaces (products, categories, search,
-  reviews, marketplace info, unified checkout, the unified profile, ad slots, and collections).
-  Per-merchant surfaces like promotions, gift cards, posts, recommendations, and per-merchant cart
-  writes reject an operator key with `403` — those belong to a single merchant's own store key.
+  reviews, marketplace info, unified checkout, the unified profile, ad slots, collections, and
+  cross-merchant trending recommendations). Per-merchant surfaces like promotions, gift cards, posts,
+  and per-merchant cart writes reject an operator key with `403` — those belong to a single
+  merchant's own store key.
 </Info>
+
+## SDK calls in marketplace mode — a quick map
+
+Most of the **standard GC SDK calls work unchanged** under an operator key — you build a marketplace
+storefront with the same `client.products` / `client.search` / `client.cartWishlist` / `client.returns`
+you already know. The table is what changes, and where a marketplace-only call replaces a standard one.
+Read this before the flows below.
+
+| SDK call | In marketplace mode | What changes |
+| --- | --- | --- |
+| `client.products.*`, `client.taxonomy.*`, `client.search.*` | ✅ same call | Returns the **aggregated** catalog across all merchants (each row carries `merchant_store_id`). Pass `storeId` to narrow to one merchant's shop page. |
+| `client.recommendations.getRecommendations` | ✅ same call | Cross-merchant rail; each item stamped with its `merchant_store_id`. |
+| `client.cartWishlist.*` | ✅ same call | Per-shopper cart/wishlist as usual (items carry `merchant_store_id`). |
+| `client.reviews.listReviews` | ⚠️ `storeId` required | An operator key must pass the merchant `storeId` (the product's owner). |
+| `client.returns.*` (createReturn / listReturns / getReturn / getStoreCredit / acceptReturnCredit / requestReturnRefund) | ⚠️ `storeId` required | A return belongs to **one merchant** — pass that merchant's `storeId` + the shopper's `xAuthToken`. There is **no** cross-merchant returns aggregate. |
+| `client.promotions.*` | ⚠️ `storeId` required, read/calc only | An operator key can **read/calculate** one promotion (`getPromotion` / `calculatePromotionDiscount` / `calculateBestPromotion`) with the merchant `storeId`, but **cannot list** promotions. |
+| `client.system.getStoreInfo` | ❌ use marketplace instead | Returns `403` for an operator key. Use `client.marketplace.getMarketplaceInfo()` (marketplace identity) or `getMarketplaceInfo({ storeId })` (one merchant's store info — same shape). |
+| Single-merchant `client.orders.createOrder` | ❌ use marketplace checkout | A marketplace basket spans merchants → use `client.marketplace.marketplaceCheckout(...)` (one payment, auto-split). Don't call `createOrder` per merchant. |
+| `client.giftCards.*`, `client.cms.*`, `client.customers.getCustomer` | ❌ per-merchant only | These are single-store surfaces — an operator key gets `403`. |
+| **Marketplace-only** (no standard equivalent) | `marketplaceCheckout`, `getMarketplaceCustomer` (unified profile, + `X-Customer-Token`), `getMarketplaceInfo`, `listMarketplaceCollections` / `getMarketplaceCollection`, `getAdSlot` / `logAdEvent` | These exist **only** in marketplace mode under an operator key. |
+
+The rule of thumb: **discovery + cart + recommendations are aggregated automatically; anything tied to one merchant (returns, reviews, promotions, store info) takes that merchant's `storeId`; and checkout / unified profile / collections / ads are marketplace-only.**
+
+## What's storefront API vs. operator back-office
+
+<Warning>
+  This page documents the **storefront / shopper** half of a marketplace — the calls a storefront
+  makes to render and transact. The **operator back-office** half — everything that *configures* the
+  marketplace — is **not** in the API. Do not emit API calls for it.
+
+  - **Storefront API (this page):** aggregated discovery, marketplace info, unified split checkout,
+    reading the unified shopper profile, reading curated collections, filling ad slots, firing ad
+    impression/click beacons, and per-merchant returns.
+  - **Operator / merchant back-office (NOT the API — done in admin):** curating collections, ad slot
+    / rate-card / booking management, setting commission rules, running payout batches, merchant
+    onboarding & application approval, and a merchant's Stripe Connect payout onboarding. There is
+    no public endpoint for any of these — they live in the operator's and merchants' admin.
+
+  The tell: if it *configures* the marketplace (who can sell, what commission, which ad runs, when a
+  payout pays), it's back-office. If it *renders or transacts the storefront*, it's the API.
+</Warning>
 
 ## 1. Aggregated discovery — combined, then narrowed
 
@@ -43,41 +99,40 @@ merchant. Each product row carries a `merchant_store_id` identifying the merchan
 the **same** `listProducts` call returns rows from **multiple** merchants.
 
 ```typescript
-const { products } = await client.products.listProducts({ limit: 20 });
+const { products } = await storefront.products.listProducts({ limit: 3 });
 ```
 
 ```json Response
 {
   "products": [
     {
-      "id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
-      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
-      "name": "4K Action Camera",
-      "price": 149,
-      "sale_price": 129,
-      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61"
-    },
-    {
-      "id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
-      "variant_id": "9cd6e472-de84-435c-be43-957b56682f43",
-      "name": "Trail Bottle 750ml",
-      "price": 24.99,
+      "product_id": "bb63bc9c-e39b-429a-a07b-0648a8edd677",
+      "name": "3-Piece Bar Table and Chairs Set with Storage Shelves and Footrests-Natural",
+      "category_name": "General",
+      "brand": "DirectDeals",
+      "variant_id": "c7d6321b-42b4-4ce5-9819-915e2ae26c7f",
+      "sku": "JV12094NA",
+      "price": 371.8,
       "sale_price": null,
-      "merchant_store_id": "a91c33e7-2f04-4b6a-8c19-77d2b5e90c41"
+      "stock": 0,
+      "display_currency": "USD",
+      "currency_symbol": "$",
+      "merchant_store_name": "Galactic Core Store",
+      "merchant_store_code": "GAL001",
+      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc"
     }
-  ],
-  "pagination": { "limit": 20, "next_cursor": null, "has_more": false }
+  ]
 }
 ```
 
-Two merchants in one page: the camera is sold by `ef7b07d3-…` (Galactic Test Store), the bottle by
-`a91c33e7-…` (Northwind Outfitters). To scope discovery to **one** merchant within the marketplace,
-narrow with `storeId` — the same call, now returning only that merchant's rows:
+Every row names the merchant that sells it (`merchant_store_id` + `merchant_store_name`), so a single
+page of results spans the whole marketplace. To scope discovery to **one** merchant within the
+marketplace, narrow with `storeId` — the same call, now returning only that merchant's rows:
 
 ```typescript
-const { products } = await client.products.listProducts({
-  storeId: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61',
-  limit: 20,
+const { products } = await storefront.products.listProducts({
+  storeId: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61', // merchant B (Galactic Test Store)
+  limit: 2,
 });
 ```
 
@@ -85,25 +140,73 @@ const { products } = await client.products.listProducts({
 {
   "products": [
     {
-      "id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
-      "variant_id": "e98631a9-7852-4fe8-8efe-988935d5922a",
+      "product_id": "de4aeb12-6621-4a3b-b83f-6ca493aeae6e",
       "name": "4K Action Camera",
+      "category_name": "Cameras & Photography",
+      "brand": "Pulsewave",
+      "variant_id": "b0302f76-3e39-4744-8401-33ef80c25a6a",
+      "sku": "ELEC-ACTIONCAM-01-de4a",
       "price": 149,
       "sale_price": 129,
+      "stock": 146,
+      "display_currency": "USD",
+      "currency_symbol": "$",
+      "merchant_store_name": "Galactic Test Store",
+      "merchant_store_code": "GTS001",
       "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61"
     }
-  ],
-  "pagination": { "limit": 20, "next_cursor": null, "has_more": false }
+  ]
 }
 ```
 
+Every row now carries `merchant_store_id: ef7b07d3-…` — only merchant B.
+
 <Tip>
-  `client.taxonomy.listCategories()` returns a deduped union of categories across merchants, and
-  `client.search.searchProducts({ q: 'wireless headphones' })` returns cross-merchant results — all
-  read-only, all operator-key. Reviews also work cross-merchant: `client.reviews.listReviews({
-  productId, storeId })` reads a merchant's approved reviews (for an operator key, `storeId` — the
-  merchant who owns the product — is required).
+  `storefront.taxonomy.listCategories()` returns a deduped union of categories across merchants, and
+  `storefront.search.searchProducts({ q: 'wireless headphones' })` returns cross-merchant results —
+  all read-only, all operator-key. Reviews also work cross-merchant:
+  `storefront.reviews.listReviews({ productId, storeId })` reads a merchant's approved reviews (for
+  an operator key, `storeId` — the merchant who owns the product — is required).
 </Tip>
+
+### Cross-merchant trending recommendations
+
+`type: 'trending'` recommendations called with the operator key surface a **cross-merchant** rail —
+each item is stamped with the `merchant_store_id` that sells it, so you can link straight through to
+the right merchant's product.
+
+```typescript
+const { recommendations } = await storefront.recommendations.getRecommendations({
+  requestBody: { type: 'trending', limit: 3 },
+});
+```
+
+```json Response
+{
+  "type": "trending",
+  "recommendations": [
+    {
+      "productId": "bb63bc9c-e39b-429a-a07b-0648a8edd677",
+      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+      "score": 1,
+      "reason": "Trending on the marketplace"
+    },
+    {
+      "productId": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "score": 0.5416666666666666,
+      "reason": "Trending on the marketplace"
+    },
+    {
+      "productId": "0a8d0f7c-1930-4c23-b636-489407e96f3c",
+      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+      "score": 0.5208333333333334,
+      "reason": "Trending on the marketplace"
+    }
+  ],
+  "fromCache": false
+}
+```
 
 ## 2. Marketplace info
 
@@ -112,56 +215,61 @@ tagline, contact, and whether unified checkout and commission are enabled. Opera
 single-store key gets `403` (it should call `getStoreInfo` instead).
 
 ```typescript
-const info = await client.marketplace.getMarketplaceInfo({});
+const info = await storefront.marketplace.getMarketplaceInfo({});
 ```
 
 ```json Response
 {
   "marketplace": true,
   "mode": "marketplace",
-  "name": "Galactic Market",
-  "logo_url": "https://cdn.example.com/marketplace-logo.png",
-  "primary_color": "#3B82F6",
-  "tagline": "Everything you need, from every merchant",
-  "support_email": "support@galacticmarket.example.com",
-  "description": "A curated marketplace of independent merchants.",
-  "website": "https://galacticmarket.example.com",
-  "phone": "+1-555-0100",
-  "address": "123 Market Street, San Francisco, CA",
+  "name": null,
+  "logo_url": null,
+  "primary_color": null,
+  "tagline": null,
+  "support_email": null,
+  "description": null,
+  "website": null,
+  "phone": null,
+  "address": null,
   "unified_checkout": true,
   "commission_enabled": true
 }
 ```
 
+The `marketplace`, `mode`, `unified_checkout`, and `commission_enabled` flags always come back; the
+branding fields (`name`, `logo_url`, `primary_color`, `tagline`, contact, address) are `null` until
+the operator sets them in their admin — render sensible fallbacks when they're absent.
+
 <Note>
   Pass `storeId` to get **one merchant's** full store info (same shape as a single-store
   `getStoreInfo`) — useful for a per-merchant "shop page":
-  `client.marketplace.getMarketplaceInfo({ storeId: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61' })`. The
-  merchant must be active in the marketplace, otherwise `404`.
+  `storefront.marketplace.getMarketplaceInfo({ storeId: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61' })`.
+  The merchant must be active in the marketplace, otherwise `404`.
 </Note>
 
 ## 3. Unified split checkout — a cart that spans two merchants
 
 The headline capability: a single shopper cart that spans **multiple merchants** checks out as one
-order with **one payment**. We carry the two merchants from step 1 forward into a single basket —
-the camera from `ef7b07d3-…` and the bottle from `a91c33e7-…`. Each line item names the merchant it
-belongs to (`merchant_store_id`); the marketplace validates the items, reserves stock, resolves
-commission **per merchant**, and starts a single payment for the whole basket.
+order with **one payment**. We carry both merchants from step 1 forward into a single basket — items
+from merchant **A** (Galactic Core Store) and merchant **B** (Galactic Test Store). Each line item
+names the merchant it belongs to (`merchant_store_id`); the marketplace validates the items, reserves
+stock per merchant, resolves commission **per merchant**, and starts **one** payment for the whole
+basket. This is a server-side call — use the **secret** operator client.
 
 ```typescript
-const checkout = await client.marketplace.marketplaceCheckout({
+const checkout = await server.marketplace.marketplaceCheckout({
   requestBody: {
     items: [
       {
-        product_id: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
-        variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a',
-        merchant_store_id: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61', // camera merchant
+        product_id: 'bb63bc9c-e39b-429a-a07b-0648a8edd677',
+        variant_id: 'c7d6321b-42b4-4ce5-9819-915e2ae26c7f',
+        merchant_store_id: '086e8d7f-b84d-41bc-8acd-3f5740ea61dc', // merchant A
         quantity: 1,
       },
       {
-        product_id: '715b8c10-eb11-4289-8c0e-2966e78cf9a5',
-        variant_id: '9cd6e472-de84-435c-be43-957b56682f43',
-        merchant_store_id: 'a91c33e7-2f04-4b6a-8c19-77d2b5e90c41', // bottle merchant
+        product_id: 'de4aeb12-6621-4a3b-b83f-6ca493aeae6e',
+        variant_id: 'b0302f76-3e39-4744-8401-33ef80c25a6a',
+        merchant_store_id: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61', // merchant B
         quantity: 1,
       },
     ],
@@ -177,58 +285,95 @@ const checkout = await client.marketplace.marketplaceCheckout({
 
 ```json Response
 {
-  "order_group_id": "44444444-4444-4444-4444-444444444444",
-  "group_number": "MKT-100042",
-  "payment_intent_id": "pi_3Pxxxxxxxxxxxx",
-  "client_secret": "pi_3Pxxxxxxxxxxxx_secret_yyyyyyyy",
+  "order_group_id": "6b636961-9d7d-419e-b0ea-a74daa707273",
+  "group_number": "MKT-2026-000036",
+  "payment_intent_id": "pi_3Tki...",
+  "client_secret": "pi_3Tki..._secret_...",
   "currency": "USD",
-  "subtotal": 153.99,
-  "total_amount": 153.99,
+  "subtotal": 564.8,
   "discount_total": 0,
   "operator_funded_discount": 0,
+  "total_amount": 564.8,
   "discount_breakdown": [],
   "merchant_breakdown": [
     {
-      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
-      "merchant_gross": 129.00,
+      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+      "gross_amount": 415.8,
       "discount_amount": 0,
-      "gross_amount": 129.00,
-      "commission_amount": 12.90,
-      "net_amount": 116.10,
-      "commission_rule_id": "7e6d5c4b-1234-5678-9abc-def012345678"
+      "merchant_gross": 415.8,
+      "operator_funded_discount": 0,
+      "commission_amount": 33.26,
+      "net_amount": 382.54,
+      "commission_rule_id": "5a243e94-83e6-48e4-8b42-2f3f4bc4c22c",
+      "promotion_id": null,
+      "gift_card_id": null,
+      "gift_card_code": null,
+      "gift_card_amount": 0,
+      "operator_promotion_id": null,
+      "reservation_ids": ["6ab3df5a-ad14-450d-a16a-d8280a3109cd"]
     },
     {
-      "merchant_store_id": "a91c33e7-2f04-4b6a-8c19-77d2b5e90c41",
-      "merchant_gross": 24.99,
+      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "gross_amount": 149,
       "discount_amount": 0,
-      "gross_amount": 24.99,
-      "commission_amount": 2.50,
-      "net_amount": 22.49,
-      "commission_rule_id": "9b1c2d3e-4567-89ab-cdef-0123456789ab"
+      "merchant_gross": 149,
+      "operator_funded_discount": 0,
+      "commission_amount": 11.92,
+      "net_amount": 137.08,
+      "commission_rule_id": "5a243e94-83e6-48e4-8b42-2f3f4bc4c22c",
+      "promotion_id": null,
+      "gift_card_id": null,
+      "gift_card_code": null,
+      "gift_card_amount": 0,
+      "operator_promotion_id": null,
+      "reservation_ids": ["cd9fd348-dabf-4fcf-beda-ca075f6098a0"]
     }
   ]
 }
 ```
 
-`merchant_breakdown` has **one entry per merchant** in the basket — gross, discount, commission, and
-net the marketplace resolved for each. There is still exactly **one** `client_secret`. **Once payment
-succeeds the order finalizes automatically**: it fans out into one child order per merchant, each
-merchant's net payout is split out, and stock is reduced. You don't make a second call.
+`merchant_breakdown` has **one entry per merchant** in the basket. There is still exactly **one**
+`client_secret`: the shopper pays `total_amount` once, on the storefront, and the marketplace takes
+care of splitting the money.
+
+### The commission math, concretely
+
+The operator earns a commission on each merchant's slice (here ~8%, set by the
+`commission_rule_id` the operator configured in their admin). Read it straight off the breakdown:
+
+| Merchant | `gross_amount` | `commission_amount` | `net_amount` |
+| --- | --- | --- | --- |
+| A — Galactic Core Store | $415.80 | $33.26 (8%) | $382.54 |
+| B — Galactic Test Store | $149.00 | $11.92 (8%) | $137.08 |
+| **Group total** | **$564.80** | **$45.18** | **$519.62** |
+
+For each merchant, `gross_amount − commission_amount = net_amount` (415.80 − 33.26 = 382.54), and the
+group's `total_amount` is the sum of the gross amounts — what the shopper pays in one payment. The
+operator keeps the summed commission; each merchant is owed their summed net.
+
+<Note>
+  Stock is **reserved** at checkout (each merchant slice gets its own `reservation_ids`) so concurrent
+  shoppers can't oversell the last units; if an item can't be held, the call returns
+  `400 insufficient_stock` and **no order or payment is created**. Marketplace-wide operator
+  promotions apply automatically and are not passed. If the payment provider can't be reached the
+  call returns `502 provider_error`.
+</Note>
 
 ### Applying a merchant's own discount to its slice
 
-Pass the optional `discounts` array to reduce **only one merchant's** subtotal. The response then
-carries a non-empty `discount_breakdown`, an `operator_funded_discount` total, and per-merchant
-`discount_amount` — the shape the schema example demonstrates:
+Pass the optional `discounts` array to reduce **only one merchant's** subtotal with that merchant's
+own promotion and/or gift card. The response then carries a non-empty `discount_breakdown`, an
+`operator_funded_discount` total, and per-merchant `discount_amount` — operator-funded promotions are
+attributed back to the operator, so you can see who paid for the discount:
 
 ```typescript
-const checkout = await client.marketplace.marketplaceCheckout({
+const checkout = await server.marketplace.marketplaceCheckout({
   requestBody: {
     items: [
       {
-        product_id: '11111111-1111-1111-1111-111111111111',
-        variant_id: '22222222-2222-2222-2222-222222222222',
-        merchant_store_id: '3f1a2b4c-1111-2222-3333-444455556666',
+        product_id: 'bb63bc9c-e39b-429a-a07b-0648a8edd677',
+        variant_id: 'c7d6321b-42b4-4ce5-9819-915e2ae26c7f',
+        merchant_store_id: '086e8d7f-b84d-41bc-8acd-3f5740ea61dc', // merchant A
         quantity: 2,
       },
     ],
@@ -237,7 +382,7 @@ const checkout = await client.marketplace.marketplaceCheckout({
     currency: 'USD',
     discounts: [
       {
-        merchant_store_id: '3f1a2b4c-1111-2222-3333-444455556666',
+        merchant_store_id: '086e8d7f-b84d-41bc-8acd-3f5740ea61dc',
         promotion_id: '8a7b6c5d-1234-5678-9abc-def012345678',
         gift_card_code: 'GC-XXXX-YYYY',
       },
@@ -246,54 +391,74 @@ const checkout = await client.marketplace.marketplaceCheckout({
 });
 ```
 
-```json Response
+The `discounts` array is keyed by `merchant_store_id`; each entry's `promotion_id` and/or
+`gift_card_code` apply to **that merchant's** portion only. In the response, `discount_breakdown`
+gains one entry per discounted merchant (`merchant_discount`, `gift_card_amount`, and the
+`operator_funded_discount` share), `discount_total` is the basket-wide reduction, and that merchant's
+`merchant_breakdown` entry shows its `discount_amount` and reduced `gross_amount`.
+
+## 4. Fulfillment → per-merchant child orders
+
+The shopper completes the single payment with the `client_secret` from step 3. **You do not call a
+fulfill endpoint** — fulfillment is driven internally off the payment-success event. The observable
+outcome is what you build against:
+
+- The paid order group splits into **one child order per merchant** — each lands in that merchant's
+  own order list (with its `merchant_net_amount` and `commission_amount`), so each merchant fulfills
+  and ships only their own items.
+- The operator's split ledger records the gross / commission / net per merchant (the same numbers
+  from the `merchant_breakdown`), and each merchant's net is queued for payout to their connected
+  Stripe account.
+- The group flips to `paid`.
+
+The internal fulfillment step produces this shape (shown so you know exactly what landed — the
+storefront never calls it):
+
+```json
 {
-  "order_group_id": "44444444-4444-4444-4444-444444444444",
-  "group_number": "MKT-100042",
-  "payment_intent_id": "pi_3Pxxxxxxxxxxxx",
-  "client_secret": "pi_3Pxxxxxxxxxxxx_secret_yyyyyyyy",
-  "currency": "USD",
-  "subtotal": 245.00,
-  "total_amount": 230.00,
-  "discount_total": 15.00,
-  "operator_funded_discount": 5.00,
-  "discount_breakdown": [
+  "message": "Marketplace order fulfilled",
+  "order_group_id": "6b636961-9d7d-419e-b0ea-a74daa707273",
+  "children": [
     {
-      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
-      "merchant_discount": 10.00,
-      "gift_card_amount": 0.00,
-      "operator_funded_discount": 5.00
+      "store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+      "online_order_id": "ed385518-9585-4ab8-9b77-e7b8f61f2dde",
+      "net_amount": 382.54
+    },
+    {
+      "store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "online_order_id": "44afa54a-9509-4cf7-a75f-e9c2a47dcdbb",
+      "net_amount": 137.08
     }
   ],
-  "merchant_breakdown": [
-    {
-      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
-      "merchant_gross": 245.00,
-      "discount_amount": 15.00,
-      "gross_amount": 230.00,
-      "commission_amount": 23.00,
-      "net_amount": 207.00,
-      "commission_rule_id": "7e6d5c4b-1234-5678-9abc-def012345678"
-    }
+  "warnings": [
+    "transfer (086e8d7f-b84d-41bc-8acd-3f5740ea61dc): Your destination account needs to have at least one of the following capabilities enabled: transfers, crypto_transfers, or legacy_payments.",
+    "transfer (ef7b07d3-424b-4b03-b1d4-30a2d2073b61): merchant has no connected payout account"
   ]
 }
 ```
 
+Each `children` entry maps a merchant to the `online_order_id` created in **that merchant's** order
+list, carrying the same `net_amount` from the checkout breakdown ($382.54 for A, $137.08 for B — the
+two nets that summed to $519.62 above).
+
 <Note>
-  Stock is **reserved** at checkout so concurrent shoppers can't oversell the last units; if an item
-  can't be held, the call returns `400 insufficient_stock` and **no order or payment is created**.
-  Marketplace-wide operator promotions apply automatically and are not passed. If the payment
-  provider can't be reached the call returns `502 provider_error`.
+  **Payout depends on a connected merchant account.** The `warnings` array reports the real Stripe
+  Connect transfer state per merchant. A merchant who hasn't finished **Stripe Connect payout
+  onboarding** (done in the merchant's admin, not via the API) has **no connected payout account**,
+  so the transfer of their net can't be made yet — their child order is still created and the shopper
+  is still charged, but their funds wait until they connect a payout account. An empty `warnings`
+  array means every merchant's transfer went through.
 </Note>
 
-## 4. Unified shopper profile
+## 5. Unified shopper profile
 
 Once the shopper from step 3 has bought from more than one merchant, read their **unified profile** —
 identity, the merchants they have a relationship with, and their full cross-merchant order history —
-in one call. Sign the shopper in first, then pass that session token in `xCustomerToken`.
+in one call. Sign the shopper in first, then pass that session token in `xCustomerToken`. This reads
+the shopper's own data, so use the **secret** operator client server-side.
 
 ```typescript
-const profile = await client.marketplace.getMarketplaceCustomer({
+const profile = await server.marketplace.getMarketplaceCustomer({
   xCustomerToken: shopperSessionToken, // from the shopper's login response
 });
 ```
@@ -314,8 +479,8 @@ const profile = await client.marketplace.getMarketplaceCustomer({
   },
   "stores": [
     {
-      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
-      "merchant_store_name": "Galactic Test Store",
+      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+      "merchant_store_name": "Galactic Core Store",
       "affiliation_date": "2026-05-02T14:11:09.220+00:00",
       "first_purchase_date": "2026-05-09T18:42:00.000+00:00",
       "last_purchase_date": "2026-06-18T10:15:30.000+00:00",
@@ -325,8 +490,8 @@ const profile = await client.marketplace.getMarketplaceCustomer({
       "preferred_store": true
     },
     {
-      "merchant_store_id": "a91c33e7-2f04-4b6a-8c19-77d2b5e90c41",
-      "merchant_store_name": "Northwind Outfitters",
+      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "merchant_store_name": "Galactic Test Store",
       "affiliation_date": "2026-05-21T09:03:55.110+00:00",
       "first_purchase_date": "2026-05-21T09:30:00.000+00:00",
       "last_purchase_date": "2026-05-21T09:30:00.000+00:00",
@@ -340,8 +505,8 @@ const profile = await client.marketplace.getMarketplaceCustomer({
     {
       "id": "e7d28e96-e9e0-45ce-be28-51812f63eb4b",
       "order_number": "ORD-1781955473455",
-      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
-      "merchant_store_name": "Galactic Test Store",
+      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+      "merchant_store_name": "Galactic Core Store",
       "order_status": "pending",
       "payment_status": "paid",
       "total_amount": 603.99,
@@ -361,14 +526,17 @@ spend totals), and `orders` is their order history across every merchant, newest
 <Note>
   **Returns are per-merchant.** A return always belongs to the merchant whose order it is — there's
   no marketplace-wide return. A shopper lodges and tracks a return against the specific merchant
-  order, and that merchant approves/processes it. See
-  [Returning customer](/workflows/returning-customer) for the returns flow.
+  order, so the return call **requires that merchant's `storeId`**, and that merchant approves and
+  processes it in their own admin. See [Returning customer](/workflows/returning-customer) for the
+  returns flow.
 </Note>
 
-## 5. Sponsored placements and curated sections
+## 6. Sponsored placements and curated sections
 
 The marketplace operator monetizes the storefront with **sponsored ad slots** and merchandises it
-with **curated collections**. Both are operator-key, read-only on the render side.
+with **curated collections**. Both are operator-key, read-only on the render side. The *bookings,
+rate cards, and curation* behind them are operator back-office (see the boundary callout above) —
+the storefront only **reads** the resolved placements and **fires beacons**.
 
 ### Fill an ad slot
 
@@ -378,7 +546,7 @@ and **curated fallback** placements (operator hand-picks, not labelled). Pass `c
 category or search term.
 
 ```typescript
-const slot = await client.marketplace.getAdSlot({
+const slot = await storefront.marketplace.getAdSlot({
   slotKey: 'home_hero',
   limit: 5,
 });
@@ -388,18 +556,28 @@ const slot = await client.marketplace.getAdSlot({
 {
   "slot": "home_hero",
   "context": null,
+  "placements": []
+}
+```
+
+An empty `placements` array means there's no active booking (sponsored or curated) for the slot right
+now — fall back to your own organic content. When a placement is live it looks like this:
+
+```json
+{
+  "slot": "home_hero",
+  "context": null,
   "placements": [
     {
       "booking_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
       "placement_kind": "product",
       "product_ids": [
-        "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
-        "9cd6e472-de84-435c-be43-957b56682f43"
+        "bb63bc9c-e39b-429a-a07b-0648a8edd677"
       ],
       "creative": {
-        "headline": "Summer audio sale",
-        "image_url": "https://cdn.example.com/ads/acme-hero.png",
+        "headline": "Summer sale",
+        "image_url": "https://cdn.example.com/ads/hero.png",
         "cta": "Shop now"
       },
       "sponsored": true,
@@ -418,7 +596,7 @@ informational; the storefront doesn't act on it.
 
 ```typescript
 // When the placement scrolls into view:
-const impression = await client.marketplace.logAdEvent({
+const impression = await storefront.marketplace.logAdEvent({
   requestBody: {
     booking_id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
     event_type: 'impression',
@@ -428,19 +606,15 @@ const impression = await client.marketplace.logAdEvent({
 // → { recorded: true, billable: true }
 
 // When the shopper clicks it:
-const click = await client.marketplace.logAdEvent({
+const click = await storefront.marketplace.logAdEvent({
   requestBody: {
     booking_id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
     event_type: 'click',
-    product_id: '715b8c10-eb11-4289-8c0e-2966e78cf9a5',
+    product_id: 'bb63bc9c-e39b-429a-a07b-0648a8edd677',
     session_id: 'sess_abc123',
   },
 });
 // → { recorded: true, billable: true }
-```
-
-```json Response
-{ "recorded": true, "billable": true }
 ```
 
 <Note>
@@ -452,13 +626,22 @@ const click = await client.marketplace.logAdEvent({
 ### Curated merchandising collections
 
 List the operator's curated sections ("Trending now", "Featured shops"), then resolve one section's
-members.
+members. Curation itself is operator back-office; the storefront only reads the result.
 
 ```typescript
-const { collections } = await client.marketplace.listMarketplaceCollections({});
+const { collections } = await storefront.marketplace.listMarketplaceCollections({});
 ```
 
 ```json Response
+{
+  "collections": []
+}
+```
+
+An empty `collections` array means the operator hasn't curated any sections yet. When sections exist,
+each carries its `slug`, `name`, `placement_kind`, and homepage flags:
+
+```json
 {
   "collections": [
     {
@@ -481,8 +664,10 @@ const { collections } = await client.marketplace.listMarketplaceCollections({});
 }
 ```
 
+Resolve one section's members with its slug:
+
 ```typescript
-const section = await client.marketplace.getMarketplaceCollection({
+const section = await storefront.marketplace.getMarketplaceCollection({
   slug: 'trending-now',
   limit: 12,
 });
@@ -497,12 +682,12 @@ const section = await client.marketplace.getMarketplaceCollection({
   "curated": true,
   "items": [
     {
-      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
-      "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5"
+      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+      "product_id": "bb63bc9c-e39b-429a-a07b-0648a8edd677"
     },
     {
-      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
-      "product_id": "9cd6e472-de84-435c-be43-957b56682f43"
+      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa"
     }
   ]
 }
@@ -520,5 +705,3 @@ const section = await client.marketplace.getMarketplaceCollection({
 - Shoppers can [review products and message merchants](/workflows/reviews-and-messaging); both work
   cross-merchant with an operator key.
 - Onboard merchant catalogs into the marketplace with [Catalog sync](/workflows/catalog-sync).
-</content>
-</invoke>
