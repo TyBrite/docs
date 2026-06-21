@@ -88,6 +88,39 @@ Once you've learned them on one endpoint, they apply to all:
 | `409` | Conflict (duplicate, or an idempotency key reused with a different body) |
 | `429` | Rate limit exceeded |
 
+## Products and variants — which ID to send where
+
+A **product** is the catalog entry a shopper browses (the "Cotton Hoodie"). A **variant** is a
+specific buyable SKU of it (the "Cotton Hoodie / Navy / M"). Every product has at least one
+variant, and one is marked the **default**. Two ID types follow from this — `product_id` and
+`variant_id` — and the rule is consistent once you see it:
+
+- **Money and inventory are variant-grained.** A shopper buys a *specific* SKU, so anything that
+  touches a cart, the stock count, or what gets charged uses **`variant_id`**.
+- **Catalog and discovery are product-grained.** Browsing, recommendations, and reviews are about
+  the *product*, so they use **`product_id`**.
+
+Carry the `variant_id` you put in the cart all the way through to the order — don't drop down to
+`product_id` at checkout, or you may order the default variant instead of the one the shopper chose.
+
+| Endpoint | `product_id` | `variant_id` | Send |
+| :--- | :---: | :---: | :--- |
+| `cart.addCartItem`, `cart.addWishlistItem` | — | ✅ required | **variant_id** — you're adding a specific SKU. |
+| `marketplace.marketplaceCheckout` (items) | — | ✅ required | **variant_id** — same, across merchants. |
+| `orders.createOrder` (items) | optional | ✅ preferred | **variant_id** preferred (the chosen SKU). `product_id` alone is accepted and resolves the product's **default** variant. Send at least one; if both, `variant_id` wins. |
+| `events.record` | ✅ either | ✅ either | **Either** — pass whichever you have; the server resolves the product from the variant. |
+| `reviews.submitReview` | ✅ required | optional | **product_id** — reviews are product-level. `variant_id` is an optional pin; it is `null` on most reviews and that is expected, not a missing value. |
+| `recommendations.getRecommendations` | ✅ (seed) | — | **product_id** — the seed product to find related items for. |
+| `returns.createReturn` (items) | — | — | Neither — return items reference the original `order_item_id`, not a product or variant id. |
+| `products.getProduct`, `pricing.*` | ✅ accepts both | ✅ accepts both | Pass **either**; the catalog read resolves it. A multi-variant product returns a `variants[]` array, each entry carrying its own `variant_id` — read the chosen one from there. |
+
+<Note>
+  **Gotcha — `product_specifications` are keyed by variant.** A product's published specifications
+  are per-variant: each spec row references a `variant_id` (despite some internal column naming).
+  If a product has multiple variants, each can carry its own specifications. When you read specs off
+  a product detail, they belong to the specific variant, not the product as a whole.
+</Note>
+
 ## Performance & rate limits
 
 Reads are served through a **multi-tier edge cache**, so catalog, pricing, and store-info calls

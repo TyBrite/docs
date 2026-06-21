@@ -179,6 +179,14 @@ We'll build up the **same order three ways** so you see every shape: the base or
 cart with a promotion, then a promotion *and* a gift card. Each one carries the 2 Galaxy Watches
 from the cart in step 2 forward.
 
+<Note>
+  **Carry the `variant_id` from the cart straight into the order line.** Order items take
+  `variant_id` (preferred — the exact SKU the shopper picked) or `product_id` (which resolves the
+  product's *default* variant). Send the same `variant_id` you added to the cart; if you send both,
+  `variant_id` wins. Dropping to `product_id` at checkout can silently order the wrong variant on a
+  multi-variant product. See [Products and variants](/concepts#products-and-variants).
+</Note>
+
 ### 7a. The base order
 
 ```typescript
