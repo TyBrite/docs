@@ -397,6 +397,20 @@ gains one entry per discounted merchant (`merchant_discount`, `gift_card_amount`
 `operator_funded_discount` share), `discount_total` is the basket-wide reduction, and that merchant's
 `merchant_breakdown` entry shows its `discount_amount` and reduced `gross_amount`.
 
+<Note>
+  **The server is the price authority — you send identifiers, never amounts.** Just like the
+  single-store checkout, the multi-merchant checkout recomputes every item price from the catalog and
+  resolves discounts itself: a `discounts` entry only *names* a `promotion_id` / `gift_card_code`, and
+  the server independently computes the real discount that promotion or gift card grants (plus the
+  operator-funded share), every `gross_amount` / `discount_amount` / `merchant_gross` / commission, and
+  the one payment total — then charges exactly that. A named discount that doesn't validate (expired,
+  ineligible, wrong merchant) returns `400 discount_invalid` rather than being silently applied. There is
+  no client-supplied `discount_amount` or per-item price in the request, so a manipulated basket can't
+  lower what's charged or inflate a merchant's payout. The resolved breakdown is held server-side and
+  used verbatim to finalize the per-merchant child orders after payment succeeds — nothing sent after
+  checkout can change it.
+</Note>
+
 ## 4. Fulfillment → per-merchant child orders
 
 The shopper completes the single payment with the `client_secret` from step 3. **You do not call a
