@@ -271,17 +271,41 @@ const { data: myReturns } = await storefront.returns.listReturns({
 }
 ```
 
-## 6. Accept a store-credit offer
+## 6. The resolution branches: take store credit OR request a refund
 
-Instead of a cash refund, a merchant can offer **store credit** as the return resolution. When they
-do, the return's `credit_offer.status` flips to `offered` with an `amount`, and the shopper accepts
-it with `acceptReturnCredit`. Galactic Core issues the credit to the customer's balance.
+When the merchant reviews the return, they can offer **store credit** instead of a cash refund. The
+return's `credit_offer.status` flips to `offered`/`pending` with an `amount`, and now the shopper
+**chooses one of two paths**. Both run on the **publishable** client + session token.
+
+First, check the balance *before* any resolution — a brand-new shopper has nothing yet:
+
+```typescript
+const { data: before } = await storefront.returns.getStoreCredit({
+  xAuthToken: session.access_token,
+});
+// before.balance === 0
+```
+
+```json Response
+{ "data": { "balance": 0, "currency": null } }
+```
+
+<Note>
+  `currency` is `null` until the customer has a credit balance — there's no currency to report on an
+  empty wallet. It becomes the store currency (`"USD"`) once credit is issued, as you'll see below.
+</Note>
+
+### Path A — accept the store credit
+
+The shopper takes the credit with `acceptReturnCredit`. Galactic Core issues it to their balance and
+returns the new credit record.
 
 ```typescript
 const { data: credit } = await storefront.returns.acceptReturnCredit({
   id: '75eef130-2aba-414b-b6ef-3c19b71205b6',
   xAuthToken: session.access_token,
 });
+// credit.amount === 24.95 → now on the customer's balance
 ```
 
 ```json Response
@@ -290,10 +314,10 @@ const { data: credit } = await storefront.returns.acceptReturnCredit({
 }
 ```
 
-Check the running balance any time with `getStoreCredit`:
+Read the balance *after* accepting — it's now populated, and `currency` is set:
 
 ```typescript
-const { data: balance } = await storefront.returns.getStoreCredit({
+const { data: after } = await storefront.returns.getStoreCredit({
   xAuthToken: session.access_token,
 });
 ```
@@ -302,12 +326,38 @@ const { data: balance } = await storefront.returns.getStoreCredit({
 { "data": { "balance": 24.95, "currency": "USD" } }
 ```
 
+### Path B — decline the credit and request a cash refund instead
+
+If the shopper would rather have their money back, they decline the offer with `requestReturnRefund`.
+The return moves to `refund_requested` and the merchant handles the payout outside this API. (This is
+only valid while a store-credit offer is pending; otherwise it returns `409`.)
+
+```typescript
+const { data: refund } = await storefront.returns.requestReturnRefund({
+  id: '75eef130-2aba-414b-b6ef-3c19b71205b6',
+  xAuthToken: session.access_token,
+});
+// refund.status === 'refund_requested' → no store credit issued; balance stays 0
+```
+
+```json Response
+{
+  "data": { "status": "refund_requested" }
+}
+```
+
+<Note>
+  These two are mutually exclusive on the same offer — the shopper takes **either** the credit
+  (Path A) **or** the refund (Path B), not both. The rest of this page follows **Path A** (the
+  shopper kept the $24.95 credit) so we can spend it on the next order.
+</Note>
+
 ## 7. Spend the credit on the next order
 
-On the shopper's next checkout, apply their store credit at order creation: set
+On the shopper's next checkout, apply the **$24.95** they kept in Path A at order creation: set
 `apply_store_credit: true` on the order body (optionally cap it with `store_credit_amount`). The
 amount actually applied comes back as `store_credit_applied`. This runs on your server — order
-creation is a secret-key, HMAC-signed call (see [Storefront checkout](/workflows/storefront-checkout#6-place-the-order-server-signed)
+creation is a secret-key, HMAC-signed call (see [Storefront checkout](/workflows/storefront-checkout#7-place-the-order-server-signed)
 for the signing recipe).
 
 ```typescript
@@ -330,6 +380,29 @@ const { order } = await server.orders.createOrder({
 });
 // order.store_credit_applied → the credit Galactic Core deducted toward this order
 ```
+
+```json Response
+{
+  "order": {
+    "id": "b2f7e1a4-9c33-4d80-8a6e-51c0d9e7f2a1",
+    "order_number": "ORD-1781955480500",
+    "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "subtotal": 299,
+    "shipping_amount": 5.99,
+    "total_amount": 304.99,
+    "currency": "USD",
+    "payment_status": "pending"
+  },
+  "store_credit_applied": 24.95
+}
+```
+
+<Note>
+  `store_credit_applied` is the documented effect of `apply_store_credit: true` — the amount of the
+  customer's balance Galactic Core spent against this order (the example value mirrors the $24.95
+  issued in Path A). This field is still being finalized in live verification; treat the field name
+  and meaning as the contract.
+</Note>
 
 <Tip>
   Store credit is deducted from the order total automatically — you don't move money yourself. The

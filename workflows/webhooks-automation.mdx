@@ -1,12 +1,17 @@
 ---
 title: "Webhooks & Automation"
-description: "React to commerce events in real time instead of polling — register an endpoint, verify deliveries cryptographically, and handle order.paid end to end."
+description: "React to commerce events in real time instead of polling — register an endpoint, read its health, verify deliveries cryptographically, test (success AND failure), and handle the auto-disable case."
 ---
 
 Webhooks let your systems **react to commerce events the moment they happen** — a new order, a
 successful payment, a completed catalog sync — instead of polling the API on a timer. You register an
 HTTPS endpoint, subscribe it to the events you care about, and Galactic Core POSTs a signed envelope
 to it on every matching event.
+
+This page follows **one endpoint through its whole life** and shows every shape the integration hits —
+not just the happy path: create it (and capture the one-time secret), read its health, verify a
+delivery, test it both when it **succeeds** and when it **fails**, watch it auto-disable after
+repeated failures, and handle `order.paid` end to end.
 
 All webhook management is **secret-key only** (`sk`). A publishable key returns `403`. These calls
 run on your server.
@@ -54,15 +59,15 @@ const { webhook_endpoint } = await server.webhooks.createWebhookEndpoint({
 <Warning>
   The **create** response is the only one that ever includes `signing_secret`. `getWebhookEndpoint`
   and `listWebhookEndpoints` deliberately omit it — there is no way to read it back. Capture it at
-  creation.
+  creation. (The mirror image is also true: create has **no** health fields or `delivery_stats`;
+  those only appear on get/list — see step 2.)
 </Warning>
 
 ## 2. List and inspect endpoints (and their health)
 
 `listWebhookEndpoints` returns every endpoint with its **delivery-health fields** —
-`last_success_at`, `last_failure_at`, `consecutive_failures`, and `disabled_reason`. (Note the
-mirror-image: these health fields appear on list/get but **not** on the create response, while
-`signing_secret` appears **only** on create.)
+`last_success_at`, `last_failure_at`, `consecutive_failures`, `disabled_reason`, and `disabled_at`.
+A freshly created endpoint has them all at their zero state (`null` / `0`).
 
 ```typescript
 const { webhook_endpoints } = await server.webhooks.listWebhookEndpoints();
@@ -91,23 +96,92 @@ const { webhook_endpoints } = await server.webhooks.listWebhookEndpoints();
 }
 ```
 
-`getWebhookEndpoint` adds aggregate `delivery_stats` for a single endpoint:
+`getWebhookEndpoint` returns the same health fields and adds aggregate `delivery_stats` for a single
+endpoint:
 
 ```typescript
 const { webhook_endpoint } = await server.webhooks.getWebhookEndpoint({
   id: 'ca8e7b1e-86e4-46a3-a716-eab9e5ffc168',
 });
-// → webhook_endpoint.delivery_stats === { total: 0, successful: 0, failed: 0 }
 ```
 
-<Note>
-  Failed deliveries are retried automatically with exponential backoff. If an endpoint fails 20
-  deliveries in a row, Galactic Core disables it (`enabled: false`) and stamps a `disabled_reason`.
-  Re-enable it once it's healthy by patching `enabled: true` — that also resets the failure counter:
-  `server.webhooks.updateWebhookEndpoint({ id, requestBody: { enabled: true } })`.
-</Note>
+```json Response
+{
+  "webhook_endpoint": {
+    "id": "ca8e7b1e-86e4-46a3-a716-eab9e5ffc168",
+    "store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+    "url": "https://yourapp.com/webhooks/tybrite",
+    "events": ["order.created", "order.paid", "payment.succeeded"],
+    "enabled": true,
+    "metadata": {},
+    "last_success_at": null,
+    "last_failure_at": null,
+    "consecutive_failures": 0,
+    "disabled_reason": null,
+    "disabled_at": null,
+    "created_at": "2026-06-20T11:30:48.673+00:00",
+    "updated_at": "2026-06-20T11:30:48.673+00:00",
+    "delivery_stats": { "total": 0, "successful": 0, "failed": 0 }
+  }
+}
+```
 
-## 3. The event envelope
+**Create vs. get — the field map at a glance:**
+
+| Field | `createWebhookEndpoint` | `getWebhookEndpoint` / `listWebhookEndpoints` |
+| --- | --- | --- |
+| `signing_secret` | **yes (once)** | no |
+| `last_success_at`, `consecutive_failures`, `disabled_reason`, … | no | **yes** |
+| `delivery_stats` | no | **get only** |
+
+## 3. Health degradation and auto-disable
+
+Failed deliveries are retried automatically with exponential backoff. Each failure bumps
+`consecutive_failures` and stamps `last_failure_at`; a success resets the counter. If an endpoint
+fails **20 deliveries in a row**, Galactic Core disables it — `enabled` flips to `false`, a
+`disabled_reason` is stamped, and `disabled_at` is set. From then on it receives nothing.
+
+A disabled endpoint reads back like this:
+
+```typescript
+const { webhook_endpoint } = await server.webhooks.getWebhookEndpoint({
+  id: 'ca8e7b1e-86e4-46a3-a716-eab9e5ffc168',
+});
+```
+
+```json Response
+{
+  "webhook_endpoint": {
+    "id": "ca8e7b1e-86e4-46a3-a716-eab9e5ffc168",
+    "store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+    "url": "https://yourapp.com/webhooks/tybrite",
+    "events": ["order.created", "order.paid", "payment.succeeded"],
+    "enabled": false,
+    "metadata": {},
+    "last_success_at": "2026-06-18T08:12:00.000+00:00",
+    "last_failure_at": "2026-06-20T11:45:10.220+00:00",
+    "consecutive_failures": 20,
+    "disabled_reason": "auto_disabled_after_20_consecutive_failures",
+    "disabled_at": "2026-06-20T11:45:10.220+00:00",
+    "created_at": "2026-06-20T11:30:48.673+00:00",
+    "updated_at": "2026-06-20T11:45:10.220+00:00",
+    "delivery_stats": { "total": 42, "successful": 22, "failed": 20 }
+  }
+}
+```
+
+Once your handler is healthy again, re-enable it by patching `enabled: true` — that also resets the
+failure counter and clears `disabled_reason`:
+
+```typescript
+const { webhook_endpoint } = await server.webhooks.updateWebhookEndpoint({
+  id: 'ca8e7b1e-86e4-46a3-a716-eab9e5ffc168',
+  requestBody: { enabled: true },
+});
+// → webhook_endpoint.enabled === true, consecutive_failures === 0, disabled_reason === null
+```
+
+## 4. The event envelope
 
 Every delivery is a POST of the same envelope shape. The `data.object` holds the resource that
 triggered the event; the top-level fields tell you how to handle it:
@@ -140,7 +214,30 @@ Here's a real `order.created` envelope as it lands in your handler (lifted from 
 }
 ```
 
-## 4. Verify the signature in your handler
+When that same order's payment confirms, an `order.paid` envelope for the **same** order id follows —
+identical envelope shape, different `type`:
+
+```json
+{
+  "id": "evt_1781955479610_z8k2mq1",
+  "type": "order.paid",
+  "api_version": "v1",
+  "livemode": true,
+  "created_at": "2026-06-20T11:38:00.610Z",
+  "data": {
+    "object": {
+      "id": "e7d28e96-e9e0-45ce-be28-51812f63eb4b",
+      "customer_id": "8c958f7c-918f-488a-a7cc-71497f677a53",
+      "order_number": "ORD-1781955473455",
+      "order_status": "pending",
+      "payment_status": "paid",
+      "total_amount": 603.99
+    }
+  }
+}
+```
+
+## 5. Verify the signature in your handler
 
 This is **your** server code, so it's free to name your own stack. Galactic Core signs every delivery
 and sends the signature in the `X-Tybrite-Signature` header as `t=<timestamp>,v1=<hex hmac>`.
@@ -180,13 +277,16 @@ app.post('/webhooks/tybrite', express.raw({ type: 'application/json' }), (req, r
 
 <Tip>
   Acknowledge fast (`200` immediately) and process asynchronously. A slow handler causes timeouts,
-  which count as delivery failures and push the endpoint toward auto-disable.
+  which count as delivery failures and push the endpoint toward auto-disable (step 3).
 </Tip>
 
-## 5. Test, audit, and retry deliveries
+## 6. Test, audit, and retry deliveries
 
 **Send a test event** to verify connectivity and your signature check end to end. The payload carries
-`test: true` and placeholder data — your handler should no-op on it (don't fulfil or charge).
+`test: true` and placeholder data — your handler should no-op on it (don't fulfil or charge). The
+response reports the actual `status_code` your endpoint returned.
+
+When your handler answers `200`, the test succeeds:
 
 ```typescript
 const test = await server.webhooks.sendTestWebhookEvent({
@@ -203,6 +303,21 @@ const test = await server.webhooks.sendTestWebhookEvent({
   "endpoint_url": "https://yourapp.com/webhooks/tybrite",
   "status_code": 200,
   "response_body": "{\"received\":true,\"event_id\":\"evt_test_1781955051835_uuib0s8\"}"
+}
+```
+
+When your endpoint is down or rejects the request, the **same call** comes back with `success: false`
+and the failing `status_code` — this is what a broken endpoint looks like, and it's how a run of
+these eventually trips the auto-disable in step 3:
+
+```json Response
+{
+  "success": false,
+  "event_id": "evt_test_1781955052910_h3p9wxa",
+  "event_type": "order.created",
+  "endpoint_url": "https://yourapp.com/webhooks/tybrite",
+  "status_code": 500,
+  "response_body": "Internal Server Error"
 }
 ```
 
@@ -244,8 +359,13 @@ const { webhook_events } = await server.webhooks.listWebhookEvents({ limit: 10, 
 }
 ```
 
+<Tip>
+  Add `environment: 'sandbox'` to see only test-key events, or `'production'` for live ones — the
+  same filter the `livemode` flag reflects on each envelope.
+</Tip>
+
 **Manually re-deliver** an event to every enabled, subscribed endpoint — each retry is logged as a
-new attempt:
+new attempt. `retried` counts how many endpoints were hit, and `results[]` reports each one's outcome:
 
 ```typescript
 const retry = await server.webhooks.retryWebhookEvent({ id: 'evt_1781955476025_lp1jafe' });
@@ -262,7 +382,7 @@ const retry = await server.webhooks.retryWebhookEvent({ id: 'evt_1781955476025_l
 }
 ```
 
-## 6. Handling `order.paid` end to end
+## 7. Handling `order.paid` end to end
 
 Here's the important mental model: **you do not patch the order to `paid` from the webhook.** When a
 payment confirms, Galactic Core already marks the order paid, reduces stock, books the sale, and
@@ -271,7 +391,7 @@ systems can react** — push the order into your ERP, send a custom confirmation
 analytics warehouse, notify a fulfilment partner.
 
 ```typescript
-// Inside your verified handler (after the signature check in step 4):
+// Inside your verified handler (after the signature check in step 5):
 const event = JSON.parse(rawBody);
 
 if (event.type === 'order.paid' && event.livemode) {
@@ -305,3 +425,5 @@ Subscribe to any of these (or `["*"]` for everything):
 - Pair `feed.sync.completed` with the inbound importer in [Catalog Sync](/workflows/catalog-sync) to
   close the loop on scheduled syncs.
 - See where `order.paid` comes from in the [Storefront checkout](/workflows/storefront-checkout) flow.
+</content>
+</invoke>
