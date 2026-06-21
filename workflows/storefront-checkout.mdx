@@ -12,6 +12,8 @@ card — so you see every response shape and the two failure variants you'll act
 
 ## 1. Browse the catalog
 
+Start with a plain list, then narrow and trim it the way a real grid does.
+
 ```typescript
 const { products } = await storefront.products.listProducts({ limit: 20 });
 ```
@@ -34,6 +36,46 @@ const { products } = await storefront.products.listProducts({ limit: 20 });
   ],
   "pagination": { "limit": 20, "next_cursor": "MjAyNi0wNi0xOVQyMDow...", "has_more": true }
 }
+```
+
+**Trim the payload with sparse fieldsets.** A grid needs a few columns, not the full product — pass
+`fields` to fetch only those and keep the response small (faster lists, less to render):
+
+```typescript
+const { products } = await storefront.products.listProducts({
+  limit: 20,
+  fields: 'id,name,price,sale_price,media',
+});
+// Each product now carries only those keys. Conversely, full: true returns the
+// complete object (media, specifications, every variant) for a product detail page.
+```
+
+<Note>
+  `fields` accepts a fixed allowlist of column names (e.g. `id`, `name`, `price`, `sale_price`,
+  `media`, `thumbnail_url`, `category_name`, `stock`) — **not** arbitrary keys. An unknown name
+  returns `400 invalid_request` ("Invalid field names: …"). `id` and `product_id` are
+  interchangeable.
+</Note>
+
+**Page through with the cursor.** Lists are cursor-based — feed `next_cursor` back as `cursor` until
+`has_more` is false (don't compute offsets):
+
+```typescript
+let cursor: string | undefined;
+do {
+  const page = await storefront.products.listProducts({ limit: 50, cursor });
+  // …render page.products…
+  cursor = page.pagination.has_more ? page.pagination.next_cursor : undefined;
+} while (cursor);
+```
+
+**Filter to a category** (build a category page) — combine with `subcategoryId` for hierarchy:
+
+```typescript
+const { products } = await storefront.products.listProducts({
+  categoryId: '…category-uuid…',
+  limit: 20,
+});
 ```
 
 <Tip>
@@ -77,6 +119,60 @@ const cart = await storefront.cartWishlist.addToCart({
   "customer_id": null
 }
 ```
+
+Note the line item's **`id`** (`09695de2-…`) — that's the **cart-item id**, not the product or
+variant id. It's the handle you use to update or remove that line. (It's distinct from `variant_id`:
+the same variant added twice is still one line you mutate by its `id`.)
+
+## 2b. Manage the cart — view, update, remove, clear
+
+Real carts aren't add-once. The shopper changes their mind, so handle the whole lifecycle. Every
+call here is the **same identity** as the add — pass `xSessionId` for an anonymous cart (or
+`xAuthToken` once signed in); the SDK targets the right cart.
+
+**Read the current cart** (e.g. to render the cart drawer or recompute a badge):
+
+```typescript
+const cart = await storefront.cartWishlist.getCart({ xSessionId: sessionId });
+// → { items: [...], total_items: 2, subtotal: 598 }
+```
+
+**Change a line's quantity** — address the line by its cart-item `id`, not the variant:
+
+```typescript
+await storefront.cartWishlist.updateCartItem({
+  id: '09695de2-73ac-45ea-b2cb-76f9751b9846', // the cart-item id from the add response
+  xSessionId: sessionId,
+  requestBody: { quantity: 3 },
+});
+```
+
+<Note>
+  **`quantity: 0` removes the line.** `updateCartItem` with `quantity: 0` is equivalent to
+  `removeCartItem` — handy when a quantity stepper is decremented to zero, so you don't need a
+  separate branch.
+</Note>
+
+**Remove a single line** explicitly (e.g. a "✕" on the row):
+
+```typescript
+await storefront.cartWishlist.removeCartItem({
+  id: '09695de2-73ac-45ea-b2cb-76f9751b9846',
+  xSessionId: sessionId,
+});
+// → { success: true, message: 'Item removed from cart' }
+```
+
+**Empty the whole cart** (a "Clear cart" action, or resetting after an abandoned checkout):
+
+```typescript
+await storefront.cartWishlist.clearCart({ xSessionId: sessionId });
+// → { success: true, message: 'Cart cleared' }
+```
+
+Re-add an item before continuing so the rest of the walkthrough has a populated cart. The
+wishlist mirrors this shape — `addToWishlist` / `removeFromWishlist` / `moveWishlistToCart` (which
+hands a saved item back into the cart flow above).
 
 ## 3. Sign the shopper in
 
