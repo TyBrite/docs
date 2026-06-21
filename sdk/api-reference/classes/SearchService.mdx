@@ -17,7 +17,7 @@ const result = await client.search.searchProducts({
   limit: 10
 });
 
-console.log(`Found ${result.totalResults} results in ${result.searchTimeMs}ms`);
+console.log(`Found ${result.totalResults} results`);
 // Each result: { productId, score, matchReason: "Text match" }
 ```
 
@@ -27,8 +27,7 @@ console.log(`Found ${result.totalResults} results in ${result.searchTimeMs}ms`);
   "results": [
     { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 1, "matchReason": "Text match" }
   ],
-  "totalResults": 1,
-  "searchTimeMs": 983
+  "totalResults": 1
 }
 ```
 
@@ -64,8 +63,7 @@ result.results.forEach(r => console.log(`${r.productId} — score ${r.score}`));
     { "productId": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", "score": 0.85 },
     { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 0.83 }
   ],
-  "totalResults": 50,
-  "searchTimeMs": 1269
+  "totalResults": 50
 }
 ```
 
@@ -86,7 +84,7 @@ const personalized = new Tybrite({
 const result = await personalized.search.semanticSearch({
   requestBody: { query: 'gear for the gym', limit: 5, personalize: true }
 });
-// → same { query, results: [{ productId, score }], totalResults, searchTimeMs } shape as above,
+// → same { query, results: [{ productId, score }], totalResults } shape as above,
 //   re-ranked to blend query relevance with this shopper's preference signal.
 ```
 

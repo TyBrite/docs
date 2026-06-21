@@ -391,24 +391,29 @@ const { order: promoOrder } = await server.orders.createOrder({
 }
 ```
 
-### 7c. The same order WITH a gift card too — and the total-math gotcha that trips everyone
+### 7c. The same order WITH a gift card too — how it lowers the total
 
 Now the shopper also redeems gift card **`GTSA-1B2C-3D4E-5F6G`** ($100 balance) for **$50** toward
-this order. Add a `gift_card_redemption: { code, amount }` block.
+this order. Add a `gift_card_redemption: { code, amount }` block **and** fold the $50 into
+`discount_amount` so the total reflects it.
 
-<Warning>
-  **The gift card is a *payment*, not a line discount — `total_amount` does NOT subtract it.** The
-  server's price guard validates `total_amount === subtotal + tax + shipping − discount`. With
-  subtotal 598, discount 89.70, shipping 5.99, the correct `total_amount` is **`514.29`** — the
-  *same* as 7b. The $50 gift card is settled as a payment against that total; it never lowers it.
-  Sending `464.29` (514.29 − 50) is the classic mistake and is rejected — see 7d.
-</Warning>
+<Note>
+  **A gift card reduces the total — it's part of `discount_amount`.** The server validates
+  `total_amount === subtotal + tax + shipping − discount_amount`, and the discount it accepts is the
+  sum of every real entitlement: promotions **plus** the gift card's redeemable amount. So with
+  subtotal 598, shipping 5.99, the $89.70 promo **and** a $50 gift card, `discount_amount` is
+  **$139.70** and `total_amount` is **`464.29`** (598 + 5.99 − 139.70). The gift card balance is
+  drawn down by the redeemed amount after the order is created. Sending the gift card with a
+  `discount_amount` that doesn't include it (so the total stays $514.29) means the card reduces
+  nothing — and over-claiming a card with no balance is rejected as `discount_invalid` (see 7d).
+</Note>
 
 ```typescript
 const ts3 = Math.floor(Date.now() / 1000);
 const orderWithGiftCard = {
   ...orderWithPromo,
-  total_amount: 514.29, // NOT 464.29 — the gift card does not reduce total_amount
+  discount_amount: 139.70,                                  // promo 89.70 + gift card 50
+  total_amount: 464.29,                                     // 598 + 5.99 − 139.70
   gift_card_redemption: { code: 'GTSA-1B2C-3D4E-5F6G', amount: 50 },
 };
 
@@ -418,27 +423,34 @@ const { order: gcOrder, post_processing_warnings } = await server.orders.createO
   xSignature: sign(orderWithGiftCard, ts3),
   requestBody: orderWithGiftCard,
 });
-// gcOrder.total_amount === 514.29  ·  post_processing_warnings === []  (gift card + stock OK)
+// gcOrder.total_amount === 464.29  ·  post_processing_warnings === []  (gift card + stock OK)
 ```
 
 ```json Response
 {
   "order": {
-    "id": "1c7e2a90-4d63-4f18-bb2a-9a3f0e6d5471",
-    "order_number": "ORD-1781955471004",
+    "id": "5d219a1e-a4cc-44ef-90b3-6d0d5b8659d5",
+    "order_number": "ORD-1782073131609",
     "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
     "subtotal": 598,
     "shipping_amount": 5.99,
-    "discount_amount": 89.7,
-    "total_amount": 514.29,
+    "discount_amount": 139.7,
+    "total_amount": 464.29,
     "currency": "USD",
     "order_status": "pending",
     "payment_status": "paid",
-    "created_at": "2026-06-20T11:37:51.004+00:00"
+    "created_at": "2026-06-21T20:18:53.655+00:00"
   },
   "post_processing_warnings": []
 }
 ```
+
+<Tip>
+  Simplest mental model, end to end: a **$50 gift card on a $250 cart** → send `discount_amount: 50`,
+  `total_amount: 200`, and `gift_card_redemption: { code, amount: 50 }`. The shopper pays **$200** and
+  the card's balance drops by $50. (Verified live: a $50 redemption on a $239.98 cart + $5.99 shipping
+  produced `total_amount: 195.97`.)
+</Tip>
 
 ### 7d. The failure variants you'll actually hit
 
@@ -449,11 +461,13 @@ const { order: gcOrder, post_processing_warnings } = await server.orders.createO
   entitlements**; the guards below are what you hit if you don't.
 </Note>
 
-**Wrong total → `400 price_mismatch`.** If you "help" by subtracting the gift card and send
-`total_amount: 464.29`, the price guard rejects it before the order is ever created:
+**Wrong total → `400 price_mismatch`.** `total_amount` must equal `subtotal + tax + shipping −
+discount_amount`. If they don't reconcile — e.g. you put the gift card in `discount_amount` but forget
+to lower the total — the price guard rejects it before the order is ever created:
 
 ```typescript
-const bad = { ...orderWithGiftCard, total_amount: 464.29 }; // wrong — subtracted the gift card
+// discount_amount includes the $50 gift card, but total_amount wasn't lowered to match
+const bad = { ...orderWithGiftCard, total_amount: 514.29 }; // should be 464.29
 await server.orders.createOrder({ /* …signed… */, requestBody: bad });
 ```
 
@@ -462,15 +476,16 @@ await server.orders.createOrder({ /* …signed… */, requestBody: bad });
   "error": {
     "code": "price_mismatch",
     "message": "total_amount does not match subtotal + tax + shipping − discount",
-    "details": "expected 514.29, got 464.29"
+    "details": "expected 464.29, got 514.29"
   }
 }
 ```
 
 **Fabricated / over-stated discount → `400 discount_invalid`.** The total math being *consistent*
 isn't enough — the server recomputes the maximum discount your claimed promotions + gift card actually
-grant, and rejects a `discount_amount` that exceeds it (a discount with no real promotion behind it →
-max is `0`). So you can't lower the price with a made-up discount:
+grant, and rejects a `discount_amount` that exceeds it (a discount with no real promotion or
+gift-card balance behind it → max is `0`). So you can't lower the price with a made-up discount, and
+you can't redeem more than a card's balance:
 
 ```typescript
 // $598 cart, but claim a $290 discount with no promotion (or an over-stated one)

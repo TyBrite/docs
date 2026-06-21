@@ -105,6 +105,39 @@ const { products } = await personalized.products.listProducts({
 //   [ { name: "Sony WH-1000XM4", price: 349.99, thumbnail_url: "https://cdn.example.com/..." }, ... ]
 ```
 
+**Filter by brand.** Pass `brand` (case-insensitive exact match) to build a brand landing page —
+pair it with `listBrands` below to render a "shop by brand" row, then list the chosen brand's products:
+
+```typescript
+const { products } = await client.products.listProducts({ brand: 'Samsung', limit: 20 });
+```
+
+---
+
+### `listBrands`
+
+Return the catalog's distinct brands, each with a product count, sorted by count (most products
+first). Use it to build brand navigation — for example a "featured brands" row after the hero — then
+pass a chosen brand to `listProducts({ brand })`.
+
+```typescript
+const { brands, total } = await client.products.listBrands();
+```
+
+```json Response
+{
+  "brands": [
+    { "brand": "Samsung", "product_count": 12 },
+    { "brand": "Apple", "product_count": 9 },
+    { "brand": "Sony", "product_count": 4 }
+  ],
+  "total": 3
+}
+```
+
+On a marketplace operator key the brands are aggregated across all active merchants; pass `storeId`
+to scope to one merchant.
+
 ---
 
 ### `getProduct`

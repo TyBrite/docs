@@ -1322,6 +1322,15 @@ paths:
           schema:
             type: string
           example: macbook
+        - name: brand
+          in: query
+          description: |
+            Filter products to a single brand (case-insensitive exact match). Use this to build a
+            brand landing page — pair it with `GET /v1/brands` to render a "shop by brand" row, then
+            pass the chosen brand here to list that brand's products.
+          schema:
+            type: string
+          example: Samsung
         - name: category_id
           in: query
           description: |
@@ -1607,6 +1616,62 @@ paths:
                       has_more: false
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/brands:
+    get:
+      operationId: listBrands
+      tags:
+        - Products
+      summary: List brands
+      description: |
+        Return the distinct brands in the catalog, each with the number of products under it,
+        sorted by product count (most products first). Use this to build brand navigation — for
+        example a "featured brands" row after the hero — then pass a chosen brand to
+        `GET /v1/products?brand=<brand>` to list that brand's products.
+
+        Brands come from each product's `brand` field; products with no brand are omitted. On a
+        marketplace operator key the brands are aggregated across all active merchants (pass
+        `store_id` to scope to one merchant).
+      parameters:
+        - name: store_id
+          in: query
+          description: Operator scope only — narrow the brand list to a single merchant's catalog.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The store's distinct brands with product counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brands:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        brand:
+                          type: string
+                        product_count:
+                          type: integer
+                  total:
+                    type: integer
+              example:
+                brands:
+                  - brand: Samsung
+                    product_count: 12
+                  - brand: Apple
+                    product_count: 9
+                  - brand: Sony
+                    product_count: 4
+                total: 3
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '429':
@@ -6776,7 +6841,6 @@ paths:
                     score: 0.92
                     matchReason: Matched product name and description
                 totalResults: 1
-                searchTimeMs: 18
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -6867,7 +6931,6 @@ paths:
                     score: 0.89
                     matchReason: Semantic match on product description
                 totalResults: 1
-                searchTimeMs: 42
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -12113,12 +12176,16 @@ paths:
           schema:
             type: string
           description: |
-            Space-separated list of permission scopes your application is requesting.
+            Space-separated list of permission scopes your application is requesting. Scopes are
+            **enforced per request** — a token is rejected with `403 insufficient_scope` if it calls an
+            endpoint it wasn't granted the matching scope for. Request only what your app needs.
 
-            Available scopes: `read`, `write`, `orders:read`, `orders:write`,
-            `customers:read`, `customers:write`, `payments:read`, `cart:write`,
-            `cms:read`, `shipping:read`, `pricing:read`
-          example: read orders:read
+            Available scopes: `read`, `write`, `products:read`, `categories:read`, `pricing:read`,
+            `orders:read`, `orders:write`, `customers:read`, `customers:write`, `payments:read`,
+            `cart:write`, `cms:read`, `shipping:read`, `reviews:read`, `reviews:write`,
+            `gift_cards:read`, `messaging:read`, `messaging:write`, `returns:read`, `returns:write`,
+            `promotions:read`, `recommendations:read`, `search:read`, `store:read`
+          example: products:read orders:read customers:read
         - name: state
           in: query
           required: true
@@ -16962,8 +17029,6 @@ components:
           items:
             $ref: '#/components/schemas/SearchResult'
         totalResults:
-          type: integer
-        searchTimeMs:
           type: integer
         message:
           type: string

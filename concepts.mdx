@@ -146,8 +146,13 @@ build on Galactic Core rather than wiring these systems together yourself.
 
 ## Currency
 
-A store defines its own currency, returned on `store.default_currency` from store info; all catalog
-prices are expressed in it. There's no separate currency call. See [Currency](/currency).
+Every priced response already tells you its currency — you don't fetch it separately. **Product and
+pricing responses carry the currency inline**: `display_currency` and `currency_symbol` on each
+product (list and detail), plus `base_currency` and `exchange_rate` from the pricing endpoints. Both
+are selectable via sparse fieldsets (`fields=...,display_currency,currency_symbol`). So a storefront
+renders prices with the right symbol straight from the catalog read — no extra call. Store info's
+`currencies` list is **configuration metadata** (which currencies the store has enabled), not the
+per-response source of truth. See [Currency](/currency).
 
 ## Where to go next
 
