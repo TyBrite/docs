@@ -1,16 +1,37 @@
 ---
 title: "Currency"
-description: "Each store defines its own currency, returned with its store information. Catalog prices are expressed in that currency, so you format amounts with it directly."
+description: "Every priced response already carries its currency. Product and pricing responses include the currency code and symbol inline, so displaying money is just formatting — there's no separate currency call."
 ---
 
-Each store sets its own currency as part of its configuration. You read it from the store
-information your storefront already loads, and because every catalog price is returned in that
-currency, displaying money is just a matter of formatting.
+Each store sets its own currency. You almost never fetch it on its own: **every product and pricing
+response already includes the currency it's expressed in**, so displaying money is just a matter of
+formatting the amount with the symbol that came back alongside it.
 
 ## Where currency lives
 
-Currency is part of the **store information** payload — `client.system.getStoreInfo` for a single
-store, `client.marketplace.getMarketplaceInfo` for a marketplace. Both return it on `store`:
+Currency travels **with the priced data**, on every catalog and pricing response — this is the
+primary source you should read:
+
+| Field | On | Meaning |
+| :--- | :--- | :--- |
+| `display_currency` | each product (`listProducts`, `getProduct`) and every pricing response | The currency code the price is in (e.g. `"USD"`). |
+| `currency_symbol` | same | The symbol to render (e.g. `"$"`). |
+| `base_currency`, `exchange_rate` | pricing responses (`getProductPrice`/`getProductPrices`) | The store's base currency and the rate applied to reach `display_currency`. |
+
+Both `display_currency` and `currency_symbol` are **selectable via sparse fieldsets** — request just
+them with `fields=...,display_currency,currency_symbol` to keep a grid lean. So a storefront renders
+the right price and symbol straight from the catalog read it was already making — no extra round trip.
+
+```typescript
+const { products } = await client.products.listProducts({
+  fields: 'id,name,price,display_currency,currency_symbol',
+});
+// → products[0] === { id, name, price: 349.99, display_currency: 'USD', currency_symbol: '$' }
+```
+
+**Store information lists what the store is *configured* for** — it's reference metadata, not the
+per-response source of truth. `client.system.getStoreInfo` (single store) /
+`client.marketplace.getMarketplaceInfo` (marketplace) return:
 
 ```json
 {
@@ -27,12 +48,12 @@ store, `client.marketplace.getMarketplaceInfo` for a marketplace. Both return it
 
 | Field | Meaning |
 | :--- | :--- |
-| `store.default_currency` | The store's base currency. All catalog prices are returned in this currency. |
-| `store.currencies` | Every currency the store accepts. |
+| `store.default_currency` | The store's base currency (the same value the pricing endpoints return as `base_currency`). |
+| `store.currencies` | Every currency the store has enabled. |
 | `features.multi_currency` | Whether the store offers more than one currency to shoppers. |
 
-Because currency travels with the store and catalog data, there is no standalone currency call to
-make — read `default_currency` once when your app loads and reuse it everywhere.
+Use store info to know *which* currencies a store supports (e.g. to render a currency switcher); use
+the `display_currency`/`currency_symbol` on each priced response to actually render prices.
 
 ## Single-currency store
 
@@ -41,14 +62,14 @@ make — read `default_currency` once when your app loads and reuse it everywher
 ```
 
 ```typescript
-const { store } = await client.system.getStoreInfo({});
-const currency = store.default_currency; // 'EUR'
-
-const fmt = (amount: number) =>
+// Format straight from each product — the currency rides along on every row.
+const fmt = (amount: number, currency: string) =>
   new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
 
-const products = await client.products.listProducts();
-products.data.forEach((p) => console.log(p.name, fmt(p.price))); // p.price is in EUR
+const { products } = await client.products.listProducts({
+  fields: 'name,price,display_currency,currency_symbol',
+});
+products.forEach((p) => console.log(p.name, fmt(p.price, p.display_currency))); // e.g. €349.99
 ```
 
 ## Multi-currency store
@@ -72,10 +93,13 @@ const offerSwitcher = features?.multi_currency === true;
 
 ## Marketplace
 
-On a marketplace deployment, read currency from `client.marketplace.getMarketplaceInfo` — the
-marketplace's own `store.default_currency` for marketplace-level pricing, or
-`getMarketplaceInfo({ storeId })` for a single merchant's store information (same shape). Each
-catalog item's price is in the currency of the store it belongs to.
+On a marketplace deployment the storefront currency is **marketplace-wide** — it's the operator's
+single default, so the whole aggregated catalog renders in one currency (you do **not** get a
+different currency per merchant). Every product still carries `display_currency`/`currency_symbol`
+inline, so you format the same way; they just resolve to the marketplace's currency across all
+merchants. `client.marketplace.getMarketplaceInfo` reports the marketplace's `default_currency`, and
+`getMarketplaceInfo({ storeId })` returns a single merchant's store info. (Each merchant still sets
+its own *prices*; the operator sets the *currency* they're shown in.)
 
 <Note>
   If `default_currency` is ever absent for a store, fall back to the first entry of

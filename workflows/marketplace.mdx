@@ -247,6 +247,16 @@ the operator sets them in their admin — render sensible fallbacks when they're
   The merchant must be active in the marketplace, otherwise `404`.
 </Note>
 
+<Note>
+  **Who owns currency vs. pricing in a marketplace.** The storefront **currency is marketplace-wide**
+  — it's the operator's deployment-level default, so the whole aggregated catalog renders in one
+  currency (you don't get a different currency per merchant). **Dynamic pricing rules, however, are
+  per-merchant** — each merchant authors their own pricing rules for their own products, and the
+  operator can't set a merchant's prices. So: currency is the operator's; product prices (and any
+  price rules behind them) are each merchant's. Commission/payout rules are the operator's
+  (configured in their admin), separate from both.
+</Note>
+
 ## 3. Unified split checkout — a cart that spans two merchants
 
 The headline capability: a single shopper cart that spans **multiple merchants** checks out as one

@@ -36,8 +36,7 @@ const results = await storefront.search.searchProducts({ q: 'headphones' });
   "results": [
     { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 1, "matchReason": "Text match" }
   ],
-  "totalResults": 1,
-  "searchTimeMs": 983
+  "totalResults": 1
 }
 ```
 
@@ -56,8 +55,7 @@ const miss = await storefront.search.searchProducts({ q: 'zxqwerty' });
 {
   "query": "zxqwerty",
   "results": [],
-  "totalResults": 0,
-  "searchTimeMs": 41
+  "totalResults": 0
 }
 ```
 
@@ -84,8 +82,7 @@ const semantic = await storefront.search.semanticSearch({
     { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 0.83 },
     { "productId": "3422935b-88ee-43ad-a7df-c03161a35cb4", "score": 0.81 }
   ],
-  "totalResults": 50,
-  "searchTimeMs": 1269
+  "totalResults": 50
 }
 ```
 
@@ -146,6 +143,34 @@ const page2 = await storefront.products.listProducts({
   `storefront.products.getProduct({ id })`, or quote prices for the whole result set at once with
   `storefront.pricing.getProductPrices(...)` (step 4). `fields=` trims the payload to just the
   columns your grid renders.
+</Tip>
+
+### 1e. Browse by brand — a "featured brands" row → a brand page
+
+Beyond categories, you can let shoppers browse by **brand**. `listBrands` returns the catalog's
+distinct brands with a product count (most products first) — perfect for a "featured brands" strip
+after the hero. Take the top few, render them, and on click pass the brand to `listProducts({ brand })`.
+
+```typescript
+// 1. The brands strip — take the top 5 for a featured row.
+const { brands } = await storefront.products.listBrands();
+const featured = brands.slice(0, 5);
+// → [ { brand: 'Samsung', product_count: 12 }, { brand: 'Apple', product_count: 9 }, ... ]
+```
+
+```typescript
+// 2. Shopper taps "Samsung" → the brand's product grid (case-insensitive exact match).
+const { products } = await storefront.products.listProducts({
+  brand: 'Samsung',
+  limit: 20,
+  fields: 'id,name,price,thumbnail_url',
+});
+```
+
+<Tip>
+  `brand` combines with `categoryId`/`search` — e.g. `listProducts({ brand: 'Samsung', categoryId })`
+  for "Samsung in Audio". On a marketplace operator key, `listBrands` aggregates brands across all
+  merchants; pass `storeId` to scope the strip to one merchant's shop page.
 </Tip>
 
 ## 2. Show recommendation rails — every type, and the fallback
