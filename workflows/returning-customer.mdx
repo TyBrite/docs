@@ -291,8 +291,9 @@ const { data: before } = await storefront.returns.getStoreCredit({
 ```
 
 <Note>
-  `currency` is `null` until the customer has a credit balance — there's no currency to report on an
-  empty wallet. It becomes the store currency (`"USD"`) once credit is issued, as you'll see below.
+  `currency` is `null` here — the store-credit ledger does not stamp a currency code, so this field
+  stays `null` even after credit is issued (the balance is always in the store's own currency). Read
+  `balance` as the amount; don't rely on `currency` to be populated.
 </Note>
 
 ### Path A — accept the store credit
@@ -314,7 +315,7 @@ const { data: credit } = await storefront.returns.acceptReturnCredit({
 }
 ```
 
-Read the balance *after* accepting — it's now populated, and `currency` is set:
+Read the balance *after* accepting — it's now populated (`currency` stays `null`, as noted above):
 
 ```typescript
 const { data: after } = await storefront.returns.getStoreCredit({
@@ -323,7 +324,7 @@ const { data: after } = await storefront.returns.getStoreCredit({
 ```
 
 ```json Response
-{ "data": { "balance": 24.95, "currency": "USD" } }
+{ "data": { "balance": 24.95, "currency": null } }
 ```
 
 ### Path B — decline the credit and request a cash refund instead
@@ -398,10 +399,10 @@ const { order } = await server.orders.createOrder({
 ```
 
 <Note>
-  `store_credit_applied` is the documented effect of `apply_store_credit: true` — the amount of the
-  customer's balance Galactic Core spent against this order (the example value mirrors the $24.95
-  issued in Path A). This field is still being finalized in live verification; treat the field name
-  and meaning as the contract.
+  `store_credit_applied` (verified live 2026-06-21) is the amount of the customer's balance Galactic
+  Core spent against this order — here mirroring the $24.95 kept in Path A. When the credit fully
+  covers the order, Galactic Core also reflects it in the order's `discount_amount` and stamps the
+  order `notes` with `[STORE_CREDIT_APPLIED <amount>]`.
 </Note>
 
 <Tip>

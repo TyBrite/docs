@@ -232,17 +232,30 @@ await client.messaging.sendMessage({
 
 ### `editMessage` 🔒
 
-Update the content of an existing message. Sets `is_edited: true`.
+Update the content of one of the customer's own messages. Sets `is_edited: true` and records
+`edited_at`. Works with a **publishable** key plus the customer's `xAuthToken` (a customer-self write,
+same browser-origin pattern as cart/wishlist) — the session token proves ownership of the message.
 
 ```typescript
 await client.messaging.editMessage({
   xAuthToken: customerSession.access_token, // Must be the original sender
-  id: 'msg-uuid-456',
+  id: 'cc64ce9a-51ba-4860-ba1a-85f14899f5bf',
   requestBody: {
-    message_content: "Correction: The delivery will arrive by 5 PM today."
+    message_content: "Thanks! Also — can I add gift wrapping and a note?"
   }
 });
-// → { message: { id: 'msg-uuid-456', is_edited: true, message_content: 'Correction: …', updated_at: '…' } }
+```
+
+```json Response
+{
+  "message": {
+    "id": "cc64ce9a-51ba-4860-ba1a-85f14899f5bf",
+    "message_content": "Thanks! Also — can I add gift wrapping and a note?",
+    "is_edited": true,
+    "edited_at": "2026-06-21T10:16:33.064+00:00",
+    "updated_at": "2026-06-21T10:16:33.082663+00:00"
+  }
+}
 ```
 
 <Note>You can only edit or delete messages the customer personally authored. Store and system messages cannot be modified.</Note>
@@ -251,14 +264,16 @@ await client.messaging.editMessage({
 
 ### `deleteMessage` 🔒
 
-Soft-deletes a message. The message is hidden from list responses but retained for audit trails.
+Soft-deletes one of the customer's own messages. The message is hidden from list responses but
+retained for audit trails. Works with a **publishable** key plus the customer's `xAuthToken` (the
+session token proves ownership). Returns `success`, the `message_id`, and the `deleted_at` timestamp.
 
 ```typescript
 await client.messaging.deleteMessage({
   xAuthToken: customerSession.access_token, // Must be the original sender
-  id: 'msg-uuid-456'
+  id: 'cc64ce9a-51ba-4860-ba1a-85f14899f5bf'
 });
-// → { success: true, message: 'Message deleted' }
+// → { success: true, message_id: 'cc64ce9a-51ba-4860-ba1a-85f14899f5bf', deleted_at: '2026-06-21T10:16:33.419Z' }
 ```
 
 <Note>Same ownership check as `editMessage` — you can only delete a message you authored. Soft delete only; the row is retained for audit.</Note>
