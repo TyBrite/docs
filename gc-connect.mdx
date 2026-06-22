@@ -75,7 +75,8 @@ When the merchant approves, their browser lands back on your `redirect_uri` with
 ```typescript
 import { Tybrite } from '@tybrite-labs/sdk';
 
-const client = new Tybrite({ BASE: 'https://api.tybritelabs.com' });
+// The authorize/token exchange uses your client_id + client_secret (below) — no store key yet.
+const client = new Tybrite();
 
 // GET /callback?code=XXX&state=YYY
 async function handleCallback(req, res) {
@@ -114,10 +115,7 @@ async function handleCallback(req, res) {
 Spin up a client with the merchant's `sk` and call the API as that store:
 
 ```typescript
-const merchant = new Tybrite({
-  BASE: 'https://api.tybritelabs.com',
-  TOKEN: storedSecretKey,
-});
+const merchant = new Tybrite({ apiKey: storedSecretKey });
 
 const { orders } = await merchant.orders.listOrders({ limit: 20 });
 ```
@@ -132,19 +130,34 @@ const { orders } = await merchant.orders.listOrders({ limit: 20 });
 
 Request the **narrowest** set of scopes your integration needs — merchants see exactly what you're asking for on the consent screen, and a tight scope list earns trust. Pass them space-separated in the `scope` parameter.
 
+Scopes are **enforced on every request** — a key is rejected with `403 insufficient_scope` if it calls an endpoint it wasn't granted, so request exactly what you need and nothing more.
+
 | Scope | Access |
 | :--- | :--- |
-| `read` | Products, inventory, pricing, categories |
-| `write` | Create / update products and inventory |
+| `read` | Coarse read (products, inventory, pricing, categories) |
+| `write` | Coarse write (create / update products and inventory) |
+| `products:read` | Read the product catalog and inventory |
+| `categories:read` | Read categories and subcategories |
+| `pricing:read` | Read dynamic pricing and price rules |
 | `orders:read` | Read order history and status |
 | `orders:write` | Create and update orders |
 | `customers:read` | Read customer profiles |
 | `customers:write` | Create and update customer records |
 | `payments:read` | Read payment status and history |
 | `cart:write` | Cart operations (browser-safe) |
-| `cms:read` | Blog posts and lookbooks |
-| `shipping:read` | Delivery zones and rates |
-| `pricing:read` | Dynamic pricing rules |
+| `cms:read` | Read blog posts and lookbooks |
+| `shipping:read` | Read delivery zones and rates |
+| `reviews:read` | Read product reviews and ratings |
+| `reviews:write` | Submit and remove reviews |
+| `gift_cards:read` | Check gift-card balances |
+| `messaging:read` | Read customer conversation threads |
+| `messaging:write` | Send messages in conversation threads |
+| `returns:read` | Read returns and their status |
+| `returns:write` | Lodge and update returns |
+| `promotions:read` | Read promotions and discounts |
+| `recommendations:read` | Read AI product recommendations |
+| `search:read` | Run catalog and semantic search |
+| `store:read` | Read store metadata and settings |
 
 ---
 

@@ -39,21 +39,34 @@ const authUrl = `https://gc.tybritelabs.com/connect/authorize?${params}`;
 // Redirect the user: window.location.href = authUrl (browser), or res.redirect(authUrl) (server)
 ```
 
-**Available scopes:**
+**Available scopes** (enforced per request — a key is rejected with `403 insufficient_scope` if it calls an endpoint it wasn't granted):
 
 | Scope | Access |
 | :--- | :--- |
-| `read` | Products, inventory, pricing, categories |
-| `write` | Create/update products and inventory |
+| `read` | Coarse read (products, inventory, pricing, categories) |
+| `write` | Coarse write (create/update products and inventory) |
+| `products:read` | Read the product catalog and inventory |
+| `categories:read` | Read categories and subcategories |
+| `pricing:read` | Read dynamic pricing and price rules |
 | `orders:read` | Read order history and status |
 | `orders:write` | Create and update orders |
 | `customers:read` | Read customer profiles |
 | `customers:write` | Create and update customer records |
 | `payments:read` | Read payment status and history |
 | `cart:write` | Cart operations (browser-safe) |
-| `cms:read` | Blog posts and lookbooks |
-| `shipping:read` | Delivery zones and rates |
-| `pricing:read` | Dynamic pricing rules |
+| `cms:read` | Read blog posts and lookbooks |
+| `shipping:read` | Read delivery zones and rates |
+| `reviews:read` | Read product reviews and ratings |
+| `reviews:write` | Submit and remove reviews |
+| `gift_cards:read` | Check gift-card balances |
+| `messaging:read` | Read customer conversation threads |
+| `messaging:write` | Send messages in conversation threads |
+| `returns:read` | Read returns and their status |
+| `returns:write` | Lodge and update returns |
+| `promotions:read` | Read promotions and discounts |
+| `recommendations:read` | Read AI product recommendations |
+| `search:read` | Run catalog and semantic search |
+| `store:read` | Read store metadata and settings |
 
 ---
 

@@ -86,7 +86,13 @@ const freshData = await client.system.getStoreInfo({ cache: false });
     "lookbooks": true,
     "messaging": true,
     "specifications": true,
-    "collections": true
+    "collections": true,
+    "feature_status": {
+      "ai_recommendations": "available",
+      "dynamic_pricing": "awaiting_data",
+      "gift_cards": "available",
+      "returns": "available"
+    }
   }
 }
 ```
@@ -107,7 +113,41 @@ const freshData = await client.system.getStoreInfo({ cache: false });
   The `store` section (ID, Name, Timezone, Currencies) is **always included** regardless of the filtered sections.
 </Note>
 
-The `features` block is a flat set of booleans your storefront can use to show/hide capabilities: `ai_recommendations`, `semantic_search`, `multi_currency`, `dynamic_pricing`, `gift_cards`, `promotions`, `cms` (blog/CMS posts), `lookbooks` (shoppable lookbooks — separate from `cms`), `messaging`, `specifications`, and `collections`.
+The `features` block is a flat set of booleans your storefront uses to show or hide capabilities: `ai_recommendations`, `semantic_search`, `multi_currency`, `dynamic_pricing`, `cms` (blog posts), `lookbooks` (shoppable lookbooks — separate from `cms`), `returns`, `gift_cards`, `promotions`, `messaging`, `specifications`, and `collections`.
+
+#### What `true` / `false` mean
+
+Each flag answers "should I render this capability **right now**?" — not "is it permitted." A flag is `true` only when the capability is **both available to the store and has data/config to surface**. `false` is intentionally broad: it can mean the plan doesn't include the feature, the plan includes it but it isn't set up yet, or both — so a `false` flag doesn't tell you *why* it's off. Treat it as "don't render this yet."
+
+There are two kinds of flag:
+
+| Kind | Flags | `true` requires |
+| :--- | :--- | :--- |
+| **Plan-gated** | `ai_recommendations`, `semantic_search`, `multi_currency`, `dynamic_pricing`, `cms`, `lookbooks`, `returns` | The store's plan **includes** the feature **and** it's configured. By plan: **Starter** has none of these; **Growth** adds `cms`, `lookbooks`, `returns`; **Premium** / **Enterprise** add `ai_recommendations`, `semantic_search`, `dynamic_pricing`, `multi_currency`. |
+| **Data-presence** (every plan) | `gift_cards`, `promotions`, `messaging`, `specifications`, `collections` | The store simply **has at least one** of that item (e.g. `gift_cards: true` = at least one gift card issued). Not plan-gated; `false` just means none exist yet. |
+
+#### `feature_status` — the reason behind each flag
+
+Because `false` is ambiguous, `features` also includes a **`feature_status`** object keyed by the same names, telling you *why*:
+
+| Status | Meaning | What to do |
+| :--- | :--- | :--- |
+| `available` | Usable now (the boolean is `true`). | Render the feature. |
+| `awaiting_data` | In the plan (or ungated) but no data yet (boolean `false`). | **Pre-build the UI** — it lights up automatically once the merchant adds data; no redeploy needed. |
+| `not_in_plan` | A plan-gated feature the store's plan excludes (boolean `false`). | Hide it; an upgrade is required. |
+
+So a Premium store with no pricing rules yet returns `dynamic_pricing: false` **and** `feature_status.dynamic_pricing: "awaiting_data"` — you can ship the dynamic-pricing UI ahead of time and it activates when the first rule is created. Data-presence features are never `not_in_plan`.
+
+```typescript
+const { features } = await client.system.getStoreInfo({ sections: 'features' });
+
+if (features.gift_cards) {
+  renderGiftCardField();                                  // available — show it
+} else if (features.feature_status.gift_cards === 'awaiting_data') {
+  renderGiftCardField({ disabledUntilData: true });       // build it now; it'll activate on first card
+}
+// feature_status === 'not_in_plan' → don't build it (upgrade required)
+```
 
 ---
 

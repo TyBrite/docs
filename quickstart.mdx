@@ -55,6 +55,63 @@ const { products } = await client.products.listProducts({ limit: 5 });
 console.log(`Found ${products.length} products!`);
 ```
 
+### Step 4: Know your store
+
+Most storefronts open with a single **store info** call — it returns everything you need to render the
+shell before any catalog request: branding, the currencies you support, which features are enabled,
+which payment methods to show, and a catalog snapshot. Read it once on load and reuse it.
+
+```typescript
+const info = await client.system.getStoreInfo({});
+```
+
+```json Response (trimmed — from the Galactic Test Store)
+{
+  "store": {
+    "store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+    "name": "Galactic Test Store",
+    "logo_url": "https://cdn.tybritelabs.com/.../gc-bag-blue.png",
+    "website": "https://gc.tybritelabs.com",
+    "default_currency": "USD",
+    "currencies": ["USD", "GBP", "EUR"],
+    "timezone": "America/New_York"
+  },
+  "marketplace": { "mode": "standard", "marketplace_enabled": false },
+  "catalog": {
+    "products": { "total": 56, "active": 56, "has_variants": 13, "featured": 1 },
+    "sample": [
+      { "id": "715b8c10-...", "name": "Apple MacBook Pro", "category": "Laptops", "price": 1999 },
+      { "id": "0186665f-...", "name": "Samsung Galaxy Watch 6", "category": "Wearables", "price": 299 }
+    ]
+  },
+  "payments": {
+    "providers": ["cash", "stripe"],
+    "methods": [
+      { "name": "stripe", "display_name": "Stripe", "type": "redirect" },
+      { "name": "cash", "display_name": "Cash on Delivery", "type": "manual" }
+    ]
+  },
+  "features": {
+    "semantic_search": true, "ai_recommendations": true, "multi_currency": true,
+    "returns": true, "gift_cards": true, "promotions": true, "messaging": true
+  }
+}
+```
+
+How a storefront uses each part:
+
+| Section | What it's for |
+| :--- | :--- |
+| `store` | Branding (name, `logo_url`) and locale: render the header, and use `currencies` to build a currency switcher (`default_currency` is the base — though each priced response also carries its own `display_currency`). |
+| `marketplace` | `mode` tells you whether this is a single store (`standard`) or a multi-merchant marketplace (`marketplace`). |
+| `catalog` | A snapshot — product counts and a `sample` of a few products — handy for a "store at a glance" view or a quick health check. |
+| `payments` | The `methods` to surface at checkout — render exactly these (e.g. Stripe, Cash on Delivery); don't hardcode providers. |
+| `features` | Booleans for "render this capability now?" — only show what's live. A flag is `true` only when the capability is both available **and** has data/config; `false` is broad (not on the plan, or on the plan but not set up yet, or both). Some flags are **plan-gated** (`semantic_search`, `ai_recommendations`, `multi_currency`, `dynamic_pricing`, `cms`, `lookbooks`, `returns` — e.g. Starter has none, Growth adds cms/lookbooks/returns, Premium adds the rest); others are **data-presence** on every plan (`gift_cards`, `promotions`, `messaging`, `specifications`, `collections`). A companion **`feature_status`** map gives the reason per flag — `available`, `awaiting_data` (in plan but no data yet → safe to pre-build the UI), or `not_in_plan` — so you can ship UI early and let it auto-activate. See [Store info](/sdk/api-reference/classes/SystemService). |
+
+<Tip>
+  Request only the parts you need with `sections`, e.g. `getStoreInfo({ sections: 'features,payments' })`.
+</Tip>
+
 ## Next Steps
 
 Explore the core pillars of the Tybrite ecosystem:
