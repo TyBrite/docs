@@ -124,9 +124,21 @@ Carry the `variant_id` you put in the cart all the way through to the order — 
 ## Performance & rate limits
 
 Reads are served through a **multi-tier edge cache**, so catalog, pricing, and store-info calls
-return in tens of milliseconds globally and stay fast under load. Endpoints are rate-limited per
-key (and per IP for publishable keys); a `429` means you've exceeded the window — back off and
-retry. The SDK retries transient failures automatically.
+return in tens of milliseconds globally and stay fast under load. The SDK retries transient failures
+automatically.
+
+There are **two independent limits**, and a `429` tells you which one you hit by its `error.code`:
+
+| `429` code | What it means | What to do |
+| :--- | :--- | :--- |
+| `rate_limited` | A short-term **abuse throttle** — too many requests from one client in a small window (per-IP, per-key, or per-session). Transient. | Back off and retry (honor `Retry-After`). This does **not** count against the store's monthly plan. |
+| `quota_exceeded` | The store's **monthly plan limit** is used up (a billing/capacity signal, not abuse). | Wait for the next cycle, or the merchant upgrades their plan. |
+
+Rate-limit tiers (the abuse throttle): publishable keys are limited per-IP **and** per-key
+(hourly + daily); secret keys per-key (hourly + daily); signed-in shoppers also get a per-session
+cap. These are flat across plans — they protect a store from any single client monopolizing it.
+**Abuse-throttled traffic is never billed to the merchant**, so a flood can't deplete their monthly
+quota. The monthly quota itself scales with the plan.
 
 ## What an order does for you
 
