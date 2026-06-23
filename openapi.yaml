@@ -148,29 +148,52 @@ info:
     - **Automatic Accounting**: Double-entry journal entries for all transactions
     - **Webhook Automation**: Real-time payment status updates and order processing
 
-    ## Rate Limiting
+    ## Rate Limiting & Usage Quota
 
-    ### Global Limits
+    Two independent controls protect the API. They return **different `429` codes** — handle them
+    differently:
 
-    **Publishable Keys:**
+    | `429` code | What it means | `Retry-After` behavior | Counts toward your monthly quota? |
+    | --- | --- | --- | --- |
+    | `rate_limited` | An **abuse throttle** tripped (too many requests, too fast, from one client or key). Responses carry an `X-RateLimit-Scope: abuse` header. | Transient — slow down and retry shortly | **No** — throttled requests never consume your plan's monthly allowance |
+    | `quota_exceeded` | You've reached your plan's **monthly request allowance**. | Resolves on the next monthly cycle, or sooner if you upgrade | n/a (this *is* the monthly meter) |
+
+    ### Abuse rate limits (`rate_limited`)
+
+    These are flat per-client throttles (not tied to your plan tier):
+
+    **Publishable keys:**
     - 1,000 requests/hour per IP address
-    - 10,000 requests/hour per API key
+    - 10,000 requests/hour and 50,000 requests/day per API key
 
-    **Secret Keys:**
-    - 10,000 requests/hour per API key
+    **Secret keys:**
+    - 10,000 requests/hour and 100,000 requests/day per API key
+
+    ### Monthly usage quota (`quota_exceeded`)
+
+    Your plan includes a monthly request allowance, reset on the 1st of each month (UTC):
+
+    - **Starter:** 100,000 requests/month
+    - **Growth:** 1,000,000 requests/month
+    - **Premium:** 5,000,000 requests/month
+    - **Enterprise:** unmetered
+
+    (During a free trial the allowance is one-fifth of the plan.) Abuse-throttled requests are **not**
+    counted against this allowance, so a traffic spike or scraping attempt can't quietly burn through
+    your plan.
 
     ### Endpoint-Specific Limits
 
-    **Payment Operations** (Additional limit on top of global limits):
+    **Payment Operations** (Additional limit on top of the above):
     - `POST /v1/payments/initialize`: 100 requests/hour per API key
     - Applies to both publishable and secret keys
     - Prevents payment spam and fraud attempts
-    - Returns 429 if exceeded
+    - Returns `429 rate_limited` if exceeded
 
     **Order Operations** (Enforced via idempotency):
     - `POST /v1/orders`: Requires `Idempotency-Key` header
     - `PATCH /v1/orders/:id`: Requires `Idempotency-Key` header
-    - Duplicate keys return existing order/state (not counted against rate limit)
+    - Duplicate keys return existing order/state (not counted against rate limits)
     - Prevents accidental duplicate orders and duplicate update processing
 
     **Authentication Operations**:
@@ -181,15 +204,16 @@ info:
     Rate limit headers are included in responses:
     - `X-RateLimit-Limit`: Maximum requests allowed
     - `X-RateLimit-Remaining`: Requests remaining
-    - `X-RateLimit-Reset`: Unix timestamp when limit resets
+    - `X-RateLimit-Reset`: Unix timestamp when the limit resets
+    - `X-RateLimit-Scope: abuse`: present only on `rate_limited` responses (distinguishes an abuse
+      throttle from the monthly quota)
 
-    When rate limits are exceeded, the API returns HTTP 429 with error details:
+    When an abuse limit is exceeded, the API returns HTTP 429 with error details:
     ```json
     {
       "error": {
-        "code": "rate_limit_exceeded",
-        "message": "Too many requests. Please try again later.",
-        "limit": 100,
+        "code": "rate_limited",
+        "message": "Too many requests for this API key. Please slow down and try again shortly.",
         "remaining": 0,
         "reset": 1739750400
       }
@@ -333,7 +357,8 @@ info:
     - `forbidden` (403): API key lacks required permissions
     - `not_found` (404): Resource not found
     - `invalid_request` (400): Malformed request or missing fields
-    - `rate_limit_exceeded` (429): Too many requests
+    - `rate_limited` (429): Abuse throttle tripped — too many requests too fast (carries `X-RateLimit-Scope: abuse`; not counted against your monthly quota)
+    - `quota_exceeded` (429): Monthly plan request allowance reached
     - `server_error` (500): Internal server error
     - `service_unavailable` (503): Service temporarily unavailable
 
@@ -520,7 +545,8 @@ tags:
         
       **Rate Limiting:**
       - Payment initialization has an additional rate limit of 100 requests/hour per API key
-      - This is on top of the global rate limits (1,000/hour for publishable keys, 10,000/hour for secret keys)
+      - This is on top of the standard abuse limits (publishable: 1,000/hour per IP + 10,000/hour & 50,000/day per key; secret: 10,000/hour & 100,000/day per key)
+      - Exceeding any of these returns `429 rate_limited` (carries `X-RateLimit-Scope: abuse`; not counted against your monthly quota)
       - Prevents payment spam and fraud attempts
   - name: Shipping
     description: Shipping zones and delivery cost calculation
@@ -15967,13 +15993,13 @@ components:
               description: Quantity already in cart (present on insufficient_stock errors).
             limit:
               type: integer
-              description: Rate limit ceiling (present on rate_limit_exceeded errors).
+              description: Rate limit ceiling (present on rate_limited / quota_exceeded errors).
             remaining:
               type: integer
-              description: Requests remaining in the current window (present on rate_limit_exceeded errors).
+              description: Requests remaining in the current window (present on rate_limited / quota_exceeded errors).
             reset:
               type: integer
-              description: Unix timestamp when the rate limit window resets (present on rate_limit_exceeded errors).
+              description: Unix timestamp when the rate limit / quota window resets (present on rate_limited / quota_exceeded errors).
     ProductVariant:
       type: object
       description: |
@@ -19529,7 +19555,7 @@ components:
               code: forbidden
               message: This operation requires a secret key. Publishable keys have read-only access.
     RateLimitError:
-      description: Rate limit exceeded
+      description: 'Too many requests. Two distinct `429` codes: `rate_limited` (an abuse throttle — too many requests too fast; carries an `X-RateLimit-Scope: abuse` header and is NOT counted against your monthly quota) and `quota_exceeded` (your plan''s monthly request allowance is reached).'
       headers:
         Tybrite-Environment:
           $ref: '#/components/headers/TybriteEnvironment'
@@ -19539,9 +19565,8 @@ components:
             $ref: '#/components/schemas/Error'
           example:
             error:
-              code: rate_limit_exceeded
-              message: Too many requests. Please try again later.
-              limit: 1000
+              code: rate_limited
+              message: Too many requests for this API key. Please slow down and try again shortly.
               remaining: 0
               reset: 1706198400
     ServerError:
