@@ -149,7 +149,7 @@ Every service in the SDK follows the same response-code contract, so you can cen
 | `403` | Valid auth but wrong key type for the operation, OR customer JWT does not match the `customer_id` in the request |
 | `404` | Resource not found by id/slug, OR a referenced resource (e.g. `product_id` on an order) is missing |
 | `409` | Uniqueness conflict (duplicate email on register/customer, duplicate wishlist item, idempotency key reused with a different body) |
-| `429` | Rate limit exceeded |
+| `429` | Too many requests — `rate_limited` (abuse throttle; carries `X-RateLimit-Scope: abuse`, not counted against the monthly quota) or `quota_exceeded` (monthly plan allowance reached) |
 | `500` | Server error |
 
 All errors share a single response shape:
