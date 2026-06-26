@@ -8694,7 +8694,7 @@ paths:
               
             **Allowed Fields:**
             - `id`, `name`, `type`, `display_type`, `value`, `min_purchase`
-            - `start_date`, `end_date`, `status`, `conditions`, `image`
+            - `start_date`, `end_date`, `status`, `conditions`, `image`, `image_mobile`
             - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
             - `has_time_restrictions`, `start_time`, `end_time`, `time_zone`, `apply_to_days`
             - `created_at`, `updated_at`
@@ -8744,6 +8744,8 @@ paths:
                     time_zone: America/New_York
                     apply_to_days: null
                     id: df290d89-0400-4b2c-aa56-11fcc486150c
+                    image: https://cdn.example.com/promotions/spring-sale.jpg
+                    image_mobile: https://cdn.example.com/promotions/spring-sale-mobile.jpg
                   - type: fixed
                     display_type: Fixed amount off
                     name: $20 Off Orders Over $200
@@ -8865,7 +8867,7 @@ paths:
 
             **Allowed Fields:**
             - `id`, `name`, `type`, `display_type`, `value`, `min_purchase`
-            - `start_date`, `end_date`, `status`, `conditions`, `image`
+            - `start_date`, `end_date`, `status`, `conditions`, `image`, `image_mobile`
             - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
             - `has_time_restrictions`, `start_time`, `end_time`, `time_zone`, `apply_to_days`
             - `created_at`, `updated_at`
@@ -8898,6 +8900,8 @@ paths:
                 time_zone: America/New_York
                 apply_to_days: null
                 id: df290d89-0400-4b2c-aa56-11fcc486150c
+                image: https://cdn.example.com/promotions/spring-sale.jpg
+                image_mobile: https://cdn.example.com/promotions/spring-sale-mobile.jpg
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -9403,6 +9407,80 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/newsletter/subscribe:
+    post:
+      operationId: subscribeNewsletter
+      tags:
+        - CMS
+      summary: Subscribe an email to the store's newsletter
+      description: |
+        Capture a storefront newsletter signup. Email is the identity — this works for anonymous
+        visitors and signed-in shoppers alike (a signed-in storefront simply prefills the email
+        field). When the store has connected a marketing tool, the new subscriber is automatically
+        synced to the merchant's chosen list.
+
+        **Auth:** accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys, so
+        it can be called directly from the storefront. No customer session required.
+
+        **Idempotent:** re-subscribing the same email is safe — it returns `200` with
+        `already_subscribed: true` and never creates a duplicate. A fresh signup returns `201`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: The subscriber's email address.
+                  example: shopper@example.com
+                source:
+                  type:
+                    - string
+                    - 'null'
+                  description: Optional free-text label for where the signup happened (e.g. a blog post or lookbook slug, or `footer`). Surfaced to the merchant and forwarded as an event property.
+                  example: post:summer-style-guide
+      responses:
+        '200':
+          description: Already subscribed (idempotent re-subscribe).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscribed:
+                    type: boolean
+                    example: true
+                  already_subscribed:
+                    type: boolean
+                    example: true
+        '201':
+          description: Subscribed (new).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscribed:
+                    type: boolean
+                    example: true
+                  already_subscribed:
+                    type: boolean
+                    example: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -17616,7 +17694,13 @@ components:
             - string
             - 'null'
           format: uri
-          description: URL of the promotion image.
+          description: URL of the promotion banner image. This is the default banner — used on desktop and as the fallback whenever `image_mobile` is not set.
+        image_mobile:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Optional banner image sized for mobile viewports. When set, render this on small screens and fall back to `image` on larger ones (e.g. a `<picture>` element with a mobile `<source>`). When absent, use `image` everywhere.
         bundle_products:
           type: array
           description: Products that make up a bundle promotion (present for `bundle` type).

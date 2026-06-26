@@ -155,9 +155,38 @@ lookbook.images.forEach(image => {
 
 ---
 
+## Newsletter
+
+### `subscribeNewsletter`
+
+Capture a newsletter signup from your storefront. The email address is the identity, so this works for both anonymous visitors and signed-in shoppers (a signed-in storefront simply prefills the email field). When the merchant has connected a marketing tool, new subscribers are automatically synced to their chosen list.
+
+```typescript
+const result = await client.cms.subscribeNewsletter({
+  requestBody: {
+    email: 'shopper@example.com',
+    source: 'post:summer-style-guide', // optional: where they signed up
+  },
+});
+
+// result.subscribed === true
+// result.already_subscribed === false on a fresh signup, true on a repeat
+```
+
+```json Response
+{
+  "subscribed": true,
+  "already_subscribed": false
+}
+```
+
+It is **safe to call repeatedly** — re-subscribing the same email returns `200` with `already_subscribed: true` and never creates a duplicate; a brand-new signup returns `201`. This endpoint accepts both **publishable** and **secret** keys (it's a storefront write, like cart), so you can call it directly from the browser.
+
+---
+
 ## Response Codes
 
-All CMS endpoints are `GET` and accept both **publishable** and **secret** keys. Slug validation is enforced — empty or whitespace-only slugs return `400` without hitting the database.
+The read endpoints (posts, lookbooks) are `GET`; `subscribeNewsletter` is a `POST`. All accept both **publishable** and **secret** keys. Slug validation is enforced — empty or whitespace-only slugs return `400` without hitting the database.
 
 | Code | Meaning |
 | :--- | :--- |

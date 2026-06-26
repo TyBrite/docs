@@ -3,7 +3,7 @@ title: "Promotions"
 description: "Reference for the PromotionsService class in the Tybrite SDK."
 ---
 
-The `PromotionsService` class (accessed via `client.promotions`) handles active store discounts, marketing campaigns, and coupon validation logic. Promotions support an `image` field for displaying visual banners and campaign assets.
+The `PromotionsService` class (accessed via `client.promotions`) handles active store discounts, marketing campaigns, and coupon validation logic. Promotions support an `image` field (the default/desktop banner) plus an optional `image_mobile` field for a phone-sized banner — render `image_mobile` on small screens and fall back to `image` everywhere else.
 
 <Note>
   **Never compute discounts yourself.** Galactic Core calculates the exact discount for
@@ -104,7 +104,9 @@ if (promo.image) {
   "start_time": null,
   "end_time": null,
   "time_zone": "America/New_York",
-  "apply_to_days": null
+  "apply_to_days": null,
+  "image": "https://cdn.example.com/promotions/spring-sale.jpg",
+  "image_mobile": "https://cdn.example.com/promotions/spring-sale-mobile.jpg"
 }
 ```
 
@@ -317,7 +319,8 @@ A marketplace key may read and calculate a single merchant's promotions this way
 | `min_purchase` | `number` | Minimum order total for the promotion to apply. |
 | `start_date` / `end_date` | `date` | Validity window. Only `active` promotions within this window apply. |
 | `status` | `string` | Lifecycle status. |
-| `image`| `string`| URL of the promotion banner. |
+| `image`| `string`| URL of the promotion banner. This is the default banner — use it on desktop and as the fallback whenever `image_mobile` isn't set. |
+| `image_mobile`| `string`| Optional banner sized for mobile viewports. When present, render it on small screens (e.g. a `<picture>` with a mobile `<source srcset={image_mobile}>` and an `<img src={image}>` fallback); when absent, use `image` everywhere. |
 | `bundle_products` / `bogo_required_products` / `bogo_free_products` / `free_products` | `array` | Product sets (ids) for `bundle` / `bogo` promotions. |
 | `*_resolved` (e.g. `bundle_products_resolved`) | `array` | Only present when fetched with `expand: 'products'`. Same entries as the matching id array, each with an embedded `product` (`{ product_id, name, price, image, category }`) or `null`. |
 | `has_time_restrictions` | `boolean` | Whether the promotion only applies on certain days/times (`start_time`, `end_time`, `time_zone`, `apply_to_days`). |
