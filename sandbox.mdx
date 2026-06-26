@@ -1,0 +1,117 @@
+---
+title: "Sandbox & Test Environment"
+description: "Build, test, and run CI against a fully isolated sandbox — no separate account, no separate base URL. Just use a test key."
+---
+
+Galactic Core ships with a built-in **sandbox**: a fully isolated test environment that lives inside
+the same API. There is **no separate base URL and no separate account** — you switch environments
+purely by which API key you authenticate with.
+
+This makes the sandbox ideal for local development, CI pipelines, and AI agents that need to safely
+exercise write endpoints (create orders, register customers, add to carts) without ever touching a
+merchant's real data.
+
+## Test keys vs. live keys
+
+The key prefix is the *only* thing that selects an environment. Every store has both pairs.
+
+| Prefix | Environment | What it touches |
+| :--- | :--- | :--- |
+| `tybrite_pk_live_…` / `tybrite_sk_live_…` | **Production** | The merchant's real customers, orders, and inventory |
+| `tybrite_pk_test_…` / `tybrite_sk_test_…` | **Sandbox** | Isolated test data, never mixed with production |
+
+The two never cross. A **test key only ever reads and writes sandbox data**; a **live key only ever
+touches production**. There is no flag to flip and no header to set — the environment follows the key
+automatically.
+
+<Note>
+  Every authenticated response carries a `Tybrite-Environment: production | sandbox` header, so you
+  can always confirm which environment resolved for a request.
+</Note>
+
+## What is isolated
+
+**Transactional data you create through the API is stamped with the environment of the key that
+created it.** That includes:
+
+- Orders
+- Customers
+- Carts and wishlists
+- Product reviews
+- Messaging conversations
+- Returns
+
+A sandbox record is invisible to a live key, and vice versa — to the other environment, the record
+simply does not exist (a cross-environment lookup returns `404`, never a hint that the record lives
+elsewhere).
+
+**Catalog and reference data is shared.** Products, categories, and promotions are read-as-is in both
+environments — a test key reads the merchant's *real* catalog, so you can build and test a realistic
+storefront against actual products. It just gets no production *transactional* data tied to those
+reads: a test key sees only the orders, customers, and carts created in sandbox.
+
+<Warning>
+  When you initialize a payment with a test key, the underlying payment provider is **forced into test
+  mode automatically** — regardless of the store's live payment settings. A sandbox checkout can never
+  create a real charge.
+</Warning>
+
+## Sandbox data is invisible in the merchant's app
+
+Sandbox rows exist **only for API testing**. They never appear in the merchant's admin dashboard, the
+storefront, reports, or anywhere in the product — so your test traffic can't pollute a merchant's
+numbers or clutter their order list.
+
+## Automatic cleanup
+
+Sandbox data is **automatically purged after 30 days**, so don't rely on a sandbox record sticking
+around long-term — treat sandbox data as disposable and re-seed it from your tests when you need it.
+
+<Note>
+  **API keys are never auto-deleted.** Only the transactional sandbox data (orders, customers, carts,
+  reviews, messaging, etc.) is cleaned up. Your test keys remain valid until you remove them yourself.
+</Note>
+
+## How to use it
+
+There is nothing to set up. Authenticate with a test key and you are in the sandbox. See the
+[Authentication guide](/authentication) for the full key reference.
+
+<CodeGroup>
+
+```typescript TypeScript SDK
+import { Tybrite } from '@tybrite-labs/sdk';
+
+// A test secret key → every call runs against the sandbox.
+const client = new Tybrite({
+  apiKey: process.env.TYBRITE_SANDBOX_SECRET_KEY // tybrite_sk_test_...
+});
+
+// Safely create a test order — it lands in sandbox, never in the merchant's real data.
+const order = await client.orders.createOrder({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    customer_email: 'test-shopper@example.com',
+    items: [{ variant_id: 'var_123', quantity: 1 }]
+  }
+});
+```
+
+```bash curl
+# The tybrite_sk_test_ prefix is all it takes — no extra header, no separate URL.
+curl -X POST "https://api.tybritelabs.com/v1/orders" \
+     -H "Authorization: Bearer tybrite_sk_test_YOUR_KEY" \
+     -H "Idempotency-Key: $(uuidgen)" \
+     -H "Content-Type: application/json" \
+     -d '{ "customer_email": "test-shopper@example.com",
+           "items": [{ "variant_id": "var_123", "quantity": 1 }] }'
+# Response includes: Tybrite-Environment: sandbox
+```
+
+</CodeGroup>
+
+<Tip>
+  Build and test your entire integration with `tybrite_sk_test_*` keys, including in CI. When you're
+  ready to go live, swap to a `tybrite_sk_live_*` key — the right environment follows automatically,
+  with **no code changes**.
+</Tip>

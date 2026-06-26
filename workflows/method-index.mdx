@@ -289,6 +289,10 @@ const { lookbooks } = await storefront.cms.listLookbooks({ limit: 10 });
 
 const lookbook = await storefront.cms.getLookbook({ slug: 'workspace-essentials' });
 // → { id, title, collection_id: null, images: [{ url, hotspots: [] }] }
+
+// Newsletter signup capture (email-keyed, idempotent — re-subscribing is safe)
+const sub = await storefront.cms.subscribeNewsletter({ requestBody: { email: 'shopper@example.com', source: 'footer' } });
+// → { subscribed: true, already_subscribed: false }
 ```
 
 ```typescript
