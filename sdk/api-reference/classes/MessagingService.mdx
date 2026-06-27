@@ -353,51 +353,19 @@ const { thread, message } = await client.messaging.createConversation({
 
 ## Realtime messaging
 
-Instead of polling `getThreadMessages` on a timer, you can receive a thread's new messages the moment they are sent. Call `getMessagingRealtimeToken` to get connection details, then pass them to the `subscribeToThread` helper, which is exported from the SDK package root and works out of the box — no extra packages to install.
-
-### `getMessagingRealtimeToken`
-
-Returns the connection details needed to subscribe to a thread. The response shape depends on how the request is authenticated, indicated by the `mode` field:
-
-- **`direct`** — returned for a customer signed in through Galactic Core (pass their session token as `xAuthToken`). The response includes a short-lived `token` used to subscribe directly; the customer only ever receives updates for their own thread.
-- **`broadcast`** — returned for customers authenticated with your own identity provider (pass the signed assertion as `xExternalAuth`) and for server-side integrations. Subscribe to the named `channel` to receive the thread's message events.
-
-```typescript
-const conn = await client.messaging.getMessagingRealtimeToken({
-  xAuthToken: customerSession.access_token, // a signed-in Galactic Core customer
-  requestBody: { thread_id: '7b2c…' },
-});
-// conn => { mode, realtime_url, realtime_key, token?, channel, thread_id, environment }
-```
-
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `mode` | `'direct' \| 'broadcast'` | How to subscribe. `direct` uses `token`; `broadcast` listens on `channel`. |
-| `realtime_url` | `string` | Base URL of the realtime service. |
-| `realtime_key` | `string` | Public connection key. Safe to use in a browser. |
-| `token` | `string \| null` | Short-lived subscription token. Present only for `direct`. |
-| `channel` | `string` | The channel to subscribe to. |
-| `thread_id` | `string \| null` | The conversation these details are for. |
-| `environment` | `'production' \| 'sandbox'` | Whether the connection covers live or test conversations. |
+Instead of polling `getThreadMessages` on a timer, you can receive a thread's new messages the moment they are sent — over a **WebSocket**. Use the `subscribeToThread` helper, exported from the SDK package root. It works out of the box on browsers, Deno, Bun, and Node 22+ — **no extra packages to install**.
 
 ### `subscribeToThread`
 
-A thin helper (exported from the SDK package root, not from `client.messaging`) that opens the realtime subscription and calls `onMessage` for every new message. It returns an unsubscribe function.
+Opens a WebSocket to the thread and calls `onMessage` for every new message — including the store's replies — as it arrives. Pass your publishable key plus one customer credential (the signed-in customer's session token, or a bring-your-own-auth assertion). It returns an unsubscribe function.
 
 ```typescript
 import { subscribeToThread } from '@tybrite-labs/sdk';
 
-const conn = await client.messaging.getMessagingRealtimeToken({
-  xAuthToken: customerSession.access_token,
-  requestBody: { thread_id: threadId },
-});
-
-const unsubscribe = await subscribeToThread({
-  realtimeUrl: conn.realtime_url,
-  realtimeKey: conn.realtime_key,
-  channel: conn.channel,
-  mode: conn.mode,
-  token: conn.token,           // required for direct; ignored for broadcast
+const unsubscribe = subscribeToThread({
+  apiKey: 'tybrite_pk_live_...',
+  threadId,
+  authToken: customerSession.access_token, // a signed-in Galactic Core customer
   onMessage: (message) => {
     console.log('New message:', message);
   },
@@ -407,7 +375,21 @@ const unsubscribe = await subscribeToThread({
 unsubscribe();
 ```
 
-For browser customers signed in through Galactic Core, pass their session `token` (the `direct` path). Customers authenticated with your own identity provider and server-side integrations use the `broadcast` mode — the same `subscribeToThread` call works for both; just forward whichever `mode`, `channel`, and (when present) `token` the token endpoint returned.
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `apiKey` | `string` | Your publishable key (`tybrite_pk_*`). |
+| `threadId` | `string` | The conversation to subscribe to. |
+| `authToken` | `string` | The signed-in customer's session token. Supply this **or** `externalAuth`. |
+| `externalAuth` | `string` | A signed bring-your-own-auth identity assertion. Supply this **or** `authToken`. |
+| `onMessage` | `(message) => void` | Called with each new message as it arrives. |
+| `onClose` | `({ code, reason }) => void` | Optional — called if the connection closes. |
+| `baseUrl` | `string` | Optional — defaults to `https://api.tybritelabs.com`. |
+
+The connection is authorized server-side: the customer credential is validated and confirmed to be the thread's participant before the socket is accepted, so a customer only ever receives their own thread's messages. The same call works for both Galactic-Core-authenticated customers (pass `authToken`) and bring-your-own-auth customers (pass `externalAuth`).
+
+<Note>
+  This is a WebSocket, not a request that counts toward your monthly request quota. To open one yourself instead of using the helper, connect to `GET /v1/messaging/threads/{id}/subscribe` with `?api_key=` and either `?auth_token=` or `?external_auth=` in the URL; the server pushes one JSON frame per new message: `{ "type": "message.created", "payload": { "thread_id", "message" } }`.
+</Note>
 
 ---
 ### Response Codes
