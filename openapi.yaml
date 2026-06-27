@@ -11564,8 +11564,8 @@ paths:
       description: |
         Append a new message to an existing conversation thread on behalf of the
         signed-in shopper. The store sees it in their admin inbox and can reply;
-        the reply streams back to the shopper over the realtime channel
-        (see `getMessagingRealtimeToken`).
+        the reply streams back to the shopper live over the realtime WebSocket
+        (see `subscribeThread`).
 
         **Auth:** API key in `Authorization: Bearer` (a **publishable** key is fine —
         this is a browser-origin storefront write) **plus** the shopper's customer
@@ -11984,78 +11984,83 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
-  /v1/messaging/realtime-token:
-    post:
-      operationId: getMessagingRealtimeToken
+  /v1/messaging/threads/{id}/subscribe:
+    get:
+      operationId: subscribeThread
       tags:
         - Messaging
-      summary: Get realtime connection details for a thread
+      summary: Subscribe to a thread's new messages in realtime (WebSocket)
       description: |
-        Returns the connection details a storefront needs to receive a thread's new messages in
-        realtime, without polling. Use these details with a realtime client to subscribe to the
-        conversation and have incoming messages pushed to you as they are sent.
+        Opens a **WebSocket** connection that streams a conversation's new messages to you live, with
+        no polling. As soon as either side posts a message, every connected subscriber of that thread
+        receives it.
 
-        Two response shapes are returned depending on how the request is authenticated, indicated by
-        the `mode` field:
+        This is a WebSocket upgrade, not a normal request — send the standard upgrade headers
+        (`Upgrade: websocket`). The connection is served on the API's own domain; the server responds
+        `101 Switching Protocols` and then pushes one JSON frame per new message:
 
-        - **`direct`** — returned for a customer signed in through Galactic Core
-          (supply their session token via `x-auth-token`). The response includes a short-lived
-          `token` the storefront uses to subscribe directly; the customer only ever receives updates
-          for their own thread.
-        - **`broadcast`** — returned for customers authenticated with your own identity provider
-          (supply the signed identity assertion via `x-external-auth`), for server-side integrations,
-          and for marketplace operators. Subscribe to the named `channel` to receive the thread's
-          message events.
+        ```json
+        { "type": "message.created", "payload": { "thread_id": "…", "message": { … } } }
+        ```
 
-        In both cases, pair `realtime_url` + `realtime_key` + `channel` (and `token` when
-        present) with the `subscribeToThread` helper in the SDK to start receiving messages live.
+        **Authentication.** Because a browser `WebSocket` cannot set request headers, supply the
+        credentials as **query parameters** on the connection URL (they may also be sent as headers
+        from non-browser clients):
+
+        - `api_key` — your publishable key (a publishable key is fine; this is a browser-origin read).
+        - **one** customer credential, proving the caller owns the thread:
+          - `auth_token` — the session token of a customer signed in through Galactic Core
+            (equivalently the `x-auth-token` header), **or**
+          - `external_auth` — a signed identity assertion for a customer authenticated with your own
+            identity provider (equivalently the `x-external-auth` header).
+
+        The server validates the credential and confirms the customer is the thread's participant
+        before accepting the socket; an unauthorized or non-participant connection is closed. Use the
+        `subscribeToThread` helper in the SDK to manage the connection (it returns an unsubscribe
+        function), or open the WebSocket yourself.
+
+        Send the text frame `ping` at intervals to keep an idle connection alive; the server replies
+        `pong`.
       security:
         - BearerAuth: []
       parameters:
-        - name: x-auth-token
-          in: header
-          required: false
-          description: |
-            Session token of a customer signed in through Galactic Core. Supply this to receive the
-            `direct` connection details for that customer's own thread.
+        - name: id
+          in: path
+          required: true
+          description: The conversation to receive realtime messages for.
           schema:
             type: string
-        - name: x-external-auth
-          in: header
+            format: uuid
+        - name: api_key
+          in: query
+          required: false
+          description: |
+            Your publishable key, supplied as a query parameter for the WebSocket handshake (browsers
+            cannot set the `Authorization` header on a WebSocket). May also be sent as the
+            `Authorization: Bearer` header from non-browser clients.
+          schema:
+            type: string
+        - name: auth_token
+          in: query
+          required: false
+          description: |
+            Session token of a customer signed in through Galactic Core. Supply this (or
+            `external_auth`) to authorize the subscription. May also be sent as the `x-auth-token` header.
+          schema:
+            type: string
+        - name: external_auth
+          in: query
           required: false
           description: |
             Signed identity assertion for a customer authenticated with your own identity provider.
-            Supply this (instead of `x-auth-token`) to receive the `broadcast` connection details.
+            Supply this (or `auth_token`) to authorize the subscription. May also be sent as the
+            `x-external-auth` header.
           schema:
             type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - thread_id
-              properties:
-                thread_id:
-                  type: string
-                  format: uuid
-                  description: The conversation to receive realtime messages for.
       responses:
-        '200':
-          description: Realtime connection details
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessagingRealtimeToken'
-              example:
-                mode: direct
-                realtime_url: wss://realtime.tybritelabs.com
-                realtime_key: rt_pub_8f3c1a9e4b2d
-                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature
-                thread_id: 6c78f23c-ecba-4783-8b0c-6df2412707b3
-                channel: thread:6c78f23c-ecba-4783-8b0c-6df2412707b3
-                environment: production
+        '101':
+          description: |
+            Switching Protocols — the WebSocket is established. New-message frames follow on the socket.
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -12064,6 +12069,10 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '426':
+          description: |
+            Upgrade Required — the request reached the endpoint without a WebSocket upgrade. Reconnect
+            with the `Upgrade: websocket` header.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -18127,54 +18136,6 @@ components:
         updated_at:
           type: string
           format: date-time
-    MessagingRealtimeToken:
-      type: object
-      description: |
-        Connection details for receiving a thread's new messages in realtime. The `mode` field selects
-        the shape: a customer signed in through Galactic Core gets `direct` (with a short-lived
-        `token` to subscribe directly), while bring-your-own-auth customers, server integrations, and
-        marketplace operators get `broadcast` (subscribe to the named `channel`).
-      properties:
-        mode:
-          type: string
-          enum:
-            - direct
-            - broadcast
-          description: |
-            How to subscribe. `direct` — for a customer signed in through Galactic Core; subscribe with
-            the returned `token`. `broadcast` — for bring-your-own-auth customers, server integrations,
-            and operators; subscribe to the `channel`.
-        realtime_url:
-          type: string
-          description: Base URL of the realtime service to connect to.
-        realtime_key:
-          type: string
-          description: Public connection key for the realtime service. Safe for the browser.
-        token:
-          type:
-            - string
-            - 'null'
-          description: Short-lived subscription token. Present only when `mode` is `direct`.
-        channel:
-          type: string
-          description: Name of the channel to subscribe to.
-        thread_id:
-          type:
-            - string
-            - 'null'
-          format: uuid
-          description: The conversation these connection details are for.
-        environment:
-          type: string
-          enum:
-            - production
-            - sandbox
-          description: Whether the connection covers live or test conversations.
-      required:
-        - mode
-        - realtime_url
-        - channel
-        - environment
     DeliveryPricingTier:
       type: object
       description: Distance-based delivery pricing tier

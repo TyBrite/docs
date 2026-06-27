@@ -523,79 +523,22 @@ const result = await storefront.messaging.markThreadRead({
 }
 ```
 
-### 14. Stream replies in real time — both modes
+### 14. Stream replies in real time
 
-Polling for new messages is wasteful. Instead, request **realtime connection details** for the
-thread, then hand them to the `subscribeToThread` helper to receive the store's replies the moment
-they're sent. The response shape depends on **how the shopper was authenticated**, indicated by the
-`mode` field — and your code must handle both.
-
-#### `direct` — a shopper signed in through Galactic Core (`xAuthToken`)
-
-The response carries a short-lived `token` the storefront uses to subscribe directly to *their own*
-thread.
-
-```typescript
-const conn = await storefront.messaging.getMessagingRealtimeToken({
-  xAuthToken: session.access_token,
-  requestBody: { thread_id: '06084af6-7334-43d6-82c0-935f92335a25' },
-});
-// → conn.mode === 'direct', conn.token is present
-```
-
-```json Response (direct)
-{
-  "mode": "direct",
-  "realtime_url": "wss://realtime.tybritelabs.com",
-  "realtime_key": "rt_pub_8f3c1a9e4b2d",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature",
-  "channel": "thread:06084af6-7334-43d6-82c0-935f92335a25",
-  "thread_id": "06084af6-7334-43d6-82c0-935f92335a25",
-  "environment": "production"
-}
-```
-
-#### `broadcast` — bring-your-own-auth, server integrations & operators
-
-For a shopper authenticated with **your own** identity provider (pass the signed assertion via
-`xExternalAuth` instead of `xAuthToken`), for server-side integrations, and for marketplace
-operators, the response comes back in `broadcast` mode. There's **no `token`** (it's `null`) — you
-subscribe to the named `channel` directly.
-
-```typescript
-const conn = await storefront.messaging.getMessagingRealtimeToken({
-  xExternalAuth: signedAssertion, // your IdP's HMAC-signed identity assertion
-  requestBody: { thread_id: '06084af6-7334-43d6-82c0-935f92335a25' },
-});
-// → conn.mode === 'broadcast', conn.token is null — subscribe to conn.channel
-```
-
-```json Response (broadcast)
-{
-  "mode": "broadcast",
-  "realtime_url": "wss://realtime.tybritelabs.com",
-  "realtime_key": "rt_pub_8f3c1a9e4b2d",
-  "token": null,
-  "channel": "thread:06084af6-7334-43d6-82c0-935f92335a25",
-  "thread_id": "06084af6-7334-43d6-82c0-935f92335a25",
-  "environment": "production"
-}
-```
-
-#### Subscribe with one helper, either mode
-
-The fields are neutral connection details — `mode`, `realtime_url`, `realtime_key`, `channel`, and
-(for `direct` only) `token`. Forward them straight into the SDK helper; it handles both shapes.
+Polling for new messages is wasteful. Instead, open a **WebSocket** to the thread with the
+`subscribeToThread` helper and receive the store's replies the moment they're sent. One call covers
+every shopper — whether they signed in through Galactic Core or through your own identity provider —
+and it needs **no extra packages** (it uses the platform `WebSocket`, available in browsers, Deno,
+Bun, and Node 22+).
 
 ```typescript
 import { subscribeToThread } from '@tybrite-labs/sdk';
 
-const unsubscribe = await subscribeToThread({
-  mode: conn.mode,                 // 'direct' | 'broadcast'
-  realtimeUrl: conn.realtime_url,
-  realtimeKey: conn.realtime_key,
-  channel: conn.channel,
-  token: conn.token,               // required for 'direct', null/ignored for 'broadcast'
+// A shopper signed in through Galactic Core — pass their session token:
+const unsubscribe = subscribeToThread({
+  apiKey: 'tybrite_pk_live_...',
+  threadId: '06084af6-7334-43d6-82c0-935f92335a25',
+  authToken: session.access_token,
   onMessage: (msg) => {
     console.log('New message:', msg.message_content);
   },
@@ -605,13 +548,28 @@ const unsubscribe = await subscribeToThread({
 unsubscribe();
 ```
 
+For a shopper authenticated with **your own** identity provider, pass the signed assertion as
+`externalAuth` instead of `authToken` — everything else is identical:
+
+```typescript
+const unsubscribe = subscribeToThread({
+  apiKey: 'tybrite_pk_live_...',
+  threadId: '06084af6-7334-43d6-82c0-935f92335a25',
+  externalAuth: signedAssertion, // your IdP's HMAC-signed identity assertion
+  onMessage: (msg) => console.log('New message:', msg.message_content),
+});
+```
+
+The connection is authorized server-side: the credential is validated and confirmed to be the
+thread's participant before the socket is accepted, so a shopper only ever receives **their own**
+thread's messages.
+
 <Note>
-  The `mode` tells you how the shopper was identified:
-  - **`direct`** — a shopper signed in through Galactic Core (`xAuthToken`). The `token` authorizes a
-    direct subscription to **their own** thread.
-  - **`broadcast`** — a shopper authenticated with your own identity provider (`xExternalAuth`),
-    server-side integrations, and marketplace operators. Subscribe to the named `channel`; `token` is
-    `null`.
+  Prefer to manage the connection yourself? Open a WebSocket to
+  `GET /v1/messaging/threads/{id}/subscribe` with `?api_key=` and either `?auth_token=` or
+  `?external_auth=` in the URL (browsers cannot set request headers on a WebSocket). The server pushes
+  one JSON frame per new message: `{ "type": "message.created", "payload": { "thread_id", "message" } }`.
+  Send the text frame `ping` to keep an idle connection alive; the server replies `pong`.
 
   Want to bring your own identity provider? See
   [Customer authentication](/authentication#customer-sessions).
