@@ -506,6 +506,11 @@ tags:
       Storefront interaction events (product views, add-to-cart, add-to-wishlist). These power the
       `next` recommendation type — the products a shopper is most likely to view or add next based
       on their current session. Publishable keys are accepted so events can be sent from the browser.
+  - name: Tax
+    description: |
+      Tax estimation for checkout. Preview the tax for a shipping destination and cart before placing
+      an order, so the storefront can show and charge the final tax-inclusive total. Publishable keys
+      are accepted so the estimate can be fetched from the browser during checkout.
   - name: Analytics
     description: |
       First-party storefront analytics capture. Fire a lightweight page-view / session-start event
@@ -6711,6 +6716,197 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/tax/preview:
+    post:
+      operationId: previewTax
+      tags:
+        - Tax
+      summary: Preview tax for a cart before checkout
+      description: |
+        Estimates the tax for a shipping destination and a set of cart lines **without creating an
+        order**, so a storefront can show the shopper the final, tax-inclusive total before they pay.
+
+        When the store has automatic tax enabled, the response is calculated for the `ship_to`
+        address and includes a per-jurisdiction `tax_breakdown`. When automatic tax is not
+        configured, the response is `{ "tax_source": "fallback" }` and you should apply the store's
+        own tax rate (the same amount the order endpoint would use). The estimate is never recorded
+        for filing — it is a quote only.
+
+        Publishable keys are accepted, so the call can be made directly from the browser during
+        checkout. Use the returned `tax_amount` to compute `total_amount` (`subtotal + tax_amount +
+        shipping − discount`) and pass that same total to `createOrder`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ship_to
+                - lines
+              properties:
+                ship_to:
+                  type: object
+                  description: The shipping destination the tax is calculated for.
+                  required:
+                    - country
+                  properties:
+                    line1:
+                      type: string
+                      example: 350 Fifth Avenue
+                    line2:
+                      type: string
+                    city:
+                      type: string
+                      example: New York
+                    region:
+                      type: string
+                      example: NY
+                      description: State / province / region code.
+                    country:
+                      type: string
+                      example: US
+                      description: ISO 3166-1 alpha-2 country code.
+                    postal_code:
+                      type: string
+                      example: '10118'
+                lines:
+                  type: array
+                  description: The cart lines to estimate tax for.
+                  items:
+                    type: object
+                    required:
+                      - amount
+                    properties:
+                      quantity:
+                        type: integer
+                        example: 2
+                      amount:
+                        type: number
+                        format: float
+                        example: 598
+                        description: The line total (unit price × quantity).
+                      item_code:
+                        type: string
+                        description: Your SKU / line reference.
+                      category_name:
+                        type: string
+                        description: The product's category, used to pick the right tax code.
+                      description:
+                        type: string
+                currency:
+                  type: string
+                  example: USD
+                  description: ISO 4217 currency code. Defaults to the store currency.
+            examples:
+              usNewYork:
+                summary: A New York shipment
+                value:
+                  ship_to:
+                    line1: 350 Fifth Avenue
+                    city: New York
+                    region: NY
+                    country: US
+                    postal_code: '10118'
+                  lines:
+                    - quantity: 2
+                      amount: 598
+                      item_code: SAM-WATCH-6
+                      category_name: Wearables
+                  currency: USD
+      responses:
+        '200':
+          description: The tax estimate. `tax_source` is `fallback` when automatic tax is not configured.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tax_amount:
+                    type: number
+                    format: float
+                    example: 53.08
+                  taxable:
+                    type: number
+                    format: float
+                    example: 598
+                  currency:
+                    type: string
+                    example: USD
+                  tax_source:
+                    type: string
+                    enum:
+                      - automatic
+                      - fallback
+                    example: automatic
+                  breakdown:
+                    type: array
+                    description: Per-jurisdiction detail (present when `tax_source` is `automatic`).
+                    items:
+                      type: object
+                      properties:
+                        country:
+                          type: string
+                          example: US
+                        region:
+                          type: string
+                          example: NY
+                        jurisName:
+                          type: string
+                          example: NEW YORK CITY
+                        taxName:
+                          type: string
+                          example: NY CITY TAX
+                        rate:
+                          type: number
+                          format: float
+                          example: 0.045
+                        taxable:
+                          type: number
+                          format: float
+                          example: 598
+                        tax:
+                          type: number
+                          format: float
+                          example: 26.91
+              examples:
+                usNewYork:
+                  summary: New York combined tax on $598
+                  value:
+                    tax_amount: 53.08
+                    taxable: 598
+                    currency: USD
+                    tax_source: automatic
+                    breakdown:
+                      - country: US
+                        region: NY
+                        jurisName: NEW YORK
+                        taxName: NY STATE TAX
+                        rate: 0.04
+                        taxable: 598
+                        tax: 23.92
+                      - country: US
+                        region: NY
+                        jurisName: NEW YORK CITY
+                        taxName: NY CITY TAX
+                        rate: 0.045
+                        taxable: 598
+                        tax: 26.91
+                      - country: US
+                        region: NY
+                        jurisName: METROPOLITAN COMMUTER TRANSPORTATION DISTRICT
+                        taxName: NY SPECIAL TAX
+                        rate: 0.00375
+                        taxable: 598
+                        tax: 2.25
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
   /v1/analytics/collect:
     post:
       operationId: collectAnalyticsEvent
@@ -16864,6 +17060,49 @@ components:
           type: number
           format: float
           example: 159.99
+        tax_breakdown:
+          type:
+            - array
+            - 'null'
+          description: Per-jurisdiction tax detail when tax was calculated automatically for the shipping destination (one entry per taxing jurisdiction). Null when a flat store rate was used.
+          items:
+            type: object
+            properties:
+              country:
+                type: string
+                example: GB
+              region:
+                type: string
+                example: GB
+              jurisName:
+                type: string
+                example: UNITED KINGDOM
+              taxName:
+                type: string
+                example: Standard Rate
+              rate:
+                type: number
+                format: float
+                example: 0.2
+              taxable:
+                type: number
+                format: float
+                example: 100
+              tax:
+                type: number
+                format: float
+                example: 20
+        tax_source:
+          type:
+            - string
+            - 'null'
+          enum:
+            - automatic
+            - fallback
+            - manual
+            - null
+          description: How the tax figure was produced — `automatic` (jurisdiction-accurate calculation for the destination), `fallback` (automatic calculation was unavailable, so the store's configured rate was used), or `manual` (the store's configured rate).
+          example: automatic
         shipping_amount:
           type: number
           format: float
