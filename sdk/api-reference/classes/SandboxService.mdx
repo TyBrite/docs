@@ -1,0 +1,95 @@
+---
+title: "Sandbox"
+description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, and webhook replay for the sandbox environment."
+---
+
+The `SandboxService` class (accessed via `client.sandbox`) gives you developer tooling for the
+**sandbox (test) environment** so your test runs are fast and repeatable — reset your test data in
+one call, fast-forward time so time-dependent behavior fires immediately, and replay a webhook
+without recreating the underlying record.
+
+<Note>
+  Every Sandbox method requires a **secret test key** (`tybrite_sk_test_*`). Publishable keys and
+  live keys are rejected with `403`. These operations only ever touch your **sandbox** data — your
+  live data and store configuration are never affected.
+</Note>
+
+## Methods
+
+### `resetSandbox`
+
+Wipe **all** of your store's sandbox test data immediately — orders, customers, carts, wishlists,
+returns, store credits, reviews, messages, analytics events, webhook events, and more — instead of
+waiting for the automatic 30-day cleanup. Returns `204 No Content`.
+
+```typescript
+await client.sandbox.resetSandbox();
+// → 204 No Content (your sandbox is now empty)
+```
+
+`deleteSandboxData` (mapped to `DELETE /v1/sandbox/data`) is an exact alias if you prefer a DELETE:
+
+```typescript
+await client.sandbox.deleteSandboxData();
+```
+
+### `advanceSandboxTime`
+
+Fast-forward your sandbox by a number of days so time-dependent behavior happens now. It back-dates
+your sandbox abandoned carts, stock reservations, and analytics events, then runs the expiry/rollup
+jobs — so abandoned-cart windows elapse, reserved stock is released, and analytics roll forward,
+without waiting. The response reports what was shifted and what was intentionally left alone.
+
+```typescript
+const result = await client.sandbox.advanceSandboxTime({
+  requestBody: { advance_days: 30 }
+});
+// → {
+//     advanced_days: 30,
+//     shifted: { shopping_carts: 3, stock_reservations: 1, storefront_events: 120 },
+//     not_shifted: { promotions: "...", gift_cards: "...", trial: "...", subscription_renewal: "..." }
+//   }
+```
+
+<Note>
+  Subscription trials/renewals are real account state and are not time-shifted; promotions and gift
+  cards aren't shifted either — to test their expiry, create one in sandbox with a near-future date.
+  The `not_shifted` object explains each.
+</Note>
+
+### `replaySandboxWebhook`
+
+Re-send a previously-recorded sandbox webhook event to all your matching, enabled webhook endpoints —
+so you can re-test your handler without recreating the order/customer/etc. Identify the event by
+`event_id`, or by `type` to replay the most recent sandbox event of that type. The original event is
+unchanged.
+
+<CodeGroup>
+
+```typescript By type (latest of that type)
+const res = await client.sandbox.replaySandboxWebhook({
+  requestBody: { type: 'order.created' }
+});
+// → { replayed_event_id: '…', results: [ { endpoint_id, success, status_code }, … ] }
+```
+
+```typescript By event id
+await client.sandbox.replaySandboxWebhook({
+  requestBody: { event_id: 'evt_…' }
+});
+```
+
+</CodeGroup>
+
+## Response Codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `204` | Reset succeeded (no body). |
+| `200` | Time-travel / replay succeeded (summary returned). |
+| `400` | Invalid request (e.g. `advance_days` out of 1–3650, or neither `event_id` nor `type`). |
+| `401` | Missing or invalid API key. |
+| `403` | Not a secret **test** key — Sandbox tools require `tybrite_sk_test_*`. |
+| `404` | No matching sandbox webhook event to replay. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |
