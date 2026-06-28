@@ -1,0 +1,93 @@
+---
+title: "Tax"
+description: "Show the right tax at checkout. Preview jurisdiction-accurate tax for a destination and cart before the order is placed, then submit the tax-inclusive total — every order carries its full tax breakdown."
+---
+
+Getting tax right is one of the hardest parts of selling across regions — rates differ by country, state, county, and city, and they change. Galactic Core handles this for you: when a store turns on **automatic tax**, the platform calculates the correct tax for each order's shipping destination and records a full per-jurisdiction breakdown on the order. Your storefront's only job is to **show the shopper the right total before they pay**, which you do with a single preview call.
+
+## How tax works
+
+- A store either has **automatic tax** turned on (calculated for the destination) or uses a **single manual rate** it configures. Either way, **the order endpoint is the authority on the tax amount** — it recalculates tax server-side and rejects an order whose total doesn't match, so a tampered total can't slip through.
+- Because the order's total must already include tax, your storefront **previews the tax first** (`client.tax.previewTax`), shows the shopper the final total, and submits that same total to `createOrder`.
+- Every order response carries the resolved tax inline — `tax_amount`, a per-jurisdiction `tax_breakdown`, and a `tax_source` telling you how it was produced. There's no separate "get the tax for this order" call.
+
+## Preview tax before checkout
+
+Call `previewTax` with the shipping destination and the cart lines. It returns the tax **without creating an order** (it's only an estimate, never recorded), so you can render the final total live as the shopper edits their cart or address. Publishable keys are accepted, so you can call it straight from the browser.
+
+```typescript
+const tax = await client.tax.previewTax({
+  requestBody: {
+    ship_to: { line1: '350 Fifth Avenue', city: 'New York', region: 'NY', country: 'US', postal_code: '10118' },
+    lines: [{ quantity: 2, amount: 598, item_code: 'SAM-WATCH-6', category_name: 'Wearables' }],
+    currency: 'USD',
+  },
+});
+```
+
+```json Response
+{
+  "tax_amount": 53.08,
+  "taxable": 598,
+  "currency": "USD",
+  "tax_source": "automatic",
+  "breakdown": [
+    { "country": "US", "region": "NY", "jurisName": "NEW YORK", "taxName": "NY STATE TAX", "rate": 0.04, "taxable": 598, "tax": 23.92 },
+    { "country": "US", "region": "NY", "jurisName": "NEW YORK CITY", "taxName": "NY CITY TAX", "rate": 0.045, "taxable": 598, "tax": 26.91 },
+    { "country": "US", "region": "NY", "jurisName": "METROPOLITAN COMMUTER TRANSPORTATION DISTRICT", "taxName": "NY SPECIAL TAX", "rate": 0.00375, "taxable": 598, "tax": 2.25 }
+  ]
+}
+```
+
+| Field | Meaning |
+| :--- | :--- |
+| `tax_amount` | The total tax for the cart at this destination. |
+| `taxable` | The taxable base the tax was calculated on. |
+| `tax_source` | `automatic` (calculated for the destination) or `fallback` (automatic tax isn't configured — apply the store's own rate). |
+| `breakdown[]` | One entry per taxing jurisdiction (state, county, city, special district…), each with its `rate` and `tax`. Present when `tax_source` is `automatic`. Render this if you want to itemize tax for the shopper. |
+
+<Tip>
+  Pass each line's `category_name` so the right tax code is applied — some categories (food, clothing, books, digital goods) are taxed differently from general merchandise. Without it, the line is taxed as standard tangible goods.
+</Tip>
+
+## Place the order with the previewed total
+
+Compute the order total from the preview, then submit that exact total. The order endpoint recomputes the tax and confirms the total matches.
+
+```typescript
+const subtotal = 598, shipping = 5.99, discount = 0;
+const total_amount = subtotal + (tax.tax_amount ?? 0) + shipping - discount; // 657.07
+
+const { order } = await server.orders.createOrder({
+  idempotencyKey: `order-${Date.now()}`,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: {
+    customer_email: 'jane@example.com',
+    customer_name: 'Jane Doe',
+    shipping_address: { street: '350 Fifth Avenue', city: 'New York', state: 'NY', zip: '10118', country: 'US' },
+    items: [{ variant_id: 'variant-uuid', quantity: 2, unit_price: 299, total_price: 598 }],
+    subtotal,
+    shipping_amount: shipping,
+    discount_amount: discount,
+    // Omit tax_amount — the server calculates and records it. total_amount must be tax-inclusive.
+    total_amount,
+    payment_status: 'paid',
+  },
+});
+// order.tax_amount === 53.08 · order.tax_source === 'automatic' · order.tax_breakdown === [ … ]
+```
+
+If you send your own `tax_amount` (because you calculate tax elsewhere), it is honored as-is and `tax_source` is omitted — the server still verifies the total adds up.
+
+## When automatic tax isn't configured
+
+`previewTax` returns `{ "tax_source": "fallback" }` (no breakdown). Apply the store's own configured rate to compute the total — the order endpoint uses that same rate, so the totals agree. Automatic tax is also self-healing: if it's ever momentarily unavailable while placing an order, the order is calculated with the store's rate and marked `tax_source: "fallback"` rather than failing, so a sale is never blocked.
+
+## Returns
+
+When a returned order is refunded, Galactic Core automatically reverses the tax that was recorded for it, for the same jurisdictions — you don't issue a separate tax adjustment. Returns themselves are lodged through the [Returns](/sdk/api-reference/classes/ReturnsService) API.
+
+## Marketplace
+
+On a marketplace deployment each merchant is the seller of record for their own items, so tax is calculated per merchant against that merchant's own tax setup. Preview still works the same way from the storefront; the unified checkout records each merchant's tax on their portion of the split order.

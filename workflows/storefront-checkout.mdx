@@ -299,7 +299,12 @@ const orderData = {
   subtotal: 598,
   shipping_amount: 5.99,
   discount_amount: 0,
-  total_amount: 603.99,
+  // With automatic tax enabled, omit tax_amount — Galactic Core calculates it for the
+  // shipping destination. total_amount must be the FINAL tax-inclusive total
+  // (subtotal + tax + shipping − discount); preview the tax first with the Tax preview
+  // endpoint (see the Tax guide) so the storefront shows and submits the right total.
+  // Here NY tax on $598 is $53.08, so total = 598 + 53.08 + 5.99 = 657.07.
+  total_amount: 657.07,
   payment_status: 'pending',
 };
 
@@ -324,11 +329,18 @@ const { order } = await server.orders.createOrder({
     "order_number": "ORD-1781955469360",
     "customer_id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
     "subtotal": 598,
+    "tax_amount": 53.08,
+    "tax_source": "automatic",
+    "tax_breakdown": [
+      { "country": "US", "region": "NY", "jurisType": "State", "jurisName": "NEW YORK", "taxName": "NY STATE TAX", "rate": 0.04, "taxable": 598, "tax": 23.92 },
+      { "country": "US", "region": "NY", "jurisType": "City", "jurisName": "NEW YORK CITY", "taxName": "NY CITY TAX", "rate": 0.045, "taxable": 598, "tax": 26.91 },
+      { "country": "US", "region": "NY", "jurisType": "Special", "jurisName": "METROPOLITAN COMMUTER TRANSPORTATION DISTRICT", "taxName": "NY SPECIAL TAX", "rate": 0.00375, "taxable": 598, "tax": 2.25 }
+    ],
     "shipping_amount": 5.99,
     "discount_amount": 0,
     "order_status": "pending",
     "payment_status": "pending",
-    "total_amount": 603.99,
+    "total_amount": 657.07,
     "currency": "USD",
     "created_at": "2026-06-20T11:37:49.360+00:00"
   },

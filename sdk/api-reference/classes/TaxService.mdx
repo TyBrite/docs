@@ -1,0 +1,92 @@
+---
+title: "Tax"
+description: "Reference for the TaxService class in the Tybrite SDK."
+---
+
+The `TaxService` class (accessed via `client.tax`) estimates the tax for a shipping destination and
+a cart **before** an order is placed, so your storefront can show and charge the final,
+tax-inclusive total. When a store has automatic tax enabled, the estimate is calculated for the
+destination and itemized per jurisdiction; otherwise the store's own rate applies.
+
+The endpoint is **publishable-key accessible**, so you can call it directly from the browser during
+checkout. The estimate is a quote only — it is never recorded for tax filing.
+
+For the full picture (how tax flows from preview → order → returns), see the [Tax guide](/tax).
+
+## Methods
+
+### `previewTax`
+
+Estimate the tax for a cart at a shipping destination, without creating an order.
+
+```typescript
+const tax = await client.tax.previewTax({
+  requestBody: {
+    ship_to: {
+      line1: '350 Fifth Avenue',
+      city: 'New York',
+      region: 'NY',        // state / province / region code
+      country: 'US',       // ISO 3166-1 alpha-2
+      postal_code: '10118'
+    },
+    lines: [
+      {
+        quantity: 2,
+        amount: 598,              // the line total (unit price × quantity)
+        item_code: 'SAM-WATCH-6',
+        category_name: 'Wearables' // lets the right tax code apply
+      }
+    ],
+    currency: 'USD'
+  }
+});
+// → {
+//   tax_amount: 53.08,
+//   taxable: 598,
+//   currency: 'USD',
+//   tax_source: 'automatic',
+//   breakdown: [
+//     { country: 'US', region: 'NY', jurisName: 'NEW YORK',      taxName: 'NY STATE TAX', rate: 0.04,    taxable: 598, tax: 23.92 },
+//     { country: 'US', region: 'NY', jurisName: 'NEW YORK CITY', taxName: 'NY CITY TAX',  rate: 0.045,   taxable: 598, tax: 26.91 },
+//     { country: 'US', region: 'NY', jurisName: 'METROPOLITAN COMMUTER TRANSPORTATION DISTRICT', taxName: 'NY SPECIAL TAX', rate: 0.00375, taxable: 598, tax: 2.25 }
+//   ]
+// }
+```
+
+**Parameters** (`requestBody`)
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `ship_to` | yes | The destination. `country` is required; include `region`, `city`, and `postal_code` for accuracy. |
+| `lines` | yes | The cart lines. Each needs `amount` (the line total); include `quantity`, `item_code`, and `category_name` where you have them. |
+| `currency` | no | ISO 4217 code; defaults to the store currency. |
+
+**Response**
+
+| Field | Description |
+| :--- | :--- |
+| `tax_amount` | Total tax for the cart at this destination. |
+| `taxable` | The taxable base. |
+| `tax_source` | `automatic` (calculated for the destination) or `fallback` (automatic tax isn't configured — apply the store's own rate). |
+| `breakdown` | Per-jurisdiction detail (state, county, city, special district…), each with its `rate` and `tax`. Present when `tax_source` is `automatic`. |
+
+<Tip>
+  Always pass `category_name` per line — categories such as food, clothing, books, and digital goods
+  are taxed differently from general merchandise. Without it, a line is taxed as standard tangible
+  goods.
+</Tip>
+
+### Using the estimate at checkout
+
+Compute the order total from the estimate, then submit that same tax-inclusive total to
+[`createOrder`](/sdk/api-reference/classes/OrdersService#createorder) — the order endpoint
+recalculates the tax server-side and confirms the total matches.
+
+```typescript
+const subtotal = 598, shipping = 5.99, discount = 0;
+const total_amount = subtotal + (tax.tax_amount ?? 0) + shipping - discount; // 657.07
+// pass total_amount to client.orders.createOrder — omit tax_amount so the server records it
+```
+
+When `tax_source` is `fallback`, apply the store's configured rate to compute the total; the order
+endpoint uses that same rate, so the figures agree.

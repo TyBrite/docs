@@ -187,6 +187,7 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
 *   **Required body fields**: `customer_email`, `customer_name`, `billing_address`, `shipping_address`, `subtotal`, `total_amount`, `payment_method`, and a non-empty `items` array. Each item must include **`variant_id` or `product_id`** (at least one).
 *   **`variant_id` vs `product_id` per item** — prefer **`variant_id`** (the exact variant the shopper chose; pass the same one you put in the cart straight through). If you send only `product_id`, the order is placed against the product's **default** variant — fine for single-variant products, but for a multi-variant product it may not be the one the shopper selected. Sending both is fine: `variant_id` wins and `product_id` is resolved from it. See [Products and variants — which ID to send where](/concepts#products-and-variants) for the full picture.
 *   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement).
+*   **Tax**: if you omit `tax_amount` and the store has automatic tax enabled, Galactic Core calculates jurisdiction-accurate tax for the `shipping_address` and returns it on the order as `tax_amount`, with a per-jurisdiction `tax_breakdown` array and a `tax_source` of `automatic`. If automatic calculation is unavailable it falls back to the store's configured rate (`tax_source: fallback`) so the order never fails on tax. If you pass your own `tax_amount` (e.g. you calculated tax elsewhere), it is honored as-is. See [Order schema](#response-shape) for the fields.
 *   **Store credit**: pass `apply_store_credit: true` (optionally with `store_credit_amount` to cap it) to spend the customer's redeemable store-credit balance against this order. Requires a `customer_id`. The amount actually applied — capped at the order total and the available balance — is returned as `store_credit_applied`.
 *   Missing a required field returns `400` with a message naming the field.
 *   **Replay Protection**: The `X-Timestamp` must be within **5 minutes** of the server time.
@@ -228,9 +229,16 @@ const order = result.order;
     "customer_email": "jane.doe@example.com",
     "customer_name": "Jane Doe",
     "subtotal": 598,
+    "tax_amount": 53.08,
+    "tax_source": "automatic",
+    "tax_breakdown": [
+      { "country": "US", "region": "NY", "jurisType": "State", "jurisName": "NEW YORK", "taxName": "NY STATE TAX", "rate": 0.04, "taxable": 598, "tax": 23.92 },
+      { "country": "US", "region": "NY", "jurisType": "City", "jurisName": "NEW YORK CITY", "taxName": "NY CITY TAX", "rate": 0.045, "taxable": 598, "tax": 26.91 },
+      { "country": "US", "region": "NY", "jurisType": "Special", "jurisName": "METROPOLITAN COMMUTER TRANSPORTATION DISTRICT", "taxName": "NY SPECIAL TAX", "rate": 0.00375, "taxable": 598, "tax": 2.25 }
+    ],
     "shipping_amount": 5.99,
     "discount_amount": 0,
-    "total_amount": 603.99,
+    "total_amount": 657.07,
     "payment_method": "card",
     "payment_status": "paid",
     "order_status": "pending",
@@ -342,10 +350,16 @@ const order = await client.orders.getOrder({ id: 'order-uuid' });
   "billing_address": { "street": "350 Fifth Avenue", "city": "New York", "state": "NY", "zip": "10118", "country": "US" },
   "shipping_address": { "street": "350 Fifth Avenue", "city": "New York", "state": "NY", "zip": "10118", "country": "US" },
   "subtotal": 598,
-  "tax_amount": null,
+  "tax_amount": 53.08,
+  "tax_source": "automatic",
+  "tax_breakdown": [
+    { "country": "US", "region": "NY", "jurisType": "State", "jurisName": "NEW YORK", "taxName": "NY STATE TAX", "rate": 0.04, "taxable": 598, "tax": 23.92 },
+    { "country": "US", "region": "NY", "jurisType": "City", "jurisName": "NEW YORK CITY", "taxName": "NY CITY TAX", "rate": 0.045, "taxable": 598, "tax": 26.91 },
+    { "country": "US", "region": "NY", "jurisType": "Special", "jurisName": "METROPOLITAN COMMUTER TRANSPORTATION DISTRICT", "taxName": "NY SPECIAL TAX", "rate": 0.00375, "taxable": 598, "tax": 2.25 }
+  ],
   "shipping_amount": 5.99,
   "discount_amount": 0,
-  "total_amount": 603.99,
+  "total_amount": 657.07,
   "payment_method": "card",
   "payment_status": "paid",
   "order_status": "pending",
@@ -403,7 +417,7 @@ The full updated order is returned at the top level:
   "tracking_number": "1Z999AA10123456784",
   "shipped_at": "2026-06-20T11:37:42.557+00:00",
   "delivered_at": null,
-  "total_amount": 603.99,
+  "total_amount": 657.07,
   "updated_at": "2026-06-20T11:37:50.273614+00:00"
 }
 ```

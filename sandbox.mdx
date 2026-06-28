@@ -92,18 +92,17 @@ await client.sandbox.resetSandbox();           // → 204 No Content
 
 ### Fast-forward time
 
-One of the hardest things to test in commerce is anything time-dependent. Advance your sandbox by N
-days so those behaviors fire now: abandoned-cart windows elapse, reserved stock is released, and
-analytics roll forward — no waiting.
+Advance your sandbox by N days so time-dependent behaviors fire now instead of after a real wait:
+Galactic Core back-dates your sandbox data so abandoned-cart windows elapse, reserved stock is
+released, and analytics roll forward.
 
 ```typescript
 const result = await client.sandbox.advanceSandboxTime({ requestBody: { advance_days: 30 } });
 // → { advanced_days: 30, shifted: { shopping_carts, stock_reservations, storefront_events }, not_shifted: {…} }
 ```
 
-The response's `not_shifted` explains what is intentionally left alone (subscription trials/renewals
-are real account state; to test promotion or gift-card expiry, create one in sandbox with a
-near-future date).
+The response's `not_shifted` explains what is intentionally left alone — to test promotion or
+gift-card expiry, create one in sandbox with a near-future date.
 
 ### Replay a webhook
 
