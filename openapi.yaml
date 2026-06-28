@@ -710,6 +710,21 @@ tags:
       ```
 
       **Rate Limiting:** 500 requests/hour per secret key.
+  - name: Sandbox
+    description: |
+      Developer tooling for the sandbox (test) environment — make your test runs fast and repeatable.
+
+      **⚠️ SECRET TEST KEY REQUIRED**: every Sandbox endpoint requires a `tybrite_sk_test_*` key and
+      only ever touches your sandbox data; publishable keys and live keys are rejected (403). Your
+      live data and store configuration are never affected.
+
+      - **Reset** (`POST /v1/sandbox/reset`, or `DELETE /v1/sandbox/data`) — wipe all your sandbox
+        test data instantly instead of waiting for the automatic 30-day cleanup.
+      - **Fast-forward time** (`POST /v1/sandbox/time`) — advance your sandbox by N days so abandoned
+        carts, stock-reservation windows and analytics roll forward without waiting. (Subscription
+        trials/renewals and promotion/gift-card expiry are not time-shifted — see the endpoint.)
+      - **Replay a webhook** (`POST /v1/sandbox/webhooks/replay`) — re-send a recorded sandbox webhook
+        event to your endpoints without recreating the underlying record.
 externalDocs:
   description: Galactic Core Documentation
   url: https://docs.tybritelabs.com/galactic-core
@@ -15542,6 +15557,176 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+  /v1/sandbox/reset:
+    post:
+      operationId: resetSandbox
+      tags:
+        - Sandbox
+      summary: Reset your sandbox data
+      description: |
+        Wipes all of your store's **sandbox** test data immediately — orders, customers, carts,
+        wishlists, returns, store credits, reviews, messages, analytics events, webhook events and
+        more — so you can start a test run from a clean slate without waiting for the automatic
+        30-day cleanup. Your **live** data and your store configuration are never touched.
+
+        **Requires a secret test key** (`tybrite_sk_test_*`). Publishable keys and live keys are
+        rejected. Returns `204 No Content` on success. `DELETE /v1/sandbox/data` does the same thing.
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Sandbox data wiped.
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/sandbox/data:
+    delete:
+      operationId: deleteSandboxData
+      tags:
+        - Sandbox
+      summary: Reset your sandbox data (alias)
+      description: |
+        Alias of `POST /v1/sandbox/reset` — wipes all of your store's sandbox test data immediately.
+        Requires a secret test key (`tybrite_sk_test_*`). Returns `204 No Content`.
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Sandbox data wiped.
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/sandbox/time:
+    post:
+      operationId: advanceSandboxTime
+      tags:
+        - Sandbox
+      summary: Fast-forward sandbox time
+      description: |
+        Advances time for your **sandbox** data so time-dependent behavior happens now instead of
+        after a real wait. Back-dates your sandbox abandoned carts, stock reservations and analytics
+        events by `advance_days`, then runs the expiry/rollup jobs — so, for example, abandoned-cart
+        windows elapse, reserved stock is released, and analytics roll forward, all without waiting.
+
+        Only your sandbox data is affected; live data is never touched. The response reports what was
+        shifted and what was intentionally not (see `not_shifted`).
+
+        Requires a secret test key (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - advance_days
+              properties:
+                advance_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 3650
+                  description: Number of days to fast-forward (1–3650).
+      responses:
+        '200':
+          description: Sandbox time advanced.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  advanced_days:
+                    type: integer
+                  shifted:
+                    type: object
+                    description: Per-area count of sandbox rows moved.
+                  not_shifted:
+                    type: object
+                    description: Areas intentionally not affected, with the reason.
+              example:
+                advanced_days: 30
+                shifted:
+                  shopping_carts: 3
+                  stock_reservations: 1
+                  storefront_events: 120
+                not_shifted:
+                  promotions: create a sandbox promo with a near-future end date to test expiry
+                  trial: real subscription state — not changed
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/sandbox/webhooks/replay:
+    post:
+      operationId: replaySandboxWebhook
+      tags:
+        - Sandbox
+      summary: Replay a sandbox webhook event
+      description: |
+        Re-sends a previously-recorded **sandbox** webhook event to all of your matching, enabled
+        webhook endpoints — so you can re-test your handler without recreating the underlying order,
+        customer, etc. Identify the event either by `event_id`, or by `type` to replay the most
+        recent sandbox event of that type for your store. The original event is unchanged.
+
+        Requires a secret test key (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event_id:
+                  type: string
+                  description: The id of the sandbox webhook event to replay. Provide this or `type`.
+                type:
+                  type: string
+                  description: Replay the most recent sandbox event of this type (e.g. `order.created`). Provide this or `event_id`.
+      responses:
+        '200':
+          description: Replay delivered (per-endpoint results returned).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  replayed_event_id:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
 components:
   securitySchemes:
     BearerAuth:

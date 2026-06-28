@@ -66,11 +66,54 @@ numbers or clutter their order list.
 
 Sandbox data is **automatically purged after 30 days**, so don't rely on a sandbox record sticking
 around long-term — treat sandbox data as disposable and re-seed it from your tests when you need it.
+You don't have to wait, though — you can [reset on demand](#developer-tools) any time.
 
 <Note>
   **API keys are never auto-deleted.** Only the transactional sandbox data (orders, customers, carts,
   reviews, messaging, etc.) is cleaned up. Your test keys remain valid until you remove them yourself.
 </Note>
+
+## Developer tools
+
+The sandbox includes tooling that makes test runs fast and repeatable — so you don't have to wait on
+real time or rebuild state by hand. All of these require a **secret test key** (`tybrite_sk_test_*`),
+only ever affect your sandbox data, and are available via `client.sandbox` in the SDK (full reference:
+[SandboxService](/sdk/api-reference/classes/SandboxService)).
+
+### Reset your sandbox instantly
+
+Wipe all your sandbox test data in one call instead of waiting for the 30-day cleanup — a clean slate
+before each test run.
+
+```typescript
+await client.sandbox.resetSandbox();           // → 204 No Content
+// or the DELETE alias: await client.sandbox.deleteSandboxData();
+```
+
+### Fast-forward time
+
+One of the hardest things to test in commerce is anything time-dependent. Advance your sandbox by N
+days so those behaviors fire now: abandoned-cart windows elapse, reserved stock is released, and
+analytics roll forward — no waiting.
+
+```typescript
+const result = await client.sandbox.advanceSandboxTime({ requestBody: { advance_days: 30 } });
+// → { advanced_days: 30, shifted: { shopping_carts, stock_reservations, storefront_events }, not_shifted: {…} }
+```
+
+The response's `not_shifted` explains what is intentionally left alone (subscription trials/renewals
+are real account state; to test promotion or gift-card expiry, create one in sandbox with a
+near-future date).
+
+### Replay a webhook
+
+Re-send a recorded sandbox webhook event to your endpoints without recreating the underlying order or
+customer — ideal for iterating on a webhook handler.
+
+```typescript
+// Replay the most recent sandbox event of a type, or pass { event_id } for a specific one.
+await client.sandbox.replaySandboxWebhook({ requestBody: { type: 'order.created' } });
+```
 
 ## How to use it
 
