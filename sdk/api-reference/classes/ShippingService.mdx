@@ -83,6 +83,52 @@ const shipping = await client.shipping.calculateShipping({
 | `is_free` | Boolean indicating if a free delivery threshold was reached. |
 | `coordinates` | Returns the resolved [lat, lng] even if you searched via `place_name`. |
 
+### Live carrier rates (multi-carrier)
+
+When the store has multi-carrier shipping connected, pass a destination `address_to` **and** a
+`parcel` to `calculateShipping` to ALSO get **live carrier rates** alongside the zone/tier fee. The
+response gains a `rates[]` array (real quotes from USPS, UPS, FedEx, DHL…) and `rate_source` becomes
+`shippo`. When multi-carrier isn't connected, `rates[]` is simply absent and the zone/tier `fee`
+applies as before — the manual rates always work.
+
+```typescript
+const quote = await client.shipping.calculateShipping({
+  requestBody: {
+    latitude: 40.748, longitude: -73.985, order_total: 120,
+    address_to: { street1: '350 5th Ave', city: 'New York', state: 'NY', zip: '10118', country: 'US' },
+    parcel: { length: '10', width: '8', height: '4', distance_unit: 'in', weight: '2', mass_unit: 'lb' },
+  },
+});
+// quote.rate_source === 'shippo'
+// quote.rates === [ { rate_id, provider: 'USPS', service: 'Ground Advantage', amount: 10.43, currency: 'USD', estimated_days: 5 }, … ]
+```
+
+Show `rates[]` to the shopper, let them pick, and carry the chosen `rate_id` into checkout (pass it as
+`shippo_rate_id` on `createOrder` so the order's shipping is validated against that real quote).
+
+<Note>
+  Buying a shipping label is done by the merchant from their admin — it charges the merchant's carrier
+  account, marks the order shipped, and emits `order.shipped` — so there is no SDK method for it. From a
+  storefront you quote rates (`calculateShipping`) and track parcels (`trackShipment`).
+</Note>
+
+### `trackShipment`
+
+Returns live tracking status for a parcel by carrier + tracking number — use this when you want to
+render the status timeline **inside** your own UI.
+
+```typescript
+const status = await client.shipping.trackShipment({ carrier: 'usps', number: order.tracking_number });
+// → { carrier, tracking_number, status, status_details, eta, history: [...] }
+```
+
+<Tip>
+  The lightest way to let a shopper track is to **link to the carrier's own tracking page** — no API
+  call. When the label is bought, the carrier tracking URL is saved on the order at
+  `shipping_metadata.shippo.tracking_url`; render it as a "Track your package" link. Use
+  `trackShipment` only when you want the status shown natively in your storefront.
+</Tip>
+
 ### How Fees Are Calculated
 
 Tybrite uses a priority-based logic to determine the shipping fee:

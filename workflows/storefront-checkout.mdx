@@ -216,6 +216,7 @@ const merged = await storefront.cartWishlist.mergeCart({
 ## 5. Quote shipping
 
 Quote delivery for the shopper's address before you total the order. Read-only — publishable key.
+The amount you show here is the same one the order endpoint validates, so use it for the total.
 
 ```typescript
 const quote = await storefront.shipping.calculateShipping({
@@ -225,14 +226,50 @@ const quote = await storefront.shipping.calculateShipping({
 
 ```json Response
 {
-  "shipping_cost": 5.99,
-  "currency": "USD",
+  "fee": 5.99,
+  "zone_name": null,
   "tier_name": "Local (within 10 km)",
   "distance_meters": 8548,
   "is_free": false,
+  "rate_source": "tier",
   "coordinates": { "latitude": 40.6782, "longitude": -73.9442 }
 }
 ```
+
+When you place the order, pass `shipping_latitude` + `shipping_longitude` so the server re-resolves
+this fee and validates `shipping_amount` against it.
+
+### With multi-carrier shipping (Shippo)
+
+If the store has multi-carrier shipping connected, also pass a destination `address_to` + a `parcel`
+to get **live carrier rates** the shopper can choose from. The response then carries `rates[]` and
+`rate_source: "shippo"`.
+
+```typescript
+const quote = await storefront.shipping.calculateShipping({
+  requestBody: {
+    latitude: 40.748, longitude: -73.985, order_total: 598,
+    address_to: { street1: '350 5th Ave', city: 'New York', state: 'NY', zip: '10118', country: 'US' },
+    parcel: { length: '10', width: '8', height: '4', distance_unit: 'in', weight: '2', mass_unit: 'lb' },
+  },
+});
+```
+
+```json Response
+{
+  "fee": 5.99,
+  "rate_source": "shippo",
+  "rates": [
+    { "rate_id": "0fd775faba6246a7…", "provider": "USPS", "service": "Ground Advantage", "amount": 10.43, "currency": "USD", "estimated_days": 5 },
+    { "rate_id": "1d2a10def7874574…", "provider": "UPS",  "service": "2nd Day Air",      "amount": 25.71, "currency": "USD", "estimated_days": 2 }
+  ],
+  "coordinates": { "latitude": 40.748, "longitude": -73.985 }
+}
+```
+
+Show `rates[]`, let the shopper pick one, set `shipping_amount` to that rate's `amount`, and carry its
+`rate_id` into the order as `shippo_rate_id` — the server validates the amount against that real
+carrier quote.
 
 ## 6. (Optional) Reserve stock before you check out
 
@@ -593,6 +630,32 @@ const payment = await server.payments.initializePayment({
   the customer's metrics automatically — you don't orchestrate those yourself. Wire this up in
   [Webhooks & automation](/workflows/webhooks-automation).
 </Note>
+
+## 9. Fulfill & track
+
+Once paid, the **merchant** buys the carrier label from their admin (multi-carrier / Shippo). Buying a
+label is a fulfillment action — it charges the merchant's carrier account, marks the order shipped,
+stamps the order's `tracking_number`, and fires an `order.shipped` webhook — so it isn't a storefront
+SDK call.
+
+**The simplest way to let a shopper track is to link to the carrier's own tracking page.** When the
+label is bought, the carrier tracking URL is saved on the order at
+`shipping_metadata.shippo.tracking_url`. Render it as a "Track your package" link — no API call:
+
+```tsx
+const trackingUrl = order.shipping_metadata?.shippo?.tracking_url;
+{trackingUrl && <a href={trackingUrl} target="_blank" rel="noopener noreferrer">Track your package</a>}
+```
+
+**Optionally**, if you'd rather show the status *inside* your storefront, call `trackShipment` to fetch
+the live status and render your own timeline:
+
+```typescript
+const status = await storefront.shipping.trackShipment({ carrier: 'usps', number: order.tracking_number });
+// → { carrier, tracking_number, status, eta, history: [...] }
+```
+
+Listen for the `order.shipped` webhook to notify the shopper and surface either of the above.
 
 ## What's next
 
