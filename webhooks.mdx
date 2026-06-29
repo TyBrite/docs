@@ -99,6 +99,7 @@ All events follow the same envelope shape — only `type` and `data.object` vary
 | `order.created` | `POST /v1/orders` succeeds, regardless of payment status |
 | `order.paid` | `payment_status` transitions to `paid` |
 | `order.fulfilled` | `order_status` transitions to `shipped` or `delivered` |
+| `order.shipped` | A shipping label is purchased for the order (carries `tracking_number` + `carrier` + `tracking_url`) |
 | `order.cancelled` | `order_status` transitions to `cancelled` |
 | `order.refunded` | A refund is recorded on the order |
 | `order.updated` | Any `PATCH /v1/orders/:id` that doesn't trigger a more specific event |

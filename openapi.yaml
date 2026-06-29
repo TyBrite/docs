@@ -12474,6 +12474,74 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/shipping/tracking/{carrier}/{number}:
+    get:
+      operationId: trackShipment
+      tags:
+        - Shipping
+      summary: Track a shipment
+      description: |-
+        Returns the live tracking status for a parcel by carrier + tracking number. Requires the
+        store to have multi-carrier shipping connected.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: carrier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Carrier token (e.g. usps, ups, fedex).
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The tracking number.
+      responses:
+        '200':
+          description: Tracking status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  carrier:
+                    type: string
+                  tracking_number:
+                    type: string
+                  status:
+                    type:
+                      - string
+                      - 'null'
+                    example: DELIVERED
+                  status_details:
+                    type:
+                      - string
+                      - 'null'
+                  eta:
+                    type:
+                      - string
+                      - 'null'
+                    format: date-time
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        status_details:
+                          type: string
+                        status_date:
+                          type: string
+                          format: date-time
+                        location:
+                          type: object
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
   /v1/connect/authorize:
     get:
       operationId: getConnectAuthorize
@@ -18630,6 +18698,55 @@ components:
           pattern: ^#[0-9A-Fa-f]{6}$
           example: '#3B82F6'
           description: Hex color code for map visualization
+    ShippingAddressInput:
+      type: object
+      description: A shipping address for live carrier rating. Supplied alongside a parcel to ALSO get live carrier rates from a connected carrier account (returned as `rates[]`).
+      properties:
+        name:
+          type: string
+        street1:
+          type: string
+          example: 350 Fifth Avenue
+        street2:
+          type: string
+        city:
+          type: string
+          example: New York
+        state:
+          type: string
+          example: NY
+        zip:
+          type: string
+          example: '10118'
+        country:
+          type: string
+          example: US
+        email:
+          type: string
+        phone:
+          type: string
+    ShippingParcelInput:
+      type: object
+      description: Parcel dimensions + weight for live carrier rating.
+      properties:
+        length:
+          type: string
+          example: '10'
+        width:
+          type: string
+          example: '8'
+        height:
+          type: string
+          example: '4'
+        distance_unit:
+          type: string
+          example: in
+        weight:
+          type: string
+          example: '2'
+        mass_unit:
+          type: string
+          example: lb
     ShippingCalculationByCoordinates:
       type: object
       description: Calculate shipping using the customer's GPS coordinates.
@@ -18657,6 +18774,12 @@ components:
           minimum: 0
           description: Total order value (before shipping)
           example: 5000
+        address_to:
+          $ref: '#/components/schemas/ShippingAddressInput'
+        address_from:
+          $ref: '#/components/schemas/ShippingAddressInput'
+        parcel:
+          $ref: '#/components/schemas/ShippingParcelInput'
     ShippingCalculationByPlace:
       type: object
       description: Calculate shipping using a place name or address that will be geocoded.
@@ -18678,6 +18801,12 @@ components:
           minimum: 0
           description: Total order value (before shipping)
           example: 5000
+        address_to:
+          $ref: '#/components/schemas/ShippingAddressInput'
+        address_from:
+          $ref: '#/components/schemas/ShippingAddressInput'
+        parcel:
+          $ref: '#/components/schemas/ShippingParcelInput'
     ShippingCalculationRequest:
       description: Input for a shipping fee calculation. Provide either GPS coordinates (latitude + longitude) or a place_name to geocode.
       oneOf:
@@ -18746,6 +18875,44 @@ components:
               format: double
               example: 37.013954
               description: Customer longitude
+        rate_source:
+          type: string
+          enum:
+            - zone
+            - tier
+            - shippo
+            - none
+          example: shippo
+          description: Which source produced the result — the store's delivery `zone`/`tier` rules, live carrier `shippo` rates, or `none` (unconfigured).
+        rates:
+          type: array
+          description: Live multi-carrier rate options, present only when the store has carrier shipping connected AND a destination address + parcel were supplied. Each entry is a real carrier quote; pass a chosen `rate_id` to buy a label or place an order with that rate.
+          items:
+            type: object
+            properties:
+              rate_id:
+                type: string
+                description: The chosen carrier rate. Pass as shippo_rate_id on createOrder so the order's shipping amount is validated against this real quote.
+              provider:
+                type: string
+                example: USPS
+              service:
+                type:
+                  - string
+                  - 'null'
+                example: Ground Advantage
+              amount:
+                type: number
+                format: float
+                example: 10.43
+              currency:
+                type: string
+                example: USD
+              estimated_days:
+                type:
+                  - integer
+                  - 'null'
+                example: 5
     ConnectAuthorizeResponse:
       type: object
       required:
