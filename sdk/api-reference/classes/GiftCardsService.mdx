@@ -9,10 +9,10 @@ The `GiftCardsService` class (accessed via `client.giftCards`) manages the check
 
 ### `listGiftCards`
 
-Retrieve all gift cards owned by a specific customer. This is used for displaying a user's digital wallet in their account dashboard.
+Retrieve all gift cards held by a specific customer (gift cards are merchant-issued stored-value/loyalty instruments, not a payment method). This is used for listing a customer's gift cards in their account dashboard.
 
 <Note>
-  `customerId` is **strictly required** for this endpoint to identify which wallet to retrieve. In addition, an `xAuthToken` (the customer's session token) must be supplied so Galactic Core can verify the requester owns that wallet.
+  `customerId` is **strictly required** for this endpoint to identify whose gift cards to retrieve. In addition, a customer identity must be supplied so Galactic Core can verify the requester owns those gift cards — **either** `xAuthToken` (the customer's session token) **or** `xExternalAuth` (a bring-your-own-auth assertion); provide one, not both.
 </Note>
 
 ```typescript
@@ -43,7 +43,7 @@ gift_cards.forEach(gc => {
 <Note>Customers with no gift cards get `{ "gift_cards": [] }`.</Note>
 
 <Note>
-  When listing gift cards for a customer, the resolved `xAuthToken` session must match the `customerId` parameter. Otherwise the request returns 403. This means a leaked publishable key alone cannot enumerate another customer's gift cards — the customer's session token is required.
+  When listing gift cards for a customer, the resolved customer identity (`xAuthToken` or `xExternalAuth`) must match the `customerId` parameter. Otherwise the request returns 403. This means a leaked publishable key alone cannot enumerate another customer's gift cards — a customer credential is required.
 </Note>
 
 ---
@@ -139,7 +139,7 @@ Once the balance reaches zero or the `expiry_date` passes, the card is no longer
 
 ## Authentication Flow
 
-`listGiftCards` requires the customer's session JWT in addition to your API key. Obtain it via the `AuthenticationService` and pass it as `xAuthToken`:
+`listGiftCards` requires a customer credential in addition to your API key — the session JWT from `AuthenticationService` passed as `xAuthToken`, or a bring-your-own-auth assertion passed as `xExternalAuth`:
 
 ```typescript
 // 1. Sign the customer in (magic link, OTP, or password)
@@ -159,7 +159,7 @@ const { gift_cards } = await client.giftCards.listGiftCards({
 // → { gift_cards: [{ code, balance, status, expiry_date }, …] }
 ```
 
-The customer's session token must match the requested `customerId` before any wallet contents are returned.
+The resolved customer identity must match the requested `customerId` before any gift cards are returned.
 
 ### Response Codes
 

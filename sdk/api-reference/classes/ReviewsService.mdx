@@ -14,7 +14,7 @@ Reviews follow a moderation lifecycle:
 3. Once approved, the review appears in public listing results.
 
 **Key type behavior:**
-- **Publishable keys** — list and get approved reviews, submit a review (with a customer session token), delete the customer's own review (with a customer session token), mark reviews helpful.
+- **Publishable keys** — list and get approved reviews, submit a review (with a customer credential), delete the customer's own review (with a customer credential), mark reviews helpful. A customer credential is **either** `xAuthToken` (session JWT) **or** `xExternalAuth` (bring-your-own-auth assertion).
 - **Secret keys** — the same storefront actions, for server-side use.
 
 ---
@@ -150,7 +150,7 @@ const { review } = await client.reviews.getReview({
 
 ## `submitReview`
 
-Submits a review on behalf of a logged-in customer. Requires both your API key and a customer session token.
+Submits a review on behalf of a logged-in customer. Requires both your API key and a customer credential (`xAuthToken` session JWT or `xExternalAuth` assertion).
 
 <Note>
   Pass the customer's session token (obtained from `POST /v1/auth/login`) in the `xAuthToken` parameter. Reviews start as `pending` and must be approved before they appear publicly.
