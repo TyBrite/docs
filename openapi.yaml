@@ -1488,7 +1488,7 @@ paths:
             **Allowed Fields:**
             - **Core:** `id` (alias of `product_id`), `product_id`, `variant_id`, `name`, `sku`, `description`
             - **Pricing:** `price`, `selling_price`, `sale_price`, `display_currency`, `currency_symbol`
-            - **Inventory:** `stock`, `threshold`, `last_restocked`
+            - **Inventory:** `stock`, `last_restocked` (`last_restocked` is not in the default response — request it explicitly)
             - **Media:** `media`, `thumbnail_url`
             - **SEO:** `product_slug`, `seo_title`, `seo_description`, `seo_keywords`
             - **Taxonomy:** `category_id`, `category_name`, `subcategory_id`, `subcategory_name`
@@ -1799,7 +1799,7 @@ paths:
             **Root-Level Fields:**
             - **Core:** `product_id`, `variant_id`, `name`, `sku`, `description`
             - **Pricing:** `price`, `selling_price`, `sale_price`, `price_range`, `display_currency`, `currency_symbol`
-            - **Inventory:** `stock`, `total_stock`, `threshold`, `last_restocked`
+            - **Inventory:** `stock`, `total_stock`, `last_restocked` (`last_restocked` is not in the default response — request it explicitly)
             - **Media:** `media`, `thumbnail_url`
             - **Metadata:** `brand`, `category_name`, `subcategory_name`, `attributes.*`
             - **Flags:** `has_variants`, `variant_count`, `is_default`
@@ -1843,7 +1843,7 @@ paths:
             **SDK Usage:**
               
             **Performance Impact:**
-            - Nested filtering excludes internal fields (threshold, last_restocked)
+            - Nested filtering excludes non-default fields like last_restocked
             - Perfect for mobile apps and bandwidth-constrained environments
             - Recommended for product cards and listing pages
           schema:
@@ -1869,7 +1869,7 @@ paths:
             - Flags: has_variants=true, variant_count
             - Clean variants array with only variant-specific fields:
               - variant_id, sku, price, sale_price, selling_price
-              - stock, threshold, last_restocked
+              - stock (last_restocked available via fields=variants.last_restocked)
               - variant_attributes (color, size, etc.)
               - variant_name, is_default
               
@@ -1903,8 +1903,6 @@ paths:
                     price: 1999
                     selling_price: 1999
                     stock: 42
-                    threshold: 5
-                    last_restocked: '2026-06-20'
                     has_variants: false
                     display_currency: USD
                     currency_symbol: $
@@ -1940,8 +1938,6 @@ paths:
                         sale_price: null
                         selling_price: 349.99
                         stock: 79
-                        threshold: 5
-                        last_restocked: '2026-06-20'
                         variant_attributes:
                           color: Grey
                         variant_name: Variant 1
@@ -1952,8 +1948,6 @@ paths:
                         sale_price: null
                         selling_price: 331.07
                         stock: 138
-                        threshold: 5
-                        last_restocked: '2026-06-20'
                         variant_attributes:
                           color: Black
                         variant_name: Variant 3
@@ -1964,8 +1958,6 @@ paths:
                         sale_price: null
                         selling_price: 368.91
                         stock: 125
-                        threshold: 5
-                        last_restocked: '2026-06-20'
                         variant_attributes:
                           color: Blue
                         variant_name: Variant 2
@@ -2230,8 +2222,6 @@ paths:
                         sale_price: null
                         selling_price: 349.99
                         stock: 79
-                        threshold: 5
-                        last_restocked: '2026-06-20'
                         variant_attributes:
                           color: Grey
                         variant_name: Variant 1
@@ -2242,8 +2232,6 @@ paths:
                         sale_price: null
                         selling_price: 331.07
                         stock: 138
-                        threshold: 5
-                        last_restocked: '2026-06-20'
                         variant_attributes:
                           color: Black
                         variant_name: Variant 3
@@ -2254,8 +2242,6 @@ paths:
                         sale_price: null
                         selling_price: 368.91
                         stock: 125
-                        threshold: 5
-                        last_restocked: '2026-06-20'
                         variant_attributes:
                           color: Blue
                         variant_name: Variant 2
@@ -12798,6 +12784,7 @@ paths:
               example:
                 sk: tybrite_sk_live_...
                 pk: tybrite_pk_live_...
+                signing_secret: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
                 pair_id: 550e8400-e29b-41d4-a716-446655440000
                 store_id: 660f9511-f30c-52e5-b827-557766551111
                 environment: production
@@ -16544,7 +16531,7 @@ components:
             
         **Field Filtering:**
         Use dot notation to filter variant fields: variants.sku,variants.selling_price,variants.stock
-        This can reduce payload size by up to 52% by excluding internal fields like threshold, last_restocked.
+        This can reduce payload size by excluding non-default fields like last_restocked.
       properties:
         variant_id:
           type: string
@@ -16572,18 +16559,12 @@ components:
           type: integer
           description: Available stock quantity for this variant
           example: 10
-        threshold:
-          type:
-            - integer
-            - 'null'
-          description: Low stock threshold (internal inventory field)
-          example: 5
         last_restocked:
           type:
             - string
             - 'null'
           format: date
-          description: Last restock date (internal inventory field)
+          description: Last restock date. Not included by default — request it explicitly with `fields=variants.last_restocked`.
           example: '2026-02-17'
         variant_attributes:
           type:
@@ -16845,17 +16826,12 @@ components:
             - 'null'
           description: Available stock quantity (only present for simple products or list endpoint)
           example: 40
-        threshold:
-          type:
-            - integer
-            - 'null'
-          description: Low stock threshold
         last_restocked:
           type:
             - string
             - 'null'
           format: date
-          description: Last restock date
+          description: Last restock date. Not included in the default list response — request it explicitly with `fields=last_restocked`.
         variant_attributes:
           type:
             - object
@@ -18997,6 +18973,18 @@ components:
             Publishable key. Safe to use client-side (browser/mobile).
             Use it for read-only catalog and cart operations.
           example: tybrite_pk_live_...
+        signing_secret:
+          type:
+            - string
+            - 'null'
+          description: |
+            Request-signing secret for THIS connection. Store it securely server-side alongside the
+            secret key — it will not be shown again. Use it to sign write requests that require a
+            signature (creating/updating orders, initializing payments): set `X-Timestamp` to the
+            current Unix time and `X-Signature` to the HMAC-SHA256 of `{timestamp}.{request_body}`
+            using this secret. Scoped to this connection, so it can be rotated or revoked
+            independently of any other integration.
+          example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
         pair_id:
           type: string
           format: uuid
