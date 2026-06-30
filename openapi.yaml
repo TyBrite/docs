@@ -5276,6 +5276,15 @@ paths:
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. Required whenever `customer_id` is supplied so the gateway can prove the caller owns that customer record. Anonymous (session-only) carts may omit it.
           schema:
             type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
+          schema:
+            type: string
         - name: customer_id
           in: query
           description: Customer UUID for authenticated carts
@@ -5377,6 +5386,15 @@ paths:
           in: header
           required: false
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. Required whenever `customer_id` is supplied so the gateway can prove the caller owns that customer record. Anonymous (session-only) carts may omit it.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
           schema:
             type: string
         - name: customer_id
@@ -5485,6 +5503,15 @@ paths:
           in: header
           required: false
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. Required whenever `customer_id` is supplied so the gateway can prove the caller owns that customer record. Anonymous (session-only) carts may omit it.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
           schema:
             type: string
         - name: X-Session-Id
@@ -5628,6 +5655,15 @@ paths:
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. Required whenever `customer_id` is supplied so the gateway can prove the caller owns that customer record. Anonymous (session-only) carts may omit it.
           schema:
             type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
+          schema:
+            type: string
         - name: id
           in: path
           required: true
@@ -5752,6 +5788,15 @@ paths:
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. Required whenever `customer_id` is supplied so the gateway can prove the caller owns that customer record. Anonymous (session-only) carts may omit it.
           schema:
             type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
+          schema:
+            type: string
         - name: id
           in: path
           required: true
@@ -5813,8 +5858,17 @@ paths:
       parameters:
         - name: x-auth-token
           in: header
-          required: true
+          required: false
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. The resolved customer must match the `customer_id` in the request.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
           schema:
             type: string
       requestBody:
@@ -5922,8 +5976,17 @@ paths:
       parameters:
         - name: x-auth-token
           in: header
-          required: true
+          required: false
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. The resolved customer must match the `customer_id` in the request.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
           schema:
             type: string
         - name: customer_id
@@ -6006,8 +6069,17 @@ paths:
       parameters:
         - name: x-auth-token
           in: header
-          required: true
+          required: false
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. The resolved customer must match the `customer_id` in the request.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
           schema:
             type: string
       requestBody:
@@ -6108,8 +6180,17 @@ paths:
       parameters:
         - name: x-auth-token
           in: header
-          required: true
+          required: false
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. The resolved customer must match the `customer_id` in the request.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
           schema:
             type: string
         - name: id
@@ -6172,8 +6253,17 @@ paths:
       parameters:
         - name: x-auth-token
           in: header
-          required: true
+          required: false
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. The resolved customer must match the `customer_id` in the request.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
           schema:
             type: string
         - name: X-Session-Id
@@ -8654,6 +8744,15 @@ paths:
           in: header
           required: false
           description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. Required when customer_id is supplied so the gateway can prove the caller owns that customer record.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
           schema:
             type: string
         - name: customer_id
@@ -13156,10 +13255,19 @@ paths:
       parameters:
         - name: x-auth-token
           in: header
-          required: true
+          required: false
+          description: Customer session JWT from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. Provide this OR `x-external-auth`, not both.
           schema:
             type: string
-          description: Customer session JWT from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`.
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -13365,12 +13473,21 @@ paths:
           description: Review UUID.
         - name: x-auth-token
           in: header
-          required: true
-          schema:
-            type: string
+          required: false
           description: |
             Customer JWT for the review's author, from `POST /v1/auth/login` or
-            `POST /v1/auth/verify-otp`.
+            `POST /v1/auth/verify-otp`. Provide this OR `x-external-auth`, not both.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Provide this OR `x-auth-token`, not both.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
+          schema:
+            type: string
       responses:
         '200':
           description: Review deleted

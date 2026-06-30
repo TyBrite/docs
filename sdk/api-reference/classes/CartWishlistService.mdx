@@ -15,10 +15,10 @@ The cart and wishlist APIs support full variant tracking and a unified media gal
 
 ## Security Model
 
-Cart and wishlist endpoints accept **publishable keys** (storefronts run in browsers), so a leaked publishable key alone is not enough to access another customer's cart. When the request claims a `customer_id` (query or body), Galactic Core requires an `xAuthToken` header — the customer's session JWT from `client.authentication.login` or `verifyOtp`. The resolved customer must match the claimed `customer_id`, otherwise the request returns `403 forbidden`. Anonymous (session-only) carts skip this check and rely on the secrecy of `X-Session-Id`.
+Cart and wishlist endpoints accept **publishable keys**, so a leaked publishable key alone is not enough to access another customer's cart. When the request claims a `customer_id` (query or body), Galactic Core requires a customer identity — supply **either** `xAuthToken` (the customer's session JWT from `client.authentication.login` or `verifyOtp`) **or** `xExternalAuth` (a bring-your-own-auth signed assertion, if your store runs its own identity provider); provide one, not both. The resolved customer must match the claimed `customer_id`, otherwise the request returns `403 forbidden`. Anonymous (session-only) carts skip this check and rely on the secrecy of `X-Session-Id`.
 
 <Note>
-  All wishlist endpoints (and `mergeCart`) always require `xAuthToken` because they are inherently customer-scoped. Only cart reads/writes that omit `customer_id` and rely solely on `xSessionId` may proceed unauthenticated.
+  All wishlist endpoints (and `mergeCart`) always require a customer identity (`xAuthToken` or `xExternalAuth`) because they are inherently customer-scoped. Only cart reads/writes that omit `customer_id` and rely solely on `xSessionId` may proceed unauthenticated.
 </Note>
 
 ## Cart Management
