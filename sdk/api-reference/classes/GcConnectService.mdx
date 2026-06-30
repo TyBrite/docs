@@ -125,10 +125,11 @@ async function handleCallback(req, res) {
     },
   });
 
-  // Store the keys — sk is not shown again
+  // Store the keys + signing secret — none are shown again
   await db.merchants.storeKeys(merchantId, {
     sk: result.sk,
     pk: result.pk,
+    signing_secret: result.signing_secret, // sign order/payment writes with this
     pair_id: result.pair_id,
     store_id: result.store_id,
     environment: result.environment,
@@ -142,6 +143,7 @@ async function handleCallback(req, res) {
 {
   "sk": "tybrite_sk_live_…",
   "pk": "tybrite_pk_live_…",
+  "signing_secret": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "pair_id": "550e8400-e29b-41d4-a716-446655440000",
   "store_id": "660f9511-f30c-52e5-b827-557766551111",
   "environment": "production",
@@ -151,8 +153,10 @@ async function handleCallback(req, res) {
 ```
 
 <Warning>
-  Store the `sk` securely server-side immediately — it is returned only once. The `pk` is safe to use client-side for read-only catalog and cart operations.
+  Store the `sk` **and** `signing_secret` securely server-side immediately — both are returned only once. The `pk` is safe to use client-side for read-only catalog and cart operations.
 </Warning>
+
+**Signing write requests:** creating/updating orders and initializing payments require a signature. Sign with the `signing_secret` from this response: set `X-Timestamp` to the current Unix time and `X-Signature` to the HMAC-SHA256 of `` `${timestamp}.${requestBody}` ``. This secret is scoped to this connection, so it can be rotated or revoked independently.
 
 **Response fields:**
 
@@ -160,6 +164,7 @@ async function handleCallback(req, res) {
 | :--- | :--- |
 | `sk` | Secret key — use server-side for all API calls requiring a secret key |
 | `pk` | Publishable key — safe for browser use (products, cart, CMS) |
+| `signing_secret` | Per-connection request-signing secret — sign order/payment writes with it (HMAC-SHA256 over `{timestamp}.{body}`) |
 | `pair_id` | Key pair UUID — required to call `connectRevoke` |
 | `store_id` | The merchant's store UUID |
 | `environment` | `production` or `sandbox` |
@@ -259,7 +264,7 @@ export async function handleCallback(code: string, state: string, sessionState: 
     },
   });
 
-  return result; // { sk, pk, pair_id, store_id, environment, scopes }
+  return result; // { sk, pk, signing_secret, pair_id, store_id, environment, scopes }
 }
 
 // Step 3 — use the sk to call the API on behalf of the merchant
