@@ -501,6 +501,14 @@ tags:
         
       This restriction protects the computational resources and AI model access used for
       generating personalized recommendations.
+  - name: Discovery
+    description: |
+      Windowed storefront discovery lists derived from live shopper signals — most-viewed,
+      most-added-to-cart, and best-converting products over a time window (1h / 1d / 7d / 30d).
+      Use them to power "Popular now" shelves, "Trending in carts" sections, and PDP "hot" badges.
+
+      Publishable-key accessible (safe in a browser/app) and available on every plan. Distinct from
+      Recommendations: these are simple, non-personalized signal rankings, not the ML engine.
   - name: Events
     description: |
       Storefront interaction events (product views, add-to-cart, add-to-wishlist). These power the
@@ -6710,6 +6718,189 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/discovery/most-viewed:
+    get:
+      operationId: getMostViewedProducts
+      tags:
+        - Discovery
+      summary: Most-viewed products (windowed)
+      description: |
+        The store's most-viewed products over a time window, ranked by view count. Powers a
+        "Popular now" homepage shelf or a "N people viewed this" PDP badge.
+
+        Publishable-key accessible; available on every plan. Returns product ids + a `score` (the
+        view count in the window) — hydrate the product details from the Products API. Results are
+        cached briefly, so counts reflect near-real-time activity, not the live millisecond.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: window_hours
+          in: query
+          required: false
+          description: The ranking window in hours. One of `1`, `24`, `168`, `720`. Defaults to `24`.
+          schema:
+            type: integer
+            enum:
+              - 1
+              - 24
+              - 168
+              - 720
+            default: 24
+        - name: limit
+          in: query
+          required: false
+          description: Max products to return (1–50).
+          schema:
+            type: integer
+            default: 12
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Ranked most-viewed products for the window.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryResponse'
+              example:
+                metric: most-viewed
+                window_hours: 720
+                products:
+                  - product_id: 0186665f-f0a1-4c79-976a-919b5b1c2daa
+                    score: 15
+                  - product_id: 068aa59d-1adf-4685-adf5-9793b1ffb9c9
+                    score: 10
+                  - product_id: 0c498ac2-4b77-4b03-a9b8-dbd4661efa54
+                    score: 8
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/discovery/most-added-to-cart:
+    get:
+      operationId: getMostAddedToCartProducts
+      tags:
+        - Discovery
+      summary: Most-added-to-cart products (windowed)
+      description: |
+        The store's most-added-to-cart products over a time window, ranked by add-to-cart count. A
+        strong purchase-intent signal — use it for a "Trending in carts" section or urgency cues.
+
+        Publishable-key accessible; available on every plan. Returns product ids + a `score` (the
+        add-to-cart count in the window).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: window_hours
+          in: query
+          required: false
+          description: The ranking window in hours. One of `24`, `168`. Defaults to `24`.
+          schema:
+            type: integer
+            enum:
+              - 24
+              - 168
+            default: 24
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 12
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Ranked most-added-to-cart products for the window.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryResponse'
+              example:
+                metric: most-added-to-cart
+                window_hours: 168
+                products:
+                  - product_id: 0186665f-f0a1-4c79-976a-919b5b1c2daa
+                    score: 6
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/discovery/best-converting:
+    get:
+      operationId: getBestConvertingProducts
+      tags:
+        - Discovery
+      summary: Best-converting products (windowed)
+      description: |
+        The store's best-converting products over a time window, ranked by view→purchase ratio
+        (units purchased ÷ product views). Surfaces high-intent "customer favorites" — products that
+        convert, not merely products that get traffic. Products with fewer than 5 views in the window
+        are excluded so a tiny sample can't top the list.
+
+        Publishable-key accessible; available on every plan. Returns product ids + a `score` (the
+        view→purchase ratio; a score above 1 means more units sold than distinct views recorded).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: window_hours
+          in: query
+          required: false
+          description: The ranking window in hours. One of `168`, `720`. Defaults to `168`.
+          schema:
+            type: integer
+            enum:
+              - 168
+              - 720
+            default: 168
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 12
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Ranked best-converting products for the window.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryResponse'
+              example:
+                metric: best-converting
+                window_hours: 720
+                products:
+                  - product_id: 0186665f-f0a1-4c79-976a-919b5b1c2daa
+                    score: 1.7333
+                  - product_id: 0c498ac2-4b77-4b03-a9b8-dbd4661efa54
+                    score: 0.375
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/events:
     post:
       operationId: recordEvent
@@ -7026,11 +7217,20 @@ paths:
                     - page_view
                     - session_start
                     - page_close
+                    - post_view
+                    - lookbook_view
+                    - content_click
                   description: |
                     `session_start` for the first event of a session, `page_view` on each route
                     change, and `page_close` (with `duration_ms`) fired on page hide to capture
                     dwell time — send it with `navigator.sendBeacon` from a `visibilitychange` /
                     `pagehide` handler so it survives the page unload.
+
+                    For the CMS conversion funnel: `post_view` / `lookbook_view` when a shopper opens
+                    a blog post / shoppable lookbook (send `content_id`), and `content_click` when
+                    they click through to a product from inside that content (send `content_id` +
+                    `content_product_id`). To close the funnel, pass `content_id` (+ `content_type`)
+                    in the order's `attribution` at checkout — see the Orders API.
                 visitor_id:
                   type: string
                   description: A stable per-visitor identifier persisted in the browser (e.g. localStorage). Used to distinguish new vs returning visitors.
@@ -7060,6 +7260,13 @@ paths:
                   type: string
                   format: uuid
                   description: The signed-in shopper, when known.
+                content_id:
+                  type: string
+                  description: For `post_view` / `lookbook_view` / `content_click` — the CMS post or lookbook id. (Also accepted as `cms_content_id`.)
+                content_product_id:
+                  type: string
+                  format: uuid
+                  description: For `content_click` — the product the shopper clicked through to from inside the content. Required (with `content_id`) on a `content_click`.
             examples:
               sessionStart:
                 summary: The first event of a new session (from a Google organic visit)
@@ -7078,6 +7285,22 @@ paths:
                   visitor_id: v_8f2a1c
                   session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
                   path: /products/wireless-headphones
+              lookbookView:
+                summary: A shopper opens a shoppable lookbook (CMS funnel)
+                value:
+                  event_type: lookbook_view
+                  visitor_id: v_8f2a1c
+                  session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
+                  content_id: 2a78a917-656f-4826-9968-86a2de64cfb9
+                  path: /lookbooks/workspace-essentials
+              contentClick:
+                summary: A shopper clicks a product from inside the lookbook (CMS funnel)
+                value:
+                  event_type: content_click
+                  visitor_id: v_8f2a1c
+                  session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
+                  content_id: 2a78a917-656f-4826-9968-86a2de64cfb9
+                  content_product_id: 0c498ac2-4b77-4b03-a9b8-dbd4661efa54
       responses:
         '202':
           description: The event was accepted.
@@ -17751,6 +17974,39 @@ components:
           format: date-time
         fallbackUsed:
           type: string
+    DiscoveryResponse:
+      type: object
+      description: A windowed storefront discovery list — product ids ranked by the requested signal.
+      properties:
+        metric:
+          type: string
+          description: The discovery metric returned (`most-viewed`, `most-added-to-cart`, or `best-converting`).
+          example: most-viewed
+        window_hours:
+          type: integer
+          description: The time window the ranking covers, in hours.
+          example: 720
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id:
+                type: string
+                format: uuid
+                example: 0186665f-f0a1-4c79-976a-919b5b1c2daa
+              score:
+                type: number
+                description: |
+                  The raw signal value for this product in the window — NOT normalized to a fixed
+                  scale, and with no threshold. Its meaning depends on `metric`:
+                  - `most-viewed` → the view **count** (e.g. `15` = viewed 15 times in the window).
+                  - `most-added-to-cart` → the add-to-cart **count** (e.g. `6`).
+                  - `best-converting` → the view→purchase **ratio** (units purchased ÷ distinct views;
+                    e.g. `1.7333` means more units sold than views recorded, `0.375` = ~3 buys per 8 views).
+                  Counts scale with your store's traffic; the ratio is a small decimal that can exceed 1.
+                  Use `score` only to sort/rank (results are already returned highest-first).
+                example: 15
     SearchResult:
       type: object
       properties:

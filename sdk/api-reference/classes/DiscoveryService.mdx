@@ -1,0 +1,109 @@
+---
+title: "Discovery"
+description: "Reference for the DiscoveryService class in the Tybrite SDK."
+---
+
+The `DiscoveryService` class (accessed via `client.discovery`) returns **windowed product rankings
+built from live shopper signals** — the products getting the most views, the most add-to-carts, or
+the highest view→purchase conversion over a time window. Use them to power a "Popular now" homepage
+shelf, a "Trending in carts" section, or a PDP "hot" badge.
+
+All three reads are **publishable-key accessible** (safe to call from a browser/app) and available
+on every plan. Each returns product ids + a `score`; hydrate the product details from
+[Products](/sdk/api-reference/classes/ProductsService).
+
+<Note>
+  Discovery is distinct from [Recommendations](/sdk/api-reference/classes/RecommendationsService).
+  Recommendations is the personalized/ML engine (secret-key, similar / bought-together / next).
+  Discovery is a simple, non-personalized signal ranking anyone can render on a storefront.
+</Note>
+
+## Methods
+
+### `getMostViewedProducts`
+
+The most-viewed products over a window, ranked by view count.
+
+```typescript
+const popular = await client.discovery.getMostViewedProducts({
+  windowHours: 720,  // 1 | 24 | 168 | 720  (default 24)
+  limit: 12,
+});
+// → {
+//     metric: 'most-viewed',
+//     window_hours: 720,
+//     products: [
+//       { product_id: '0186665f-f0a1-4c79-976a-919b5b1c2daa', score: 15 },
+//       { product_id: '068aa59d-1adf-4685-adf5-9793b1ffb9c9', score: 10 },
+//       { product_id: '0c498ac2-4b77-4b03-a9b8-dbd4661efa54', score: 8 },
+//     ],
+//   }
+```
+
+`score` is the view count in the window. A product's presence in `getMostViewedProducts({ windowHours: 1 })` is a natural "hot right now" signal for a PDP badge.
+
+### `getMostAddedToCartProducts`
+
+The most-added-to-cart products over a window, ranked by add-to-cart count — a strong
+purchase-intent signal.
+
+```typescript
+const trendingInCarts = await client.discovery.getMostAddedToCartProducts({
+  windowHours: 168,  // 24 | 168  (default 24)
+  limit: 12,
+});
+// → { metric: 'most-added-to-cart', window_hours: 168,
+//     products: [ { product_id: '0186665f-…', score: 6 } ] }
+```
+
+`score` is the add-to-cart count in the window.
+
+### `getBestConvertingProducts`
+
+The best-converting products over a window, ranked by **view→purchase ratio** (units purchased ÷
+product views). Surfaces high-intent "customer favorites" — products that convert, not just
+products that get traffic. Products with fewer than 5 views in the window are excluded so a tiny
+sample can't top the list.
+
+```typescript
+const favorites = await client.discovery.getBestConvertingProducts({
+  windowHours: 720,  // 168 | 720  (default 168)
+  limit: 12,
+});
+// → { metric: 'best-converting', window_hours: 720,
+//     products: [
+//       { product_id: '0186665f-…', score: 1.7333 },
+//       { product_id: '0c498ac2-…', score: 0.375 },
+//     ] }
+```
+
+`score` is the view→purchase ratio; a score above 1 means more units sold than distinct views were
+recorded in the window.
+
+## Parameters
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `windowHours` | `number` | The ranking window in hours. Allowed values differ per method (see each above); an unlisted value returns `400`. |
+| `limit` | `number` | Max products to return, 1–50 (default 12). |
+
+## Building a PDP "hot" badge
+
+Fetch `getMostViewedProducts({ windowHours: 1 })` once per page load (or cache it briefly on your
+storefront), then badge any product whose `product_id` appears in the list — no per-product call
+needed.
+
+## Response Codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | The ranked list for the window. |
+| `400` | Invalid `window_hours` (not one of the allowed values for that metric). |
+| `401` | Invalid or missing API key. |
+| `429` | Rate limit exceeded. |
+
+## Freshness
+
+Rankings are computed from live shopper events and cached briefly (shorter windows refresh faster),
+so counts reflect near-real-time activity rather than the live millisecond. This keeps the read
+cheap enough to call on every storefront page.

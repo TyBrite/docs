@@ -105,6 +105,34 @@ session's first-touch attribution when you create the order — see
 (`session_id` + the UTM parameters) lets Store Analytics join revenue back to the
 campaign that brought the shopper in.
 
+## How these events power Store Analytics (in the admin)
+
+The events you send here are the raw material behind the merchant's **Store Analytics** dashboards
+in Galactic Core Admin. Nothing you send is shown to shoppers; it's aggregated into daily rollups the
+merchant reads. Specifically:
+
+- **Overview & Traffic** — `session_start` + `page_view` produce sessions, visitors (new vs
+  returning, via `visitor_id`), pageviews, pages/session, and bounce rate. The device / browser / OS
+  and country / region / city derived from each request become the **Devices**, **Countries**, and
+  **Cities** breakdowns. `page_close` `duration_ms` powers average time-on-page.
+- **Traffic sources & Revenue-by-source** — the `utm_*` on `session_start` become the **Traffic
+  sources** breakdown; joined with orders that carry the matching `session_id` in their
+  `attribution`, they become **Revenue by source** (which campaigns actually convert).
+- **Conversion funnel** — the funnel stages (Viewed → Added to cart → Reached checkout → Purchased)
+  are stitched **by `session_id`** across surfaces: product `view` / `add_to_cart` come from the
+  [Events API](/sdk/api-reference/classes/EventsService), "reached checkout" from a stock
+  reservation, and "purchased" from a paid order whose `attribution.session_id` matches. **Use one
+  stable `session_id` for a shopper's whole journey** or the funnel can't connect the stages.
+- **Landing / exit pages** — from the `path` on each `page_view`.
+- **Content funnel** — `post_view` / `lookbook_view` and `content_click` (with `content_id` +
+  `content_product_id`) feed the **Content** tab's views → clicks → orders → revenue per post/lookbook,
+  closed by orders carrying `attribution.content_id`.
+
+Because these are the *only* inputs to those dashboards, the completeness of what you send maps
+directly to what the merchant can see — e.g. omit `utm_*` and there's no revenue-by-source; reuse
+one `session_id` per journey and the funnel lights up. The rollups recompute continuously, so
+recent activity shows up within minutes.
+
 ## Response Codes
 
 | Code | Meaning |
