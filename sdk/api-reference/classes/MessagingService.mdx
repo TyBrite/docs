@@ -369,6 +369,10 @@ const unsubscribe = subscribeToThread({
   onMessage: (message) => {
     console.log('New message:', message);
   },
+  onPresence: ({ type, participant, participants }) => {
+    // Someone joined or left THIS conversation.
+    console.log(type, participant, participants);
+  },
 });
 
 // later, when leaving the conversation:
@@ -382,14 +386,71 @@ unsubscribe();
 | `authToken` | `string` | The signed-in customer's session token. Supply this **or** `externalAuth`. |
 | `externalAuth` | `string` | A signed bring-your-own-auth identity assertion. Supply this **or** `authToken`. |
 | `onMessage` | `(message) => void` | Called with each new message as it arrives. |
+| `onPresence` | `({ type, participant, participants }) => void` | Optional — called when a participant joins (`type: 'join'`) or leaves (`type: 'leave'`) **this** conversation. `participants` is the current connected set (each `{ pid, role }`). Use it for a "seller is online" indicator. |
+| `onTyping` | `({ participant, isTyping }) => void` | Optional — the other participant started/stopped typing. Ephemeral (never stored). |
+| `onRead` | `({ participant, at }) => void` | Optional — the other participant read the conversation (a "seen" receipt); `at` is when. |
 | `onClose` | `({ code, reason }) => void` | Optional — called if the connection closes. |
 | `baseUrl` | `string` | Optional — defaults to `https://api.tybritelabs.com`. |
+
+The value `subscribeToThread` returns is a **callable unsubscribe function** (call it to disconnect)
+that also carries two senders for publishing **your own** state:
+
+```typescript
+const sub = subscribeToThread({ /* …options… */ });
+sub.sendTyping(true);   // tell the other participant you're typing (call sendTyping(false) to stop)
+sub.markRead();         // mark the conversation read — sends a live "seen" cue AND persists it
+sub();                  // unsubscribe / disconnect
+```
+
+`markRead()` both sends the instant "seen" cue over the socket and persists your read position via
+`POST /v1/messaging/threads/{id}/read`, so the receipt survives a reconnect.
 
 The connection is authorized server-side: the customer credential is validated and confirmed to be the thread's participant before the socket is accepted, so a customer only ever receives their own thread's messages. The same call works for both Galactic-Core-authenticated customers (pass `authToken`) and bring-your-own-auth customers (pass `externalAuth`).
 
 <Note>
-  This is a WebSocket, not a request that counts toward your monthly request quota. To open one yourself instead of using the helper, connect to `GET /v1/messaging/threads/{id}/subscribe` with `?api_key=` and either `?auth_token=` or `?external_auth=` in the URL; the server pushes one JSON frame per new message: `{ "type": "message.created", "payload": { "thread_id", "message" } }`.
+  This is a WebSocket, not a request that counts toward your monthly request quota.
 </Note>
+
+### Raw WebSocket protocol (without the SDK)
+
+If you're not using the TypeScript SDK — a mobile app, another language, or your own client — connect
+to the WebSocket directly and speak the frame protocol below. Everything the `subscribeToThread`
+helper does (messages, presence, typing, read receipts) is available on the raw socket.
+
+**Connect** (browsers/WS handshakes can't set headers, so credentials go in the query string):
+
+```
+wss://api.tybritelabs.com/v1/messaging/threads/{threadId}/subscribe
+  ?api_key=tybrite_pk_live_...
+  &auth_token=<customer session token>      # OR:
+  &external_auth=<bring-your-own-auth assertion>
+```
+
+The server validates the credential + participant membership before accepting the socket, then keeps
+it open. All frames are JSON strings, except the heartbeat (a bare `ping`/`pong`).
+
+**Server → client frames** (things you receive):
+
+| `type` | `payload` | Meaning |
+| :--- | :--- | :--- |
+| `message.created` | `{ thread_id, message }` | A new message (yours or the store's). |
+| `presence.join` | `{ participant: { pid, role }, participants: [...] }` | Someone connected to this conversation; `participants` is the current set. |
+| `presence.leave` | `{ participant, participants }` | Someone disconnected. |
+| `presence.typing` | `{ participant: { pid, role }, is_typing }` | The other party started/stopped typing. |
+| `presence.read` | `{ participant, at }` | The other party read the conversation (`at` = ISO timestamp). |
+
+**Client → server frames** (things you send):
+
+| Frame | Purpose |
+| :--- | :--- |
+| `ping` (bare string) | Heartbeat; the server replies `pong`. Send every ~25s to keep the connection alive. |
+| `{ "type": "typing", "payload": { "is_typing": true } }` | Publish your own typing state (send `false` when you stop). Ephemeral — never stored. |
+| `{ "type": "read", "payload": { "at": "<ISO>" } }` | Publish a live "seen" cue. **Also call `POST /v1/messaging/threads/{id}/read`** to persist your read position so it survives a reconnect. |
+
+`pid` is the participant id (the shopper's customer id, or `store` for the merchant); `role` is
+`customer` or `store`. Presence is **per-conversation** — it reflects who's connected to *this*
+thread, not global online state. Build a "seller is online" dot from `presence.join`/`leave`, a typing
+bubble from `presence.typing`, and read ticks from `presence.read`.
 
 ---
 ### Response Codes
