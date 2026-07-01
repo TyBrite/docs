@@ -74,6 +74,18 @@ current product, the items most likely to come next. The model is rebuilt period
 strengthens as more events accumulate — and until there is enough session data, `next` gracefully
 falls back to "frequently bought together," then "similar," then "trending."
 
+## Where these events show up
+
+Product events feed three surfaces (beyond the `next` rail):
+- the **Store Analytics conversion funnel** — `view` and `add_to_cart` are its first two stages
+  (see [Analytics → How these events power Store Analytics](/sdk/api-reference/classes/AnalyticsService#how-these-events-power-store-analytics-in-the-admin) for the full picture and the `session_id` stitching rule);
+- **"Most viewed products"** in the admin Engagement tab;
+- the [Discovery API](/sdk/api-reference/classes/DiscoveryService) (`most-viewed`,
+  `most-added-to-cart`, `best-converting`) a storefront renders as "Popular now" shelves and PDP
+  "hot" badges — so the events you send here come back as shoppable signals.
+
+Use the **same `session_id`** as your Analytics beacons so all of the above connect.
+
 ## Response Codes
 
 | Code | Meaning |

@@ -1,6 +1,6 @@
 ---
 title: "Search & Discovery"
-description: "The discovery surfaces that get shoppers to the cart — text and semantic search (with filters, empty results, and paging), every recommendation rail and its fallback, behavior capture, and dynamic multi-currency pricing — threaded as one shopper's session."
+description: "The discovery surfaces that get shoppers to the cart — text and semantic search (with filters, empty results, and paging), every recommendation rail and its fallback, publishable-key discovery shelves (most-viewed / trending-in-carts / best-converting), behavior capture, and dynamic multi-currency pricing — threaded as one shopper's session."
 ---
 
 Before a shopper can check out, they have to *find* the product. This page walks **one shopper's
@@ -336,6 +336,48 @@ const forYou = await server.recommendations.getRecommendations({
 <Note>
   Asking for a rail on a product that doesn't exist returns `404`. A publishable key on any
   recommendation call returns `403` — keep these on your server.
+</Note>
+
+## 2f. Discovery shelves — "Popular now" & a PDP "hot" badge (publishable key)
+
+Recommendations are personalized/ML and secret-key. For simple, **non-personalized** shelves you can
+render straight from the browser, use **Discovery** — windowed rankings built from live shopper
+signals (views, cart-adds, view→purchase). These are publishable-key and available on every plan.
+Each call returns `{ metric, window_hours, products: [{ product_id, score }] }`; hydrate the cards
+with `products.getProduct`. `score` is a raw sortable signal (a count, or a ratio for converting),
+already returned highest-first.
+
+```typescript
+// A "Popular now" homepage shelf — most-viewed over the last 30 days.
+const popular = await storefront.discovery.getMostViewedProducts({ windowHours: 720, limit: 12 });
+```
+```json Response
+{
+  "metric": "most-viewed",
+  "window_hours": 720,
+  "products": [
+    { "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa", "score": 15 },
+    { "product_id": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 10 },
+    { "product_id": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 8 }
+  ]
+}
+```
+
+```typescript
+// A "Trending in carts" strip, and a "Customer favorites" (best-converting) shelf.
+const inCarts   = await storefront.discovery.getMostAddedToCartProducts({ windowHours: 168, limit: 8 });
+const favorites = await storefront.discovery.getBestConvertingProducts({ windowHours: 720, limit: 8 });
+
+// PDP "hot" badge: fetch the 1-hour most-viewed once per page, badge any product in the list.
+const hotNow = await storefront.discovery.getMostViewedProducts({ windowHours: 1, limit: 20 });
+const isHot = (productId) => hotNow.products.some((p) => p.product_id === productId);
+```
+
+<Note>
+  `storefront` here uses a **publishable** key — Discovery is browser-safe. Allowed `windowHours`
+  differ per metric (`1|24|168|720` for most-viewed, `24|168` for carts, `168|720` for converting);
+  an unlisted value returns `400`. Discovery is the complement to Recommendations: use Discovery for
+  organic "what's hot" shelves, Recommendations for personalized/anchored rails.
 </Note>
 
 ## 3. Capture browsing behavior → the `next` rail
