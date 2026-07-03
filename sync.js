@@ -16,7 +16,9 @@ const syncItems = [
     { src: 'openapi.yaml', dest: 'openapi.yaml' },
     { src: 'authentication.mdx', dest: 'authentication.mdx' },
     { src: 'quickstart.mdx', dest: 'quick-start.mdx' },
-    { src: 'custom-integrations.mdx', dest: 'custom-integrations.mdx' }
+    // Custom Integrations — the two paths (Extensions = platform-native, BYO Compute = full-control).
+    { src: 'extensions.mdx', dest: 'extensions.mdx' },
+    { src: 'byo-compute.mdx', dest: 'byo-compute.mdx' }
 ];
 
 /**

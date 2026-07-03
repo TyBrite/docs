@@ -1,0 +1,320 @@
+---
+title: "Custom Integrations — Extensions"
+description: "The platform-native way to build a Custom Integration: automations that react to store events and custom providers that stand in for a built-in integration — hosted on our runtime or on your own infrastructure."
+---
+
+# Custom Integrations — Extensions
+
+**Custom Integrations** are how you make Galactic Core work the way your business does. There are two ways to build one, and this page covers the platform-native path — **Extensions** — where Galactic Core does the plumbing for you. (The other path, running your own service entirely outside the platform and driving it over the API, is [Bring Your Own Compute](/byo-compute) — reach for it when an Extension doesn't cover what you need.)
+
+With Extensions there are two things you can build:
+
+<CardGroup cols={2}>
+  <Card title="Automations" icon="bolt">
+    React to a store event — `order.paid`, `product.stock_low`, `cart.abandoned` — with a no-code **recipe** or a small **custom function**. "When X happens, call my system / sync a field / send a message."
+  </Card>
+  <Card title="Custom Providers" icon="plug">
+    Become the implementation Galactic Core calls for a capability — Email, SMS, Marketing, Tax, Shipping rates, Sales channels, or Payments — standing in for the built-in integration.
+  </Card>
+</CardGroup>
+
+<Info>
+  **Where extensions live:** you create and manage extensions in your Tybrite dashboard under **Settings → Extensions** — not through the storefront API. A recipe builder, a code editor, a remote-endpoint registration form, and a live run-log debugger are all there.
+</Info>
+
+Built-in integrations stay the default. A custom provider only takes over a capability once you explicitly select it for your store; until then, everything runs exactly as it does today.
+
+---
+
+## The two building blocks
+
+### Automations
+
+An automation runs **after the fact**, off a real store event, and never blocks anything. You author it two ways:
+
+- **A recipe** — a small, validated JSON graph (`trigger → filter → transform → action`) with no raw code. Ideal for the "notify my system / call an API on `order.paid`" case.
+- **A custom function** — a small handler when you need real logic.
+
+### Custom providers
+
+A custom provider implements one of **seven named interfaces** and, when selected, is dispatched at that subsystem's seam in place of the built-in path:
+
+| Interface | Replaces / augments | Cardinality |
+| :--- | :--- | :--- |
+| `PaymentProvider` | A payment processor | Your provider owns its own method name(s) |
+| `ShippingProvider` | A shipping-rate source | Added alongside native rate sources |
+| `TaxProvider` | The tax engine | One active per store |
+| `EmailProvider` | Transactional email | One active per store |
+| `SmsProvider` | SMS delivery | One active per store |
+| `MarketingProvider` | Marketing segments / campaigns / flows | One active per store |
+| `SalesChannelProvider` | An outbound sales channel | Several can be active at once |
+
+<Note>
+  For **single-active** interfaces (Email, SMS, Tax, Marketing) selecting a custom provider **replaces** the built-in for that capability. **Shipping** adds a rate source next to the native ones; **Sales channels** are fully multi-active; **Payments** route per transaction, so your custom method runs alongside the native processors.
+</Note>
+
+---
+
+## Execution modes: hosted vs remote
+
+Every custom function and provider runs in one of two modes. The contract is identical — only where the code runs differs.
+
+<CardGroup cols={2}>
+  <Card title="Hosted" icon="server">
+    You write a handler; **Galactic Core runs it** in an isolated sandbox. Your provider secrets are held in our secure vault and injected at run time. Nothing to deploy or operate.
+  </Card>
+  <Card title="Remote" icon="globe">
+    You run an **HTTPS endpoint** on your own infrastructure. Galactic Core calls it with a signed request and expects the same return shape. Your provider secrets never leave your side.
+  </Card>
+</CardGroup>
+
+### Hosted handler
+
+A hosted function is a single default-export handler. Galactic Core passes it the event (or, for sync hooks, the hook input) and a small, safe `ctx`:
+
+```ts
+export default async function handler(event, ctx) {
+  // event: the same envelope as a webhook — { id, type, store_id, data: { object }, livemode, ... }
+  //        or, for a sync hook, the hook input (cart / rate quote / order draft).
+  // ctx:   { secrets, fetch, log, store_id, environment }
+  const token = await ctx.secrets.get('threepl_key');       // resolves an alias to a vaulted secret
+  const res = await ctx.fetch('https://my-3pl.example.com/rates', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: JSON.stringify({ to: event.address_to, parcel: event.parcel }),
+  });
+  const quote = await res.json();
+  ctx.log('3pl quote', quote.amount);                        // captured into your run log
+  return {
+    rates: [{
+      rate_id: quote.id, provider: 'My3PL', service: quote.service,
+      amount: quote.amount, currency: quote.currency, estimated_days: quote.eta,
+    }],
+  };
+}
+```
+
+The `ctx` surface is deliberately tiny — it's the entire capability set:
+
+| Member | What it does |
+| :--- | :--- |
+| `ctx.secrets.get(alias)` | Resolve one of this extension's provider secrets by alias. Resolved server-side; never logged. |
+| `ctx.fetch(url, init)` | Make an outbound HTTP request. Filtered to public destinations; response size-capped. |
+| `ctx.log(...args)` | Write a structured log line into the run log (your debugger). |
+| `ctx.store_id` / `ctx.environment` | The authenticated store and its environment (`production` / `sandbox`). Read-only. |
+
+There is **no** database client, no API key, and no access to any other store's data in `ctx`. If your function needs to change store data, it does so the same way any client does — `ctx.fetch` to the public API with your own key (supplied as a secret alias).
+
+### Remote endpoint
+
+In remote mode, Galactic Core POSTs the **same input a hosted handler would receive** to your registered `endpoint_url`, and your endpoint returns the **same shape a hosted handler would return**. The request is signed so you can verify it came from Galactic Core:
+
+| Header | Value |
+| :--- | :--- |
+| `X-Timestamp` | Unix seconds when the request was signed. |
+| `X-Signature` | Base64 HMAC-SHA256 of `${timestamp}.${rawBody}`, using your per-extension signing secret. |
+| `X-Tybrite-Extension` | The extension's id. |
+| `X-Tybrite-Kind` | The extension kind / interface being invoked. |
+
+Verify every request before acting on it:
+
+```ts
+// Your endpoint — e.g. an Express route on your own infrastructure
+import { createHmac, timingSafeEqual } from 'crypto';
+
+app.post('/gc/tax', express.raw({ type: 'application/json' }), (req, res) => {
+  const ts = req.headers['x-timestamp'];
+  const sig = req.headers['x-signature'];
+  const rawBody = req.body.toString();
+
+  // Reject anything older than 5 minutes (replay protection)
+  if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) {
+    return res.status(401).json({ error: 'stale timestamp' });
+  }
+
+  const expected = createHmac('sha256', process.env.GC_EXTENSION_SECRET)
+    .update(`${ts}.${rawBody}`)
+    .digest('base64');
+  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+    return res.status(401).json({ error: 'bad signature' });
+  }
+
+  const input = JSON.parse(rawBody);
+  // input.operation === 'resolve' for TaxProvider — return the contract shape:
+  res.json({ tax_amount: 8.25, breakdown: [{ jurisdiction: 'CA', amount: 8.25 }] });
+});
+```
+
+<Note>
+  **Timestamp / replay:** requests carry a 5-minute freshness window — reject anything older. **Retries:** on a transient failure (a network error or a `5xx`), Galactic Core retries the request **once**, re-signing with a fresh timestamp; a `4xx` is treated as final and is not retried. Your `endpoint_url` must be HTTPS and publicly reachable — internal, link-local, and metadata addresses are rejected.
+</Note>
+
+---
+
+## Provider contracts
+
+Each interface operation receives an `input` (with an `operation` discriminator where it has more than one) and must return the shape below. This is the same whether you run hosted or remote. Money-bearing returns (payment status, rate amounts) are **revalidated server-side** — see [Safety](#safety).
+
+| Interface / kind | Input (key fields) | Return |
+| :--- | :--- | :--- |
+| `EmailProvider` | `{ operation: 'send', to, subject, body, trigger_key, record_id }` | Any value — succeeding means the send worked. |
+| `SmsProvider` | `{ operation: 'send', to, body, trigger_key, record_id }` | Any value — succeeding means the send worked. |
+| `MarketingProvider` | `{ operation: 'trackEvent', event_type, record_id }` | Any value — succeeding means it was recorded (retried on failure). |
+| `SalesChannelProvider` | `{ operation: 'authenticate' \| 'push' \| 'pullStatus' \| 'mapProduct', channel_id, ... }` | `authenticate → { accessToken? }`, `push → { results: [{ sku, ok, error? }] }`, `pullStatus → { statuses: [{ sku, state, reasons }] }` |
+| `ShippingProvider` | `{ address_to, address_from?, parcel }` | `{ rates: [{ rate_id, provider, service, amount, currency, estimated_days? }] }` — appended to the rate list, revalidated at checkout. |
+| `PaymentProvider` | `{ operation: 'initialize', provider, amount, currency, email, phone, order_id, reference, ... }` / `{ operation: 'verify', provider, reference }` | `initialize → { redirect_url?, status? }`; `verify → { status: 'paid' \| 'failed' \| ..., reference? }` — amount and status revalidated by the platform. |
+| `TaxProvider` | `{ operation: 'resolve', currency, ship_to, lines: [...], mode: 'quote' \| 'commit' }` | `{ tax_amount: number, breakdown? }` — otherwise the platform falls back to your manual/native tax path. |
+| `order.validate` | `{ operation: 'validate', total_amount, subtotal, currency, customer_id, item_count, shipping_address, ... }` | `{ allow: boolean, reason?, annotations? }` — `allow: false` rejects the order with `422`. |
+
+<Note>
+  **How this relates to the storefront API.** Connecting a custom provider does **not** change the
+  storefront API contract your app calls. A shopper's storefront never sees "which provider handled
+  this" — the provider is invoked *internally* behind the endpoints you already use:
+
+  - **Payments** — you still call `POST /v1/payments/initialize` / `verify` exactly as before. The
+    `provider` field already accepts any name, and the response shape is unchanged, so a custom
+    payment provider just means a provider name outside the built-in set is handled instead of
+    rejected. (The platform still validates the amount and re-checks the paid status.)
+  - **Tax** — resolved server-side; it only affects the order's `tax_amount`, which is already part
+    of the order response.
+  - **Shipping** — the one visible addition: `GET /v1/shipping/calculate` may return extra `rates[]`
+    from your custom carrier and set `rate_source` to `custom` (see
+    [`calculateShipping`](/sdk/api-reference/classes/ShippingService)).
+  - **Email / SMS / Marketing / Sales channels** — entirely off the storefront API (notification and
+    sync internals); there's nothing to call.
+
+  So the provider contracts above describe what *your extension implements*, not what the storefront
+  API returns. The only storefront-API change in the whole feature is the shipping `rate_source: custom`
+  value.
+</Note>
+
+---
+
+## Triggers
+
+Automations subscribe to the same event vocabulary as webhooks. The events that fire today:
+
+<CardGroup cols={2}>
+  <Card title="Orders" icon="receipt">
+    `order.created` · `order.paid` · `order.fulfilled` · `order.shipped` · `order.cancelled` · `order.updated` · `order.refunded`
+  </Card>
+  <Card title="Payments" icon="credit-card">
+    `payment.succeeded` · `payment.failed` · `payment.refunded`
+  </Card>
+  <Card title="Customers" icon="user">
+    `customer.created` · `customer.updated`
+  </Card>
+  <Card title="Products" icon="box">
+    `product.created` · `product.updated` · `product.stock_low` · `product.out_of_stock`
+  </Card>
+  <Card title="Gift cards" icon="gift">
+    `gift_card.issued` · `gift_card.redeemed` · `gift_card.expired`
+  </Card>
+  <Card title="Carts & sync" icon="arrows-rotate">
+    `cart.abandoned` · `feed.sync.completed` · `channel.sync.completed`
+  </Card>
+</CardGroup>
+
+---
+
+## Safety
+
+Custom code can shape your store's behavior without ever putting a sale at risk. The guarantees:
+
+<CardGroup cols={2}>
+  <Card title="Automations never block" icon="shield-check">
+    Automations run after the event that triggered them. A slow or failing automation can never delay or block checkout, an order, or any request.
+  </Card>
+  <Card title="Sync providers fail safely" icon="life-ring">
+    A `ShippingProvider` or `TaxProvider` that errors or times out **falls back to the native path** — the sale continues. A `PaymentProvider` failure returns *provider unavailable* with **no order created or changed** — never a false "paid".
+  </Card>
+  <Card title="Opt-in gates" icon="lock">
+    `order.validate` is fail-open by default (a buggy rule never blocks sales). You can opt a specific gate into fail-closed when you need a hard compliance stop.
+  </Card>
+  <Card title="Galactic Core stays the authority" icon="scale-balanced">
+    A custom provider's claimed payment status and returned rate amounts are **revalidated server-side** and never trusted as final. The platform remains the price, payment, and ledger authority.
+  </Card>
+</CardGroup>
+
+Every extension is also protected by a per-extension **circuit breaker** — after too many consecutive failures it is automatically disabled and you're notified — and hard **timeouts** on any hot-path hook. Outbound requests from a hosted function are filtered to public destinations to prevent them reaching internal infrastructure.
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```jsonc Recipe (automation)
+// A declarative automation for order.paid — push large orders to an ERP.
+{
+  "version": 1,
+  "filter": {                        // optional — skip unless this matches
+    "all": [
+      { "path": "data.object.total_amount", "op": "gte", "value": 100 }
+    ]
+  },
+  "transform": {                     // build the outbound body from the event
+    "order_id":  "{{ data.object.id }}",
+    "email":     "{{ data.object.customer.email }}",
+    "net_total": "{{ data.object.total_amount }}"
+  },
+  "action": {
+    "type": "http",                  // 'http' | 'email' | 'emit_event'
+    "method": "POST",
+    "url": "https://my-erp.example.com/orders",
+    "headers": { "Authorization": "Bearer {{ secrets.erp_token }}" },
+    "body": "{{ transform }}",
+    "retry": true
+  }
+}
+```
+
+```ts Remote payment provider (endpoint skeleton)
+// A remote PaymentProvider — your HTTPS endpoint, your secrets.
+import { createHmac, timingSafeEqual } from 'crypto';
+
+app.post('/gc/payments', express.raw({ type: 'application/json' }), async (req, res) => {
+  const ts = req.headers['x-timestamp'];
+  const sig = req.headers['x-signature'];
+  const rawBody = req.body.toString();
+
+  if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return res.sendStatus(401);
+  const expected = createHmac('sha256', process.env.GC_EXTENSION_SECRET)
+    .update(`${ts}.${rawBody}`).digest('base64');
+  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return res.sendStatus(401);
+
+  const input = JSON.parse(rawBody);
+
+  if (input.operation === 'initialize') {
+    const link = await myProvider.createCheckout({
+      amount: input.amount, currency: input.currency,
+      reference: input.reference, email: input.email,
+    });
+    return res.json({ redirect_url: link.url });     // status inferred later by verify
+  }
+
+  if (input.operation === 'verify') {
+    const txn = await myProvider.getTransaction(input.reference);
+    return res.json({
+      status: txn.settled ? 'paid' : 'failed',        // revalidated by Galactic Core
+      reference: txn.id,
+    });
+  }
+
+  res.status(400).json({ error: 'unknown operation' });
+});
+```
+
+</CodeGroup>
+
+---
+
+## Choosing your approach
+
+| You want to… | Use |
+| :--- | :--- |
+| React to a store event with a no-code recipe | A **declarative automation** |
+| React to a store event with real logic on our runtime | A **hosted custom function** |
+| Have Galactic Core call a capability implementation you host | A **remote provider extension** |
+| Run provider logic on our runtime with secrets in our vault | A **hosted provider extension** |
+| Orchestrate freely, entirely outside the platform | **[Bring Your Own Compute](/byo-compute)** |
