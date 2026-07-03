@@ -88,8 +88,9 @@ const shipping = await client.shipping.calculateShipping({
 When the store has multi-carrier shipping connected, pass a destination `address_to` **and** a
 `parcel` to `calculateShipping` to ALSO get **live carrier rates** alongside the zone/tier fee. The
 response gains a `rates[]` array (real quotes from USPS, UPS, FedEx, DHL…) and `rate_source` becomes
-`shippo`. When multi-carrier isn't connected, `rates[]` is simply absent and the zone/tier `fee`
-applies as before — the manual rates always work.
+`shippo`. If the store has connected its own **custom carrier** (a Custom Extension shipping provider),
+its rates are appended too and `rate_source` becomes `custom`. When neither is connected, `rates[]` is
+simply absent and the zone/tier `fee` applies as before — the manual rates always work.
 
 ```typescript
 const quote = await client.shipping.calculateShipping({
