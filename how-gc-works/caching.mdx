@@ -1,0 +1,116 @@
+---
+title: "The Caching Pipeline"
+description: "The four cache layers a read passes through, how they stay correct, and the resilience directives that keep the catalog serving during an incident."
+---
+
+A read passes through as many as four cache layers on its way to the database, and each answers what it
+can before handing off. In practice most reads never reach Postgres at all, which is what keeps catalog
+and pricing calls in the tens of milliseconds worldwide.
+
+## The four layers
+
+<Frame>
+```mermaid
+graph TD
+    A["Browser cache<br/>(ETag / If-None-Match → 304)"] --> B["Edge POP cache<br/>(per-location, shared)"]
+    B --> C["Distributed cache<br/>(Redis · hot business data)"]
+    C --> D["Database<br/>(Postgres · system of record)"]
+```
+</Frame>
+
+<Steps>
+  <Step title="Browser cache (validation)">
+    Every cacheable response carries an **ETag**. When the browser already has a copy, it sends
+    `If-None-Match`; if nothing changed, the server replies **304 Not Modified** with no body — saving
+    the entire payload over the wire.
+  </Step>
+  <Step title="Edge POP cache (first request per location)">
+    The first request from a given region runs the worker and stores the response in that location's edge
+    cache. Subsequent requests from the same region are served directly from the edge, with no worker,
+    database, or cache round trip. A busy region therefore pays the full cost only on the first request.
+  </Step>
+  <Step title="Distributed cache (hot data)">
+    Business data — the product catalog, pricing rules, currencies — lives in a distributed in-memory
+    cache. When the edge misses, the worker reads from here, not the database.
+  </Step>
+  <Step title="Database (system of record)">
+    Only a genuine cold read reaches Postgres, and when it does it's a **single indexed query** against
+    a purpose-built read view. The result is then written back up through the cache layers.
+  </Step>
+</Steps>
+
+## The hot-path budget
+
+An authenticated read is held to a fixed budget: at most one database call and one cache round trip. Two
+choices make that possible. First, authentication and tenant scoping are combined into a single database
+function, so validating the key does not cost a separate lookup. Second, when many requests for the same
+cold entry arrive at one location together, they are coalesced into a single database fetch and the rest
+wait on its result, so a cache stampede cannot reach the database more than once.
+
+## Write-through invalidation
+
+Business data — the catalog, pricing rules, currencies — is cached without a TTL. Rather than expiring on
+a timer, it is kept correct by invalidation: when a merchant edits a product, changes a price, or adjusts
+stock, the write path refreshes the affected entries at once. The cache is therefore always current,
+without the window of staleness a timed cache carries while it waits out its TTL.
+
+<Note>
+  The catalog is cached under **two separate keys** — one for the merchant's in-store/admin view (every
+  product, including those not published online) and one for the public storefront view (online-enabled
+  products only). Every product or media write busts **both**, so the two surfaces never drift apart.
+</Note>
+
+Short-lived external data, such as geolocation lookups and currency snapshots, does use a TTL, since it is
+not something a merchant writes. The business catalog, though, never depends on expiry for correctness.
+
+## Freshness and resilience directives
+
+Public reads carry a `Cache-Control` header that tunes freshness at each layer and adds two resilience
+behaviours:
+
+```http
+Cache-Control: public, max-age=60, s-maxage=300,
+               stale-while-revalidate=600, stale-if-error=86400
+```
+
+<Columns cols={2}>
+  <Card title="s-maxage — POP holds longer" icon="clock">
+    The browser revalidates after `max-age`, but the shared edge cache holds the response for the
+    longer `s-maxage` — so the edge keeps serving a hot response to everyone while individual browsers
+    revalidate.
+  </Card>
+  <Card title="stale-while-revalidate" icon="arrows-rotate">
+    When an entry goes stale, the edge serves the stale copy **immediately** and refreshes it in the
+    background — the shopper never waits for a revalidation.
+  </Card>
+  <Card title="stale-if-error — serve over a 500" icon="shield-halved">
+    If the origin errors (a database hiccup, a worker fault), the edge keeps serving the
+    last-known-good response for up to a day. For a catalog, slightly-stale data beats a failed page.
+  </Card>
+  <Card title="Vary — safe personalization" icon="code-branch">
+    Responses that legitimately differ by currency, language, or auth are keyed on those headers, so
+    variants never collide in a shared cache. Personalized responses bypass the shared cache entirely.
+  </Card>
+</Columns>
+
+## What is (and isn't) cached
+
+<Info>
+  Only **public, non-personalized** reads are edge-cached: the catalog, product detail, collections,
+  specifications, brands, taxonomy, the outbound product feed, semantic content, and non-personalized
+  pricing. **Personalized responses** (a per-customer priced list, a customer's own cart or messages)
+  and **all writes** are never edge-cached — the cache key is the URL, which doesn't carry the shopper's
+  identity, so caching them would risk leaking one shopper's data to another. The platform keys these
+  out of the shared cache deliberately.
+</Info>
+
+---
+
+<CardGroup cols={2}>
+  <Card title="Request Lifecycle" icon="route" href="/how-gc-works/request-lifecycle">
+    See where these cache layers sit in the full path of a request.
+  </Card>
+  <Card title="Scaling & Reliability" icon="earth-americas" href="/how-gc-works/scaling-reliability">
+    Read replicas, rate limits, and how the platform holds up under stress.
+  </Card>
+</CardGroup>

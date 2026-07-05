@@ -1,0 +1,63 @@
+---
+title: "Design Principles"
+description: "The decisions that shape Galactic Core's architecture, and the reasoning behind each one."
+---
+
+A few decisions run through every layer of Galactic Core. They explain why the API looks the way it does,
+why reads are so cheap, and why one tenant's traffic can't affect another's. The rest of this section
+builds on them.
+
+## The public surface is storefront-only
+
+Every endpoint serves a shopper on a storefront, or a headless backend acting on that shopper's behalf:
+browsing the catalog, searching, reading reviews, managing a cart, placing an order, paying, signing in.
+Store management does not appear on the public API — creating products, moderating reviews, issuing
+refunds, and changing configuration all happen in the merchant's admin, against the database directly.
+
+That boundary is what makes a publishable key safe to embed in a browser. There is no administrative
+surface behind it to abuse, so the read-only guarantee is real rather than a matter of trust. It also
+keeps the surface small and cacheable, which the rest of the architecture depends on.
+
+<Note>
+  Catalog ingestion is the one sanctioned exception: a merchant syncing their own product feed *into* GC
+  is machine-to-machine work that cannot live in a UI. It sits behind the strictest auth on the platform —
+  a secret key and an HMAC signature together. See [Ingestion](/ingestion).
+</Note>
+
+## An order carries its consequences
+
+Creating an order is not inserting a row. A paid order reduces stock, redeems any gift cards, posts
+double-entry accounting journal entries, and updates the customer's lifetime metrics — in one
+transaction, triggered by a single API call. If part of that post-processing fails, the order is not
+silently marked complete: the failure is recorded on the order and returned to you, so you always know the
+true state.
+
+This is the line between a commerce engine and a commerce datastore, and it is the reason writes are
+transactional and idempotent. The [Request Lifecycle](/how-gc-works/request-lifecycle) shows exactly what
+runs when an order is created.
+
+## The platform owns the money math
+
+Totals, discounts, and gift-card redemption are computed on the server, in the database, at write time.
+The API never trusts a client-sent price; it recalculates and rejects a mismatch. This is what lets an
+order be placed from a browser-adjacent backend without turning pricing into an attack surface — the
+authority for what a customer pays lives on the server, not in the request.
+
+## Isolation is physical, not just logical
+
+Each deployment runs on its own dedicated stack: a separate database and API layer, not a shared
+multi-tenant pool. A marketplace operator or enterprise client gets infrastructure no other tenant
+touches. Within a deployment, every row is additionally scoped to a store and enforced by the database's
+row-level security.
+
+The result is a boundary that holds for both security and reliability — data is never co-mingled, and one
+tenant's load or incident cannot reach another's. [Data Model & Multi-tenancy](/how-gc-works/data-model)
+covers how the scoping and isolation are enforced.
+
+## Reads should cost almost nothing
+
+Because reads are the bulk of commerce traffic, the platform is built so they rarely reach the database.
+They are cacheable and served from the edge; writes are the minority and the only traffic that must reach
+the primary. Nearly everything about the caching pipeline, the read views, and the hot-path budget follows
+from wanting a catalog read to be close to free. [The Caching Pipeline](/how-gc-works/caching) is where
+that plays out.
