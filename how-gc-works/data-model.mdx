@@ -22,15 +22,16 @@ graph TD
 ```
 </Frame>
 
-When a request authenticates, the platform sets the current store as a transaction-local session variable,
-and the database's row-level security policies filter every read and write to that store. A query cannot
-reach another store's data, and a bug in application code cannot cross the boundary either, because the
-boundary is enforced a layer below the application.
+When a request authenticates, the platform verifies the caller is authorized for the store it names and
+sets that store as the active scope, and the database's row-level security policies filter every read and
+write to it. A query cannot reach another store's data, and a bug in application code cannot cross the
+boundary either, because the boundary is enforced a layer below the application.
 
 <Note>
-  The scoping is transaction-local (safe under connection pooling), so it never leaks between requests
-  sharing a pooled connection. Setting the scope is folded into the same single auth call that validates
-  the key — no extra round trip. See [Request Lifecycle](/how-gc-works/request-lifecycle).
+  Authorizing the caller for the store and setting the scope is folded into the same single auth call that
+  validates the key — no extra round trip. The scope is re-established per request, so it is bound to the
+  authenticated caller and never inferred from a previous one. See
+  [Request Lifecycle](/how-gc-works/request-lifecycle).
 </Note>
 
 ## Postgres is the system of record

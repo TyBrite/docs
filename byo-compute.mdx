@@ -1,253 +1,72 @@
 ---
 title: "Custom Integrations — Bring Your Own Compute"
-description: "The full-control path to a Custom Integration: run your own service outside Galactic Core and drive the platform over the public API and webhooks — for any orchestration an Extension doesn't cover."
+description: "The full-control path to a Custom Integration: run your own service and drive Galactic Core over the public API and webhooks."
 ---
 
 # Custom Integrations — Bring Your Own Compute
 
-This is the full-control path to a **Custom Integration**. (The platform-native path — where Galactic Core hosts and runs your logic for you — is [Extensions](/extensions); reach for that first.)
-
-Galactic Core is designed to be the programmable source of truth for your commerce operations. Because everything the platform does is reachable over a public API and every state change is broadcast as a webhook, you can run **your own code, on your own infrastructure**, and drive Galactic Core from the outside — no framework, nothing to register. This is the unlimited option for free-form orchestration that doesn't fit a provider or hook contract, and the on-ramp for migrating a raw integration into a first-class **[Extension](/extensions)** when you want platform-native ergonomics.
+The full-control path to a **Custom Integration**: run your own code, on your own infrastructure, and drive Galactic Core from the outside over the public API and webhooks. Nothing to register.
 
 <Note>
-  **Building a custom payment provider?** For most cases you no longer need to stand up and host your own function. A **remote provider extension** ([Custom Extensions](/extensions)) lets Galactic Core call *your* HTTPS endpoint with a signed request at the payment seam — registered, run-logged, retried, and revalidated for you — while your provider secrets stay entirely on your side. This page's pending → `PATCH paid` pattern remains fully documented as the full-control alternative and the migration on-ramp, but reach for a remote provider extension first.
+  **Reach for [Extensions](/extensions) first.** For the common cases — react to a store event, or become the provider Galactic Core calls for payments / shipping / tax / email / SMS / marketing / a sales channel — an Extension does the plumbing for you (registered, signed, retried, revalidated, run-logged), and your secrets can stay entirely on your side. Use this page only when you need free-form orchestration that an Extension doesn't cover.
 </Note>
 
----
+## The pattern
 
-## 🔐 Custom Payment Providers
+Galactic Core is the system of record — orders, inventory, accounting, customers. Your service does the provider-specific work and tells Galactic Core the result over the API. The clearest example is a **custom payment provider** (any provider beyond the built-in Stripe, PayPal, Paystack, and M-Pesa):
 
-> **Pattern**: Your own function orchestrating an external payment provider  
-> **Galactic Core Role**: System of record (orders, inventory, accounting)  
-> **Your Role**: Payment orchestrator (provider-specific logic)
+1. **Create the order as `pending`** in Galactic Core to get a permanent `order_id`.
+2. **Charge through your provider** from your own function, tagging the transaction with that `order_id`.
+3. **On your provider's webhook**, verify it and `PATCH` the order to `paid`.
 
-### Overview
-Galactic Core provides built-in integrations for Stripe, PayPal, Paystack, and M-Pesa. For any other provider (Flutterwave, Razorpay, local banks, crypto, etc.), you can run your own function to handle the specific logic while Galactic Core manages the commerce state.
-
-### Architecture
-```mermaid
-graph TD
-    A[Customer Checkout] --> B[Frontend]
-    B --> C[Your Function]
-    C --> D[Provider API - e.g. Flutterwave]
-    D --> E[Customer Completes Payment]
-    E --> F[Provider Webhook]
-    F --> G[Your Webhook Handler]
-    G --> H[Galactic Core - PATCH Order]
-    H --> I[Inventory, Accounting, LTV]
-```
-
-**Key Principle**: Galactic Core doesn't need to know the specifics of your provider. It only needs to receive a verified "paid" or "failed" status update to trigger its internal commerce engines.
-
-### Core Workflow
-
-#### 1. Create Order with Pending Status
-Initialize the order in Galactic Core first to get a permanent record and an `order_id`.
+Galactic Core then runs the commerce side-effects automatically — inventory, double-entry accounting, and order-confirmation emails. It only needs a verified `paid` / `failed` status; it never sees your provider's keys.
 
 ```typescript
-const timestamp = Math.floor(Date.now() / 1000);
-const orderData = {
-  customer_id: 'cust_abc',
-  items: [...],
-  payment_status: 'pending',
-  payment_method: 'flutterwave',
-  total_amount: 5000
-};
-
-// Generate signature on your server
-const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(orderData)}`, secret);
-
+// 1. Create a pending order (HMAC-signed — see Authentication).
 const order = await client.orders.createOrder({
   idempotencyKey: 'checkout-123',
   xTimestamp: timestamp,
-  xSignature: signature,
-  requestBody: orderData
+  xSignature: sign(`${timestamp}.${JSON.stringify(orderData)}`, secret),
+  requestBody: { customer_id: 'cust_abc', items: [...], total_amount: 5000,
+                 payment_status: 'pending', payment_method: 'flutterwave' },
+});
+
+// 2. …charge through your provider (your own function), then
+// 3. on your provider's verified webhook, mark the order paid:
+await client.orders.updateOrder({
+  id: order.id,
+  idempotencyKey: `webhook-${transactionId}`,   // safe against retried webhooks
+  xTimestamp: ts,
+  xSignature: sign(`${ts}.${JSON.stringify({ payment_status: 'paid', payment_reference: transactionId })}`, secret),
+  requestBody: { payment_status: 'paid', payment_reference: transactionId },
 });
 ```
 
-#### 2. Initialize Payment (Your Function)
-Pass the `order_id` to your function to link the provider's transaction to the Tybrite order.
+The same shape works for **custom shipping**: run a function that fetches a live rate from any carrier, and include the resulting fee when you create the order. (To have Galactic Core call your rate logic *during* checkout so custom rates appear in its own rate list, use a [`ShippingProvider` remote extension](/extensions) instead.)
 
-```typescript
-// Example: your own Cloudflare Worker, Supabase Function, or Vercel function
-export async function initialize(orderId, amount) {
-  const payment = await flutterwave.initialize({
-    tx_ref: orderId, // Crucial: Link to Tybrite order
-    amount: amount,
-    redirect_url: 'https://yourstore.com/callback'
-  });
-  return payment.link;
-}
-```
+### Order fields you set
 
-#### 3. Handle the Webhook
-Securely verify the payment and update the order in Tybrite.
+| Field | Values |
+| :--- | :--- |
+| `payment_status` | `pending` · `paid` · `failed` · `refunded` |
+| `payment_method` | your provider label, e.g. `"flutterwave"` |
+| `payment_reference` | the provider's transaction id |
+| `payment_metadata` | optional provider-specific data |
 
-```typescript
-// Inside your secure webhook handler
-if (status === 'successful') {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const updateData = {
-    payment_status: 'paid',
-    payment_reference: transaction_id
-  };
-  
-  const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(updateData)}`, secret);
+## Guidelines
 
-  await client.orders.updateOrder({
-    id: order_id,
-    idempotencyKey: `webhook-${transaction_id}`,
-    xTimestamp: timestamp,
-    xSignature: signature,
-    requestBody: updateData
-  });
-}
-```
+- **Run it anywhere** — any serverless platform (Cloudflare Workers, Supabase Edge Functions, Vercel, Deno Deploy) or your own server.
+- **Keep provider secrets on your side** — they never touch Galactic Core or your storefront.
+- **Verify your provider's webhook signature** before trusting a payment result.
+- **Use an `Idempotency-Key`** on the update so a retried webhook can't double-post accounting.
 
----
+Anvil can scaffold this for you — describe a custom payment integration and it generates the `initialize` / `webhook` / `verify` function skeleton, with templates for common providers.
 
-## 🚚 Custom Shipping Workers
-
-### Problem Statement
-Standard zone-based shipping works for local delivery, but custom integrations are often needed for external carriers like FedEx, DHL, or regional aggregators.
-
-### Solution Pattern
-You can run a **Shipping Proxy** that calculates real-time rates from any carrier API and returns them to the frontend.
-
-1.  **Request**: Frontend sends delivery coordinates to your shipping function.
-2.  **Logic**: Function calls DHL/FedEx API with weight and destination.
-3.  **Response**: Function returns the exact carrier quote.
-4.  **Checkout**: Frontend includes this fee when creating the order in Galactic Core.
-
-<Note>
-  If you'd rather have Galactic Core call your rate logic **during** checkout — so custom rates appear in the platform's own rate list next to native zone/tier rates — use a **`ShippingProvider` remote extension** ([Custom Extensions](/extensions)) instead of a frontend proxy.
-</Note>
-
----
-
-## Deployment Options
-
-You can run these "mid-tier" functions on any modern serverless platform:
-
-*   **Cloudflare Workers**: Edge-optimized and quick to deploy.
-*   **Supabase Edge Functions**: Great if you already use Supabase for other logic.
-*   **Vercel / Deno Deploy**: Excellent developer experience and fast cold starts.
-
----
-
-## Security Checklist
-
-<Check>
-  **Provider Secrets**: Store all third-party API keys in your platform's secure vault (Secrets).
-</Check>
-<Check>
-  **Webhook Verification**: Always verify signatures from your payment provider to prevent spoofing.
-</Check>
-<Check>
-  **Idempotency**: Use the `Idempotency-Key` when updating Tybrite to ensure retried webhooks don't double-trigger accounting entries.
-</Check>
-
----
-
-## 🏗️ ANVIL Generation
-
-When you request a custom payment integration through **ANVIL**, it generates a ready-to-deploy structure:
-
-```bash
-generated-storefront/
-├── functions/
-│   └── payment-{provider}/
-│       ├── initialize.ts      # Create payment intent
-│       ├── webhook.ts         # Handle provider callback
-│       ├── verify.ts          # Verify payment status
-│       └── README.md          # Setup instructions
-├── .env.example
-└── README.md
-```
-
-**Templates Available**: Flutterwave, Razorpay, PayU, Coinbase Commerce, and a Generic template for any other provider.
-
----
-
-## 📊 Order Metadata Fields
-
-When updating an order from your custom function, Galactic Core accepts these specific payment-related fields:
-
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `payment_status` | `string` | `pending`, `paid`, `failed`, or `refunded`. |
-| `payment_method` | `string` | The label for the provider (e.g., `"flutterwave"`). |
-| `payment_reference` | `string` | The provider's unique transaction ID. |
-| `payment_metadata` | `object` | Optional: Any additional provider-specific data. |
-
----
-
-## Benefits
-
-*   **Flexibility**: Support any payment provider without waiting for built-in integration.
-*   **Control**: You manage the provider relationships, API keys, and contract terms.
-*   **Security**: Provider secrets NEVER touch Galactic Core or your frontend.
-*   **Performance**: Side effects like **Inventory Sync** and **Accounting** trigger the moment you patch an order to `paid`.
-
----
-
-## Example: Complete Flutterwave Integration
-
-Implementing a custom provider involves three clear steps:
-
-1.  **Initialize (Frontend)**: Get a checkout link from your serverless function.
-    ```typescript
-    const response = await fetch('/api/payment/initialize', {
-      method: 'POST',
-      body: JSON.stringify({
-        order_id: 'ord_abc123',
-        amount: 5000,
-        customer_email: 'customer@example.com'
-      })
-    });
-
-    const { payment_link } = await response.json();
-    window.location.href = payment_link; // Redirect to provider
-    ```
-
-2.  **Verify & Update (Webhook)**: Receive the provider's callback and update Tybrite.
-    ```typescript
-    // Inside your secure Webhook Handler
-    if (status === 'successful') {
-      const timestamp = Math.floor(Date.now() / 1000);
-      const updateData = {
-        payment_status: 'paid',
-        payment_reference: transaction_id
-      };
-      
-      const signature = generateHmacSignature(`${timestamp}.${JSON.stringify(updateData)}`, secret);
-
-      await tybrite.orders.updateOrder({
-        id: tx_ref, 
-        idempotencyKey: `flw-webhook-${transaction_id}`,
-        xTimestamp: timestamp,
-        xSignature: signature,
-        requestBody: updateData
-      });
-    }
-    ```
-
-3.  **Tybrite Lifecycle**: The platform automatically handles the commerce side-effects.
-    - ✅ **Inventory**: Stocks are reserved/reduced globally.
-    - ✅ **Accounting**: Double-entry logs are generated.
-    - ✅ **Emails**: Automated order confirmations are dispatched.
-
----
-
-## When to graduate to a Custom Extension
-
-This bring-your-own pattern gives you total freedom, at the cost of hosting and operating your own function. If your integration is really *"react to a store event"* or *"become the provider Galactic Core calls for a capability"*, a **[Custom Extension](/extensions)** does the plumbing for you:
+## Should you use this or an Extension?
 
 | You want to… | Use |
 | :--- | :--- |
-| Run arbitrary orchestration entirely outside the platform | **Bring your own integration** (this page) |
-| React to a store event (`order.paid`, `product.stock_low`, …) with a call to your system | A **declarative automation** or **custom function** |
-| Have Galactic Core call *your* endpoint for payments, shipping rates, tax, email, SMS, or a sales channel | A **remote provider extension** |
-| Run provider logic on Galactic Core's runtime with secrets in our vault | A **hosted custom function** |
-
-See **[Custom Extensions](/extensions)** for the full extension model.
+| Orchestrate freely, entirely outside the platform | **Bring Your Own Compute** (this page) |
+| React to a store event with a call to your system | An [automation](/extensions) |
+| Have Galactic Core call *your* endpoint for a capability (payments, shipping, tax, …) | A [remote provider extension](/extensions) |
+| Run your code on Galactic Core's runtime, secrets in its vault | A [hosted function](/extensions) |
