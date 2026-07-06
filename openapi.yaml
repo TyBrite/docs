@@ -1,14 +1,9 @@
 # ============================================================================
-# GENERATED FILE — DO NOT EDIT DIRECTLY
+# Galactic Core API — OpenAPI specification
 #
-# This file is the bundled output of openapi/root.yaml. It is consumed by:
-#   - The TypeScript SDK generator (tybrite-typescript-sdk)
-#   - Mintlify documentation (GC-docs/openapi.yaml)
-#   - Anyone wanting a single-file view of the entire API spec
-#
-# To update: edit files in openapi/ and run `npm run spec:bundle`
-# To validate: `npm run spec:validate`
-# To preview docs locally: `npm run spec:preview`
+# This is the complete, single-file API reference. It is generated, so it is
+# always in sync with the live API. Please don't hand-edit it — it is regenerated
+# from source and any manual changes would be overwritten.
 # ============================================================================
 
 openapi: 3.1.0
@@ -127,7 +122,7 @@ info:
       
     ### Obtaining API Keys
       
-    Generate API keys from your Tybrite dashboard under Settings → Integrations.
+    Generate API keys from your Tybrite dashboard under the Integrations page (Developer section).
       
     ## Environments
 
@@ -452,7 +447,7 @@ tags:
         - Used to prevent replay attacks
       - `X-Signature`: **REQUIRED** for `POST /v1/orders` and `PATCH /v1/orders/:id`
         - HMAC-SHA256 signature of payload (timestamp + "." + request_body), base64-encoded
-        - Sign using your HMAC secret from Settings → Integration Settings
+        - Sign using your HMAC secret from the Integrations page (Developer section)
         - Requests with invalid/missing signatures return 401 Unauthorized
         
       **Automatic Processing:**
@@ -545,7 +540,7 @@ tags:
         - Used to prevent replay attacks
       - `X-Signature`: **REQUIRED** for `POST /v1/payments/initialize`
         - HMAC-SHA256 signature of payload (timestamp + "." + request_body), base64-encoded
-        - Sign using your HMAC secret from Settings → Integration Settings
+        - Sign using your HMAC secret from the Integrations page (Developer section)
         - Requests with invalid/missing signatures return 401 Unauthorized
         
       **Key Type Requirements:**
@@ -3321,7 +3316,7 @@ paths:
         If the same key is used, the original order is returned (not counted against rate limit).
           
         **⚠️ Security Notes:**
-        - HMAC secret is displayed in Settings → Integration Settings
+        - HMAC secret is displayed in the Integrations page (Developer section)
         - Never expose HMAC secret in client-side code
         - Regenerate secret immediately if compromised
         - Requests with invalid/missing signatures return 401 Unauthorized
@@ -3370,7 +3365,7 @@ paths:
           required: true
           description: |
             HMAC-SHA256 signature of the payload (timestamp + "." + request_body), base64-encoded.
-            Sign using your HMAC secret from Settings → Integration Settings.
+            Sign using your HMAC secret from the Integrations page (Developer section).
           schema:
             type: string
           example: IqdgKXgloLzL5akDgFEwPaK6wviozf+3U0Q2eeevl494gpFUIdwMwALs+6bRn...
@@ -4023,7 +4018,7 @@ paths:
           required: true
           description: |
             HMAC-SHA256 signature of the payload (timestamp + "." + request_body), base64-encoded.
-            Sign using your HMAC secret from Settings → Integration Settings.
+            Sign using your HMAC secret from the Integrations page (Developer section).
           schema:
             type: string
           example: bGKjnUJ5HmI8fCOhtsjnPjPWWFjBGI...
@@ -4489,7 +4484,7 @@ paths:
         4. Verify payment status with `/v1/payments/verify`
 
         **Security Notes:**
-        - HMAC secret is displayed in Settings → Integration Settings
+        - HMAC secret is displayed in the Integrations page (Developer section)
         - Never expose HMAC secret in client-side code
         - Regenerate secret immediately if compromised
         - Requests with invalid/missing signatures return 401 Unauthorized
@@ -4528,7 +4523,7 @@ paths:
           required: true
           description: |
             HMAC-SHA256 signature of the payload (timestamp + "." + request_body), base64-encoded.
-            Sign using your HMAC secret from Settings → Integration Settings.
+            Sign using your HMAC secret from the Integrations page (Developer section).
           schema:
             type: string
           example: k0gb6GC6NfkrZBHamqZPAh2haiMaqm...
@@ -13156,7 +13151,7 @@ paths:
         **Authentication:** `client_id` and `client_secret` in the request body.
 
         **Note:** Merchants can also disconnect your application at any time from
-        their store's **Settings → Integrations → Connected Apps** panel.
+        their store's **Integrations → Developer → Connected Apps** panel.
         Galactic Core handles that automatically — you do not need to call this
         endpoint for merchant-initiated disconnects.
 
@@ -13234,7 +13229,7 @@ paths:
       summary: List active store connections
       description: |
         Returns all active third-party tool connections for the authenticated
-        store. Powers the **Settings → Integrations → Connected Apps** panel.
+        store. Powers the **Integrations → Developer → Connected Apps** panel.
 
         **Authentication:** Secret key (`tybrite_sk_*`) required.
         Publishable keys return 403.
@@ -15286,7 +15281,7 @@ paths:
           original result instead of re-processing.
         - `X-Timestamp` — unix time in seconds, within 5 minutes of server time.
         - `X-Signature` — base64 HMAC-SHA256 of `` `${X-Timestamp}.${raw_body}` `` signed with
-          your store's signing secret (Settings → Integration Settings).
+          your store's signing secret (the Integrations page, Developer section).
 
         Tip: validate your feed first with `POST /v1/ingest/test` (no key, no writes).
       security:
@@ -15313,7 +15308,7 @@ paths:
           required: true
           description: |
             Base64-encoded HMAC-SHA256 of the payload (`${X-Timestamp}.${raw_body}`), signed with your
-            HMAC secret from Settings → Integration Settings. Required in addition to the secret key.
+            HMAC secret from the Integrations page (Developer section). Required in addition to the secret key.
           schema:
             type: string
           example: IqdgKXgloLzL5akDgFEwPaK6wviozf+3U0Q2eeevl494gpFUIdwMwALs+6bRn...
