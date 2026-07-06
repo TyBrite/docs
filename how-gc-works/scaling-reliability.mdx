@@ -99,6 +99,15 @@ than lost.
   </Card>
 </Columns>
 
+## Backups and recovery
+
+The database is backed up continuously, not just on a nightly snapshot. Alongside regular full backups, a
+write-ahead log captures every committed change, which makes point-in-time recovery possible: the database
+can be restored to any moment within the retention window — the instant before an accidental bulk delete or
+a bad migration, for example — rather than only to the last snapshot. Per-deployment isolation applies here
+too: each deployment's backups are its own, so a restore affects one tenant and never reaches across to
+another.
+
 <Note>
   Planning for a specific scale or availability target? We are glad to review the architecture against
   your traffic profile and reliability requirements —

@@ -1,0 +1,159 @@
+---
+title: "Security & Compliance"
+description: "The guarantees Galactic Core makes about isolation, authentication, payment integrity, and data protection — and the responsibilities that stay with you."
+---
+
+Security in a commerce platform is a shared responsibility. Galactic Core secures the infrastructure, the
+data boundaries, and the money path; your integration secures its keys and its own request handling. This
+page states what the platform guarantees and where your responsibilities begin, so there is no ambiguity
+about who owns what.
+
+The theme throughout is that the important boundaries are enforced below the application, in the
+infrastructure — so a bug in application code cannot cross them.
+
+## Tenant isolation
+
+Every merchant's data is isolated at two levels, and neither depends on application code remembering to
+filter. Within a deployment, row-level security in the database scopes every read and write to a single
+store; across deployments, each tenant runs on its own dedicated database and API layer. A query cannot
+reach another store's data, and one deployment's incident cannot affect another's. This is covered in depth
+in [Data Model & Multi-tenancy](/how-gc-works/data-model) — the short version is that isolation is a
+property of the infrastructure, not a filter an engineer has to remember.
+
+## Authentication and access
+
+Access to the API is by key, and the key type determines what it can do.
+
+<Columns cols={2}>
+  <Card title="Publishable keys" icon="globe">
+    For the storefront — safe to ship in a browser or mobile bundle. A publishable key reads catalog and
+    other non-sensitive data, and can make the writes a shopper performs on their own behalf: adding to a
+    cart or wishlist, submitting a review, sending a message, lodging a return, updating their own profile.
+    It cannot place or modify orders, take payments, sign customers in, or touch store-wide or other
+    customers' data.
+  </Card>
+  <Card title="Secret keys" icon="key">
+    Full read/write access, for server-side use only. Orders, payments, customer sign-in, and any
+    store-management write require a secret key — which must never reach the browser.
+  </Card>
+</Columns>
+
+Writes a publishable key makes that act on a specific shopper's data — their wishlist, reviews, returns,
+messages, and profile — additionally require that shopper's own session token, so one shopper's key can
+never act for another. Cart updates, stock reservations, newsletter sign-up, and anonymous analytics
+events are accepted without a session, because that is how a storefront works before a shopper logs in.
+
+Keys are stored only as a one-way hash — the platform keeps a fingerprint of each key, never the key
+itself, so a key is shown to you exactly once, at creation, and cannot be recovered afterward. Each request
+is authenticated and resolves to exactly one store before any data is touched. Keys also carry scopes: an
+integration authorized through [Login with GC](/authentication) receives only the specific permissions the
+merchant approved, and a request outside those permissions is refused. Full details of the key model,
+environments, and request signing are in [Authentication](/authentication).
+
+## Data in transit and at rest
+
+All API traffic is served over HTTPS/TLS; there is no plaintext endpoint. Sensitive values a merchant
+stores with the platform — payment-processor credentials, integration tokens — are encrypted at rest in a
+managed secrets vault, not in an ordinary table column, and the plaintext is never returned to the browser
+after it is entered. What the merchant sees afterward is a masked reference; the secret itself is used only
+server-side, to talk to the provider it belongs to.
+
+## Payment integrity
+
+The payment path is designed so that the platform never holds funds and never sees raw card details.
+
+<Steps>
+  <Step title="Card details go straight to the processor">
+    Card entry happens on the payment processor's hosted checkout, not on a Galactic Core page. Card
+    numbers never reach the platform's servers or database — the platform stores only a payment reference,
+    never a card number.
+  </Step>
+  <Step title="The processor holds the money">
+    For marketplace payments, funds are captured by the processor and paid out to each merchant's own
+    connected account. The platform never custodies money; it only directs the split. This is what keeps
+    marketplace operators outside money-transmitter territory.
+  </Step>
+  <Step title="Amounts are recomputed server-side">
+    Prices, tax, shipping, discounts, and the order total are re-derived from the authoritative catalog
+    when an order is placed. A client that submits a tampered price or total is rejected — the amount the
+    customer is charged is the platform's figure, never the client's.
+  </Step>
+  <Step title="Payment confirmations are verified at the source">
+    When a payment is confirmed, the platform re-checks the transaction directly with the processor and
+    reads the amount and status from the processor's own response. Provider webhooks are cryptographically
+    signature-verified, and a notification that fails verification — or arrives without a signature — is
+    rejected before it can affect an order.
+  </Step>
+</Steps>
+
+The most sensitive server-to-server writes — placing or updating an order, initializing a payment, and
+pushing a catalog into the platform — additionally require a request signature, so a request that isn't
+signed with the store's secret is rejected even if it carries a valid key. Order placement also requires an
+idempotency key, so a retried request can never become a duplicate order. See
+[Authentication](/authentication) for how to sign requests and [Custom Integrations](/custom-integrations)
+for handling payment webhooks in your own code.
+
+## Environment separation
+
+Test and live data never mix. The key prefix chooses the environment — `tybrite_sk_test_` /
+`tybrite_pk_test_` operate on isolated sandbox data, `…_live_` on production — and the two are stored under
+a separate environment marker so a test order can never appear in live reporting. Sandbox data is purged on
+a schedule, so test runs don't accumulate. Because the environment is fixed by the key, there is no way for
+a live key to read sandbox data or the reverse.
+
+## Data protection and privacy
+
+Galactic Core is built for GDPR and CCPA from the ground up. The data in a store belongs to the merchant,
+and the tools to exercise data-subject rights over it are self-service — the merchant runs them directly,
+from their own dashboard, without going through us. Your store's data is never shared with anyone else; we
+would only step in to help produce an export if a merchant were unable to run one themselves.
+
+<Columns cols={2}>
+  <Card title="Access and portability" icon="download">
+    A merchant can export their own store's data — customers, orders, and the associated records — in a
+    portable format, and can produce the data held about an individual customer to satisfy a request that
+    customer makes to *them*.
+  </Card>
+  <Card title="Erasure" icon="trash">
+    A merchant can delete an individual customer's personal data, and can request deletion of their entire
+    store. Erasure removes the personal data across the stores where it lives.
+  </Card>
+</Columns>
+
+Beyond those operations, the platform minimizes and ages out the personal data it holds: personal
+details in payment transaction logs are automatically redacted after 90 days (the financial audit trail —
+reference, amount, status — is kept) and the records deleted entirely after a year, abandoned and test data
+are purged on a schedule, and each merchant's data stays walled off in its own tenant. The database is
+backed up continuously with point-in-time recovery — see
+[Scaling & Reliability](/how-gc-works/scaling-reliability#backups-and-recovery).
+
+## Shared responsibility
+
+The platform secures the infrastructure and the boundaries; you secure how your integration uses it. The
+split:
+
+| Galactic Core secures | You secure |
+| --- | --- |
+| Tenant isolation and per-deployment separation | Keeping your **secret key server-side** — never in a browser bundle, mobile app, or public repo |
+| Encryption in transit and of stored credentials | Using a **publishable key** for anything client-side |
+| Hashing your API keys at rest | **Rotating** a key you suspect is exposed, and scoping delegated access to what's needed |
+| Signature-verifying payment webhooks and re-checking with the processor | **Verifying signatures** on any webhooks *you* receive, and making handlers idempotent |
+| Recomputing order amounts server-side | **Signing** state-changing requests and sending an idempotency key |
+| Backups, recovery, and data-subject-rights tooling | Handling the data you export in line with your own obligations |
+
+<Note>
+  Found a security issue? We appreciate responsible disclosure — email
+  [security@tybritelabs.com](mailto:security@tybritelabs.com) and we will work with you on it. Please give
+  us a chance to address it before any public disclosure.
+</Note>
+
+---
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Key types, scopes, environments, and request signing in detail.
+  </Card>
+  <Card title="Data Model & Multi-tenancy" icon="database" href="/how-gc-works/data-model">
+    How row-level security and per-deployment isolation keep tenants separate.
+  </Card>
+</CardGroup>
