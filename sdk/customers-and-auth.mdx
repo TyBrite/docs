@@ -126,7 +126,7 @@ X-External-Auth: <base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>
 
 **Rules:**
 
-- Signed with your store's `hmac_secret` (the same secret used for orders/payments signing — find it under Settings → Integration Settings).
+- Signed with your store's `hmac_secret` (the same secret used for orders/payments signing — find it under Integrations → Developer).
 - `exp - iat` must be **≤ 300 seconds**.
 - The `external_id` in the claim must resolve to a Galactic Core customer whose `id` matches the `{id}` in the path — otherwise `403`.
 - Provide `x-external-auth` **OR** `x-auth-token`, not both. Both → `400`.

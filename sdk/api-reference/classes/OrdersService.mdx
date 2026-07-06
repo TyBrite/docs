@@ -16,7 +16,7 @@ To prevent tampering, replay attacks, and duplicate processing of updates, `crea
 ### Signing Process
 1.  **Generate Timestamp**: Get the current Unix timestamp in seconds.
 2.  **Prepare Payload**: Concatenate the timestamp and the JSON request body with a dot: `timestamp + "." + JSON_body`.
-3.  **Generate Signature**: Compute an HMAC-SHA256 signature of the payload using your **HMAC Secret** (found in Settings → Integration Settings).
+3.  **Generate Signature**: Compute an HMAC-SHA256 signature of the payload using your **HMAC Secret** (found in Integrations → Developer).
 4.  **Base64 Encode**: The resulting signature must be Base64 encoded.
 
 ### Code Implementation (TypeScript/Node.js)
