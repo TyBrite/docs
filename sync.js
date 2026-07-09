@@ -18,7 +18,8 @@ const syncItems = [
     { src: 'quickstart.mdx', dest: 'quick-start.mdx' },
     // Custom Integrations — the two paths (Extensions = platform-native, BYO Compute = full-control).
     { src: 'extensions.mdx', dest: 'extensions.mdx' },
-    { src: 'byo-compute.mdx', dest: 'byo-compute.mdx' }
+    { src: 'byo-compute.mdx', dest: 'byo-compute.mdx' },
+    { src: 'advertising.mdx', dest: 'advertising.mdx' }
 ];
 
 /**

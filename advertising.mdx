@@ -1,0 +1,139 @@
+---
+title: "Advertising"
+description: "Native Google Ads inside Galactic Core: connect an ad account, build campaigns and copy with AI, automate optimization, and measure return on ad spend against real orders and profit — not just clicks."
+---
+
+# Advertising
+
+Galactic Core takes advertising in as a first-class part of the platform. A merchant connects their ad
+account, builds and runs campaigns from inside their store, and sees performance measured against their
+**actual orders and gross profit** — the store's real numbers, not just clicks. Because Galactic Core is
+the system that holds the catalog, the costs, and every sale (online and in-store), it can do the one
+thing an ad platform on its own cannot: tell a merchant whether a campaign is actually making money.
+
+<Note>
+  Advertising is a **platform-managed provider**. Unlike the [Extensions](/extensions) provider
+  interfaces you implement yourself, the ad platforms are built and operated by Galactic Core — a
+  merchant connects an account and uses the built-in tools rather than writing an integration. Google
+  Ads is available today; Meta and Microsoft are planned on the same interface.
+</Note>
+
+## Return on ad spend, on real profit
+
+Galactic Core holds a store's cost of goods, its per-order margin, and every sale — online and in-store.
+That lets it report **gross-profit ROAS**: profit earned per dollar of ad spend, the number that actually
+tells a merchant whether a campaign makes money. It's the signal behind every automatic decision below.
+
+<CardGroup cols={2}>
+  <Card title="Real-margin ROAS" icon="chart-line">
+    Ad spend is joined to real orders and cost of goods, so a merchant sees profit earned per dollar
+    spent, not just revenue — the signal that drives every automatic decision below.
+  </Card>
+  <Card title="Online + in-store conversions" icon="store">
+    Because Galactic Core is the sales system for both the storefront and the point of sale, a
+    campaign can get credit for the in-store purchases it drove — a purchase online and at the counter
+    are both conversions.
+  </Card>
+</CardGroup>
+
+## What a merchant can do
+
+<CardGroup cols={2}>
+  <Card title="AI campaign builder" icon="wand-magic-sparkles">
+    Describe what to advertise and pick a goal; the builder generates a complete campaign — structure,
+    budget guidance, ad groups, and A/B ad-copy variants — written to pass advertising policy, ready to
+    review before anything goes live.
+  </Card>
+  <Card title="Marketing goals" icon="bullseye">
+    Everything aligns to a goal the merchant sets — maximize profit, acquire new customers, sell aging
+    inventory, run a seasonal push, or grow revenue — and the campaigns, rules, and budgets optimize
+    toward it.
+  </Card>
+  <Card title="Automatic rules" icon="robot">
+    Ready-made rules with no setup: pause ads for out-of-stock products, raise budgets when return on
+    ad spend beats a target, pause a campaign when a product's margin drops, auto-add wasteful search
+    terms as negative keywords, keep shopping coverage, and email a daily performance digest.
+  </Card>
+  <Card title="Autonomous Marketing" icon="gauge-high">
+    Set a monthly budget cap, a goal, and hard constraints — never advertise below a margin, pause when
+    stock is low, cap daily budget changes, require approval above a threshold — and Galactic Core runs
+    the advertising within those limits, holding anything above the approval line for sign-off.
+  </Card>
+</CardGroup>
+
+## Safety, by design
+
+Advertising decisions affect a store's standing with the ad platform, so Galactic Core screens every ad
+against advertising policy **before it goes live**, watches for policy problems after the fact, and
+automatically pauses a store's ad changes if problems accumulate — protecting the account. These controls
+run quietly in the background; a paused store is re-enabled with support.
+
+## For developers building a storefront
+
+You don't call an advertising API from a storefront — campaigns and automation are merchant tools in the
+admin. There is **one** thing a storefront does to make advertising work: **forward the ad click id and
+the shopper's privacy consent when placing an order**, so a purchase can be reported back as a conversion.
+
+On a paid order, pass these optional fields to [`orders.createOrder`](/sdk/api-reference/classes/OrdersService):
+
+| Field | What it is |
+| :--- | :--- |
+| `gclid` | The ad click id from the landing URL's query string (persist it for the session). |
+| `ad_consent.ad_user_data` | The shopper's consent to share data for advertising — `granted` / `denied` / `unspecified`. |
+| `ad_consent.ad_personalization` | The shopper's consent to ad personalization — same values. |
+| `ad_consent.jurisdiction` | The shopper's region (e.g. `EEA` / `UK` / `CH` / `US`). |
+
+<Tip>
+  **Enhanced matching happens automatically — no extra work.** If a `gclid` is ever missing (a shopper
+  switched devices, cleared cookies, or the click id expired), Galactic Core still matches the sale to
+  the ad account using the order's customer email and phone, hashed on our servers. So a conversion isn't
+  lost just because the click id was — you only ever forward the fields above; the fallback is server-side.
+</Tip>
+
+```typescript
+await client.orders.createOrder({
+  idempotencyKey: `order-${Date.now()}`,
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: hmacSignature,
+  requestBody: {
+    // …customer, addresses, items, totals, payment_status: 'paid'…
+    gclid: capturedClickId,               // from the landing URL, persisted for the session
+    ad_consent: {
+      ad_user_data: 'granted',            // from your consent banner
+      ad_personalization: 'granted',
+      jurisdiction: 'US',
+    },
+  },
+});
+```
+
+<Warning>
+  **Consent is required by law for EEA, UK, and Swiss shoppers.** A generated or custom storefront
+  serving these regions must show a compliant consent banner (accept / reject, editable later) and
+  forward the shopper's real choice. Galactic Core decides what to report — it will not report a
+  conversion where a shopper's region and consent don't allow it — so always send the **true** captured
+  values and never guess. Forward `unspecified` if the shopper hasn't chosen yet.
+</Warning>
+
+Storefronts generated by Anvil wire this consent banner and the `createOrder` fields automatically. If
+you build your own storefront and the merchant runs advertising, implement the same contract.
+
+<Note>
+  **No analytics tag required — conversions are reported server-side.** Galactic Core sends each
+  conversion to the ad platform directly from its own servers, keyed by the `gclid` you forwarded on the
+  order. Forwarding `gclid` on `createOrder` is the *entire* client-side contract. Concretely, a
+  storefront needs:
+
+  - **No Google Analytics (GA4) property** — the merchant doesn't need a GA4 account at all for
+    conversions to report.
+  - **No global site tag (`gtag`) or tag manager** on the storefront, and no third-party analytics script.
+  - **No GA4 ↔ Google Ads linking** — the conversion goes straight to the ad account.
+
+  This keeps storefronts first-party and script-free, consistent with Galactic Core's built-in analytics.
+</Note>
+
+## Availability
+
+Advertising is a Premium feature, connected under **Integrations → Google Ads** in the admin. Some
+capabilities depend on the ad platform approving the account for API access; until then the connection
+reports its status clearly rather than failing silently.
