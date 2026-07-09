@@ -20,6 +20,15 @@ reach another store's data, and one deployment's incident cannot affect another'
 in [Data Model & Multi-tenancy](/how-gc-works/data-model) — the short version is that isolation is a
 property of the infrastructure, not a filter an engineer has to remember.
 
+Automations extend this guarantee. When a merchant's own automation — a custom extension, or an
+AI-generated one such as an ad-optimization rule — needs to read the store's data, it does **not** get
+direct database access. It reads a **governed set of business concepts** (revenue and margin by product,
+stock at risk, campaign performance, active promotions, and the like) exposed as a fixed, read-only
+interface. Every concept is scoped to the automation's own store, returns computed business facts rather
+than raw records, and can never reach another tenant's data or a table the automation wasn't meant to
+see. This lets a merchant's logic act on rich, meaningful signals while the underlying data stays walled
+off — the same isolation that protects the storefront protects what an automation can read.
+
 ## Authentication and access
 
 Access to the API is by key, and the key type determines what it can do.
