@@ -3659,6 +3659,42 @@ paths:
                     `apply_store_credit` is true) up to the full order total is applied.
                     The applied amount never exceeds the available balance or the total.
                   example: 25
+                gclid:
+                  type:
+                    - string
+                    - 'null'
+                  description: Google ad click id, when the shopper arrived from a Google ad. On a paid order this lets the merchant's Google advertising get credit for the sale. Forward the true captured value; omit if not present.
+                  example: Cj0KCQiA...gclid
+                fbclid:
+                  type:
+                    - string
+                    - 'null'
+                  description: Meta (Facebook & Instagram) ad click id, when the shopper arrived from a Meta ad. On a paid order this lets the merchant's Meta advertising get credit for the sale. The conversion is sent server-side (Conversions API) and de-duplicated against the storefront's Meta Pixel by the order id, so it counts even when the browser blocks the Pixel. Forward the true captured value; omit if not present.
+                  example: IwAR1abc...fbclid
+                ad_consent:
+                  type:
+                    - object
+                    - 'null'
+                  description: Advertising privacy-consent state captured at checkout, used to decide whether a conversion may be reported to an ad platform for this shopper's region (required for EEA shoppers; UK/Swiss records are not dropped for a missing signal). Always forward the true captured values — never guess.
+                  properties:
+                    ad_user_data:
+                      type: string
+                      enum:
+                        - granted
+                        - denied
+                        - unspecified
+                      example: granted
+                    ad_personalization:
+                      type: string
+                      enum:
+                        - granted
+                        - denied
+                        - unspecified
+                      example: granted
+                    jurisdiction:
+                      type: string
+                      description: The shopper's region bucket (e.g. EEA, UK, CH, US).
+                      example: US
             example:
               customer_email: john.doe@example.com
               customer_name: John Doe
