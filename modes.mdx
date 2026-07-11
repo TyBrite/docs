@@ -1,0 +1,91 @@
+---
+title: "Modes"
+description: "Galactic Core wears three faces — a standalone store, a marketplace, and a wholesale supplier — on one shared API. Understand which surfaces are common and which are mode-specific before you build."
+---
+
+Galactic Core is one commerce core that ships in three shapes. The vast majority of the API is
+**identical across all three** — the same catalog, cart, checkout, payments, customers, search, and
+webhooks. Each mode then adds a small, focused surface on top for its shape. Read this first so you
+know which parts you can build once and reuse, and which are specific to the store you're integrating.
+
+<CardGroup cols={3}>
+  <Card title="Vanilla GC (standard)" icon="store">
+    A single merchant's own store — "Vanilla GC," the default. Everything in the API reference applies.
+  </Card>
+  <Card title="Marketplace" icon="shop">
+    Many merchants behind one storefront, with a unified cart and split payment. Adds the
+    Marketplace surface on top of the standard API.
+  </Card>
+  <Card title="B2B (Wholesale)" icon="handshake">
+    A supplier selling to business buyers on terms. Adds the B2B (RFQ → quote → purchase order →
+    invoice) surface on top of the standard API.
+  </Card>
+</CardGroup>
+
+## The shared core (build this once)
+
+Whatever mode you target, these work the same way and are the bulk of any integration:
+
+- **Catalog & discovery** — products, categories, product specifications, search, recommendations.
+- **Cart & checkout** — cart, wishlist, orders, pricing, promotions, gift cards.
+- **Payments** — the payment surface and its providers.
+- **Customers & identity** — customer profiles and the two ways a shopper signs in
+  (a Galactic Core session token, or your own identity provider). See [Authentication](/authentication).
+- **Everything operational** — shipping, returns, reviews, messaging, content, analytics, tax,
+  webhooks, and catalog ingestion.
+
+If you're building a normal single-store storefront, that shared core **is** the whole API — you don't
+touch anything mode-specific.
+
+## What each mode adds
+
+### Vanilla GC (standard)
+**Vanilla GC** is standard Galactic Core for a single merchant — one store you run yourself, on
+Galactic Core's secure multi-tenant platform with strict per-store data isolation. It's the default,
+and the one most integrations target. It adds nothing on top of the shared core: a merchant's own
+storefront uses the shared services directly with the merchant's own key.
+
+### Marketplace
+A marketplace aggregates many independent merchants into one shopping experience. It authenticates
+with a single **marketplace operator key**; the standard catalog reads automatically span every active
+merchant (each result stamped with the merchant it came from), a single cart can hold items from
+several merchants, and one payment is split to each merchant automatically after checkout.
+
+Mode-specific surface: **`client.marketplace`** — see the
+[Marketplace service](/sdk/api-reference/classes/MarketplaceService).
+
+### B2B (Wholesale)
+A wholesale store sells to business **buyers** at negotiated or tiered prices, on payment terms. The
+wholesale flow runs from request for quote to quote to purchase order to terms invoice, with buyer
+credit and payment on net terms. Buyer-facing actions form an API surface; the supplier prices quotes
+and manages the pipeline in their admin. A wholesale store has no direct pay-now checkout — its
+storefront surfaces the request-for-quote flow rather than an add-to-cart checkout.
+
+Wholesale is a per-store capability rather than a whole-deployment setting, so a retail store and a
+wholesale store can run side by side on the same standalone deployment. Each store's `commerce_model`,
+returned by [`GET /v1/store/info`](/sdk/api-reference/classes/SystemService), identifies which it is:
+`retail` for a standard cart-and-checkout storefront, or `wholesale` for the request-for-quote
+storefront. Because the value is per store, it is the reliable signal even when the deployment itself
+serves both kinds of store.
+
+Mode-specific surface: **`client.b2B`** — see the
+[B2B service](/sdk/api-reference/classes/B2BService).
+
+<Note>
+  Marketplace and wholesale sit at different levels. Marketplace is a property of the whole deployment:
+  a single operator key spans every merchant behind one storefront. Wholesale is a property of the
+  individual store, so retail and wholesale stores can share one deployment. `GET /v1/store/info`
+  reports each store's `commerce_model` (`retail` or `wholesale`), which is how a storefront determines
+  the right experience regardless of the deployment it runs on. The shared core is always present; the
+  mode-specific surface — marketplace or B2B — appears only where it applies.
+</Note>
+
+## Where to go next
+
+- **[Core Concepts](/concepts)** — the ideas (keys, stores, environments, currency) that underpin
+  every mode.
+- **[Quickstart](/quickstart)** — make your first call.
+- **[Authentication](/authentication)** — API keys and shopper/buyer sessions.
+- **[Sandbox & Test Environment](/sandbox)** — build and test safely before going live.
+- Mode-specific: the **[Marketplace](/sdk/api-reference/classes/MarketplaceService)** and
+  **[B2B](/sdk/api-reference/classes/B2BService)** service pages.

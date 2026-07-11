@@ -1,0 +1,133 @@
+---
+title: "B2B (Wholesale)"
+description: "Build a wholesale buyer experience with the Tybrite SDK — request quotes, accept them into purchase orders, and pay invoices on terms."
+---
+
+The `B2BService` class (accessed via `client.b2B`) is the buyer-facing entry point for **wholesale (B2B) commerce**: a business buyer requests a quote, accepts it into a purchase order, tracks fulfilment, and pays invoices on terms.
+
+Every method here acts on the **signed-in buyer's own records**. Supplier-side work — pricing a quote, confirming a purchase order, recording shipments, and setting credit — happens in the supplier's admin, not through this API. B2B endpoints are available only on a supplier deployment.
+
+---
+
+## Before you start: how wholesale works in Tybrite
+
+A wholesale order moves through a clear sequence, and each step maps to one or two methods here.
+
+- **Request for quote (RFQ).** The buyer asks a supplier to price a set of items and quantities — `createRfq`. The supplier prices it into a quote.
+- **Quote.** A priced offer the buyer can accept or reject — `getQuote`, `acceptQuote`, `rejectQuote`. A quote may carry a validity date, after which it expires.
+- **Purchase order (PO).** Accepting a quote creates a purchase order — the buyer's commitment. It carries the buyer's payment terms (prepaid, or net 15 / 30 / 60 days). Track it with `getPurchaseOrder` / `listPurchaseOrders`.
+- **Invoice.** When the supplier confirms the purchase order, a terms invoice is issued. The buyer sees it with `getInvoice` / `listInvoices` and settles it with `payInvoice` — in full or in parts. An invoice past its due date is marked overdue.
+
+<Note>
+  Every method requires the API key **plus the buyer's session** — either an `xAuthToken` (a session token from `client.authentication.login`) **or** an `xExternalAuth` assertion if you run your own identity provider. Provide one of the two on every call.
+
+  All create calls (`createRfq`, `payInvoice`) require an **`idempotencyKey`** — a unique value per action, so a retried request is never applied twice.
+</Note>
+
+---
+
+## The typical integration flow
+
+```ts
+import { Tybrite } from "@tybrite/sdk";
+
+const client = new Tybrite({ TOKEN: "tybrite_pk_...", BASE: "https://api.tybritelabs.com" });
+const session = "..."; // the buyer's x-auth-token from client.authentication.login
+
+// 1. Request a quote for some items.
+const rfq = await client.b2B.createRfq({
+  xAuthToken: session,
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    line_items: [{ variant_id: "ab8411a6-...", quantity: 25 }],
+    note: "Need a wholesale quote",
+  },
+});
+
+// 2. The supplier prices + sends a quote; the buyer reviews and accepts it.
+const quote = await client.b2B.getQuote({ id: quoteId, xAuthToken: session });
+const po = await client.b2B.acceptQuote({ id: quoteId, xAuthToken: session });
+
+// 3. Once the supplier confirms the PO, an invoice is issued. Pay it (in full or in part).
+const invoices = await client.b2B.listInvoices({ xAuthToken: session });
+await client.b2B.payInvoice({
+  id: invoices.data[0].id,
+  xAuthToken: session,
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: { amount: 200, payment_method: "bank" },
+});
+```
+
+---
+
+## Requests for quote
+
+### `createRfq(options)`
+
+Requests a quote for a set of items and quantities. The supplier prices it into a quote you can later accept.
+
+- `requestBody.line_items` — an array of `{ variant_id, quantity, note? }` (required, non-empty).
+- `requestBody.note` — an optional message to the supplier.
+- `requestBody.expires_at` — an optional expiry for the request.
+- `idempotencyKey` — required.
+
+Returns the created RFQ (`{ data: B2bRfq }`).
+
+### `listRfqs(options)`
+
+Returns your own requests for quote, newest first (`{ data: B2bRfq[] }`).
+
+### `getRfq(options)`
+
+Returns one of your requests for quote by `id`.
+
+---
+
+## Quotes
+
+### `getQuote(options)`
+
+Returns a quote addressed to you by `id`, including its priced line items, totals, and validity date.
+
+### `acceptQuote(options)`
+
+Accepts a sent quote and creates a purchase order from it. The purchase order then awaits the supplier's confirmation before an invoice is issued. Returns `{ data: { quote_id, purchase_order_id, po_number } }`.
+
+### `rejectQuote(options)`
+
+Rejects a quote by `id`.
+
+---
+
+## Purchase orders
+
+### `listPurchaseOrders(options)`
+
+Returns your own purchase orders, newest first (`{ data: B2bPurchaseOrder[] }`).
+
+### `getPurchaseOrder(options)`
+
+Returns one of your purchase orders by `id`, including its status (`issued`, `confirmed`, `partially_fulfilled`, `fulfilled`, `cancelled`), line items, totals, and payment terms.
+
+---
+
+## Invoices
+
+### `listInvoices(options)`
+
+Returns your own invoices, newest first (`{ data: B2bInvoice[] }`). Each carries its status (`issued`, `partially_paid`, `paid`, `overdue`, `void`), amount, amount paid, and due date.
+
+### `getInvoice(options)`
+
+Returns one of your invoices by `id`.
+
+### `payInvoice(options)`
+
+Records a payment against an invoice. Payments settle the outstanding balance and never exceed it — a partial payment is fine; the invoice stays `partially_paid` until fully settled.
+
+- `id` — the invoice id.
+- `requestBody.amount` — the amount to pay (must not exceed the balance).
+- `requestBody.payment_method` — e.g. `"bank"` or `"cash"`.
+- `idempotencyKey` — required (the payment is keyed on it, so a retry with the same key is safe).
+
+Returns `{ data: { payment_id, amount_paid, invoice_status } }`.
