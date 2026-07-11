@@ -733,6 +733,16 @@ tags:
         trials/renewals and promotion/gift-card expiry are not time-shifted — see the endpoint.)
       - **Replay a webhook** (`POST /v1/sandbox/webhooks/replay`) — re-send a recorded sandbox webhook
         event to your endpoints without recreating the underlying record.
+  - name: B2B
+    description: |
+      GC B2B — the buyer-side wholesale flow: request a quote (RFQ), receive and accept
+      a quote, track the resulting purchase order, and pay invoices on terms.
+
+      Every endpoint acts on the buyer's own records and requires the buyer's session
+      (`x-auth-token` or `x-external-auth`) alongside the API key. Supplier-side actions —
+      pricing quotes, confirming purchase orders, fulfilling, and credit decisions — are
+      handled in the supplier's admin, never through this API. Available only on
+      deployments with B2B enabled.
 externalDocs:
   description: Galactic Core Documentation
   url: https://docs.tybritelabs.com/galactic-core
@@ -1100,6 +1110,7 @@ paths:
                         - EUR
                       timezone: America/New_York
                       created_at: '2026-06-19T19:59:48.799138+00:00'
+                      commerce_model: retail
                     catalog:
                       products:
                         total: 53
@@ -1256,6 +1267,7 @@ paths:
                         - EUR
                       timezone: America/New_York
                       created_at: '2026-06-19T19:59:48.799138+00:00'
+                      commerce_model: retail
                     catalog:
                       products:
                         total: 53
@@ -14596,6 +14608,633 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/b2b/rfqs:
+    get:
+      operationId: listRfqs
+      tags:
+        - B2B
+      summary: List your requests for quote
+      description: |
+        Returns the buyer's own requests for quote (RFQs), newest first. Requires
+        the buyer's session token (x-auth-token or x-external-auth) alongside the API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+      responses:
+        '200':
+          description: RFQs retrieved
+          content:
+            application/json:
+              example:
+                data:
+                  - id: 9b1e4c22-5f3a-4d18-8e77-2a5b90c1d3ef
+                    status: open
+                    line_items:
+                      - variant_id: ab8411a6-06bf-4383-ae14-a4800ec02005
+                        quantity: 25
+                    note: Need a wholesale quote
+                    expires_at: null
+                    created_at: '2026-07-11T13:30:00.000000+00:00'
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/B2bRfq'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      operationId: createRfq
+      tags:
+        - B2B
+      summary: Request a quote
+      description: |
+        Creates a request for quote for the given line items. The supplier prices it
+        into a quote you can later accept. Requires an Idempotency-Key header.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: A unique key so a retried create is not duplicated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - line_items
+              properties:
+                line_items:
+                  type: array
+                  description: The items to be quoted.
+                  items:
+                    type: object
+                    required:
+                      - variant_id
+                      - quantity
+                    properties:
+                      variant_id:
+                        type: string
+                        format: uuid
+                      quantity:
+                        type: integer
+                        minimum: 1
+                      note:
+                        type: string
+                note:
+                  type: string
+                expires_at:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: RFQ created
+          content:
+            application/json:
+              example:
+                data:
+                  id: 9b1e4c22-5f3a-4d18-8e77-2a5b90c1d3ef
+                  status: open
+                  line_items:
+                    - variant_id: ab8411a6-06bf-4383-ae14-a4800ec02005
+                      quantity: 25
+                  note: Need a wholesale quote
+                  expires_at: null
+                  created_at: '2026-07-11T13:30:00.000000+00:00'
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/B2bRfq'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /v1/b2b/rfqs/{id}:
+    get:
+      operationId: getRfq
+      tags:
+        - B2B
+      summary: Get one of your RFQs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: RFQ retrieved
+          content:
+            application/json:
+              example:
+                data:
+                  id: 9b1e4c22-5f3a-4d18-8e77-2a5b90c1d3ef
+                  status: open
+                  line_items:
+                    - variant_id: ab8411a6-06bf-4383-ae14-a4800ec02005
+                      quantity: 25
+                  note: Need a wholesale quote
+                  expires_at: null
+                  created_at: '2026-07-11T13:30:00.000000+00:00'
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/B2bRfq'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /v1/b2b/quotes/{id}:
+    get:
+      operationId: getQuote
+      tags:
+        - B2B
+      summary: Get a quote addressed to you
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Quote retrieved
+          content:
+            application/json:
+              example:
+                data:
+                  id: e18980a5-a8d2-454b-9774-f302fcb2a9ea
+                  rfq_id: 9b1e4c22-5f3a-4d18-8e77-2a5b90c1d3ef
+                  version: 1
+                  status: sent
+                  line_items:
+                    - variant_id: ab8411a6-06bf-4383-ae14-a4800ec02005
+                      quantity: 25
+                      unit_price: 8
+                      line_total: 200
+                  currency: USD
+                  subtotal: 200
+                  tax_amount: 0
+                  total: 200
+                  valid_until: '2026-07-25T00:00:00.000000+00:00'
+                  created_at: '2026-07-11T13:31:00.000000+00:00'
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/B2bQuote'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /v1/b2b/quotes/{id}/accept:
+    post:
+      operationId: acceptQuote
+      tags:
+        - B2B
+      summary: Accept a quote
+      description: |
+        Accepts a sent quote and creates a purchase order from it. The purchase order
+        awaits the supplier's confirmation before an invoice is issued.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: Quote accepted, purchase order created
+          content:
+            application/json:
+              example:
+                data:
+                  quote_id: e18980a5-a8d2-454b-9774-f302fcb2a9ea
+                  purchase_order_id: 7761b763-224b-43f2-a3f0-01139159b430
+                  po_number: PO-20260711-47cc6c
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      quote_id:
+                        type: string
+                        format: uuid
+                      purchase_order_id:
+                        type: string
+                        format: uuid
+                      po_number:
+                        type: string
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /v1/b2b/quotes/{id}/reject:
+    post:
+      operationId: rejectQuote
+      tags:
+        - B2B
+      summary: Reject a quote
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Quote rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      quote_id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: rejected
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /v1/b2b/purchase-orders:
+    get:
+      operationId: listPurchaseOrders
+      tags:
+        - B2B
+      summary: List your purchase orders
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+      responses:
+        '200':
+          description: Purchase orders retrieved
+          content:
+            application/json:
+              example:
+                data:
+                  - id: 7761b763-224b-43f2-a3f0-01139159b430
+                    quote_id: e18980a5-a8d2-454b-9774-f302fcb2a9ea
+                    po_number: PO-20260711-47cc6c
+                    status: confirmed
+                    currency: USD
+                    subtotal: 200
+                    tax_amount: 0
+                    total: 200
+                    payment_terms: net30
+                    created_at: '2026-07-11T13:32:07.271194+00:00'
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/B2bPurchaseOrder'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /v1/b2b/purchase-orders/{id}:
+    get:
+      operationId: getPurchaseOrder
+      tags:
+        - B2B
+      summary: Get one of your purchase orders
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Purchase order retrieved
+          content:
+            application/json:
+              example:
+                data:
+                  id: 7761b763-224b-43f2-a3f0-01139159b430
+                  quote_id: e18980a5-a8d2-454b-9774-f302fcb2a9ea
+                  po_number: PO-20260711-47cc6c
+                  status: confirmed
+                  currency: USD
+                  subtotal: 200
+                  tax_amount: 0
+                  total: 200
+                  payment_terms: net30
+                  created_at: '2026-07-11T13:32:07.271194+00:00'
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/B2bPurchaseOrder'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /v1/b2b/invoices:
+    get:
+      operationId: listInvoices
+      tags:
+        - B2B
+      summary: List your invoices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+      responses:
+        '200':
+          description: Invoices retrieved
+          content:
+            application/json:
+              example:
+                data:
+                  - id: 7206051a-86f4-4f6d-9ad2-14aa41f3e371
+                    purchase_order_id: 7761b763-224b-43f2-a3f0-01139159b430
+                    invoice_number: INV-20260711-6b7253
+                    status: issued
+                    currency: USD
+                    amount: 200
+                    amount_paid: 0
+                    tax_amount: 0
+                    due_date: '2026-08-10'
+                    created_at: '2026-07-11T13:32:07.271194+00:00'
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/B2bInvoice'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /v1/b2b/invoices/{id}:
+    get:
+      operationId: getInvoice
+      tags:
+        - B2B
+      summary: Get one of your invoices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice retrieved
+          content:
+            application/json:
+              example:
+                data:
+                  id: 7206051a-86f4-4f6d-9ad2-14aa41f3e371
+                  purchase_order_id: 7761b763-224b-43f2-a3f0-01139159b430
+                  invoice_number: INV-20260711-6b7253
+                  status: issued
+                  currency: USD
+                  amount: 200
+                  amount_paid: 0
+                  tax_amount: 0
+                  due_date: '2026-08-10'
+                  created_at: '2026-07-11T13:32:07.271194+00:00'
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/B2bInvoice'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /v1/b2b/invoices/{id}/pay:
+    post:
+      operationId: payInvoice
+      tags:
+        - B2B
+      summary: Pay an invoice
+      description: |
+        Records a payment against an invoice. Payments settle the outstanding balance
+        and never exceed it. Requires an Idempotency-Key header (the payment is keyed on
+        it, so a retry with the same key is safe).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: A unique key so a retried create is not duplicated.
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+              properties:
+                amount:
+                  type: number
+                  description: Payment amount (must not exceed the balance).
+                payment_method:
+                  type: string
+                  example: bank
+      responses:
+        '201':
+          description: Payment recorded
+          content:
+            application/json:
+              example:
+                data:
+                  payment_id: c4d5e6f7-1234-4a2b-9c8d-7e6f5a4b3c2d
+                  amount_paid: 200
+                  invoice_status: paid
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      payment_id:
+                        type: string
+                        format: uuid
+                      amount_paid:
+                        type: number
+                      invoice_status:
+                        type: string
+                        example: paid
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /v1/webhook_endpoints:
     post:
       operationId: createWebhookEndpoint
@@ -15881,6 +16520,7 @@ paths:
                         - EUR
                       timezone: America/Chicago
                       created_at: '2025-12-16T07:20:56.276495+00:00'
+                      commerce_model: retail
                     marketplace:
                       mode: marketplace
                       marketplace_enabled: true
@@ -16442,6 +17082,7 @@ components:
             - currencies
             - timezone
             - created_at
+            - commerce_model
           properties:
             store_id:
               type: string
@@ -16495,6 +17136,20 @@ components:
               type: string
               format: date-time
               description: Store creation timestamp
+            commerce_model:
+              type: string
+              enum:
+                - retail
+                - wholesale
+              description: |-
+                How this store sells, so a storefront can build the right experience:
+                - `retail` — a standard consumer storefront: browse the catalog, add to cart, and pay now
+                  at checkout.
+
+                - `wholesale` — the store sells to business buyers on payment terms. There is no direct
+                  pay-now checkout; buyers request a quote, receive a quote, place a purchase order, and
+                  are billed on a terms invoice. A wholesale storefront should surface the request-for-quote
+                  flow instead of an add-to-cart checkout.
         catalog:
           type: object
           description: Catalog overview (optional, included when requested)
@@ -16852,7 +17507,8 @@ components:
               enum:
                 - standard
                 - marketplace
-              description: Whether the store runs on its own or inside a marketplace.
+                - supplier
+              description: The deployment kind this store runs in — `standard` (a store on its own), `marketplace` (inside a marketplace), or `supplier` (a B2B/wholesale deployment).
             marketplace_enabled:
               type: boolean
               description: Whether marketplace features are available.
@@ -19849,6 +20505,204 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ReturnItem'
+    B2bRfq:
+      type: object
+      example:
+        id: 9b1e4c22-5f3a-4d18-8e77-2a5b90c1d3ef
+        status: open
+        line_items:
+          - variant_id: ab8411a6-06bf-4383-ae14-a4800ec02005
+            quantity: 25
+        note: Need a wholesale quote
+        expires_at: null
+        created_at: '2026-07-11T13:30:00.000000+00:00'
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - open
+            - quoted
+            - declined
+            - expired
+        line_items:
+          type: array
+          items:
+            type: object
+        note:
+          type:
+            - string
+            - 'null'
+        expires_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    B2bQuote:
+      type: object
+      example:
+        id: e18980a5-a8d2-454b-9774-f302fcb2a9ea
+        rfq_id: 9b1e4c22-5f3a-4d18-8e77-2a5b90c1d3ef
+        version: 1
+        status: sent
+        line_items:
+          - variant_id: ab8411a6-06bf-4383-ae14-a4800ec02005
+            quantity: 25
+            unit_price: 8
+            line_total: 200
+        currency: USD
+        subtotal: 200
+        tax_amount: 0
+        total: 200
+        valid_until: '2026-07-25T00:00:00.000000+00:00'
+        created_at: '2026-07-11T13:31:00.000000+00:00'
+      properties:
+        id:
+          type: string
+          format: uuid
+        rfq_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        version:
+          type: integer
+        status:
+          type: string
+          enum:
+            - draft
+            - sent
+            - accepted
+            - rejected
+            - expired
+        line_items:
+          type: array
+          items:
+            type: object
+        currency:
+          type: string
+          example: USD
+        subtotal:
+          type: number
+        tax_amount:
+          type: number
+        total:
+          type: number
+        valid_until:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    B2bPurchaseOrder:
+      type: object
+      example:
+        id: 7761b763-224b-43f2-a3f0-01139159b430
+        quote_id: e18980a5-a8d2-454b-9774-f302fcb2a9ea
+        po_number: PO-20260711-47cc6c
+        status: confirmed
+        currency: USD
+        subtotal: 200
+        tax_amount: 0
+        total: 200
+        payment_terms: net30
+        created_at: '2026-07-11T13:32:07.271194+00:00'
+      properties:
+        id:
+          type: string
+          format: uuid
+        quote_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        po_number:
+          type: string
+        status:
+          type: string
+          enum:
+            - issued
+            - confirmed
+            - partially_fulfilled
+            - fulfilled
+            - cancelled
+        line_items:
+          type: array
+          items:
+            type: object
+        currency:
+          type: string
+          example: USD
+        subtotal:
+          type: number
+        tax_amount:
+          type: number
+        total:
+          type: number
+        payment_terms:
+          type: string
+          enum:
+            - prepaid
+            - net15
+            - net30
+            - net60
+        created_at:
+          type: string
+          format: date-time
+    B2bInvoice:
+      type: object
+      example:
+        id: 7206051a-86f4-4f6d-9ad2-14aa41f3e371
+        purchase_order_id: 7761b763-224b-43f2-a3f0-01139159b430
+        invoice_number: INV-20260711-6b7253
+        status: issued
+        currency: USD
+        amount: 200
+        amount_paid: 0
+        tax_amount: 0
+        due_date: '2026-08-10'
+        created_at: '2026-07-11T13:32:07.271194+00:00'
+      properties:
+        id:
+          type: string
+          format: uuid
+        purchase_order_id:
+          type: string
+          format: uuid
+        invoice_number:
+          type: string
+        status:
+          type: string
+          enum:
+            - issued
+            - partially_paid
+            - paid
+            - overdue
+            - void
+        currency:
+          type: string
+          example: USD
+        amount:
+          type: number
+        amount_paid:
+          type: number
+        tax_amount:
+          type: number
+        due_date:
+          type:
+            - string
+            - 'null'
+          format: date
+        created_at:
+          type: string
+          format: date-time
     WebhookEndpoint:
       type: object
       properties:
