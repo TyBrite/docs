@@ -18,10 +18,12 @@ A wholesale order moves through a clear sequence, and each step maps to one or t
 - **Purchase order (PO).** Accepting a quote creates a purchase order — the buyer's commitment. It carries the buyer's payment terms (prepaid, or net 15 / 30 / 60 days). Track it with `getPurchaseOrder` / `listPurchaseOrders`.
 - **Invoice.** When the supplier confirms the purchase order, a terms invoice is issued. The buyer sees it with `getInvoice` / `listInvoices` and settles it with `payInvoice` — in full or in parts. An invoice past its due date is marked overdue.
 
+For routine reorders, an approved buyer does not need the full request-for-quote round trip. `createDirectOrder` places an order in one call at the buyer's own agreed prices — the self-serve equivalent of the flow above. The request-for-quote path remains for negotiated or bespoke orders.
+
 <Note>
   Every method requires the API key **plus the buyer's session** — either an `xAuthToken` (a session token from `client.authentication.login`) **or** an `xExternalAuth` assertion if you run your own identity provider. Provide one of the two on every call.
 
-  All create calls (`createRfq`, `payInvoice`) require an **`idempotencyKey`** — a unique value per action, so a retried request is never applied twice.
+  All create calls (`createRfq`, `createDirectOrder`, `payInvoice`) require an **`idempotencyKey`** — a unique value per action, so a retried request is never applied twice.
 </Note>
 
 ---
@@ -56,6 +58,77 @@ await client.b2B.payInvoice({
   idempotencyKey: crypto.randomUUID(),
   requestBody: { amount: 200, payment_method: "bank" },
 });
+```
+
+---
+
+## Direct checkout
+
+### `createDirectOrder(options)`
+
+Places a wholesale order for an approved buyer in one call, without the request-for-quote round trip — the self-serve path for routine reorders at the buyer's own agreed prices.
+
+Send only the items and quantities. Galactic Core prices every line itself against the buyer's wholesale price list (their per-buyer price, their group's price, or the store default), enforces each item's minimum order quantity, and computes the totals. **Any price sent by the client is ignored.** An item with no wholesale price for this buyer, or a quantity below its minimum order quantity, is rejected with a clear reason.
+
+How the order settles depends on the supplier's policy for this buyer:
+
+- **On terms** — the order is confirmed and a terms invoice is issued (subject to the buyer's credit limit). The response's `settlement` is `"terms"`, with `invoice_id`, `invoice_number`, and `due_date`. Settle it later with `payInvoice`.
+- **Pay now** — the order is created awaiting payment. The response's `settlement` is `"pay_now"`, with an `order_id` and `amount`. Complete the payment through the payment flow (`client.payments.initializePayment` then `verifyPayment`) using that `order_id`, exactly as for a normal online order.
+
+- `requestBody.items` — an array of `{ variant_id, quantity }` (required, non-empty). Do not send prices.
+- `requestBody.note` — an optional note on the order.
+- `requestBody.shipping_address` — an optional shipping address.
+- `idempotencyKey` — required.
+- `xTimestamp` / `xSignature` — required. A direct order must be signed, like a standard order: `xTimestamp` is the current Unix time in milliseconds, and `xSignature` is the Base64 HMAC-SHA256 of `` `${xTimestamp}.${rawJsonBody}` `` using the store's signing secret. See [Signing requests](/authentication#signing-requests).
+
+```ts
+const order = await client.b2B.createDirectOrder({
+  xAuthToken: session,
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    items: [{ variant_id: "ab8411a6-...", quantity: 10 }],
+  },
+});
+
+if (order.data.settlement === "terms") {
+  // A terms invoice was issued — pay it later.
+  console.log(order.data.invoice_number, "due", order.data.due_date);
+} else {
+  // Pay now — complete payment against the returned order_id.
+  await client.payments.initializePayment({
+    requestBody: { provider: "stripe", order_id: order.data.order_id, amount: order.data.amount },
+    // ...signing headers as for any payment
+  });
+}
+```
+
+```json Response (terms)
+{
+  "data": {
+    "settlement": "terms",
+    "purchase_order_id": "5a566f3d-1798-461a-926f-4c38602965ce",
+    "po_number": "PO-20260711-ce9be3",
+    "invoice_id": "f5199e4a-2f22-4970-a536-bb40068c4518",
+    "invoice_number": "INV-20260711-29fad5",
+    "due_date": "2026-08-10",
+    "total": 100,
+    "currency": "USD"
+  }
+}
+```
+
+```json Response (pay now)
+{
+  "data": {
+    "settlement": "pay_now",
+    "purchase_order_id": "80338da9-1c05-4d58-a6d0-8cf1b83c5eeb",
+    "po_number": "PO-20260711-b599a5",
+    "order_id": "aa50d584-7028-49dc-8b06-2a23551ebd47",
+    "order_number": "B2B-20260711-933fe9",
+    "amount": 100,
+    "currency": "USD"
+  }
+}
 ```
 
 ---
