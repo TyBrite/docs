@@ -15235,6 +15235,134 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+  /v1/b2b/orders:
+    post:
+      operationId: createDirectOrder
+      tags:
+        - B2B
+      summary: Place a wholesale order directly (self-serve checkout)
+      description: |
+        Places a wholesale order for an approved buyer directly, without the request-for-quote
+        round-trip — the self-serve path for routine reorders at the buyer's own agreed prices.
+
+        Send only the items and quantities; Galactic Core prices every line itself against the
+        buyer's wholesale price list (per-buyer, group, or default), enforces each item's minimum
+        order quantity, and computes the authoritative totals. Any price sent by the client is
+        ignored. An item with no wholesale price for this buyer, or a quantity below its minimum
+        order quantity, is rejected with a clear reason.
+
+        How the order settles depends on the supplier's policy for this buyer:
+        - **On terms** — the order is confirmed and a terms invoice is issued (subject to the buyer's
+          credit limit). The response carries the invoice and its due date.
+        - **Pay now** — the order is created awaiting payment. The response carries an `order_id` and
+          `amount`; complete the payment through the standard payment flow (`/v1/payments/initialize`
+          then `/v1/payments/verify`) with that `order_id`, exactly as for a normal online order.
+
+        Requires the buyer's session token (x-auth-token or x-external-auth), an Idempotency-Key, and a
+        request signature (X-Timestamp + X-Signature over the body with the store's signing secret) —
+        the same signing a standard order requires.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Buyer session token (GC-native). Provide this or x-external-auth.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the buyer. Provide this or x-auth-token.
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: A unique key so a retried order is not duplicated.
+        - name: X-Timestamp
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Unix timestamp (milliseconds) used in the request signature. Required — a direct order must be signed, like a standard order. Must be within 5 minutes of the server time.
+        - name: X-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Base64 HMAC-SHA256 of `{X-Timestamp}.{raw JSON body}` using the store's signing secret. Required — a direct order must be signed, like a standard order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  description: The items to order. Prices are resolved by Galactic Core; do not send prices.
+                  items:
+                    type: object
+                    required:
+                      - variant_id
+                      - quantity
+                    properties:
+                      variant_id:
+                        type: string
+                        format: uuid
+                      quantity:
+                        type: integer
+                        minimum: 1
+                note:
+                  type: string
+                  description: An optional note on the order.
+                shipping_address:
+                  type: string
+                  description: An optional shipping address for this order.
+      responses:
+        '201':
+          description: |
+            Order placed. The `settlement` field is `terms` (an invoice was issued) or `pay_now`
+            (an order awaiting payment). Fields present depend on which.
+          content:
+            application/json:
+              examples:
+                terms:
+                  summary: Settled on terms — an invoice was issued
+                  value:
+                    data:
+                      settlement: terms
+                      purchase_order_id: 5a566f3d-1798-461a-926f-4c38602965ce
+                      po_number: PO-20260711-ce9be3
+                      invoice_id: f5199e4a-2f22-4970-a536-bb40068c4518
+                      invoice_number: INV-20260711-29fad5
+                      due_date: '2026-08-10'
+                      total: 100
+                      currency: USD
+                pay_now:
+                  summary: Pay now — complete payment against order_id
+                  value:
+                    data:
+                      settlement: pay_now
+                      purchase_order_id: 80338da9-1c05-4d58-a6d0-8cf1b83c5eeb
+                      po_number: PO-20260711-b599a5
+                      order_id: aa50d584-7028-49dc-8b06-2a23551ebd47
+                      order_number: B2B-20260711-933fe9
+                      amount: 100
+                      currency: USD
+              schema:
+                $ref: '#/components/schemas/B2bDirectOrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /v1/webhook_endpoints:
     post:
       operationId: createWebhookEndpoint
@@ -20703,6 +20831,62 @@ components:
         created_at:
           type: string
           format: date-time
+    B2bDirectOrderResponse:
+      type: object
+      description: The result of a direct wholesale order. `settlement` is `terms` (a terms invoice was issued — `invoice_id`, `invoice_number`, and `due_date` are present) or `pay_now` (the order awaits payment — `order_id`, `order_number`, and `amount` are present; complete payment through the standard payment flow using `order_id`). `purchase_order_id`, `po_number`, and `currency` are always present.
+      required:
+        - settlement
+        - purchase_order_id
+        - po_number
+      properties:
+        settlement:
+          type: string
+          enum:
+            - terms
+            - pay_now
+          description: How the order settles — on terms (invoice) or pay now (awaiting payment).
+        purchase_order_id:
+          type: string
+          format: uuid
+        po_number:
+          type: string
+        currency:
+          type: string
+          example: USD
+        total:
+          type: number
+          description: The order total (present on a terms order).
+        invoice_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: The issued invoice (terms only).
+        invoice_number:
+          type:
+            - string
+            - 'null'
+          description: The issued invoice number (terms only).
+        due_date:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: When the invoice is due (terms only).
+        order_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: The order to pay (pay-now only).
+        order_number:
+          type:
+            - string
+            - 'null'
+          description: The order number (pay-now only).
+        amount:
+          type: number
+          description: The amount to pay (present on a pay-now order).
     WebhookEndpoint:
       type: object
       properties:
