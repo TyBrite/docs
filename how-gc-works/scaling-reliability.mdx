@@ -75,6 +75,16 @@ Under stress the platform aims to return a slower or slightly-stale response rat
     Totals, discounts, and gift-card redemption are computed in atomic database functions, so
     concurrent orders for the same customer do not produce lost updates or inconsistent balances.
   </Step>
+  <Step title="No overselling in a rush on limited stock">
+    When tens of thousands of shoppers try to reserve the same item at once — a limited drop, a flash
+    sale — each unit is claimed by exactly one shopper. Stock reservation is serialized per item at
+    the edge: the decision to grant or decline a reservation is made in memory, close to the shopper,
+    without a database round trip, so a single hot item sustains tens of thousands of reservation
+    decisions per second and a shopper who missed out is told instantly rather than after a slow wait.
+    The item's stock can never be reserved below zero, no matter how many requests arrive at the same
+    instant. A reservation holds the stock for a short window and is released automatically if the
+    shopper does not complete checkout, returning the units to available inventory.
+  </Step>
   <Step title="Isolated failures">
     Because each deployment is physically isolated, one tenant's load spike or incident cannot degrade
     another's — there is no shared database or compute to contend for.
