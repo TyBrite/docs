@@ -49,10 +49,15 @@ wait on its result, so a cache stampede cannot reach the database more than once
 
 ## Write-through invalidation
 
-Business data — the catalog, pricing rules, currencies — is cached without a TTL. Rather than expiring on
-a timer, it is kept correct by invalidation: when a merchant edits a product, changes a price, or adjusts
-stock, the write path refreshes the affected entries at once. The cache is therefore always current,
-without the window of staleness a timed cache carries while it waits out its TTL.
+Business data — the catalog, pricing rules, currencies — is kept correct by invalidation rather than by
+expiry. When a merchant edits a product, changes a price, or adjusts stock, the write path refreshes the
+affected entries at once, so the cache reflects the change immediately instead of waiting out a timer.
+Correctness never depends on an entry expiring.
+
+Every cached entry still carries a **TTL as a backstop**, though — write-through is the primary mechanism,
+not the only one. If an invalidation were ever missed, the entry still ages out on its own (the hot catalog
+entries within about fifteen minutes) rather than serving stale data indefinitely. In normal operation you
+never see that window, because the write already refreshed the entry; the TTL is the safety net beneath it.
 
 <Note>
   The catalog is cached under **two separate keys** — one for the merchant's in-store/admin view (every
@@ -60,8 +65,9 @@ without the window of staleness a timed cache carries while it waits out its TTL
   products only). Every product or media write busts **both**, so the two surfaces never drift apart.
 </Note>
 
-Short-lived external data, such as geolocation lookups and currency snapshots, does use a TTL, since it is
-not something a merchant writes. The business catalog, though, never depends on expiry for correctness.
+Short-lived external data, such as geolocation lookups and currency snapshots, leans on its TTL directly.
+Business data leans on write-through first and the TTL only as a fallback — but in both cases a TTL is
+present.
 
 ## Freshness and resilience directives
 

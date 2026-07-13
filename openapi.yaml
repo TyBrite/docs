@@ -1127,6 +1127,23 @@ paths:
                           - Featured
                           - New Arrivals
                           - Best Sellers
+                        list:
+                          - id: 45e28d12-9381-45f6-98bb-cb3a34c0a215
+                            name: Featured
+                            slug: featured
+                            type: featured_collections
+                            show_on_homepage: true
+                            display_priority: 0
+                            image: https://cdn.example.com/collections/featured-desktop.jpg
+                            image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
+                          - id: e9810818-5051-4b74-a53b-2ff843b4f435
+                            name: New Arrivals
+                            slug: new-arrivals
+                            type: new_arrivals
+                            show_on_homepage: true
+                            display_priority: 1
+                            image: null
+                            image_mobile: null
                       taxonomy:
                         categories:
                           total: 23
@@ -1284,6 +1301,23 @@ paths:
                           - Featured
                           - New Arrivals
                           - Best Sellers
+                        list:
+                          - id: 45e28d12-9381-45f6-98bb-cb3a34c0a215
+                            name: Featured
+                            slug: featured
+                            type: featured_collections
+                            show_on_homepage: true
+                            display_priority: 0
+                            image: https://cdn.example.com/collections/featured-desktop.jpg
+                            image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
+                          - id: e9810818-5051-4b74-a53b-2ff843b4f435
+                            name: New Arrivals
+                            slug: new-arrivals
+                            type: new_arrivals
+                            show_on_homepage: true
+                            display_priority: 1
+                            image: null
+                            image_mobile: null
                       taxonomy:
                         categories:
                           total: 23
@@ -2592,6 +2626,8 @@ paths:
                     is_active: true
                     show_on_homepage: true
                     display_priority: 0
+                    image: https://cdn.example.com/collections/featured-desktop.jpg
+                    image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
                     created_at: '2026-06-19T19:59:58.711993+00:00'
                     updated_at: '2026-06-19T19:59:58.711993+00:00'
                   - id: e9810818-5051-4b74-a53b-2ff843b4f435
@@ -2602,6 +2638,8 @@ paths:
                     is_active: true
                     show_on_homepage: true
                     display_priority: 1
+                    image: null
+                    image_mobile: null
                     created_at: '2026-06-19T19:59:58.711993+00:00'
                     updated_at: '2026-06-19T20:26:59.123524+00:00'
                   - id: 8e02fcb5-3079-4902-8e69-6485790b740b
@@ -2612,6 +2650,8 @@ paths:
                     is_active: true
                     show_on_homepage: true
                     display_priority: 2
+                    image: null
+                    image_mobile: null
                     created_at: '2026-06-19T19:59:58.711993+00:00'
                     updated_at: '2026-06-19T20:26:59.123524+00:00'
                 pagination:
@@ -2670,6 +2710,8 @@ paths:
                 is_active: true
                 show_on_homepage: true
                 display_priority: 0
+                image: https://cdn.example.com/collections/featured-desktop.jpg
+                image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
                 rules:
                   type: manual
                 created_at: '2026-06-19T19:59:58.711993+00:00'
@@ -17335,6 +17377,39 @@ components:
                   type: array
                   items:
                     type: string
+                list:
+                  type: array
+                  description: |
+                    The store's active collections with their banner images. `image` is the desktop
+                    banner (and the fallback for all viewports); `image_mobile` is an optional phone crop.
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      name:
+                        type: string
+                      slug:
+                        type: string
+                      type:
+                        type:
+                          - string
+                          - 'null'
+                      show_on_homepage:
+                        type: boolean
+                      display_priority:
+                        type: integer
+                      image:
+                        type:
+                          - string
+                          - 'null'
+                        format: uri
+                      image_mobile:
+                        type:
+                          - string
+                          - 'null'
+                        format: uri
             taxonomy:
               type: object
               properties:
@@ -18082,6 +18157,22 @@ components:
           type: boolean
         display_priority:
           type: integer
+        image:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: |
+            URL of the collection banner image (desktop, and the fallback used on all
+            viewports when no mobile image is set).
+        image_mobile:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: |
+            Optional URL of a phone-sized collection banner. Storefronts render this on
+            small viewports when set and fall back to `image` otherwise.
         created_at:
           type: string
           format: date-time
