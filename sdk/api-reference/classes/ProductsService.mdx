@@ -315,7 +315,7 @@ const { specification_data } = await client.products.getProductSpecifications({
 
 ## Collections
 
-Manage curated groups of products.
+Curated groups of products a merchant highlights on their storefront — a "Featured", "New Arrivals", or "Summer Edit" row. Each collection can carry a banner image, which makes it a natural building block for an image-led homepage.
 
 ```typescript
 // List all active collections
@@ -327,10 +327,17 @@ const { collections } = await client.products.listProductCollections({
 //     { id: "45e28d12-9381-45f6-98bb-cb3a34c0a215", name: "Featured", slug: "featured",
 //       description: "Hand-picked products to highlight on your storefront.",
 //       collection_type: "featured_collections", is_active: true,
-//       show_on_homepage: true, display_priority: 0 },
+//       show_on_homepage: true, display_priority: 0,
+//       image: "https://media.example.com/.../featured-desktop.jpg",
+//       image_mobile: "https://media.example.com/.../featured-mobile.jpg" },
 //     { id: "e9810818-5051-4b74-a53b-2ff843b4f435", name: "New Arrivals", slug: "new-arrivals",
-//       collection_type: "new_arrivals", is_active: true, ... }
+//       collection_type: "new_arrivals", is_active: true, image: null, image_mobile: null, ... }
 //   ]
+```
+
+`image` is the collection's banner and the image to use on every viewport; `image_mobile` is an optional phone-sized crop. Render the mobile image on small screens when it is set and fall back to `image` otherwise — a `<picture>` element with a mobile `<source>` handles this cleanly. Either field is `null` when the merchant has not added artwork.
+
+```typescript
 
 // Get items in a specific collection (returns all items, ordered by sort_order)
 // Each item has: product_id, sort_order, and an embedded product object
