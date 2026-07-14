@@ -161,9 +161,13 @@ When a recommendation type cannot produce results (insufficient data, missing em
 | `also-bought` | `also-bought → similar → trending` |
 | `similar` | `similar → trending` |
 | `personalized` | `personalized → trending` |
-| `trending` | `trending` (terminal — no further fallback) |
+| `trending` | `trending → most popular products` |
 
 When a fallback is used, the response's `fallbackUsed` field contains the name of the algorithm that ultimately produced the results.
+
+### Minimum results guarantee
+
+Every recommendation response is topped up to **at least 8 products** (capped at the `limit` you request, and at the number of active products the store has), so a storefront never renders a multi-slot shelf with only one or two items. If the requested algorithm returns fewer than eight, the response is backfilled — in order — from what's trending, what shoppers are viewing and adding to cart, the store's featured products, and its newest arrivals. Backfilled items are de-duplicated and never include the product you anchored on. When a response has been topped up this way, `fallbackUsed` includes `backfill`.
 
 ---
 

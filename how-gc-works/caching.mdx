@@ -69,6 +69,16 @@ Short-lived external data, such as geolocation lookups and currency snapshots, l
 Business data leans on write-through first and the TTL only as a fallback — but in both cases a TTL is
 present.
 
+## Warming ahead of the shopper
+
+Write-through keeps a busy store's cache warm on its own: every edit repopulates what it changed. The one
+moment a shopper could still pay for a cold read is the first request after a quiet store's entry ages out,
+or just after a deployment. To keep even that request fast, the hot storefront entries — the catalog, the
+product specifications, and the store's default currency — are refreshed on a short schedule for active
+stores, so the entry is already present when the next shopper arrives. Dormant stores are skipped, so the
+warming does no work for catalogs no one is browsing. The effect is that the occasional cold-start cost is
+absorbed ahead of time rather than landing on a real request.
+
 ## Freshness and resilience directives
 
 Public reads carry a `Cache-Control` header that tunes freshness at each layer and adds two resilience

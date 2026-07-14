@@ -102,6 +102,16 @@ needed.
 | `401` | Invalid or missing API key. |
 | `429` | Rate limit exceeded. |
 
+## Minimum results guarantee
+
+Every discovery list is topped up to **at least 8 products** (capped at the `limit` you request, and
+at the number of active products the store has), so a "Popular now" shelf never renders with only one
+or two items. This matters most for `best-converting`, which excludes products with fewer than five
+views and so can start out very short on a new or low-traffic store. When a list is short on genuine
+signal, it is backfilled — in order — from what's trending, what shoppers are viewing and adding to
+cart, the store's featured products, and its newest arrivals, de-duplicated against the products
+already in the list.
+
 ## Freshness
 
 Rankings are computed from live shopper events and cached briefly (shorter windows refresh faster),
