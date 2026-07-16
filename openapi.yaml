@@ -15459,7 +15459,7 @@ paths:
                     Array of event types to subscribe to. Use `["*"]` for all events.
 
                     **Order lifecycle:** `order.created`, `order.paid`, `order.fulfilled`,
-                    `order.cancelled`, `order.refunded`, `order.updated`
+                    `order.shipped`, `order.cancelled`, `order.refunded`, `order.updated`
 
                     **Payment lifecycle:** `payment.succeeded`, `payment.failed`, `payment.refunded`
 
@@ -15472,12 +15472,41 @@ paths:
 
                     **Gift cards:** `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired`
 
-                    **Promotions:** `promotion.applied`
+                    **Promotions:** `promotion.applied` (a promotion was applied to a checkout),
+                    `promotion.created`, `promotion.activated` (a promotion went live),
+                    `promotion.deactivated` (a live promotion ended, was paused, or expired)
+
+                    **Content & collections:** `collection.created`, `collection.updated`
+                    (a product collection was added or its homepage placement / banner changed),
+                    `post.published`, `lookbook.published`, `review.approved` (a review passed
+                    moderation and is now visible)
+
+                    **Store lifecycle & configuration:** `store.updated` (the store's name,
+                    logo, branding, contact, or base currency changed — carries a
+                    `changed_fields` list), `payment_provider.connected` (a payment provider was
+                    connected), `shipping_provider.connected` (a shipping-rate provider was
+                    connected), `channel.connected` (a sales channel was connected)
+
+                    **Feature availability:** `feature.status_changed` — a capability crossed
+                    from awaiting data to available (or the reverse), e.g. the store's first
+                    approved reviews arrive and reviews become usable. Carries `feature`,
+                    `status`, and `previous_status`. Use this to light up a storefront surface
+                    the moment its data exists. See the `automation-webhooks` guide.
 
                     **Catalog sync & syndication:** `feed.sync.completed` (a scheduled
                     inbound feed-pull finished — carries created/updated/failed counts),
                     `channel.sync.completed` (a sales-channel push to Google/Meta/… finished —
                     carries pushed/rejected counts)
+
+                    **Wholesale (B2B):** for stores with wholesale enabled — `b2b.rfq.created`,
+                    `b2b.quote.sent`, `b2b.quote.accepted`, `b2b.quote.rejected`,
+                    `b2b.po.issued`, `b2b.po.confirmed`, `b2b.po.fulfilled`,
+                    `b2b.invoice.issued`, `b2b.invoice.paid`, `b2b.invoice.overdue`
+
+                    The store-lifecycle, content, and feature-availability events are designed
+                    for automation tools that keep a storefront in step with the store as it
+                    grows — the moment a promotion goes live, a collection becomes
+                    homepage-eligible, or a licensed capability gains its first data.
                   example:
                     - order.paid
                     - order.fulfilled
@@ -15820,6 +15849,7 @@ paths:
                     - order.created
                     - order.paid
                     - order.fulfilled
+                    - order.shipped
                     - order.cancelled
                     - payment.succeeded
                     - payment.failed
@@ -15829,6 +15859,13 @@ paths:
                     - cart.abandoned
                     - gift_card.issued
                     - promotion.applied
+                    - promotion.activated
+                    - collection.created
+                    - post.published
+                    - review.approved
+                    - store.updated
+                    - payment_provider.connected
+                    - feature.status_changed
                     - feed.sync.completed
                     - channel.sync.completed
       responses:
@@ -20306,6 +20343,42 @@ components:
           type: string
           description: Your application's client identifier.
           example: fantastic-storefront
+        webhook_endpoint:
+          type: object
+          description: |
+            Present only if your application registered a webhook URL. When it did, connecting a merchant
+            automatically creates a signed webhook subscription for their store — you do not need to call
+            `createWebhookEndpoint` yourself. The subscription starts receiving events immediately.
+
+            Verify each inbound event POST with `webhook_endpoint.signing_secret` (this is a **different**
+            secret from `signing_secret` above: `signing_secret` signs YOUR outbound write requests, while
+            `webhook_endpoint.signing_secret` verifies Galactic Core's inbound event POSTs to you). The
+            secret is returned only once, here.
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: The webhook endpoint's id.
+            url:
+              type: string
+              description: The receiver URL events are delivered to (the one your app registered).
+            events:
+              type: array
+              items:
+                type: string
+              description: The event types this subscription receives.
+            signing_secret:
+              type: string
+              description: |
+                Secret for verifying inbound event signatures. Store it securely — shown only once.
+          example:
+            id: 770a8400-e29b-41d4-a716-446655442222
+            url: https://yourapp.com/webhooks/galactic-core
+            events:
+              - promotion.activated
+              - review.approved
+              - feature.status_changed
+            signing_secret: 4f2a...c0de
     ConnectSession:
       type: object
       required:

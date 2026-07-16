@@ -415,15 +415,53 @@ Subscribe to any of these (or `["*"]` for everything):
   `product.out_of_stock`
 - **Cart & checkout** — `cart.created`, `cart.updated`, `cart.abandoned`
 - **Gift cards** — `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired`
-- **Promotions** — `promotion.applied`
+- **Promotions** — `promotion.applied`, `promotion.created`, `promotion.activated` (a promotion went
+  live), `promotion.deactivated` (a live promotion ended, was paused, or expired)
+- **Content & collections** — `collection.created`, `collection.updated` (name / banner / homepage
+  placement changed), `post.published`, `lookbook.published`, `review.approved`
+- **Store lifecycle & configuration** — `store.updated` (name / logo / branding / contact / base
+  currency; carries `changed_fields`), `payment_provider.connected`, `shipping_provider.connected`,
+  `channel.connected`
+- **Feature availability** — `feature.status_changed` (a capability crossed between `available`,
+  `awaiting_data`, and `not_in_plan`; carries `feature`, `status`, `previous_status`)
 - **Catalog sync & syndication** — `feed.sync.completed` (a scheduled inbound feed-pull finished —
   carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished —
   carries pushed/rejected counts)
+- **Wholesale (B2B)** — `b2b.rfq.created`, `b2b.quote.sent` / `.accepted` / `.rejected`,
+  `b2b.po.issued` / `.confirmed` / `.fulfilled`, `b2b.invoice.issued` / `.paid` / `.overdue` (for
+  stores with wholesale enabled)
+
+## Keeping a storefront in step with the store
+
+The order, payment, and inventory events above react to a *transaction*. The **store lifecycle**,
+**content & collections**, and **feature availability** events react to the store *growing* — and they
+are what an automation tool listens to when it keeps a storefront current without anyone rebuilding it.
+
+A store rarely arrives fully-formed. A merchant starts with a thin catalog and no reviews, no
+promotions, no published content — and the matching storefront surfaces have nothing to show. As the
+store fills in, these events fire at the exact moment each surface earns its place:
+
+- `promotion.activated` → render the live promotion's banner and badge the eligible products; retire
+  them on `promotion.deactivated`.
+- `review.approved` → show the star summary and reviews block on the product page once there is a real
+  review to display.
+- `collection.updated` (banner added, or `show_on_homepage` turned on) → add the collection to the
+  homepage merchandising.
+- `feature.status_changed` (`awaiting_data → available`) → light up a capability the moment its data
+  exists — for example, switch on recommendations shelves once there is enough signal, or a currency
+  switcher once a second currency is configured. A `not_in_plan → available` transition is the same
+  signal after a plan upgrade unlocks the capability.
+
+This is how **Anvil**, Galactic Core's storefront generator, powers its self-improving storefronts: it
+subscribes to these events and, when one fires, proposes the matching storefront change for the
+merchant to preview and approve — no rebuild, no downtime. Any tool can do the same by subscribing to
+the same events.
 
 ## What's next
 
 - Pair `feed.sync.completed` with the inbound importer in [Catalog Sync](/workflows/catalog-sync) to
   close the loop on scheduled syncs.
 - See where `order.paid` comes from in the [Storefront checkout](/workflows/storefront-checkout) flow.
+- See the full envelope shape and per-event payloads in the [Webhooks](/webhooks) reference.
 </content>
 </invoke>

@@ -148,7 +148,13 @@ async function handleCallback(req, res) {
   "store_id": "660f9511-f30c-52e5-b827-557766551111",
   "environment": "production",
   "scopes": ["read", "orders:read"],
-  "client_id": "your-client-id"
+  "client_id": "your-client-id",
+  "webhook_endpoint": {
+    "id": "770a8400-e29b-41d4-a716-446655442222",
+    "url": "https://yourapp.com/webhooks/galactic-core",
+    "events": ["promotion.activated", "review.approved", "feature.status_changed"],
+    "signing_secret": "4f2a…c0de"
+  }
 }
 ```
 
@@ -170,6 +176,7 @@ async function handleCallback(req, res) {
 | `environment` | `production` or `sandbox` |
 | `scopes` | Permissions the merchant granted |
 | `client_id` | Your application's client identifier |
+| `webhook_endpoint` | Present only if your app registered a webhook URL — an auto-created webhook subscription for this store (`id`, `url`, `events`, `signing_secret`). Verify inbound event POSTs with `webhook_endpoint.signing_secret` (distinct from `signing_secret` above, which signs your outbound writes). See the [GC Connect guide](/gc-connect#automatic-webhooks). |
 
 **Error codes:**
 

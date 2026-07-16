@@ -217,7 +217,23 @@ Automations subscribe to the same event vocabulary as webhooks. The events that 
   <Card title="Carts & sync" icon="arrows-rotate">
     `cart.abandoned` · `feed.sync.completed` · `channel.sync.completed`
   </Card>
+  <Card title="Promotions" icon="tag">
+    `promotion.applied` · `promotion.created` · `promotion.activated` · `promotion.deactivated`
+  </Card>
+  <Card title="Content & collections" icon="newspaper">
+    `collection.created` · `collection.updated` · `post.published` · `lookbook.published` · `review.approved`
+  </Card>
+  <Card title="Store lifecycle" icon="store">
+    `store.updated` · `payment_provider.connected` · `shipping_provider.connected` · `channel.connected`
+  </Card>
+  <Card title="Feature availability" icon="toggle-on">
+    `feature.status_changed` (a capability crossed between `available` / `awaiting_data` / `not_in_plan`)
+  </Card>
 </CardGroup>
+
+The store-lifecycle, content, and feature-availability triggers fire as the store *grows* — an
+automation can react to a promotion going live, a review being approved, or a licensed capability
+gaining its first data. See the [Webhooks](/webhooks) reference for each event's payload.
 
 ---
 
