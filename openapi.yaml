@@ -15378,12 +15378,31 @@ paths:
                   description: An optional note on the order.
                 shipping_address:
                   type: string
-                  description: An optional shipping address for this order.
+                  description: An optional free-text shipping address for this order.
+                shipping_address_parts:
+                  type: object
+                  description: An optional structured shipping address. When provided, tax is calculated accurately for the destination; otherwise the store's configured rate applies.
+                  properties:
+                    line1:
+                      type: string
+                    city:
+                      type: string
+                    region:
+                      type: string
+                    country:
+                      type: string
+                      description: ISO country code, e.g. US or GB.
+                    postal_code:
+                      type: string
+                currency:
+                  type: string
+                  description: The order currency, e.g. USD.
       responses:
         '201':
           description: |
             Order placed. The `settlement` field is `terms` (an invoice was issued) or `pay_now`
-            (an order awaiting payment). Fields present depend on which.
+            (an order awaiting payment). Fields present depend on which. `tax_amount` is always
+            resolved server-side; `total`/`amount` are tax-inclusive.
           content:
             application/json:
               examples:
@@ -15398,9 +15417,10 @@ paths:
                       invoice_number: INV-20260711-29fad5
                       due_date: '2026-08-10'
                       total: 100
+                      tax_amount: 0
                       currency: USD
                 pay_now:
-                  summary: Pay now — complete payment against order_id
+                  summary: Pay now — complete payment against order_id (tax resolved for the shipping destination)
                   value:
                     data:
                       settlement: pay_now
@@ -15408,8 +15428,9 @@ paths:
                       po_number: PO-20260711-b599a5
                       order_id: aa50d584-7028-49dc-8b06-2a23551ebd47
                       order_number: B2B-20260711-933fe9
-                      amount: 100
-                      currency: USD
+                      amount: 59.88
+                      tax_amount: 9.98
+                      currency: GBP
               schema:
                 $ref: '#/components/schemas/B2bDirectOrderResponse'
         '400':
@@ -21038,7 +21059,10 @@ components:
           example: USD
         total:
           type: number
-          description: The order total (present on a terms order).
+          description: The order total, tax included (present on a terms order).
+        tax_amount:
+          type: number
+          description: The tax on the order, resolved server-side — jurisdiction-accurate when a shipping address is supplied, otherwise the store's configured rate, and zero for a tax-exempt buyer.
         invoice_id:
           type:
             - string
@@ -21069,7 +21093,7 @@ components:
           description: The order number (pay-now only).
         amount:
           type: number
-          description: The amount to pay (present on a pay-now order).
+          description: The amount to pay, tax included (present on a pay-now order).
     WebhookEndpoint:
       type: object
       properties:
