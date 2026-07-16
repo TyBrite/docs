@@ -13040,6 +13040,7 @@ paths:
                     - orders:read
                   state: a8f3d2e1c9b7
                   environment: sandbox
+                  receives_webhooks: true
         '400':
           $ref: '#/components/responses/BadRequestError'
         '429':
@@ -20279,6 +20280,12 @@ components:
                 - sandbox
                 - production
               example: sandbox
+            receives_webhooks:
+              type: boolean
+              description: |
+                True when the application registered a webhook URL, so connecting also creates a webhook
+                subscription for the store (the consent screen can disclose the resulting event feed).
+              example: true
     ConnectTokenResponse:
       type: object
       required:
