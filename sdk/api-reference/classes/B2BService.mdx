@@ -68,7 +68,9 @@ await client.b2B.payInvoice({
 
 Places a wholesale order for an approved buyer in one call, without the request-for-quote round trip — the self-serve path for routine reorders at the buyer's own agreed prices.
 
-Send only the items and quantities. Galactic Core prices every line itself against the buyer's wholesale price list (their per-buyer price, their group's price, or the store default), enforces each item's minimum order quantity, and computes the totals. **Any price sent by the client is ignored.** An item with no wholesale price for this buyer, or a quantity below its minimum order quantity, is rejected with a clear reason.
+Send only the items and quantities. Galactic Core prices every line itself against the buyer's wholesale price list (their per-buyer price, their group's price, or the store default), enforces each item's minimum order quantity and pack size, and computes the totals. **Any price sent by the client is ignored.** An item with no wholesale price for this buyer, a quantity below its minimum order quantity, or a quantity that is not a whole multiple of its pack size, is rejected with a clear reason.
+
+Tax is resolved on the server too. When you include a structured shipping address, tax is calculated accurately for the destination; otherwise the store's configured rate applies, and a tax-exempt buyer is charged no tax. The response's `tax_amount` is the resolved tax, and `total` / `amount` are tax-inclusive.
 
 How the order settles depends on the supplier's policy for this buyer:
 
@@ -77,7 +79,9 @@ How the order settles depends on the supplier's policy for this buyer:
 
 - `requestBody.items` — an array of `{ variant_id, quantity }` (required, non-empty). Do not send prices.
 - `requestBody.note` — an optional note on the order.
-- `requestBody.shipping_address` — an optional shipping address.
+- `requestBody.shipping_address` — an optional free-text shipping address.
+- `requestBody.shipping_address_parts` — an optional structured shipping address (`line1`, `city`, `region`, `country`, `postal_code`). Supply it so tax is calculated for the destination.
+- `requestBody.currency` — the order currency (e.g. `"USD"`).
 - `idempotencyKey` — required.
 - `xTimestamp` / `xSignature` — required. A direct order must be signed, like a standard order: `xTimestamp` is the current Unix time in milliseconds, and `xSignature` is the Base64 HMAC-SHA256 of `` `${xTimestamp}.${rawJsonBody}` `` using the store's signing secret. See [Signing requests](/authentication#signing-requests).
 
@@ -112,12 +116,13 @@ if (order.data.settlement === "terms") {
     "invoice_number": "INV-20260711-29fad5",
     "due_date": "2026-08-10",
     "total": 100,
+    "tax_amount": 0,
     "currency": "USD"
   }
 }
 ```
 
-```json Response (pay now)
+```json Response (pay now, tax calculated for the destination)
 {
   "data": {
     "settlement": "pay_now",
@@ -125,8 +130,9 @@ if (order.data.settlement === "terms") {
     "po_number": "PO-20260711-b599a5",
     "order_id": "aa50d584-7028-49dc-8b06-2a23551ebd47",
     "order_number": "B2B-20260711-933fe9",
-    "amount": 100,
-    "currency": "USD"
+    "amount": 59.88,
+    "tax_amount": 9.98,
+    "currency": "GBP"
   }
 }
 ```

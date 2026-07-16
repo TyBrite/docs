@@ -105,3 +105,36 @@ its own *prices*; the operator sets the *currency* they're shown in.)
   If `default_currency` is ever absent for a store, fall back to the first entry of
   `store.currencies`.
 </Note>
+
+## Currency is validated server-side at payment
+
+The currency a payment is charged in is decided by Galactic Core, not by the caller. When you
+initialize a payment, any `currency` you pass is treated as a request that is **validated against the
+store's enabled currencies** — the same set `store.currencies` reports:
+
+- A currency the store **supports** is accepted (this is what a multi-currency storefront's currency
+  switcher relies on).
+- A currency the store does **not** support is rejected with `400 unsupported_currency`, listing the
+  currencies that are allowed — so a mismatched or unexpected currency can never be charged.
+- Omit `currency` and the store's default is used.
+
+```json
+{
+  "error": {
+    "code": "unsupported_currency",
+    "message": "This store does not accept JPY. Supported: EUR, GBP, CNY, KES, USD.",
+    "details": { "requested": "JPY", "supported": ["EUR", "GBP", "CNY", "KES", "USD"], "store_default": "EUR" }
+  }
+}
+```
+
+On a marketplace deployment this resolves to the operator's single marketplace currency, and a
+checkout that requests a different currency is rejected the same way. In every case the amount and the
+currency the shopper is actually charged are the server's decision — pass the currency that came back
+on the priced response you're checking out, and you'll always be in the accepted set.
+
+<Note>
+  Because currency is validated server-side, you don't need to pre-check it — but reading
+  `store.currencies` (or the `display_currency` on each priced response) lets your UI only ever offer
+  currencies that will be accepted.
+</Note>
