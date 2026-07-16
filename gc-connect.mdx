@@ -106,6 +106,12 @@ async function handleCallback(req, res) {
     scopes: keys.scopes,
   });
 
+  // If your app registered a webhook URL, a subscription was created automatically for this store.
+  // Save its signing secret — you'll use it to verify inbound event POSTs (returned only once).
+  if (keys.webhook_endpoint) {
+    await db.merchants.saveWebhookSecret(merchantId, keys.webhook_endpoint.signing_secret);
+  }
+
   res.redirect('/dashboard?connected=true');
 }
 ```
@@ -123,6 +129,47 @@ const { orders } = await merchant.orders.listOrders({ limit: 20 });
 <Warning>
   Store the `sk` securely server-side immediately — it is returned **only once**. Treat it like a password: keep it in a secrets manager, never in client-side code, logs, or version control.
 </Warning>
+
+---
+
+## Automatic webhooks
+
+If your application processes events — reacting when a promotion goes live, a review is approved, or a
+store's data changes — you can have a webhook subscription created for you the moment a merchant
+connects, with no separate setup step for them.
+
+Register a **webhook URL** on your application (in the developer portal, when you register or edit the
+app). From then on, every time a merchant connects, Galactic Core automatically creates a signed
+webhook subscription for their store pointing at that URL. The token-exchange response includes the
+subscription:
+
+```typescript
+const keys = await client.gcConnect.connectToken({ requestBody: { code, client_id, client_secret, redirect_uri } });
+
+if (keys.webhook_endpoint) {
+  // {
+  //   id: '…',
+  //   url: 'https://yourapp.com/webhooks/galactic-core',
+  //   events: ['promotion.activated', 'review.approved', 'feature.status_changed', …],
+  //   signing_secret: '…',   // verify inbound POSTs with this — returned only once
+  // }
+}
+```
+
+<Note>
+`webhook_endpoint.signing_secret` is a **different** secret from `signing_secret`. `signing_secret`
+signs your *outbound* write requests (creating orders, initializing payments);
+`webhook_endpoint.signing_secret` verifies Galactic Core's *inbound* event POSTs to your receiver. Store
+both, keep them apart.
+</Note>
+
+Connecting the same merchant again updates that one subscription rather than creating duplicates, and
+it never touches an endpoint the merchant created by hand. If you did not register a webhook URL,
+`webhook_endpoint` is absent and the merchant (or your app) can still create one via the
+[Webhooks](/webhooks) API. The full event catalogue — including the store-lifecycle and
+feature-availability events that make this useful — is in the [Webhooks reference](/webhooks); the
+pattern for keeping a storefront in step with a store is in
+[Automated workflows](/workflows/webhooks-automation).
 
 ---
 

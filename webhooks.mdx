@@ -150,6 +150,42 @@ All events follow the same envelope shape — only `type` and `data.object` vary
 | Event | Fired when |
 | :--- | :--- |
 | `promotion.applied` | An order uses a promotion code |
+| `promotion.created` | A promotion is created (any status) |
+| `promotion.activated` | A promotion goes live (its status becomes active) |
+| `promotion.deactivated` | A live promotion ends, is paused, or expires. Carries `previous_attributes.status` |
+
+### Content & collections
+
+| Event | Fired when |
+| :--- | :--- |
+| `collection.created` | A product collection is created |
+| `collection.updated` | A collection's name, banner image, homepage placement, or display order changes. Fires only on a meaningful change, and carries `previous_attributes` |
+| `post.published` | A blog post is published (its status becomes published) |
+| `lookbook.published` | A shoppable lookbook is published |
+| `review.approved` | A product review passes moderation and becomes visible. Carries `product_id`, `rating`, `verified_purchase` |
+
+### Store lifecycle & configuration
+
+| Event | Fired when |
+| :--- | :--- |
+| `store.updated` | The store's name, logo, branding, contact details, or base currency changes. Carries a `changed_fields` list of which of those changed |
+| `payment_provider.connected` | A payment provider is connected. Carries `provider` |
+| `shipping_provider.connected` | A shipping-rate provider is connected. Carries `provider` |
+| `channel.connected` | A sales channel (Google, Meta, Shopify, …) is connected. Carries `provider` |
+
+### Feature availability
+
+| Event | Fired when |
+| :--- | :--- |
+| `feature.status_changed` | A capability crosses from *awaiting data* to *available* (or the reverse) — for example, the store's first approved reviews arrive, so reviews become usable, or its first live promotion appears. Carries `feature`, `status` (`available` / `awaiting_data` / `not_in_plan`), and `previous_status`. |
+
+<Note>
+The **Content & collections**, **Store lifecycle**, and **Feature availability** events describe a
+store *growing* rather than a single transaction. They are what an automation tool listens to when it
+keeps a storefront in step with the store — adding a promo banner the moment a promotion goes live, a
+reviews block when the first reviews are approved, or a "shop by collection" row when a collection
+becomes homepage-eligible. See the [automated workflows](/workflows/webhooks-automation) guide.
+</Note>
 
 ### Catalog sync & syndication
 
@@ -157,6 +193,12 @@ All events follow the same envelope shape — only `type` and `data.object` vary
 | :--- | :--- |
 | `feed.sync.completed` | A scheduled inbound feed-pull finishes. Payload carries `status` and `rows_created` / `rows_updated` / `rows_failed` (plus a sample of per-row errors). |
 | `channel.sync.completed` | A push of your catalog to a sales channel (Google, Meta, …) finishes. Payload carries `provider`, `status`, and `items_total` / `items_pushed` / `items_rejected`. |
+
+### Wholesale (B2B)
+
+For stores with wholesale enabled, the B2B lifecycle also emits events: `b2b.rfq.created`,
+`b2b.quote.sent` / `.accepted` / `.rejected`, `b2b.po.issued` / `.confirmed` / `.fulfilled`, and
+`b2b.invoice.issued` / `.paid` / `.overdue`.
 
 ---
 

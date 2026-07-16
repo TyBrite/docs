@@ -139,14 +139,24 @@ await client.webhooks.createWebhookEndpoint({
 
 | Category | Events |
 | :--- | :--- |
-| Orders | `order.created`, `order.paid`, `order.fulfilled`, `order.cancelled`, `order.refunded`, `order.updated` |
+| Orders | `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`, `order.cancelled`, `order.refunded`, `order.updated` |
 | Payments | `payment.succeeded`, `payment.failed`, `payment.refunded` |
 | Customers | `customer.created`, `customer.updated`, `customer.deleted` |
 | Inventory | `product.created`, `product.updated`, `product.stock_low`, `product.out_of_stock` |
 | Cart | `cart.created`, `cart.updated`, `cart.abandoned` |
 | Gift Cards | `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired` |
-| Promotions | `promotion.applied` |
+| Promotions | `promotion.applied`, `promotion.created`, `promotion.activated`, `promotion.deactivated` |
+| Content & collections | `collection.created`, `collection.updated`, `post.published`, `lookbook.published`, `review.approved` |
+| Store lifecycle | `store.updated`, `payment_provider.connected`, `shipping_provider.connected`, `channel.connected` |
+| Feature availability | `feature.status_changed` (a capability crossed between `available` / `awaiting_data` / `not_in_plan` — carries `feature`, `status`, `previous_status`) |
 | Catalog Sync | `feed.sync.completed` (a scheduled inbound feed-pull finished — carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished — carries pushed/rejected counts) |
+| Wholesale (B2B) | `b2b.rfq.created`, `b2b.quote.sent` / `.accepted` / `.rejected`, `b2b.po.issued` / `.confirmed` / `.fulfilled`, `b2b.invoice.issued` / `.paid` / `.overdue` (stores with wholesale enabled) |
+
+The store-lifecycle, content, and feature-availability events describe a store *growing* rather than a
+transaction — the signal an automation tool uses to keep a storefront in step with the store (a promo
+banner the moment a promotion goes live, a reviews block when reviews are first approved, a feature
+surface the moment its data exists). See the [webhooks guide](/webhooks) for the full catalogue and the
+[automated workflows](/workflows/webhooks-automation) guide for the pattern.
 
 ---
 
@@ -310,7 +320,7 @@ console.log(result.status_code); // 200
 }
 ```
 
-Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `gift_card.issued`, `promotion.applied`, `feed.sync.completed`, `channel.sync.completed`.
+Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `gift_card.issued`, `promotion.applied`, `promotion.activated`, `collection.created`, `post.published`, `review.approved`, `store.updated`, `payment_provider.connected`, `feature.status_changed`, `feed.sync.completed`, `channel.sync.completed`.
 
 ---
 
