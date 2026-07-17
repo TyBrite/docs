@@ -54,6 +54,12 @@ expiry. When a merchant edits a product, changes a price, or adjusts stock, the 
 affected entries at once, so the cache reflects the change immediately instead of waiting out a timer.
 Correctness never depends on an entry expiring.
 
+This invalidation reaches **both cache layers**. A stock change — an order placed, a fulfilment shipped,
+an inventory edit — refreshes the shared in-memory cache the workers read from *and* purges the matching
+response from the shared edge cache in every location, so a shopper anywhere sees the new availability
+right away rather than the copy their nearest edge happened to be holding. (Product responses are tagged
+so the whole set for a store can be dropped from the edge in one operation the moment its stock moves.)
+
 Every cached entry still carries a **TTL as a backstop**, though — write-through is the primary mechanism,
 not the only one. If an invalidation were ever missed, the entry still ages out on its own (the hot catalog
 entries within about fifteen minutes) rather than serving stale data indefinitely. In normal operation you
@@ -64,6 +70,27 @@ never see that window, because the write already refreshed the entry; the TTL is
   product, including those not published online) and one for the public storefront view (online-enabled
   products only). Every product or media write busts **both**, so the two surfaces never drift apart.
 </Note>
+
+<Note>
+  Availability is never *guaranteed* by cache freshness alone. The authoritative check on whether stock is
+  actually available happens at checkout, when the order is placed against live inventory — so even in the
+  brief moment before a cache refresh lands, the platform will not let two shoppers buy the last unit.
+  Fresh catalog reads keep the *displayed* stock honest; the checkout is what prevents overselling.
+</Note>
+
+<Warning>
+  **For a high-traffic store, or any limited or flash-sale item, reserve stock before checkout.** A cached
+  catalog read shows a shopper what was in stock a moment ago; between that read and their checkout, other
+  shoppers may take the last units. To guarantee the units are theirs while they pay, call
+  [`client.orders.reserveStock`](/sdk/api-reference/classes/OrdersService#reservestock) first — it holds
+  the stock atomically (all-or-nothing; you get `409 insufficient_stock` if a unit is already gone) for a
+  short window, and the hold converts straight into the order when they complete checkout. This is the same
+  mechanism that lets a single hot item survive [tens of thousands of simultaneous
+  buyers](/how-gc-works/scaling-reliability) without ever going below zero. It is **optional** — a normal
+  order still can't oversell, because the final stock check happens at order time — but for busy or
+  scarce-inventory storefronts it is **strongly recommended**: it turns "sorry, it sold out while you were
+  paying" into a held unit and a smooth checkout.
+</Warning>
 
 Short-lived external data, such as geolocation lookups and currency snapshots, leans on its TTL directly.
 Business data leans on write-through first and the TTL only as a fallback — but in both cases a TTL is
@@ -93,7 +120,9 @@ Cache-Control: public, max-age=60, s-maxage=300,
   <Card title="s-maxage — POP holds longer" icon="clock">
     The browser revalidates after `max-age`, but the shared edge cache holds the response for the
     longer `s-maxage` — so the edge keeps serving a hot response to everyone while individual browsers
-    revalidate.
+    revalidate. A stock or product change doesn't wait this out: it purges the affected entries from the
+    edge immediately (see write-through above), so `s-maxage` only ever governs how long an *unchanged*
+    response is served.
   </Card>
   <Card title="stale-while-revalidate" icon="arrows-rotate">
     When an entry goes stale, the edge serves the stale copy **immediately** and refreshes it in the
