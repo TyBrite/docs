@@ -633,6 +633,30 @@ tags:
       **Special headers:**
       - `x-auth-token` **or** `x-external-auth`: identifies the signed-in customer on
         `GET /v1/returns`, `GET /v1/returns/{id}`, and `POST /v1/returns`.
+  - name: Disputes
+    description: |
+      Disputes a shopper raises on their own marketplace orders when something goes
+      wrong — the item never arrived, arrived damaged, or was not as described.
+
+      Disputes are a marketplace capability: the operator sits between the shopper and
+      the merchant, reviews an open dispute, and applies a resolution (a refund, store
+      credit, or another remedy). This API is the shopper's side of that flow — open a
+      dispute, list and track your own, add a message, and cancel one you opened.
+      Reviewing and resolving disputes are operator and merchant tasks handled in the
+      admin dashboards, not through this API.
+
+      **Key type behavior:**
+      - The reason-code list (`GET /v1/disputes/reasons`) needs only an API key — no
+        customer session — so you can build the reason picker before sign-in.
+      - Listing, getting, opening, messaging, and cancelling disputes require an API key
+        **and** a customer session: either `x-auth-token` (a GC-native session token) or
+        `x-external-auth` (a bring-your-own-auth assertion).
+
+      A shopper can only open, list, track, message, and cancel their OWN disputes.
+
+      **Special headers:**
+      - `x-auth-token` **or** `x-external-auth`: identifies the signed-in customer on the
+        per-shopper dispute endpoints.
   - name: Marketplace
     description: |
       Endpoints for building a multi-merchant marketplace storefront.
@@ -14663,6 +14687,505 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/disputes/reasons:
+    get:
+      operationId: listDisputeReasons
+      tags:
+        - Disputes
+      summary: List dispute reason codes
+      description: |
+        Returns the set of reason codes accepted when opening a dispute, each with
+        a human-readable label suitable for a dropdown in your storefront UI.
+
+        **No customer session required** — only a valid API key. Use it to build
+        the reason picker before the shopper is asked to sign in.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Dispute reasons retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DisputeReason'
+              example:
+                data:
+                  - code: not_received
+                    label: Item not received
+                  - code: not_as_described
+                    label: Not as described
+                  - code: damaged
+                    label: Arrived damaged
+                  - code: wrong_item
+                    label: Wrong item received
+                  - code: quality
+                    label: Quality issue
+                  - code: unauthorized
+                    label: Unauthorized charge
+                  - code: other
+                    label: Other (please describe)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/disputes:
+    get:
+      operationId: listDisputes
+      tags:
+        - Disputes
+      summary: List the shopper's disputes
+      description: |
+        Lists the disputes opened by the authenticated shopper, newest first.
+
+        **Authentication:** API key in the `Authorization: Bearer` header **and** a
+        customer session — either `x-auth-token` (a session token from
+        `POST /v1/auth/login` or `POST /v1/auth/verify-otp`) or `x-external-auth`
+        (a bring-your-own-auth assertion).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Customer session token from `POST /v1/auth/login` or
+            `POST /v1/auth/verify-otp`. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Bring-your-own-auth assertion identifying the customer. Provide this
+            **or** `x-auth-token`.
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+              - under_review
+              - awaiting_buyer
+              - awaiting_seller
+              - resolved
+              - rejected
+              - cancelled
+          description: Filter to disputes in this status.
+          example: open
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Maximum number of disputes to return.
+          example: 20
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            **Marketplace operator key only — and required for operator keys.** On a
+            marketplace storefront (which holds the operator key, not a single
+            merchant's key), pass the merchant the shopper is acting at, so the call
+            resolves their disputes at that merchant. Ignored for single-store keys.
+      responses:
+        '200':
+          description: Disputes retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Dispute'
+              example:
+                data:
+                  - id: 8c714568-64cf-40af-a372-ea34200cd5a6
+                    order_id: 0bce8f80-1f44-434c-8e1b-a1203b1a3377
+                    reason: not_received
+                    description: Tracking never updated
+                    status: open
+                    resolution: null
+                    resolution_amount: null
+                    thread_id: 5f0d2a11-3c9e-4b7a-9d21-6d0f2c8b4a10
+                    created_at: '2026-07-17T09:12:44.201Z'
+                    resolved_at: null
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: openDispute
+      tags:
+        - Disputes
+      summary: Open a dispute
+      description: |
+        Opens a dispute against one of the authenticated shopper's own marketplace
+        orders. The dispute is created with `status: "open"` for the operator to
+        review, and a message thread is started so the shopper, merchant, and
+        operator can communicate.
+
+        A shopper may have only one open dispute per order at a time.
+
+        **Authentication:** API key in the `Authorization: Bearer` header **and** a
+        customer session — either `x-auth-token` or `x-external-auth`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion. Provide this **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            **Marketplace operator key only.** The merchant the shopper is acting at.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - order_id
+                - reason
+              properties:
+                order_id:
+                  type: string
+                  format: uuid
+                  description: The shopper's own order the dispute is about.
+                reason:
+                  type: string
+                  enum:
+                    - not_received
+                    - not_as_described
+                    - damaged
+                    - wrong_item
+                    - quality
+                    - unauthorized
+                    - other
+                  description: The dispute reason code (see `GET /v1/disputes/reasons`).
+                description:
+                  type: string
+                  description: |
+                    Free-text detail. **Required when `reason` is `other`.**
+            example:
+              order_id: 0bce8f80-1f44-434c-8e1b-a1203b1a3377
+              reason: not_received
+              description: Tracking never updated and the parcel never arrived.
+      responses:
+        '201':
+          description: Dispute opened successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                      thread_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+              example:
+                data:
+                  id: 8c714568-64cf-40af-a372-ea34200cd5a6
+                  status: open
+                  thread_id: 5f0d2a11-3c9e-4b7a-9d21-6d0f2c8b4a10
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/disputes/{id}:
+    get:
+      operationId: getDispute
+      tags:
+        - Disputes
+      summary: Get a dispute
+      description: |
+        Retrieves one of the authenticated shopper's own disputes, including its
+        current status and resolution (once the operator has resolved it).
+
+        **Authentication:** API key **and** a customer session (`x-auth-token` or
+        `x-external-auth`).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The dispute id.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion. Provide this **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: '**Marketplace operator key only.** The merchant the shopper is acting at.'
+      responses:
+        '200':
+          description: Dispute retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Dispute'
+              example:
+                data:
+                  id: 8c714568-64cf-40af-a372-ea34200cd5a6
+                  order_id: 0bce8f80-1f44-434c-8e1b-a1203b1a3377
+                  reason: not_received
+                  description: Tracking never updated
+                  status: resolved
+                  resolution: refund_partial
+                  resolution_amount: 60
+                  thread_id: 5f0d2a11-3c9e-4b7a-9d21-6d0f2c8b4a10
+                  created_at: '2026-07-17T09:12:44.201Z'
+                  resolved_at: '2026-07-17T15:02:10.882Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/disputes/{id}/cancel:
+    post:
+      operationId: cancelDispute
+      tags:
+        - Disputes
+      summary: Cancel a dispute
+      description: |
+        Cancels one of the authenticated shopper's own disputes while it is still
+        open (before the operator resolves it) — for example if the parcel turned
+        up after all. Once a dispute is resolved or rejected it can no longer be
+        cancelled.
+
+        **Authentication:** API key **and** a customer session (`x-auth-token` or
+        `x-external-auth`).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The dispute id.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion. Provide this **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: '**Marketplace operator key only.** The merchant the shopper is acting at.'
+      responses:
+        '200':
+          description: Dispute cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: cancelled
+              example:
+                data:
+                  id: 8c714568-64cf-40af-a372-ea34200cd5a6
+                  status: cancelled
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/disputes/{id}/messages:
+    post:
+      operationId: addDisputeMessage
+      tags:
+        - Disputes
+      summary: Add a message to a dispute
+      description: |
+        Adds a message from the shopper to the dispute's conversation thread, so
+        the shopper can add detail or respond to the operator or merchant while the
+        dispute is being reviewed. Messages cannot be added once the dispute is
+        closed.
+
+        **Authentication:** API key **and** a customer session (`x-auth-token` or
+        `x-external-auth`).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The dispute id.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token. Provide this **or** `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion. Provide this **or** `x-auth-token`.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: '**Marketplace operator key only.** The merchant the shopper is acting at.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: The message body.
+            example:
+              message: I've attached the tracking screenshot showing no movement for 10 days.
+      responses:
+        '201':
+          description: Message added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      thread_id:
+                        type: string
+                        format: uuid
+                      sent:
+                        type: boolean
+              example:
+                data:
+                  thread_id: 5f0d2a11-3c9e-4b7a-9d21-6d0f2c8b4a10
+                  sent: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/rfqs:
     get:
       operationId: listRfqs
@@ -20837,6 +21360,105 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ReturnItem'
+    DisputeReason:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          enum:
+            - not_received
+            - not_as_described
+            - damaged
+            - wrong_item
+            - quality
+            - unauthorized
+            - other
+          description: Machine value to send as `reason` when opening a dispute.
+          example: not_received
+        label:
+          type: string
+          description: Human-readable label suitable for a storefront dropdown.
+          example: Item not received
+    Dispute:
+      type: object
+      required:
+        - id
+        - reason
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The dispute id.
+        order_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: The order the dispute is about.
+        reason:
+          type: string
+          enum:
+            - not_received
+            - not_as_described
+            - damaged
+            - wrong_item
+            - quality
+            - unauthorized
+            - other
+          description: The dispute reason code.
+        description:
+          type:
+            - string
+            - 'null'
+          description: Free-text detail the shopper provided.
+        status:
+          type: string
+          enum:
+            - open
+            - under_review
+            - awaiting_buyer
+            - awaiting_seller
+            - resolved
+            - rejected
+            - cancelled
+          description: Current dispute status.
+        resolution:
+          type:
+            - string
+            - 'null'
+          enum:
+            - refund_full
+            - refund_partial
+            - store_credit
+            - release_to_seller
+            - penalty
+            - no_action
+            - null
+          description: The resolution the operator applied, once resolved.
+        resolution_amount:
+          type:
+            - number
+            - 'null'
+          description: The monetary amount of the resolution, where applicable.
+        thread_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: The conversation thread for this dispute.
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
     B2bRfq:
       type: object
       example:

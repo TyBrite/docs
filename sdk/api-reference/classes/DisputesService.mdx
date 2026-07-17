@@ -1,0 +1,121 @@
+---
+title: "Disputes"
+description: "Reference for the DisputesService class in the Tybrite SDK."
+---
+
+The `DisputesService` class (accessed via `client.disputes`) lets a shopper raise and track a dispute on one of their own marketplace orders when something goes wrong — the item never arrived, arrived damaged, or was not as described.
+
+## How disputes work in Galactic Core
+
+Disputes are a marketplace capability. On a marketplace, the operator sits between the shopper and the merchant. When a shopper opens a dispute, the operator reviews it and applies a resolution — a refund, store credit, or another remedy — and the merchant is kept in the loop. This API is the **shopper's side** of that flow: open a dispute, list and track your own disputes, add a message to the conversation, and cancel one you opened while it is still open.
+
+Reviewing and resolving a dispute is an operator and merchant task handled in the admin dashboards, not through this API. There is no "resolve" or "refund" method on this service — the resolution is the operator's decision. A storefront opens disputes and reacts to the outcome.
+
+| Shopper — via this API | Operator / merchant — in the admin, not this API |
+|---|---|
+| Open a dispute on their own order | Review the dispute and decide the resolution |
+| List and track their disputes | Issue a refund, store credit, or payout adjustment |
+| Message the dispute thread | Respond to the shopper, gather evidence |
+| Cancel a dispute they opened | Close the dispute |
+
+### A dispute moves through a lifecycle
+
+A dispute is created with `status: "open"`. As the operator works through it the status moves to `under_review`, and can pause on `awaiting_buyer` or `awaiting_seller` while more information is gathered. It ends in one of three terminal states: `resolved` (the operator applied a remedy), `rejected` (the operator found in the seller's favour), or `cancelled` (the shopper withdrew it). Once a dispute reaches a terminal state it can no longer be cancelled or messaged.
+
+When the operator resolves a dispute, `resolution` and `resolution_amount` describe the outcome — for example `refund_partial` with an amount, `store_credit`, or `release_to_seller` — so your storefront can show the shopper what happened.
+
+### Every dispute has a conversation thread
+
+Opening a dispute starts a message thread (`thread_id`) shared by the shopper, merchant, and operator. Use `addDisputeMessage` to let the shopper add detail or respond while the dispute is being reviewed.
+
+### One open dispute per order
+
+A shopper can have only one open dispute on a given order at a time. Opening a second while one is still open returns a `409 Conflict`.
+
+## Authentication
+
+Every endpoint takes an API key in the `Authorization: Bearer` header. The reason-code list (`listDisputeReasons`) needs only the API key, so you can build the reason picker before the shopper signs in. Every other method also requires a **customer session** identifying the signed-in shopper — either `x-auth-token` (a GC-native session token from `client.auth.login` / `client.auth.verifyOtp`) or `x-external-auth` (a bring-your-own-auth assertion). A shopper can only open, list, track, message, and cancel their **own** disputes.
+
+On a marketplace storefront that holds an operator key rather than a single merchant's key, pass `storeId` (the merchant the shopper is acting at) so the call resolves against that merchant.
+
+## Methods
+
+### `listDisputeReasons()`
+
+Returns the reason codes accepted when opening a dispute, each with a human-readable label for a dropdown. Only an API key is required.
+
+```typescript
+const { data } = await client.disputes.listDisputeReasons();
+// data: [{ code: "not_received", label: "Item not received" }, ...]
+```
+
+### `listDisputes({ status?, limit?, storeId?, xAuthToken? / xExternalAuth? })`
+
+Lists the signed-in shopper's disputes, newest first. Optionally filter by `status`.
+
+```typescript
+const { data } = await client.disputes.listDisputes({
+  xAuthToken: session.token,
+  status: "open",
+  limit: 20,
+});
+```
+
+### `openDispute({ requestBody, storeId?, xAuthToken? / xExternalAuth? })`
+
+Opens a dispute against one of the shopper's own orders. `order_id` must be an order that belongs to the signed-in shopper. `reason` is one of the reason codes; when it is `other`, a `description` is required. Returns the new dispute's `id`, `status`, and `thread_id`.
+
+```typescript
+const { data } = await client.disputes.openDispute({
+  xAuthToken: session.token,
+  requestBody: {
+    order_id: "0bce8f80-1f44-434c-8e1b-a1203b1a3377",
+    reason: "not_received",
+    description: "Tracking never updated and the parcel never arrived.",
+  },
+});
+// data: { id: "...", status: "open", thread_id: "..." }
+```
+
+### `getDispute({ id, storeId?, xAuthToken? / xExternalAuth? })`
+
+Retrieves one of the shopper's own disputes, including its current status and — once resolved — the `resolution` and `resolution_amount`.
+
+```typescript
+const { data } = await client.disputes.getDispute({ id: disputeId, xAuthToken: session.token });
+```
+
+### `addDisputeMessage({ id, requestBody, storeId?, xAuthToken? / xExternalAuth? })`
+
+Adds a message from the shopper to the dispute's conversation thread. Fails with `409 Conflict` if the dispute is already closed.
+
+```typescript
+await client.disputes.addDisputeMessage({
+  id: disputeId,
+  xAuthToken: session.token,
+  requestBody: { message: "I've attached a screenshot showing no tracking movement for 10 days." },
+});
+```
+
+### `cancelDispute({ id, storeId?, xAuthToken? / xExternalAuth? })`
+
+Cancels one of the shopper's own disputes while it is still open — for example if the parcel turned up. A resolved or rejected dispute cannot be cancelled (`409 Conflict`).
+
+```typescript
+await client.disputes.cancelDispute({ id: disputeId, xAuthToken: session.token });
+```
+
+## The `Dispute` object
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | The dispute id. |
+| `order_id` | string \| null | The order the dispute is about. |
+| `reason` | string | The reason code. |
+| `description` | string \| null | Free-text detail the shopper provided. |
+| `status` | string | `open`, `under_review`, `awaiting_buyer`, `awaiting_seller`, `resolved`, `rejected`, or `cancelled`. |
+| `resolution` | string \| null | The remedy the operator applied, once resolved (e.g. `refund_partial`, `store_credit`, `release_to_seller`). |
+| `resolution_amount` | number \| null | The monetary amount of the resolution, where applicable. |
+| `thread_id` | string \| null | The conversation thread for this dispute. |
+| `created_at` | string | When the dispute was opened. |
+| `resolved_at` | string \| null | When the dispute was resolved. |
