@@ -24,7 +24,7 @@ graph TD
     W --> C["Distributed cache<br/>(Redis · hot data)"]
     W --> DB["Database<br/>(Postgres · system of record)<br/>primary + regional read replicas"]
     W --> O["Object storage<br/>(media · global edge)"]
-    C -.->|"write-through, no TTL"| DB
+    C -.->|"write-through (TTL backstop)"| DB
 ```
 </Frame>
 
