@@ -35,10 +35,10 @@ graph TD
     replica close to the shopper and the primary is reserved for writes. Reads scale out; writes stay
     consistent.
   </Card>
-  <Card title="Isolation as sharding" icon="grip">
-    Each deployment runs on its own stack, so adding tenants adds independent capacity rather than
-    contending for a shared database — per-deployment isolation is horizontal sharding by design. See
-    [Data Model](/how-gc-works/data-model).
+  <Card title="Dedicated stacks add capacity" icon="grip">
+    A tenant on a dedicated deployment runs on its own stack, so it adds independent capacity rather than
+    contending for a shared database — isolation doubling as horizontal sharding. On the shared platform,
+    the edge, cache, and replica layers carry the load for everyone. See [Data Model](/how-gc-works/data-model).
   </Card>
 </Columns>
 
@@ -85,9 +85,10 @@ Under stress the platform aims to return a slower or slightly-stale response rat
     instant. A reservation holds the stock for a short window and is released automatically if the
     shopper does not complete checkout, returning the units to available inventory.
   </Step>
-  <Step title="Isolated failures">
-    Because each deployment is physically isolated, one tenant's load spike or incident cannot degrade
-    another's — there is no shared database or compute to contend for.
+  <Step title="Contained failures">
+    A tenant on a dedicated deployment is physically isolated, so its load spike or incident cannot reach
+    another tenant — there is no shared database or compute to contend for. On the shared platform, the
+    per-store rate limits and atomic quotas above keep one store's traffic from degrading its neighbours.
   </Step>
 </Steps>
 
@@ -114,9 +115,8 @@ than lost.
 The database is backed up continuously, not just on a nightly snapshot. Alongside regular full backups, a
 write-ahead log captures every committed change, which makes point-in-time recovery possible: the database
 can be restored to any moment within the retention window — the instant before an accidental bulk delete or
-a bad migration, for example — rather than only to the last snapshot. Per-deployment isolation applies here
-too: each deployment's backups are its own, so a restore affects one tenant and never reaches across to
-another.
+a bad migration, for example — rather than only to the last snapshot. A dedicated deployment's backups are
+its own, so a restore there affects one tenant and never reaches across to another.
 
 <Note>
   Planning for a specific scale or availability target? We are glad to review the architecture against
@@ -131,6 +131,6 @@ another.
     The cache tiers that carry the read load.
   </Card>
   <Card title="Data Model & Multi-tenancy" icon="database" href="/how-gc-works/data-model">
-    How per-deployment isolation keeps tenants separate and adds capacity.
+    How shared-platform and dedicated-deployment isolation keep tenants separate.
   </Card>
 </CardGroup>

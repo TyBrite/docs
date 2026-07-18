@@ -1,0 +1,138 @@
+---
+title: "AI Extension Builder"
+description: "Describe an integration in plain language and get a working extension, built against this deployment's API surface."
+---
+
+# AI Extension Builder
+
+The Builder turns a sentence into a Custom Extension. You describe the integration you want — *"when
+an order is paid, push it to my ERP"*, *"quote shipping rates from my own carrier"* — and it returns a
+complete extension: the recipe or handler code, the trigger, the secrets it needs, and a test plan.
+
+Its inputs are this deployment's own API surface: the OpenAPI spec, the SDK, the extensions runtime,
+and the event catalogue. So the endpoints, event names, filter operators and field names it uses are
+read from what is deployed rather than recalled — and where it can't find something you asked for, it
+asks instead of substituting a close-sounding alternative.
+
+<Note>
+  A build produces a draft. You review it, connect its secrets, and test it before enabling it —
+  particularly the outbound call, which is the one part shaped by your description rather than read
+  from the API.
+</Note>
+
+## Where it lives
+
+In your admin, under **Settings → Extensions → Build with AI**. Agencies get the same builder inside
+their own portal, for the billing rails they offer their merchants.
+
+Each build consumes AI credits from your plan's allowance, so an unclear prompt that produces something
+you discard still costs a little. Being specific is cheaper as well as better.
+
+## What it produces
+
+A build returns one extension plus the context you need to judge it:
+
+| Field | What it is |
+| :--- | :--- |
+| `name`, `kind`, `provides` | What the extension is and which seam it plugs into |
+| `tier` + `execution` | A declarative recipe or a function; running on Galactic Core or on your infrastructure |
+| `definition` **or** `code` | The recipe graph, or the handler source |
+| `trigger_event` | For automations — which event starts it |
+| `secret_refs` | The secrets you must connect, **by alias only** — the Builder never writes a real credential |
+| `fail_mode`, `timeout_ms` | How it behaves when it fails, and its budget |
+| `notes` | A plain-language explanation, plus anything left for you to finish |
+| `test_plan` | A concrete first test, including sample input |
+
+If your message isn't a build request — a greeting, or a question about what it does — it answers
+directly instead of inventing an extension to satisfy the prompt.
+
+## Writing a good prompt
+
+The Builder decides four things from your description: the **kind** of extension, the **trigger**, the
+**execution mode**, and the **shape of the outbound call**. A prompt that settles those needs no
+follow-up.
+
+<CodeGroup>
+
+```text Good
+When an order is paid and the total is over $500, POST it to
+https://erp.example.com/orders with an X-API-Key header, sending the
+order number, customer email, line items and total.
+```
+
+```text Vague
+Connect my ERP.
+```
+
+</CodeGroup>
+
+The first names the event, the condition, the destination, the auth style, and the payload — it builds
+in one pass. The second could be a dozen different extensions, so the Builder asks rather than guesses.
+
+Three things worth stating explicitly when they matter:
+
+- **Which event**, if it's an automation. "When an order is paid" is unambiguous; "when something
+  changes" is not.
+- **Where it runs.** Say *"I'll host the endpoint myself"* for a remote extension, or let it choose.
+- **What the other system expects** — the header, the body shape, the auth. The Builder cannot inspect
+  your API.
+
+## Reviewing the output
+
+Read `notes` first: it explains what the extension does and flags anything unfinished. Then check four
+things.
+
+<AccordionGroup>
+  <Accordion title="Does the trigger match what you meant?">
+    `order.paid` and `order.created` are not the same event — one fires when money arrives, the other
+    when the order is placed, which may be before payment. An automation on the wrong one runs at the
+    wrong moment.
+  </Accordion>
+  <Accordion title="Are the secret aliases right?">
+    `secret_refs` lists aliases, not values. Connect each one in the extension's settings; until you do,
+    the handler reads nothing and the call to your system goes out unauthenticated.
+  </Accordion>
+  <Accordion title="Does the outbound call match the other system's contract?">
+    This is the part the Builder is least able to verify — it knows Galactic Core's API exactly, and
+    yours not at all. Check the URL, the headers and the body shape against your own documentation.
+  </Accordion>
+  <Accordion title="Is the failure behaviour what you want?">
+    Sync providers default to `fail_mode: 'open'` so a broken extension never blocks a sale. Switch to
+    `closed` only for a genuine compliance stop, and understand that it will reject orders when the
+    extension is down.
+  </Accordion>
+</AccordionGroup>
+
+Then run the **test plan** before enabling. A test run executes the extension once with sample input
+and shows you the real result — including the actual request your endpoint received.
+
+## Boundaries
+
+- **It references only what is deployed.** Endpoints, events and fields come from the indexed API
+  surface; anything outside it is a question back to you, not an approximation.
+- **It never writes a credential.** Secrets are referenced by alias and connected separately, so the
+  extension source never contains one.
+- **It never enables anything.** A build is a draft. Nothing executes until you review it, connect its
+  secrets, and turn it on.
+
+## Keeping it current
+
+The Builder's grounding is re-indexed whenever the API surface changes, so a newly-added endpoint or
+event becomes available to it. If it seems unaware of something recent, the index is the thing to
+refresh — the model itself has no memory of your store between builds.
+
+<Note>
+  Each build sees only your prompt and the grounded API surface. It does not see your catalogue,
+  customers, orders, or previous builds.
+</Note>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Extensions" icon="puzzle-piece" href="/extensions">
+    The contracts, execution modes, and safety guarantees behind what the Builder generates.
+  </Card>
+  <Card title="Bring your own compute" icon="server" href="/byo-compute">
+    Running extension code on your own infrastructure.
+  </Card>
+</CardGroup>

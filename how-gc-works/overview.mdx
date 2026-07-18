@@ -6,7 +6,8 @@ description: "The system behind the API: how Galactic Core serves reads from the
 Galactic Core is more than a database with an API in front of it. Reads are served by stateless compute
 at the network edge and answered, in most cases, from cache before they ever reach a database. Writes run
 a full commerce engine — an order reduces stock, redeems gift cards, posts accounting entries, and updates
-customer metrics in one transaction. And every tenant runs on its own isolated stack.
+customer metrics in one transaction. And every tenant is isolated — by row-level security on the shared
+platform, and on a dedicated stack of their own where a tenant needs one.
 
 The pages in this section describe how that works, in enough detail to make an architecture decision. If
 you have not yet read [Core Concepts](/concepts) — keys, environments, and the conventions that hold
@@ -60,7 +61,7 @@ covers how reads are served; the [Request Lifecycle](/how-gc-works/request-lifec
     The cache layers, invalidation, and the resilience directives.
   </Card>
   <Card title="Data Model & Multi-tenancy" icon="database" href="/how-gc-works/data-model">
-    Store scoping, row-level security, and per-deployment isolation.
+    Store scoping, row-level security, and shared-vs-dedicated isolation.
   </Card>
   <Card title="Scaling & Reliability" icon="earth-americas" href="/how-gc-works/scaling-reliability">
     Read replicas, rate limits, idempotency, and graceful degradation.

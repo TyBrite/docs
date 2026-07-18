@@ -1,11 +1,11 @@
 ---
 title: "Data Model & Multi-tenancy"
-description: "How every row is scoped to a store, how row-level security enforces it in the database itself, and how per-deployment isolation contains blast radius."
+description: "How every row is scoped to a store, how row-level security enforces it in the database itself, and when a tenant runs on a shared stack versus a dedicated deployment."
 ---
 
-Galactic Core enforces multi-tenancy at two levels: inside a deployment by row-level security, and across
-tenants by physical isolation. Neither depends on application code remembering to filter — both guarantees
-live in the infrastructure, below the application.
+Galactic Core enforces multi-tenancy at two levels: within a shared database by row-level security, and —
+for tenants who need it — across separate deployments by physical isolation. Neither depends on application
+code remembering to filter; both guarantees live in the infrastructure, below the application.
 
 ## Every row belongs to a store
 
@@ -44,41 +44,52 @@ Read-heavy access goes through purpose-built read views rather than raw tables. 
 product with its variants, media, stock, and category joins already assembled, so a catalog read is one
 indexed lookup instead of a fan-out of joins assembled at request time.
 
-## Per-deployment isolation
+## Two tiers of isolation
 
-Row-level security separates stores within a deployment; physical isolation separates deployments from one
-another. Each deployment — a single merchant on the shared platform, a marketplace operator, or an
-enterprise client — runs on its own dedicated stack: a separate database and its own API layer.
+Isolation comes at two levels, and which one applies depends on the tenant, not on the code. Row-level
+security separates stores that share a database; a dedicated deployment separates a tenant physically from
+everyone else. Most tenants need the first; some need the second.
+
+The **shared platform** is the default. A single merchant runs here: their store shares one multi-tenant
+database with many others, and row-level security is the boundary — the same guarantee described above, and
+the reason a query can never reach another store's rows. Adding a merchant here adds rows, not a database.
+
+A **dedicated deployment** is for tenants who need physical separation rather than a logical one — a
+marketplace operator, an enterprise client, or anyone with a data-residency or compliance requirement that
+maps more cleanly onto a separate stack. A dedicated deployment is a database and API layer of its own,
+serving one tenant.
 
 <Columns cols={2}>
-  <Card title="No co-mingling" icon="box">
-    A marketplace operator's data lives in its own database, never in a pool shared with other
-    operators. Isolation is a product guarantee, not a query filter.
+  <Card title="Shared, RLS-isolated" icon="table-cells">
+    On the shared platform, stores live in one database and row-level security keeps each store's data
+    private. Isolation is enforced below the application, so a code bug cannot cross it.
+  </Card>
+  <Card title="Dedicated, physically isolated" icon="box">
+    A dedicated deployment's data lives in its own database, never in a pool shared with other tenants —
+    a product guarantee rather than a query filter.
   </Card>
   <Card title="Contained blast radius" icon="shield-halved">
-    One deployment's load spike, migration, or incident cannot affect another's — there is no shared
-    database or shared compute to contend for.
-  </Card>
-  <Card title="Independent scaling" icon="arrows-left-right-to-line">
-    A high-volume operator's stack scales independently of everyone else's, and can be placed and
-    tuned for its own footprint.
+    A dedicated deployment's load spike, migration, or incident cannot affect another tenant, because it
+    shares no database or compute. On the shared platform, per-store limits and quotas keep one store's
+    load from crowding out its neighbours.
   </Card>
   <Card title="Clean compliance boundary" icon="file-shield">
-    Data-residency and compliance obligations map cleanly onto a per-tenant stack rather than a
-    shared database that must be reasoned about row by row.
+    Data-residency and compliance obligations that are awkward to reason about row by row map cleanly
+    onto a dedicated per-tenant stack.
   </Card>
 </Columns>
 
-Taken together, these properties cover the confidentiality and integrity sides of the CIA triad:
-row-level security and per-deployment isolation keep each tenant's data confidential, and the
-server-side pricing authority and ACID writes described in the [Request Lifecycle](/how-gc-works/request-lifecycle)
-keep it intact. Availability — the third side — is the subject of
-[Scaling & Reliability](/how-gc-works/scaling-reliability).
+The same codebase serves both tiers, so a tenant can start on the shared platform and graduate to a
+dedicated deployment without a rewrite. Taken together, the two tiers cover the confidentiality and
+integrity sides of the CIA triad: row-level security and — where it applies — physical isolation keep each
+tenant's data confidential, and the server-side pricing authority and ACID writes described in the
+[Request Lifecycle](/how-gc-works/request-lifecycle) keep it intact. Availability — the third side — is the
+subject of [Scaling & Reliability](/how-gc-works/scaling-reliability).
 
 ## Production and sandbox share a stack, not data
 
-A sandbox environment runs alongside production within each deployment, so developers can build against
-realistic data without touching real orders. Environment-scoped tables carry an `environment` marker;
+A sandbox environment runs alongside production on the same stack a tenant already uses, so developers can
+build against realistic data without touching real orders. Environment-scoped tables carry an `environment` marker;
 production is the default, and only test-keyed API calls write sandbox rows. Sandbox data is purged on a
 schedule and never appears in any admin or storefront surface. See [Sandbox](/sandbox).
 

@@ -4510,6 +4510,12 @@ paths:
                     type: manual
                     environment: production
                     is_configured: true
+                  - provider: acme_pay
+                    display_name: Acme Pay
+                    type: redirect
+                    environment: production
+                    is_configured: true
+                    custom_provider: true
         '400':
           description: Invalid request (invalid field names in `fields` query parameter)
           content:
@@ -19084,14 +19090,7 @@ components:
       properties:
         provider:
           type: string
-          description: Machine identifier for the payment method — use this in code (e.g. when initializing a payment).
-          enum:
-            - cash
-            - stripe
-            - paypal
-            - paystack
-            - mpesa
-            - mpesa_c2b
+          description: 'Machine identifier for the payment method — pass this back as `provider` when initializing a payment. The built-in methods are `cash`, `stripe`, `paypal`, `paystack`, `mpesa` and `mpesa_c2b`, but this is **not a closed set**: a store can offer its own payment provider, which appears here under whatever identifier that provider uses (with `custom_provider: true`). Treat the value as an opaque string rather than matching against a fixed list, or a store''s own provider will be dropped from your checkout.'
           example: stripe
         display_name:
           type: string
@@ -19116,6 +19115,10 @@ components:
           example: test
         is_configured:
           type: boolean
+          example: true
+        custom_provider:
+          type: boolean
+          description: Present and `true` when this method is the store's own payment provider rather than one of the built-in ones. It is initialized and verified through exactly the same endpoints; the flag is there so a storefront can label or order it differently if it wants to.
           example: true
     PaymentInitializeResponse:
       type: object

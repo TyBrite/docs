@@ -13,12 +13,13 @@ infrastructure — so a bug in application code cannot cross them.
 
 ## Tenant isolation
 
-Every merchant's data is isolated at two levels, and neither depends on application code remembering to
-filter. Within a deployment, row-level security in the database scopes every read and write to a single
-store; across deployments, each tenant runs on its own dedicated database and API layer. A query cannot
-reach another store's data, and one deployment's incident cannot affect another's. This is covered in depth
-in [Data Model & Multi-tenancy](/how-gc-works/data-model) — the short version is that isolation is a
-property of the infrastructure, not a filter an engineer has to remember.
+Every merchant's data is isolated, and it never depends on application code remembering to filter. On the
+shared platform, row-level security in the database scopes every read and write to a single store, so a
+query cannot reach another store's data even on a shared table. Tenants who need physical separation rather
+than a logical one — a marketplace operator, an enterprise client — run on a dedicated deployment: a
+separate database and API layer whose incident cannot affect another tenant. This is covered in depth in
+[Data Model & Multi-tenancy](/how-gc-works/data-model) — the short version is that isolation is a property
+of the infrastructure, not a filter an engineer has to remember.
 
 Automations extend this guarantee. When a merchant's own automation — a custom extension, or an
 AI-generated one such as an ad-optimization rule — needs to read the store's data, it does **not** get
@@ -164,6 +165,6 @@ split:
     Key types, scopes, environments, and request signing in detail.
   </Card>
   <Card title="Data Model & Multi-tenancy" icon="database" href="/how-gc-works/data-model">
-    How row-level security and per-deployment isolation keep tenants separate.
+    How row-level security and dedicated deployments keep tenants separate.
   </Card>
 </CardGroup>

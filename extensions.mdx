@@ -115,10 +115,19 @@ In remote mode, Galactic Core POSTs the **same input a hosted handler would rece
 
 | Header | Value |
 | :--- | :--- |
-| `X-Timestamp` | Unix seconds when the request was signed. |
+| `X-Timestamp` | Unix time in **milliseconds** when the request was signed. |
 | `X-Signature` | Base64 HMAC-SHA256 of `${timestamp}.${rawBody}`, using your per-extension signing secret. |
 | `X-Tybrite-Extension` | The extension's id. |
 | `X-Tybrite-Kind` | The extension kind / interface being invoked. |
+
+Three details decide whether your verification works:
+
+- **Sign the raw header string and the raw body bytes.** Re-serialising the parsed JSON changes key
+  order and spacing, and the signature will not match.
+- **`X-Timestamp` is milliseconds**, so compare it against `Date.now()` directly.
+- **Require the signature.** Galactic Core sends no `X-Signature` at all when an extension has no
+  signing secret configured, so an endpoint that verifies "only if the header is present" is open to
+  anyone who omits it.
 
 Verify every request before acting on it:
 
@@ -131,15 +140,21 @@ app.post('/gc/tax', express.raw({ type: 'application/json' }), (req, res) => {
   const sig = req.headers['x-signature'];
   const rawBody = req.body.toString();
 
-  // Reject anything older than 5 minutes (replay protection)
-  if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) {
+  // No signature at all → reject. Never treat "absent" as "not required".
+  if (!sig || !ts) return res.status(401).json({ error: 'unsigned request' });
+
+  // Reject anything older than 5 minutes (replay protection). X-Timestamp is in MILLISECONDS.
+  if (Math.abs(Date.now() - Number(ts)) > 5 * 60 * 1000) {
     return res.status(401).json({ error: 'stale timestamp' });
   }
 
+  // Sign the RAW header string and the RAW body — not a re-serialised object.
   const expected = createHmac('sha256', process.env.GC_EXTENSION_SECRET)
     .update(`${ts}.${rawBody}`)
     .digest('base64');
-  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+  const sigBuf = Buffer.from(String(sig));
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
     return res.status(401).json({ error: 'bad signature' });
   }
 
@@ -169,6 +184,7 @@ Each interface operation receives an `input` (with an `operation` discriminator 
 | `PaymentProvider` | `{ operation: 'initialize', provider, amount, currency, email, phone, order_id, reference, ... }` / `{ operation: 'verify', provider, reference }` | `initialize → { redirect_url?, status? }`; `verify → { status: 'paid' \| 'failed' \| ..., reference? }` — amount and status revalidated by the platform. |
 | `TaxProvider` | `{ operation: 'resolve', currency, ship_to, lines: [...], mode: 'quote' \| 'commit' }` | `{ tax_amount: number, breakdown? }` — otherwise the platform falls back to your manual/native tax path. |
 | `order.validate` | `{ operation: 'validate', total_amount, subtotal, currency, customer_id, item_count, shipping_address, ... }` | `{ allow: boolean, reason?, annotations? }` — `allow: false` rejects the order with `422`. |
+| `SubscriptionBillingProvider` | `{ operation: 'createSubscription', store_id, plan, period, amount_cents, currency, subscriber_email, return_url, cancel_url }` / `{ operation: 'getSubscription' \| 'cancelSubscription', subscription_id }` | `createSubscription → { subscription_id, status, redirect_url?, provider }`; `getSubscription → { subscription_id, status, next_billing_at?, provider }`; `cancelSubscription → { subscription_id, status, provider }` |
 
 <Note>
   **How this relates to the storefront API.** Connecting a custom provider does **not** change the
@@ -191,6 +207,68 @@ Each interface operation receives an `input` (with an `operation` discriminator 
   API returns. The only storefront-API change in the whole feature is the shipping `rate_source: custom`
   value.
 </Note>
+
+---
+
+## Billing your own merchants
+
+`SubscriptionBillingProvider` is the one interface that is not about a shopper. It is how an agency
+running its own commerce platform charges *its* merchants for their plan — the merchant pays the
+agency, on the agency's own payment account, and Galactic Core never touches that money.
+
+Most agencies never need this interface. Stripe, Lemon Squeezy and Paddle are supported directly, and
+Paystack in its markets, so an agency picks one in their portal and connects it. Build a
+`SubscriptionBillingProvider` when you need a processor we don't ship — a regional gateway, or your
+own billing system that already holds the customer relationship.
+
+<Note>
+  This is a **different money flow** from `PaymentProvider`, which is a shopper paying a merchant at
+  checkout. Subscription billing is a merchant paying their agency for the platform. They use separate
+  interfaces so the two can never be resolved through each other's seam: a shopper's checkout is never
+  affected by an agency's billing choice, and vice versa.
+</Note>
+
+Three operations, all admin-plane — no shopper is ever waiting on them:
+
+| Operation | You receive | You return |
+| :--- | :--- | :--- |
+| `createSubscription` | `store_id`, `plan`, `period`, `amount_cents`, `currency`, `subscriber_email`, `return_url`, `cancel_url` | `{ subscription_id, status, redirect_url?, provider }` |
+| `getSubscription` | `subscription_id` | `{ subscription_id, status, next_billing_at?, provider }` |
+| `cancelSubscription` | `subscription_id` | `{ subscription_id, status, provider }` |
+
+```ts
+// A remote SubscriptionBillingProvider — verify the signature first (see above), then:
+switch (input.operation) {
+  case 'createSubscription': {
+    // amount_cents is server-resolved from the agency's price catalogue. Charge THAT — a different
+    // amount is a tampering attempt and is revalidated.
+    const sub = await myGateway.subscriptions.create({
+      email: input.subscriber_email,
+      amount: input.amount_cents,
+      currency: input.currency,
+      returnUrl: input.return_url,
+    });
+    return {
+      subscription_id: sub.id,
+      status: sub.status,          // your provider's state
+      redirect_url: sub.approveUrl, // where the merchant approves the mandate
+      provider: 'my_gateway',
+    };
+  }
+  case 'getSubscription':
+    // Report what your provider ACTUALLY says. Do not assume 'active'.
+    return { subscription_id: input.subscription_id, status: (await myGateway.get(input.subscription_id)).status, provider: 'my_gateway' };
+  case 'cancelSubscription':
+    await myGateway.cancel(input.subscription_id);
+    return { subscription_id: input.subscription_id, status: 'cancelled', provider: 'my_gateway' };
+}
+```
+
+<Warning>
+  **`amount_cents` is server-authoritative.** It is resolved from the agency's own price catalogue, not
+  supplied by the browser. Charging a different amount does not change what the merchant is recorded
+  as owing — it only creates a mismatch between your gateway and the platform's ledger.
+</Warning>
 
 ---
 
@@ -257,6 +335,33 @@ Custom code can shape your store's behavior without ever putting a sale at risk.
 </CardGroup>
 
 Every extension is also protected by a per-extension **circuit breaker** — after too many consecutive failures it is automatically disabled and you're notified — and hard **timeouts** on any hot-path hook. Outbound requests from a hosted function are filtered to public destinations to prevent them reaching internal infrastructure.
+
+### Budgets
+
+These are ceilings, not suggestions. A `timeout_ms` on your extension can only make its budget
+*smaller* — it can never raise the ceiling, so an endpoint written for a longer budget is cut off at
+the limit for its class.
+
+| Limit | Value |
+| :--- | :--- |
+| Hosted handler, on a shopper-facing hook | 800 ms |
+| Remote endpoint, on a shopper-facing hook | 2 s |
+| Remote endpoint, admin-plane (`SubscriptionBillingProvider`) | 8 s |
+| Automations (off the hot path) | 10 s |
+| Outbound `fetch` calls per hosted run | 5 |
+| Response body | 1 MB |
+| Hosted function source | 64 KB |
+
+The shopper-facing budgets are tight on purpose: someone is waiting on a page render. Admin-plane work
+gets more room because a merchant clicked a button and can wait — a real billing provider needs two
+round trips (authenticate, then create) and does not fit a checkout budget.
+
+<Warning>
+  Measure your endpoint's **slowest** path against these, not its typical one. A lookup for a reference
+  the provider has never seen is often far slower than a normal call, and an endpoint that sits just
+  under the ceiling on average will fail intermittently — which looks like flakiness rather than
+  misconfiguration.
+</Warning>
 
 ---
 
