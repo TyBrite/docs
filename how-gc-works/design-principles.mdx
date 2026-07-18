@@ -43,16 +43,17 @@ The API never trusts a client-sent price; it recalculates and rejects a mismatch
 order be placed from a browser-adjacent backend without turning pricing into an attack surface — the
 authority for what a customer pays lives on the server, not in the request.
 
-## Isolation is physical, not just logical
+## Isolation scales from logical to physical
 
-Each deployment runs on its own dedicated stack: a separate database and API layer, not a shared
-multi-tenant pool. A marketplace operator or enterprise client gets infrastructure no other tenant
-touches. Within a deployment, every row is additionally scoped to a store and enforced by the database's
-row-level security.
+Isolation matches the tenant. On the shared platform — where a single merchant runs — every row is scoped
+to a store and enforced by the database's row-level security, so no store can read or write another's data
+even on a shared table. When a tenant needs more than a logical boundary — a marketplace operator, an
+enterprise client, or a data-residency requirement — it runs on a dedicated deployment: a separate database
+and API layer that no other tenant touches.
 
-The result is a boundary that holds for both security and reliability — data is never co-mingled, and one
-tenant's load or incident cannot reach another's. [Data Model & Multi-tenancy](/how-gc-works/data-model)
-covers how the scoping and isolation are enforced.
+Either way the boundary holds for security, and a dedicated deployment adds a reliability boundary on top —
+its load or incident cannot reach another tenant, because it shares no database or compute.
+[Data Model & Multi-tenancy](/how-gc-works/data-model) covers how both are enforced.
 
 ## Reads should cost almost nothing
 

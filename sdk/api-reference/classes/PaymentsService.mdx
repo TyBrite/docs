@@ -84,6 +84,14 @@ const { methods } = await client.payments.getPaymentMethods({
       "type": "redirect",
       "environment": "test",
       "is_configured": true
+    },
+    {
+      "provider": "acme_pay",
+      "display_name": "Acme Pay",
+      "type": "redirect",
+      "environment": "production",
+      "is_configured": true,
+      "custom_provider": true
     }
   ]
 }
@@ -93,11 +101,12 @@ Each method in the returned list includes:
 
 | Field | Description |
 | :--- | :--- |
-| `provider` | Provider identifier (e.g. `stripe`, `paypal`, `paystack`, `mpesa`). |
+| `provider` | Provider identifier (e.g. `stripe`, `paypal`, `paystack`, `mpesa`). Not a fixed set — see the note below. |
 | `display_name` | Human-friendly label to show at checkout. |
 | `type` | How the buyer completes payment: `redirect`, `popup`, `stk_push`, or `manual`. |
 | `environment` | `sandbox` or `production`, matching the key you used. |
 | `is_configured` | `true` when the provider is fully set up and ready to accept payments. |
+| `custom_provider` | Present and `true` when the store offers its own payment provider rather than a built-in one. |
 
 ---
 
