@@ -184,6 +184,8 @@ The `reserveStock` call itself returns:
 
 Place a new order. Returns **`201 Created`** (semantic create) with the new order resource. Requires verified signatures and idempotency protection.
 
+*   **Retrying is safe.** The first request with a given `Idempotency-Key` returns `201` with the order nested under an `order` property. Any later request carrying that same key — a retry, a double-submit, or two requests racing each other — returns **`200 OK`** with the order that was already created, as a bare order resource (the same shape `getOrder` returns). Exactly one order is ever created for a key, so a client that retries on a timeout cannot double-order.
+
 *   **Required body fields**: `customer_email`, `customer_name`, `billing_address`, `shipping_address`, `subtotal`, `total_amount`, `payment_method`, and a non-empty `items` array. Each item must include **`variant_id` or `product_id`** (at least one).
 *   **`variant_id` vs `product_id` per item** — prefer **`variant_id`** (the exact variant the shopper chose; pass the same one you put in the cart straight through). If you send only `product_id`, the order is placed against the product's **default** variant — fine for single-variant products, but for a multi-variant product it may not be the one the shopper selected. Sending both is fine: `variant_id` wins and `product_id` is resolved from it. See [Products and variants — which ID to send where](/concepts#products-and-variants) for the full picture.
 *   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement).
@@ -447,13 +449,13 @@ Transitioning an order to the **paid** state automatically triggers:
 
 | Code | Endpoint | Meaning |
 | :--- | :--- | :--- |
-| `200` | `GET /v1/orders`, `GET /v1/orders/{id}`, `PATCH /v1/orders/{id}` | Success. `GET /v1/orders` returns a paginated list; `PATCH` returns the updated order. |
-| `201` | `POST /v1/orders` | Order created. Response includes `post_processing_warnings?` if any post-paid step failed. |
+| `200` | `GET /v1/orders`, `GET /v1/orders/{id}`, `PATCH /v1/orders/{id}`, `POST /v1/orders` | Success. `GET /v1/orders` returns a paginated list; `PATCH` returns the updated order. On `POST`, a reused `Idempotency-Key` returns the order already created for it, as a bare order resource. |
+| `201` | `POST /v1/orders` | Order created (first use of the `Idempotency-Key`). The order is nested under an `order` property, and the response includes `post_processing_warnings?` if any post-paid step failed. |
 | `400` | All | Invalid request — bad pagination/filter value, missing `total_amount` / `payment_method` / `items`, an item with neither `variant_id` nor `product_id`, or invalid tax/subtotal for a tax-exclusive store. |
 | `401` | All | Invalid API key, or invalid / expired HMAC signature. |
 | `403` | Read & write | Publishable key used on an order endpoint. Orders are secret-key only. |
 | `404` | `GET /v1/orders/{id}`, `PATCH`, `POST` | Order not found, or a `product_id` referenced in `items` not found. |
-| `409` | `POST /v1/orders` | Idempotency key reused with a different payload. |
+| `409` | `POST /v1/orders` | Idempotency key reused with a different payload, or an order-number collision between two orders created in the same instant — retry the request. |
 | `429` | All | Rate limit exceeded. |
 | `500` | All | Server error. |
 

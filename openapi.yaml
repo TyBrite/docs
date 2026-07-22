@@ -3812,8 +3812,24 @@ paths:
                 applied_rule: distance
               notes: Leave with front desk
       responses:
+        '200':
+          description: |
+            The `Idempotency-Key` has already been used for this store, so the order it created is
+            returned instead of a new one being made. The body is the order resource, exactly as
+            `GET /v1/orders/{id}` would return it — note this differs from the `201` envelope, which
+            nests the order under an `order` property.
+
+            Retrying a create with the same key is always safe: concurrent retries resolve to the
+            same order, and only the first request receives `201`.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
         '201':
-          description: Order created successfully (or existing order returned if idempotency key matches)
+          description: Order created successfully
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
