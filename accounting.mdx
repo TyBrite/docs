@@ -1,0 +1,93 @@
+---
+title: "Accounting"
+description: "Galactic Core keeps a store's books as it trades. Every sale, cost, refund, expense, and gift card posts itself as a balanced double-entry journal entry, so the chart of accounts, journals, and financial reports are always current — and can be mirrored into QuickBooks automatically."
+---
+
+# Accounting
+
+Galactic Core is a store's accounting system, not just a place that records orders. Every store gets a
+full set of business books — a chart of accounts, double-entry journals, and the standard financial
+statements — and Galactic Core keeps them up to date on its own as the store trades. A merchant does not
+post entries by hand: a sale, its cost of goods, a refund, an expense, a gift card each write the correct
+balanced entry the moment the business event happens.
+
+<Note>
+  Accounting is **built in and automatic** — it is not something a developer wires up through the API,
+  and there is no accounting endpoint on the storefront API. The books are produced from the store's real
+  activity inside Galactic Core, and can be mirrored into an external accounting system.
+</Note>
+
+## Double-entry, kept for you
+
+Galactic Core uses standard double-entry bookkeeping: every transaction is one **journal entry** made of
+two or more **lines**, and the debits always equal the credits. Entries are grouped by the business event
+that produced them — a sale, a refund, an expense — so the books trace straight back to what actually
+happened in the store.
+
+When a store is created, Galactic Core seeds a complete **chart of accounts** automatically — assets,
+liabilities, revenue, contra-revenue, cost of goods, and expenses — so a merchant never sets one up from
+scratch. The core accounts a shop relies on are there from day one: cash and bank, sales revenue, sales
+tax payable, cost of goods sold, discounts given, returns and refunds, gift-card liability, accounts
+receivable, and marketing expense, among others. A merchant can add their own accounts; the ones the
+platform depends on are protected so they can't be removed by accident.
+
+## What posts itself
+
+Galactic Core writes a balanced double-entry entry for every business event as it happens — the merchant
+does nothing. The full set of events that post to the books:
+
+| Event | What it records |
+| :--- | :--- |
+| **Sale** (in-store and online) | Debits the account the money landed in (cash or bank) for the amount taken, credits sales revenue for the net, and credits sales tax payable for the tax. |
+| **Cost of goods sold** | A second entry alongside each sale, recording the item cost against inventory — so gross profit is real, not estimated. Skipped when there's no cost to record. |
+| **Refund / return** | Reverses the sale: the revenue and the cost both back out against returns and refunds, and a returned item's stock and cost are put back. |
+| **Store credit** | Credit issued to a customer is carried as a liability until it's spent, and drawn down against that liability when redeemed. |
+| **Gift cards** | Issuing, redeeming, adjusting, expiring, or cancelling a gift card posts against the gift-card liability — an unredeemed card is a liability, and redeeming it moves the value to revenue. |
+| **Discounts & promotions** | Booked as contra-revenue rather than hidden in a lower price, so a store can see exactly what discounting cost it over a period. |
+| **Expenses** | Posted to the right expense account against cash or bank, including expense adjustments. |
+| **Inventory** | Restocks and cost adjustments post against inventory. |
+| **Supplier purchases** | Purchases from suppliers, and adjustments to them. |
+| **Collections & receivables** | Invoicing, payments received, payment reversals, and bad-debt write-offs, tracked against accounts receivable. |
+| **Marketplace** | On a marketplace order, the commission split and the payout to each seller post to the operator's and the seller's books. |
+| **Wholesale (B2B)** | Wholesale invoices, fulfilment, and buyer payments post against accounts receivable, revenue, cost of goods, and tax. |
+| **Payroll** | Payroll runs and adjustments. |
+| **Automation rewards** | Rewards granted by a merchant's automation rules. |
+
+Posting is resilient: if an entry can't be written for some reason, the sale or refund itself still goes
+through — the books flag the gap rather than blocking the business, and a background process reconciles
+anything outstanding.
+
+## The reports a merchant gets
+
+Because the entries are real double-entry, the standard financial statements come straight out of them —
+a **trial balance**, an **income statement (profit & loss)**, a **balance sheet**, and a **cash-flow**
+view — plus the underlying **journals** and the **chart of accounts** itself, all in the store's admin.
+Since Galactic Core also holds the store's costs and every sale, the profit figures are the store's actual
+gross profit, not an estimate.
+
+## Sync to QuickBooks
+
+A store can connect **QuickBooks** so its external books stay current with no exporting. Once connected, **every** posted journal entry — a sale and its cost of
+goods, a refund, a gift-card redemption, an expense, and all the rest above — is copied into the
+merchant's QuickBooks company automatically.
+
+The sync is **one way**, and Galactic Core stays the definitive record. QuickBooks receives a mirror of
+what Galactic Core has already booked; nothing on the Galactic Core side ever changes because of the sync,
+so if QuickBooks is briefly unreachable the mirror simply catches up on the next run rather than anything
+breaking.
+
+Connecting takes two steps in the admin, on **Integrations → Accounting**:
+
+1. **Connect** the QuickBooks company (a standard sign-in with QuickBooks).
+2. **Map the accounts** — match each Galactic Core account to the matching QuickBooks account.
+   Galactic Core suggests the mapping automatically on connect (revenue to income, cost of goods to cost
+   of goods sold, and so on); the merchant reviews and adjusts it.
+
+An entry that touches an account the merchant hasn't mapped is **held with a clear note** rather than
+posted to the wrong place — mapping the account and re-syncing clears it. The page also has a **Sync now**
+button and a short activity summary showing how many entries have synced, been skipped, or failed.
+
+QuickBooks accounting sync is a Galactic-Core-managed integration — you connect it rather than build it,
+the same way as [Advertising](/advertising). It sits alongside the provider interfaces you can implement
+yourself; see [Extensions](/extensions) for the full picture of how Galactic Core connects to outside
+systems.
