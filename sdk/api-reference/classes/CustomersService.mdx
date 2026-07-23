@@ -99,7 +99,7 @@ const customer = await client.customers.getCustomer({
 });
 ```
 
-<Accordion title="Using Galactic Core auth instead?">
+<Accordion title="Using Galactic Core auth, or a raw provider token, instead?">
   If your storefront authenticates customers through Galactic Core (Path A), pass the customer's session JWT as `xAuthToken` in place of `xExternalAuth`:
 
   ```typescript
@@ -109,7 +109,18 @@ const customer = await client.customers.getCustomer({
   });
   ```
 
-  Provide exactly one of `xAuthToken` or `xExternalAuth`. Both → `400`. Mismatch with the path `id` → `403`.
+  If you'd rather not sign an assertion, pass the raw token from your identity provider (for example a Firebase ID token) as `xIdpToken`. Galactic Core forwards it to your store's configured Auth verifier, which validates it and returns the identity:
+
+  ```typescript
+  const customer = await client.customers.getCustomer({
+    id: gcCustomerId,
+    xIdpToken: firebaseIdToken,
+  });
+  ```
+
+  `xIdpToken` is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). It requires an Auth verifier to be configured for the store.
+
+  Provide exactly one of `xAuthToken`, `xExternalAuth`, or `xIdpToken`. More than one → `400`. Mismatch with the path `id` → `403`.
 </Accordion>
 
 **Response `200`** — the customer fields are returned at the top level (not wrapped in a `customer` key):
@@ -183,7 +194,7 @@ const updated = result.customer;
 }
 ```
 
-<Accordion title="Using Galactic Core auth instead?">
+<Accordion title="Using Galactic Core auth, or a raw provider token, instead?">
   ```typescript
   const result = await client.customers.updateCustomer({
     id: gcCustomerId,
@@ -193,7 +204,17 @@ const updated = result.customer;
   // → { customer: { ... } } — same response shape as above
   ```
 
-  Provide exactly one of `xAuthToken` or `xExternalAuth`. Both → `400`. Mismatch with the path `id` → `403`.
+  You can also pass a raw identity-provider token (for example a Firebase ID token) as `xIdpToken`, which Galactic Core forwards to your store's Auth verifier — fail-closed, so a rejected or unreachable verifier returns `401`:
+
+  ```typescript
+  const result = await client.customers.updateCustomer({
+    id: gcCustomerId,
+    xIdpToken: firebaseIdToken,
+    requestBody: { address: '350 Fifth Avenue, New York, NY 10118' }
+  });
+  ```
+
+  Provide exactly one of `xAuthToken`, `xExternalAuth`, or `xIdpToken`. More than one → `400`. Mismatch with the path `id` → `403`.
 </Accordion>
 
 <Note>
@@ -336,7 +357,7 @@ await client.customers.deleteAddress({
 
 ## Authentication Flow
 
-The `getCustomer` and `updateCustomer` methods require a customer session JWT (`xAuthToken`) in addition to your API key. Obtain the token via the `AuthenticationService` — either through `login` or `verifyOtp`.
+The `getCustomer` and `updateCustomer` methods require the shopper to be identified in addition to your API key, by exactly one of three headers: a customer session JWT (`xAuthToken`, obtained via the `AuthenticationService` through `login` or `verifyOtp`), a bring-your-own-auth signed assertion (`xExternalAuth`), or a raw identity-provider token (`xIdpToken`) that Galactic Core forwards to your store's Auth verifier. See [Customers and Auth](../../customers-and-auth) for choosing between them.
 
 <Warning>
   Never expose **Secret Keys** in client-side code. For browser-based customer portals, use a **Publishable Key** in combination with the customer's `xAuthToken`.

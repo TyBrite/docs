@@ -14,7 +14,7 @@ With Extensions there are two things you can build:
     React to a store event — `order.paid`, `product.stock_low`, `cart.abandoned` — with a no-code **recipe** or a small **custom function**. "When X happens, call my system / sync a field / send a message."
   </Card>
   <Card title="Custom Providers" icon="plug">
-    Become the implementation Galactic Core calls for a capability — Email, SMS, Marketing, Tax, Shipping rates, Sales channels, or Payments — standing in for the built-in integration.
+    Become the implementation Galactic Core calls for a capability — Email, SMS, Marketing, Tax, Shipping rates, Sales channels, Payments, or shopper sign-in — standing in for the built-in integration.
   </Card>
 </CardGroup>
 
@@ -37,7 +37,7 @@ An automation runs **after the fact**, off a real store event, and never blocks 
 
 ### Custom providers
 
-A custom provider implements one of **seven named interfaces** and, when selected, is dispatched at that subsystem's seam in place of the built-in path:
+A custom provider implements one of **eight named interfaces** and, when selected, is dispatched at that subsystem's seam in place of the built-in path:
 
 | Interface | Replaces / augments | Cardinality |
 | :--- | :--- | :--- |
@@ -48,9 +48,14 @@ A custom provider implements one of **seven named interfaces** and, when selecte
 | `SmsProvider` | SMS delivery | One active per store |
 | `MarketingProvider` | Marketing segments / campaigns / flows | One active per store |
 | `SalesChannelProvider` | An outbound sales channel | Several can be active at once |
+| `AuthProvider` | Verifying a shopper's sign-in against your own identity provider | One active per store |
 
 <Note>
-  For **single-active** interfaces (Email, SMS, Tax, Marketing) selecting a custom provider **replaces** the built-in for that capability. **Shipping** adds a rate source next to the native ones; **Sales channels** are fully multi-active; **Payments** route per transaction, so your custom method runs alongside the native processors.
+  For **single-active** interfaces (Email, SMS, Tax, Marketing, Auth) selecting a custom provider **replaces** the built-in for that capability. **Shipping** adds a rate source next to the native ones; **Sales channels** are fully multi-active; **Payments** route per transaction, so your custom method runs alongside the native processors.
+</Note>
+
+<Note>
+  **`AuthProvider` is remote-only and fail-closed.** It verifies who a shopper is, so it must run as a remote endpoint you host, must be synchronous, and if it rejects a token or can't be reached the request is treated as signed-out — never signed-in. It is the second of the two bring-your-own-auth modes: with the first, your backend verifies the shopper and signs an assertion Galactic Core checks (`x-external-auth`); with an `AuthProvider`, the shopper's raw identity-provider token is sent to your verifier and Galactic Core trusts the identity it returns (`x-idp-token`). See [Customers and Auth](/sdk/customers-and-auth#the-two-byo-auth-modes-who-verifies).
 </Note>
 
 <Note>
@@ -183,6 +188,7 @@ Each interface operation receives an `input` (with an `operation` discriminator 
 | `ShippingProvider` | `{ address_to, address_from?, parcel }` | `{ rates: [{ rate_id, provider, service, amount, currency, estimated_days? }] }` — appended to the rate list, revalidated at checkout. |
 | `PaymentProvider` | `{ operation: 'initialize', provider, amount, currency, email, phone, order_id, reference, ... }` / `{ operation: 'verify', provider, reference }` | `initialize → { redirect_url?, status? }`; `verify → { status: 'paid' \| 'failed' \| ..., reference? }` — amount and status revalidated by the platform. |
 | `TaxProvider` | `{ operation: 'resolve', currency, ship_to, lines: [...], mode: 'quote' \| 'commit' }` | `{ tax_amount: number, breakdown? }` — otherwise the platform falls back to your manual/native tax path. |
+| `AuthProvider` | `{ operation: 'verifyToken', token, store_id, environment }` — the raw identity-provider token a shopper presented | `{ ok: true, external_id, email? }` if the token is valid, else `{ ok: false, error? }`. `external_id` resolves to the customer; a non-`ok` result or an unreachable endpoint leaves the request signed-out. |
 | `order.validate` | `{ operation: 'validate', total_amount, subtotal, currency, customer_id, item_count, shipping_address, ... }` | `{ allow: boolean, reason?, annotations? }` — `allow: false` rejects the order with `422`. |
 | `SubscriptionBillingProvider` | `{ operation: 'createSubscription', store_id, plan, period, amount_cents, currency, subscriber_email, return_url, cancel_url }` / `{ operation: 'getSubscription' \| 'cancelSubscription', subscription_id }` | `createSubscription → { subscription_id, status, redirect_url?, provider }`; `getSubscription → { subscription_id, status, next_billing_at?, provider }`; `cancelSubscription → { subscription_id, status, provider }` |
 

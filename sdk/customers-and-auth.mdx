@@ -19,9 +19,10 @@ Where Path A and Path B differ is **how you prove the caller is the customer** w
 | Path | What proves "I am this customer" | Header |
 |---|---|---|
 | A — GC-native auth | A Galactic Core session JWT (issued by `client.authentication.login`) | `xAuthToken` |
-| B — bring your own auth | An HMAC-signed assertion from your backend, scoped to the customer's `external_id` | `xExternalAuth` |
+| B — bring your own auth, you verify | An HMAC-signed assertion from your backend, scoped to the customer's `external_id` | `xExternalAuth` |
+| B — bring your own auth, we verify | The raw token from your identity provider, which Galactic Core forwards to your verifier | `xIdpToken` |
 
-Either header authorises the same operation. The customer-self endpoints (`getCustomer`, `updateCustomer`) accept both — the dev picks whichever matches their integration.
+Any one of these headers authorises the same operation. The customer-self endpoints (`getCustomer`, `updateCustomer`) accept all three — you pick whichever matches your integration. Bring-your-own-auth comes in two shapes that differ only in **who checks the identity-provider token**: with `xExternalAuth`, your backend verifies the shopper's login and signs a short assertion Galactic Core checks; with `xIdpToken`, you hand Galactic Core the raw token and it asks a verifier you run to confirm it (see [the two BYO-auth modes](#the-two-byo-auth-modes-who-verifies) below).
 
 ## The two paths
 
@@ -42,6 +43,21 @@ Authenticate users in your own identity system (Auth0, Clerk, Cognito, Firebase 
 - You already use Auth0/Clerk/Cognito/Firebase/NextAuth/SSO and don't want a second login system.
 - You need MFA flows, social logins, enterprise SSO, or other features your provider already does well.
 - Your buyers exist in an upstream system (ERP, CRM, accounting platform) and are projected into Galactic Core via integration.
+
+### The two BYO-auth modes: who verifies
+
+Both modes let a shopper authenticated in your identity provider act on their own Galactic Core customer record, and both resolve to the same record by `external_id`. They differ in **who verifies the identity-provider token, and therefore what you have to run**:
+
+| | `xExternalAuth` — you verify | `xIdpToken` — we verify |
+|---|---|---|
+| What Galactic Core receives | a signed statement of who the shopper is | the raw identity-provider token |
+| Who checks the IdP token | your backend (before signing) | a verifier endpoint you register, called by Galactic Core |
+| What you run | anything that can sign with the store's secret | a small HTTPS verifier endpoint |
+| Cost | no extra call | one verification round-trip (cached) |
+
+Use **`xExternalAuth`** when you already run a backend: it authenticates the shopper against your identity provider and signs a short-lived assertion `{ external_id, iat, exp }`, which Galactic Core verifies with a signature check. Nothing leaves your side except the signed claim.
+
+Use **`xIdpToken`** when you'd rather not build the signing step — a thin or serverless storefront that only holds the identity provider's client-side token. You send that raw token; Galactic Core forwards it to a verifier endpoint you register as an Auth provider, which validates it and returns the identity. Verification is **fail-closed**: if the verifier rejects the token or can't be reached, the request is treated as signed-out, never signed-in. Registering the verifier is done through Custom Integrations; see the Auth provider capability on the [Extensions](/extensions) page.
 
 ## Decision matrix
 
