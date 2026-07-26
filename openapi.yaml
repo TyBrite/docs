@@ -1625,8 +1625,8 @@ paths:
           in: query
           required: false
           description: |
-            When `true` and the request is made on behalf of a signed-in customer (pass the
-            customer's session token as `x-auth-token`), the returned page is ordered by how
+            When `true` and the request is made on behalf of a signed-in customer (identify the
+            shopper with any of `x-auth-token`, `x-external-auth`, or `x-idp-token`), the returned page is ordered by how
             closely each product matches that shopper's preferences, with the default name order
             as the tiebreak. Without a customer session, or for a shopper with no preference
             signal yet, the order is unchanged.
@@ -4675,12 +4675,11 @@ paths:
               properties:
                 provider:
                   type: string
-                  enum:
-                    - stripe
-                    - paypal
-                    - paystack
-                    - mpesa
-                  description: Payment provider to use
+                  description: |
+                    Payment provider to use. The built-in providers are `stripe`, `paypal`, `paystack`,
+                    and `mpesa`. A store that has connected its own payment provider can also pass that
+                    provider's identifier here — the same value returned as `provider` (with
+                    `custom_provider: true`) by `GET /v1/payments/methods`.
                   example: stripe
                 amount:
                   type: number
@@ -7227,7 +7226,7 @@ paths:
         order**, so a storefront can show the shopper the final, tax-inclusive total before they pay.
 
         When the store has automatic tax enabled, the response is calculated for the `ship_to`
-        address and includes a per-jurisdiction `tax_breakdown`. When automatic tax is not
+        address and includes a per-jurisdiction `breakdown`. When automatic tax is not
         configured, the response is `{ "tax_source": "fallback" }` and you should apply the store's
         own tax rate (the same amount the order endpoint would use). The estimate is never recorded
         for filing — it is a quote only.
@@ -7651,7 +7650,8 @@ paths:
         - **`minScore`** (default `0.3`, range `0.0–1.0`) raises the similarity floor — increase it
           (e.g. `0.5`) to return only strong matches and suppress loosely-related products.
         - **`personalize`** (default `false`) nudges ranking toward a signed-in shopper's preferences
-          when you also pass that shopper's session token as `x-auth-token`; relevance stays primary
+          when you also identify that shopper with any of `x-auth-token`, `x-external-auth`, or
+          `x-idp-token`; relevance stays primary
           (it is blended, not replaced). Without a customer session it has no effect.
 
         **Marketplace:** when called with a marketplace operator key, searches products across all
@@ -7687,8 +7687,8 @@ paths:
                   type: boolean
                   default: false
                   description: |
-                    When `true` and the request is made on behalf of a signed-in customer (pass the
-                    customer's session token as `x-auth-token`), results are nudged toward the
+                    When `true` and the request is made on behalf of a signed-in customer (identify the
+                    shopper with any of `x-auth-token`, `x-external-auth`, or `x-idp-token`), results are nudged toward the
                     shopper's preferences while keeping query relevance primary (relevance is
                     blended with preference, not replaced). Without a customer session, or for a
                     shopper with no preference signal yet, ranking is by query relevance only.
@@ -7730,6 +7730,7 @@ paths:
       description: |
         Create a new customer account with email and password.
         Returns user details and authentication tokens upon successful registration.
+        The email must be a real, deliverable address — disposable and example domains (e.g. `example.com`) are rejected with `400 invalid_request`.
           
         **Multi-Store Support:**
         - If the email is already registered at another store, a new customer record
@@ -7759,7 +7760,7 @@ paths:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@example.com
+                  example: john.doe@tybritelabs.com
                 password:
                   type: string
                   minLength: 8
@@ -7782,7 +7783,7 @@ paths:
                     marketing opt-in checkbox.
                   example: true
             example:
-              email: john.doe@example.com
+              email: john.doe@tybritelabs.com
               password: SecurePassword123!
               name: John Doe
               phone: '+12125550142'
@@ -7820,12 +7821,12 @@ paths:
                 message: Registration successful
                 user:
                   id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
                   email_confirmed: true
                 customer:
                   id: de11e44b-78e5-4940-ad54-cac237d5d30d
                   name: John Doe
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
                   phone: '+12125550142'
                   created_at: '2026-06-20T13:47:38.831799+00:00'
                 session:
@@ -7875,13 +7876,13 @@ paths:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@example.com
+                  example: john.doe@tybritelabs.com
                 password:
                   type: string
                   description: Customer password
                   example: SecurePassword123!
             example:
-              email: john.doe@example.com
+              email: john.doe@tybritelabs.com
               password: SecurePassword123!
       responses:
         '200':
@@ -7908,12 +7909,12 @@ paths:
                 message: Login successful
                 user:
                   id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
                   email_confirmed: true
                 customer:
                   id: de11e44b-78e5-4940-ad54-cac237d5d30d
                   name: John Doe
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
                   phone: '+12125550142'
                   total_purchases: 0
                   created_at: '2026-06-20T13:47:38.831799+00:00'
@@ -8000,9 +8001,9 @@ paths:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@example.com
+                  example: john.doe@tybritelabs.com
             example:
-              email: john.doe@example.com
+              email: john.doe@tybritelabs.com
       responses:
         '200':
           description: Magic link/OTP sent successfully
@@ -8022,14 +8023,14 @@ paths:
                     type: string
                     format: email
                     description: Email address the magic link/OTP was sent to
-                    example: john.doe@example.com
+                    example: john.doe@tybritelabs.com
                   hint:
                     type: string
                     description: Helpful guidance for the user
                     example: Check your email for the login link or OTP code
               example:
                 message: Magic link sent
-                email: john.doe@example.com
+                email: john.doe@tybritelabs.com
                 hint: Check your email for the login link or OTP code
         '400':
           $ref: '#/components/responses/BadRequestError'
@@ -8069,13 +8070,13 @@ paths:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@example.com
+                  example: john.doe@tybritelabs.com
                 token:
                   type: string
                   description: 6-digit OTP code
                   example: '123456'
             example:
-              email: john.doe@example.com
+              email: john.doe@tybritelabs.com
               token: '123456'
       responses:
         '200':
@@ -8102,12 +8103,12 @@ paths:
                 message: OTP verified successfully
                 user:
                   id: df648f68-39b3-4ba6-9be2-ff0a9393c02b
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
                   email_confirmed: true
                 customer:
                   id: 15ecd58f-a8f8-49e4-9098-96f1fa8308e9
                   name: John Doe
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
                   phone: '+12125550142'
                   tier: bronze
                   total_purchases: 0
@@ -8153,7 +8154,7 @@ paths:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@example.com
+                  example: john.doe@tybritelabs.com
                 redirect_to:
                   type: string
                   format: uri
@@ -8178,10 +8179,10 @@ paths:
                     type: string
                     format: email
                     description: Email address the reset link was sent to
-                    example: john.doe@example.com
+                    example: john.doe@tybritelabs.com
               example:
                 message: Password reset email sent
-                email: jane.doe@example.com
+                email: jane.doe@tybritelabs.com
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -8270,7 +8271,7 @@ paths:
                 message: Password updated successfully
                 user:
                   id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -8390,13 +8391,13 @@ paths:
               example:
                 user:
                   id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
                   email_confirmed: true
                   created_at: '2026-06-20T13:47:38.354399Z'
                 customer:
                   id: de11e44b-78e5-4940-ad54-cac237d5d30d
                   name: John Doe
-                  email: john.doe@example.com
+                  email: john.doe@tybritelabs.com
                   phone: '+12125550142'
                   total_purchases: 0
                   created_at: '2026-06-20T13:47:38.831799+00:00'
@@ -8863,6 +8864,24 @@ paths:
           description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
           schema:
             type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Resolves the shopper whose addresses are managed.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; resolves the shopper whose addresses are managed.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
       responses:
         '200':
           description: The shopper's saved addresses.
@@ -8931,6 +8950,24 @@ paths:
           in: header
           required: true
           description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Resolves the shopper whose addresses are managed.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; resolves the shopper whose addresses are managed.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
       requestBody:
@@ -9067,6 +9104,24 @@ paths:
           description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
           schema:
             type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Resolves the shopper whose addresses are managed.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; resolves the shopper whose addresses are managed.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -9176,6 +9231,24 @@ paths:
           in: header
           required: true
           description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Resolves the shopper whose addresses are managed.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; resolves the shopper whose addresses are managed.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
       responses:
@@ -12043,6 +12116,24 @@ paths:
           description: Customer session access_token. Required to prove ownership of the thread/message being accessed.
           schema:
             type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). The resolved customer is used as the message author / thread participant.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; the resolved customer is used as the message author / thread participant.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
         - name: id
           in: path
           required: true
@@ -12124,6 +12215,24 @@ paths:
           in: header
           required: true
           description: Customer session access_token. Required to prove ownership of the thread/message being accessed.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). The resolved customer is used as the message author / thread participant.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; the resolved customer is used as the message author / thread participant.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
         - name: id
@@ -12230,6 +12339,24 @@ paths:
           in: header
           required: true
           description: Customer session access_token. Required to prove ownership of the thread/message being accessed.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). The resolved customer is used as the message author / thread participant.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; the resolved customer is used as the message author / thread participant.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
         - name: id
@@ -12373,6 +12500,24 @@ paths:
           description: Customer session access_token. Required to prove ownership of the thread/message being accessed.
           schema:
             type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). The resolved customer is used as the message author / thread participant.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; the resolved customer is used as the message author / thread participant.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
         - name: id
           in: path
           required: true
@@ -12454,6 +12599,24 @@ paths:
           in: header
           required: false
           description: Customer session access_token. Required when body.customer_id is supplied so the gateway can prove the caller owns that customer record.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). The resolved customer is used as the message author / thread participant.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; the resolved customer is used as the message author / thread participant.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
       requestBody:
@@ -12583,6 +12746,24 @@ paths:
           description: Customer session access_token. Required to prove ownership of the thread/message being accessed.
           schema:
             type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). The resolved customer is used as the message author / thread participant.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; the resolved customer is used as the message author / thread participant.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
         - name: id
           in: path
           required: true
@@ -12641,6 +12822,24 @@ paths:
           in: header
           required: true
           description: Customer session access_token. Required to prove ownership of the thread/message being accessed.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). The resolved customer is used as the message author / thread participant.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; the resolved customer is used as the message author / thread participant.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
         - name: id
@@ -12728,6 +12927,24 @@ paths:
           in: header
           required: true
           description: Customer session access_token. Required to prove ownership of the thread/message being accessed.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). The resolved customer is used as the message author / thread participant.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; the resolved customer is used as the message author / thread participant.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
         - name: id
@@ -13242,6 +13459,9 @@ paths:
         **Authorize**. Provisions a key pair for the selected store, records the
         connection, and returns the redirect URL the browser should follow to
         complete the flow.
+
+        An agency-scoped application can be authorized only by a store that
+        belongs to that agency; a store outside the agency receives `403`.
 
         **Authentication:** The merchant's active Galactic Core session JWT in
         the `Authorization: Bearer` header. This is not an API key — it is the
@@ -16790,6 +17010,8 @@ paths:
                     - cart.abandoned
                     - gift_card.issued
                     - promotion.applied
+                    - b2b.po.confirmed
+                    - b2b.invoice.issued
                     - promotion.activated
                     - collection.created
                     - post.published
@@ -16797,8 +17019,6 @@ paths:
                     - store.updated
                     - payment_provider.connected
                     - feature.status_changed
-                    - feed.sync.completed
-                    - channel.sync.completed
       responses:
         '200':
           description: Test delivery attempted
@@ -22365,7 +22585,9 @@ components:
           example: 8.4
         stock:
           type: integer
-          description: On-hand quantity.
+          description: |
+            On-hand quantity. For a variant tracked by individual barcodes, `stock` is ignored
+            (barcode-tracked stock is derived from scanned units); `threshold` still applies.
           example: 30
         threshold:
           type: integer

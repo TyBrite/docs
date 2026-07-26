@@ -203,7 +203,7 @@ const result = await client.orders.createOrder({
   xTimestamp: Math.floor(Date.now() / 1000),
   xSignature: hmacSignature, // base64 HMAC-SHA256 of `${timestamp}.${body}`
   requestBody: {
-    customer_email: 'jane@example.com',
+    customer_email: 'jane@tybritelabs.com',
     customer_name: 'Jane Doe',
     billing_address: { street: '123 Main St', city: 'New York', state: 'NY', zip: '10001', country: 'US' },
     shipping_address: { street: '123 Main St', city: 'New York', state: 'NY', zip: '10001', country: 'US' },
@@ -230,7 +230,7 @@ const order = result.order;
     "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
     "order_number": "ORD-1781955469360",
     "customer_id": "d6f46dad-189f-489a-a1a9-6d63cf103fbe",
-    "customer_email": "jane.doe@example.com",
+    "customer_email": "jane.doe@tybritelabs.com",
     "customer_name": "Jane Doe",
     "subtotal": 598,
     "tax_amount": 53.08,
@@ -348,7 +348,7 @@ const order = await client.orders.getOrder({ id: 'order-uuid' });
   "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
   "order_number": "ORD-1781955469360",
   "customer_id": "d6f46dad-189f-489a-a1a9-6d63cf103fbe",
-  "customer_email": "john.doe@example.com",
+  "customer_email": "john.doe@tybritelabs.com",
   "customer_phone": "+12125550142",
   "customer_name": "John Doe",
   "billing_address": { "street": "350 Fifth Avenue", "city": "New York", "state": "NY", "zip": "10118", "country": "US" },

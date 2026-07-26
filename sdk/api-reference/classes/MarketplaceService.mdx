@@ -124,7 +124,7 @@ const order = await client.marketplace.marketplaceCheckout({
       { product_id: 'p1', variant_id: 'v1', merchant_store_id: 'merchant-a-uuid', quantity: 1 },
       { product_id: 'p2', variant_id: 'v2', merchant_store_id: 'merchant-b-uuid', quantity: 2 },
     ],
-    customer_email: 'john.doe@example.com',
+    customer_email: 'john.doe@tybritelabs.com',
     customer_name: 'John Doe',
     currency: 'USD',
     shipping_address: { line1: '1 Market St', city: 'San Francisco', country: 'US' },
@@ -227,7 +227,7 @@ This requires the shopper's session token (from sign-in) in the `X-Customer-Toke
 ```typescript
 // 1. Sign the shopper in (operator key) to get a session token:
 const { session } = await client.authentication.login({
-  requestBody: { email: 'john.doe@example.com', password: '...' },
+  requestBody: { email: 'john.doe@tybritelabs.com', password: '...' },
 });
 
 // 2. Fetch their unified profile:
@@ -614,14 +614,14 @@ const cart = [
 
 // 4. Sign in (or register) the shopper:
 const { session } = await market.authentication.login({
-  requestBody: { email: 'john.doe@example.com', password: '...' },
+  requestBody: { email: 'john.doe@tybritelabs.com', password: '...' },
 });
 
 // 5. Checkout → one payment, auto-split:
 const order = await market.marketplace.marketplaceCheckout({
   requestBody: {
     items: cart,
-    customer_email: 'john.doe@example.com',
+    customer_email: 'john.doe@tybritelabs.com',
     currency: 'USD',
   },
 });
