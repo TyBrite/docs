@@ -30,7 +30,7 @@ Pass `marketing_consent` to record whether the customer opted in to marketing co
 ```typescript
 const result = await client.customers.createCustomer({
   requestBody: {
-    email: 'jane.doe@example.com',
+    email: 'jane.doe@tybritelabs.com',
     name: 'Jane Doe',
     phone: '+12125550123',
     address: '350 Fifth Avenue, New York, NY 10118',
@@ -49,7 +49,7 @@ const customer = result.customer;
   "customer": {
     "id": "0adffe56-ccc7-4868-bb4c-0f0ca5db117f",
     "name": "Jane Doe",
-    "email": "jane.doe@example.com",
+    "email": "jane.doe@tybritelabs.com",
     "phone": "+12125550123",
     "address": "350 Fifth Avenue, New York, NY 10118",
     "status": "active",
@@ -129,7 +129,7 @@ const customer = await client.customers.getCustomer({
 {
   "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
   "name": "Jane Doe",
-  "email": "jane.doe@example.com",
+  "email": "jane.doe@tybritelabs.com",
   "phone": "+12125550142",
   "address": null,
   "status": "active",
@@ -177,7 +177,7 @@ const updated = result.customer;
   "customer": {
     "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
     "name": "Jane Doe",
-    "email": "jane.doe@example.com",
+    "email": "jane.doe@tybritelabs.com",
     "phone": "+12125550199",
     "address": "350 Fifth Avenue, New York, NY 10118",
     "status": "active",
@@ -366,7 +366,7 @@ The `getCustomer` and `updateCustomer` methods require the shopper to be identif
 ```typescript
 // 1. Customer logs in via AuthenticationService
 const session = await client.authentication.login({
-  requestBody: { email: 'jane.doe@example.com', password: '...' }
+  requestBody: { email: 'jane.doe@tybritelabs.com', password: '...' }
 });
 // → { message: 'Login successful', user, customer, session }
 

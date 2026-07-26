@@ -40,12 +40,14 @@ Every customer-scoped operation across the SDK — on `client.customers`, `clien
 
 Create a new customer account. On success, returns **`201 Created`** along with session tokens so you can log the user in immediately.
 
+The email must be a real, deliverable address. Disposable and placeholder domains (`example.com`, `test.com`, known throwaway-mail providers, and similar) are rejected with `400 invalid_request`, so a sign-up form that submits a dummy address gets a validation error rather than a dead account.
+
 Pass `marketing_consent: true` when the sign-up form includes a marketing opt-in box and the customer checked it. It defaults to `false` (opt-in) — a customer is never subscribed to marketing without affirmative consent. The customer can change this later via `updateCustomer`.
 
 ```typescript
 const { user, customer, session, is_multi_store_customer } = await client.authentication.register({
   requestBody: {
-    email: 'jane.doe@example.com',
+    email: 'jane.doe@tybritelabs.com',
     password: 'securePassword123',
     name: 'Jane Doe',          // optional
     phone: '+12125550142',     // optional
@@ -65,13 +67,13 @@ if (is_multi_store_customer) {
   "message": "Registration successful",
   "user": {
     "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
-    "email": "jane.doe@example.com",
+    "email": "jane.doe@tybritelabs.com",
     "email_confirmed": true
   },
   "customer": {
     "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
     "name": "Jane Doe",
-    "email": "jane.doe@example.com",
+    "email": "jane.doe@tybritelabs.com",
     "phone": "+12125550142",
     "tier": "bronze",
     "created_at": "2026-06-20T11:36:54.174303+00:00"
@@ -107,7 +109,7 @@ Authenticate an existing customer using their email and password. Returns **`200
 ```typescript
 const { message, user, customer, session } = await client.authentication.login({
   requestBody: {
-    email: 'jane.doe@example.com',
+    email: 'jane.doe@tybritelabs.com',
     password: 'securePassword123'
   }
 });
@@ -154,7 +156,7 @@ Send a passwordless authentication link **and** a 6-digit OTP code to the custom
 ```typescript
 const { message } = await client.authentication.sendMagicLink({
   requestBody: {
-    email: 'jane.doe@example.com'
+    email: 'jane.doe@tybritelabs.com'
   }
 });
 // message → "Check your email for the magic link / OTP"
@@ -169,7 +171,7 @@ Verify the 6-digit OTP code emitted by `sendMagicLink` to complete authenticatio
 ```typescript
 const { user, customer, session } = await client.authentication.verifyOtp({
   requestBody: {
-    email: 'jane.doe@example.com',
+    email: 'jane.doe@tybritelabs.com',
     token: '123456' // The 6-digit code from email
   }
 });
@@ -188,11 +190,11 @@ Trigger a password reset email for a customer who has forgotten their password. 
 ```typescript
 await client.authentication.resetPassword({
   requestBody: {
-    email: 'jane.doe@example.com',
+    email: 'jane.doe@tybritelabs.com',
     redirect_to: 'https://shop.example.com/reset-callback' // optional
   }
 });
-// → { message: 'Password reset email sent', email: 'jane.doe@example.com' }
+// → { message: 'Password reset email sent', email: 'jane.doe@tybritelabs.com' }
 ```
 
 ---
@@ -216,7 +218,7 @@ await client.authentication.updatePassword({
 });
 // → {
 //     message: 'Password updated successfully',
-//     user: { id: 'df648f68-39b3-4ba6-9be2-ff0a9393c02b', email: 'jane.doe@example.com' }
+//     user: { id: 'df648f68-39b3-4ba6-9be2-ff0a9393c02b', email: 'jane.doe@tybritelabs.com' }
 //   }
 ```
 
@@ -273,14 +275,14 @@ console.log(`Logged in as: ${user.email} (customer id: ${customer.id})`);
 {
   "user": {
     "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
-    "email": "jane.doe@example.com",
+    "email": "jane.doe@tybritelabs.com",
     "email_confirmed": true,
     "created_at": "2026-06-20T11:36:53.593963Z"
   },
   "customer": {
     "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
     "name": "Jane Doe",
-    "email": "jane.doe@example.com",
+    "email": "jane.doe@tybritelabs.com",
     "phone": "+12125550142",
     "tier": "bronze",
     "total_purchases": 0,
@@ -307,7 +309,7 @@ const client = new Tybrite({ apiKey: process.env.TYBRITE_PUBLISHABLE_KEY });
 // 1. LOGIN — mint the session
 const { customer, session } = await client.authentication.login({
   requestBody: {
-    email: 'jane.doe@example.com',
+    email: 'jane.doe@tybritelabs.com',
     password: 'securePassword123'
   }
 });
