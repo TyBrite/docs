@@ -1,0 +1,64 @@
+---
+title: "Agentic Commerce"
+description: "Your in-app assistant can prepare gift cards, promotions, and dynamic-pricing rules from your store's own data — and you approve before anything goes live."
+---
+
+# Agentic Commerce
+
+Your in-app assistant already sees your store — sales, catalogue, the traffic funnel, business health. Agentic
+commerce lets it act on what it sees. It can prepare the things it would otherwise only suggest — a gift card
+for a lapsed customer, a promotion on slow-moving stock, a dynamic-pricing rule that targets a customer
+segment — and it handles the reversible catalogue housekeeping outright.
+
+The line it never crosses is approval on anything that moves money. A gift card, a promotion, or a pricing
+rule arrives as a **draft you approve**; it is inert until you do. The organisational actions — creating a
+subcategory, enabling a category, tagging a product — are reversible and happen directly.
+
+## What it can do
+
+| Action | How it works |
+| :--- | :--- |
+| **Issue a gift card** | Prepared as a draft. Nothing is sent to the customer until you approve. |
+| **Create a promotion** | Prepared as a draft, in one of the four promotion types. Live once you approve. |
+| **Create a dynamic-pricing rule** | Prepared as a draft, targeting a category, product, collection, or customer segment. Takes effect once you approve. Available on plans that include dynamic pricing. |
+| **Organise your catalogue** | Reviews your categories and subcategories and tidies them: creates a subcategory (nesting it under the right parent rather than adding a redundant one), moves a subcategory to where it belongs, re-files a mis-categorised product, and enables categories that match what you sell. |
+| **Tag products** | Sets merchandising tags. |
+| **Suggest reorders** | Surfaces a ranked list of what to restock — a recommendation, not an order. |
+
+Base product prices are off limits — the assistant only ever touches dynamic-pricing *rules*, never a
+product's own price. Anything a plan doesn't include, or your role isn't permitted to do, it won't offer.
+
+## Approving a draft
+
+A draft appears wherever you already manage that thing: a draft gift card on the **Gift Cards** page, a
+draft promotion under **Marketing**, a draft rule on the **Pricing** page — each marked as an AI draft with
+**Approve** and **Reject**. You can also approve it right in the chat when the assistant proposes it, and the
+assistant's launcher shows a small count when suggestions are waiting.
+
+Approving a gift card is the moment it issues and the customer is notified; approving a promotion or a rule
+is the moment it goes live. Rejecting dismisses the draft — you can always ask again.
+
+<Note>
+  Approving an AI suggestion is its own permission, separate from the pages themselves. A store owner can
+  grant a teammate — an admin, a marketer — the authority to approve suggestions without changing anything
+  else about what they can do. The check is enforced on the server, not just hidden in the interface.
+</Note>
+
+## Margin protection
+
+Every value the assistant proposes is in your store's currency, and every money action protects your margin.
+It reads each product's cost to make sure a discount never sells below cost, and it prefers higher-margin or
+slow-moving stock.
+
+When too many products have no cost price set, margin can't be trusted — so the assistant declines to prepare
+any gift card, promotion, or pricing rule and points you to **Inventory → Bulk Edit** to fill in the missing
+costs first. This is deliberate: a campaign that looks good but sells below cost is a real loss, and the
+assistant would rather ask you to set costs than risk it. The reversible catalogue actions stay available in
+the meantime.
+
+## Human in the loop, by design
+
+The assistant proposes; you decide. It never issues a gift card, activates a promotion, or turns on a pricing
+rule on its own — and it cannot be talked into bypassing the margin check or the approval step, because those
+are enforced in Galactic Core's own code rather than left to the assistant's judgement. Every action it takes
+is recorded in your activity log under its own name, so an AI-assisted change is as traceable as a manual one.
