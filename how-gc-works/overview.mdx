@@ -22,7 +22,7 @@ graph TD
     E -->|"cached response"| B
     E --> G["API gateway<br/>(single entry point)"]
     G -->|"in-process binding<br/>(no network hop)"| W["Stateless workers<br/>(one per domain)"]
-    W --> C["Distributed cache<br/>(Redis · hot data)"]
+    W --> C["Distributed cache<br/>(hot data)"]
     W --> DB["Database<br/>(Postgres · system of record)<br/>primary + regional read replicas"]
     W --> O["Object storage<br/>(media · global edge)"]
     C -.->|"write-through (TTL backstop)"| DB

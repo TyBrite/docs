@@ -38,10 +38,10 @@ GC Connect is a five-step, redirect-based handshake. The merchant's browser carr
     Galactic Core redirects the browser back to your `redirect_uri` with a short-lived, single-use `code` and your original `state`.
   </Step>
   <Step title="Exchange the code (server-side)">
-    Your server calls `connectToken` with the `code` plus your `client_id` and `client_secret`. You get back the merchant's `sk` and `pk`.
+    Your server calls `connectToken` with the `code` plus your `client_id` and `client_secret`. You get back the merchant's `sk`, their `pk`, and a `signing_secret` for signing write requests.
   </Step>
-  <Step title="Store the key securely">
-    Save the `sk` server-side (it's shown only once) and use it for every API call on behalf of that merchant. The `pk` is safe for browser/mobile read operations.
+  <Step title="Store the credentials securely">
+    Save the `sk` and the `signing_secret` server-side — both are shown only once. The `sk` authenticates every call you make for that merchant; the `signing_secret` signs the write requests that require a signature. The `pk` is safe for browser/mobile read operations.
   </Step>
 </Steps>
 
@@ -96,10 +96,11 @@ async function handleCallback(req, res) {
     },
   });
 
-  // Persist the sk securely — it is returned only once
+  // Persist the sk AND the signing_secret securely — both are returned only once
   await db.merchants.saveKeys(merchantId, {
     sk: keys.sk,
     pk: keys.pk,
+    signing_secret: keys.signing_secret,
     pair_id: keys.pair_id,
     store_id: keys.store_id,
     environment: keys.environment,
@@ -126,8 +127,48 @@ const merchant = new Tybrite({ apiKey: storedSecretKey });
 const { orders } = await merchant.orders.listOrders({ limit: 20 });
 ```
 
+### 4. Sign write requests
+
+Reads need only the `sk`. Creating or updating an order, and initializing a payment, additionally
+require a signature computed with the `signing_secret` you stored at step 2:
+
+| Header | Value |
+| --- | --- |
+| `X-Timestamp` | Current Unix time, in seconds or milliseconds |
+| `X-Signature` | Base64 HMAC-SHA256 of `` `${timestamp}.${requestBody}` `` |
+
+The signed string is the timestamp, a literal `.`, and the exact request body you send — sign the
+serialized bytes, not a re-serialized copy, or the signature won't match. Signatures are accepted
+within five minutes of their timestamp.
+
+```typescript
+import { createHmac } from 'node:crypto';
+
+const body = JSON.stringify(orderPayload);
+const timestamp = Math.floor(Date.now() / 1000).toString();
+const signature = createHmac('sha256', storedSigningSecret)
+  .update(`${timestamp}.${body}`)
+  .digest('base64');
+
+await fetch('https://api.tybritelabs.com/v1/orders', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${storedSecretKey}`,
+    'Content-Type': 'application/json',
+    'Idempotency-Key': crypto.randomUUID(),
+    'X-Timestamp': timestamp,
+    'X-Signature': signature,
+  },
+  body,
+});
+```
+
+An unsigned or mis-signed write returns `401 invalid_signature`.
+
 <Warning>
-  Store the `sk` securely server-side immediately — it is returned **only once**. Treat it like a password: keep it in a secrets manager, never in client-side code, logs, or version control.
+  Store the `sk` and the `signing_secret` securely server-side immediately — both are returned
+  **only once** and cannot be retrieved later. Treat them like passwords: keep them in a secrets
+  manager, never in client-side code, logs, or version control.
 </Warning>
 
 ---
@@ -250,6 +291,7 @@ const { sessions } = await client.gcConnect.listConnectSessions();
 - [ ] Generate a fresh random `state` per authorization and verify it on the callback (CSRF protection)
 - [ ] Run the code-for-keys exchange **server-side only** — never expose `client_secret` to a browser
 - [ ] Store each merchant's `sk` in a secrets manager, scoped to that merchant
+- [ ] Store each merchant's `signing_secret` alongside it — it is returned only once, and without it you cannot create orders or initialize payments for that merchant
 - [ ] Request the minimum scopes your integration needs
 - [ ] Save the `pair_id` so you can revoke the connection later
 - [ ] Use HTTPS for your `redirect_uri`, and register it exactly in the Developer Portal

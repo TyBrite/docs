@@ -9,6 +9,13 @@ Tybrite uses a dual-key architecture to ensure maximum security without sacrific
 
 We support two distinct key types for every store. You can manage these in your [Dashboard](https://gc.tybritelabs.com/integrations) under **Integrations → Developer**.
 
+<Note>
+  Keys issued by a store that runs on a [white-label platform](/agencies) carry that platform's own
+  vendor prefix in place of `tybrite_` — `acmecommerce_sk_live_…`. Only the vendor name changes; the
+  `sk`/`pk` and `live`/`test` segments are identical everywhere, so parse those rather than matching
+  the full prefix.
+</Note>
+
 ### Publishable Keys (`tybrite_pk_...`)
 
 Publishable keys are intended for use in frontend applications, such as React websites, mobile apps, or headless storefronts.
@@ -90,10 +97,23 @@ const signature = createHmac('sha256', process.env.TYBRITE_HMAC_SECRET)
 // xSignature: signature
 ```
 
+The timestamp may be sent in seconds or milliseconds — both are accepted — and a signature is valid
+for five minutes either side of it. Sign the exact bytes you send: re-serializing the body after
+signing it produces a different string and the signature will not match.
+
 Endpoints requiring HMAC signing:
-*   `POST /v1/payments/initialize`
-*   `POST /v1/orders`
-*   `PATCH /v1/orders/:id`
+
+| Endpoint | Requirement |
+| --- | --- |
+| `POST /v1/orders` | Required |
+| `PATCH /v1/orders/:id` | Required |
+| `POST /v1/payments/initialize` | Required |
+| `POST /v1/b2b/orders` | Required by default; a store can relax it in its B2B settings |
+| `POST /v1/ingest/products` | Always required, with no opt-out, in addition to a secret key |
+
+Most integrations sign with the store's own signing secret, shown above as `TYBRITE_HMAC_SECRET`.
+An application that connected through [GC Connect](/gc-connect#4-sign-write-requests) instead
+receives its own per-merchant `signing_secret` at the code exchange and signs with that.
 
 ---
 
@@ -171,7 +191,7 @@ Every endpoint accepts one (or a combination) of the credentials above. Use this
 - **`pk` or `sk`** — either a publishable or a secret key works.
 - **`sk` only** — a secret key is required; a publishable key returns **`403 Forbidden`**.
 - **`pk` (browser)** — a publishable key is enough; safe to call directly from the browser.
-- **+ session** — *also* requires a [customer session token](#customer-session-tokens-xauthtoken) (`xAuthToken`, or `x-external-auth` for bring-your-own-auth).
+- **+ session** — *also* requires a [customer session token](#customer-session-tokens-xauthtoken): `xAuthToken`, or one of the bring-your-own-auth credentials (`x-external-auth` for a signed assertion, `x-idp-token` for a token from your own identity provider). Send exactly one of the three.
 - **+ HMAC** — *also* requires a [request signature](#advanced-security-hmac-signing).
 - **Public** — no key required.
 - **Operator** — a marketplace operator key (marketplace deployments only).
