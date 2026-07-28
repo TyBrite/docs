@@ -83,7 +83,7 @@ How the order settles depends on the supplier's policy for this buyer:
 - `requestBody.shipping_address_parts` — an optional structured shipping address (`line1`, `city`, `region`, `country`, `postal_code`). Supply it so tax is calculated for the destination.
 - `requestBody.currency` — the order currency (e.g. `"USD"`).
 - `idempotencyKey` — required.
-- `xTimestamp` / `xSignature` — required. A direct order must be signed, like a standard order: `xTimestamp` is the current Unix time in milliseconds, and `xSignature` is the Base64 HMAC-SHA256 of `` `${xTimestamp}.${rawJsonBody}` `` using the store's signing secret. See [Signing requests](/authentication#signing-requests).
+- `xTimestamp` / `xSignature` — required. A direct order must be signed, like a standard order: `xTimestamp` is the current Unix time in milliseconds, and `xSignature` is the Base64 HMAC-SHA256 of `` `${xTimestamp}.${rawJsonBody}` `` using the store's signing secret. See [Signing requests](/authentication#advanced-security-hmac-signing).
 
 ```ts
 const order = await client.b2B.createDirectOrder({
