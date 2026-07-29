@@ -156,16 +156,28 @@ All events follow the same envelope shape — only `type` and `data.object` vary
 | Event | Fired when |
 | :--- | :--- |
 | `promotion.applied` | An order uses a promotion code |
-| `promotion.created` | A promotion is created (any status) |
-| `promotion.activated` | A promotion goes live (its status becomes active) |
+| `promotion.created` | A promotion becomes real — created live, or approved out of draft. A promotion awaiting approval emits nothing |
+| `promotion.activated` | A promotion goes live, or is approved with a future start date (status becomes active or scheduled) |
 | `promotion.deactivated` | A live promotion ends, is paused, or expires. Carries `previous_attributes.status` |
+
+### Pricing
+
+Dynamic-pricing rules change what every shopper pays without touching a product record, so a cached
+price is stale the moment one of these fires.
+
+| Event | Fired when |
+| :--- | :--- |
+| `pricing_rule.created` | A rule becomes real — created live, or approved out of an inactive draft |
+| `pricing_rule.activated` | A rule starts applying. Carries `previous_attributes.is_active` |
+| `pricing_rule.updated` | A **live** rule's discount, scope, priority, or window changes, so the prices it produces differ |
+| `pricing_rule.deactivated` | A live rule stops applying. Carries `previous_attributes.is_active` |
 
 ### Content & collections
 
 | Event | Fired when |
 | :--- | :--- |
 | `collection.created` | A product collection is created |
-| `collection.updated` | A collection's name, banner image, homepage placement, or display order changes. Fires only on a meaningful change, and carries `previous_attributes` |
+| `collection.updated` | A collection's name, banner image, homepage placement, or display order changes — **or its membership changes** (products added, removed, or re-ordered), which carries `members_changed: true`. A membership change fires once per collection, not once per product. Attribute changes fire only on a meaningful change and carry `previous_attributes` |
 | `post.published` | A blog post is published (its status becomes published) |
 | `lookbook.published` | A shoppable lookbook is published |
 | `review.approved` | A product review passes moderation and becomes visible. Carries `product_id`, `rating`, `verified_purchase` |

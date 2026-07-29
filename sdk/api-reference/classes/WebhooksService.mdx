@@ -146,7 +146,8 @@ await client.webhooks.createWebhookEndpoint({
 | Cart | `cart.created`, `cart.updated`, `cart.abandoned` |
 | Gift Cards | `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired` |
 | Promotions | `promotion.applied`, `promotion.created`, `promotion.activated`, `promotion.deactivated` |
-| Content & collections | `collection.created`, `collection.updated`, `post.published`, `lookbook.published`, `review.approved` |
+| Pricing | `pricing_rule.created`, `pricing_rule.activated`, `pricing_rule.updated`, `pricing_rule.deactivated` |
+| Content & collections | `collection.created`, `collection.updated` (includes membership changes, carrying `members_changed`), `post.published`, `lookbook.published`, `review.approved` |
 | Store lifecycle | `store.updated`, `payment_provider.connected`, `shipping_provider.connected`, `channel.connected` |
 | Feature availability | `feature.status_changed` (a capability crossed between `available` / `awaiting_data` / `not_in_plan` — carries `feature`, `status`, `previous_status`) |
 | Catalog Sync | `feed.sync.completed` (a scheduled inbound feed-pull finished — carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished — carries pushed/rejected counts) |
@@ -320,7 +321,7 @@ console.log(result.status_code); // 200
 }
 ```
 
-Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `gift_card.issued`, `promotion.applied`, `promotion.activated`, `collection.created`, `post.published`, `review.approved`, `store.updated`, `payment_provider.connected`, `feature.status_changed`, `feed.sync.completed`, `channel.sync.completed`.
+Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `gift_card.issued`, `promotion.applied`, `promotion.activated`, `pricing_rule.activated`, `collection.created`, `post.published`, `review.approved`, `store.updated`, `payment_provider.connected`, `feature.status_changed`, `feed.sync.completed`, `channel.sync.completed`.
 
 ---
 

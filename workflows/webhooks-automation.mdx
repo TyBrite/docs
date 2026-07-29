@@ -416,9 +416,16 @@ Subscribe to any of these (or `["*"]` for everything):
 - **Cart & checkout** — `cart.created`, `cart.updated`, `cart.abandoned`
 - **Gift cards** — `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired`
 - **Promotions** — `promotion.applied`, `promotion.created`, `promotion.activated` (a promotion went
-  live), `promotion.deactivated` (a live promotion ended, was paused, or expired)
+  live or was scheduled to), `promotion.deactivated` (a live promotion ended, was paused, or
+  expired). A promotion awaiting approval is not yet a promotion: nothing fires while it is a draft,
+  and `promotion.created` arrives when it is approved
+- **Pricing** — `pricing_rule.created`, `pricing_rule.activated` (a dynamic-pricing rule went live),
+  `pricing_rule.updated` (a live rule's discount, scope, priority, or window changed, so the prices
+  it produces are now different), `pricing_rule.deactivated`. As with promotions, a rule awaiting
+  approval emits nothing until it goes live
 - **Content & collections** — `collection.created`, `collection.updated` (name / banner / homepage
-  placement changed), `post.published`, `lookbook.published`, `review.approved`
+  placement changed, **or membership changed** — products added, removed, or re-ordered, carrying
+  `members_changed: true`), `post.published`, `lookbook.published`, `review.approved`
 - **Store lifecycle & configuration** — `store.updated` (name / logo / branding / contact / base
   currency; carries `changed_fields`), `payment_provider.connected`, `shipping_provider.connected`,
   `channel.connected`
@@ -445,8 +452,15 @@ store fills in, these events fire at the exact moment each surface earns its pla
   them on `promotion.deactivated`.
 - `review.approved` → show the star summary and reviews block on the product page once there is a real
   review to display.
-- `collection.updated` (banner added, or `show_on_homepage` turned on) → add the collection to the
-  homepage merchandising.
+- `collection.updated` (banner added, `show_on_homepage` turned on, **or its membership changed**) →
+  add the collection to the homepage merchandising, and re-read its products when
+  `members_changed: true`. Membership churn matters more than it sounds: a merchant can set a
+  collection to refresh itself on a schedule, so "current best sellers" is a shelf whose contents
+  change on their own. The event fires once per collection per change, not once per product, so a
+  ten-product rotation is one event.
+- `pricing_rule.activated` / `.updated` / `.deactivated` → re-read prices for the affected scope. A
+  dynamic-pricing rule changes what every shopper pays without touching a single product record, so
+  a cached price is stale the moment one of these fires.
 - `feature.status_changed` (`awaiting_data → available`) → light up a capability the moment its data
   exists — for example, switch on recommendations shelves once there is enough signal, or a currency
   switcher once a second currency is configured. A `not_in_plan → available` transition is the same
