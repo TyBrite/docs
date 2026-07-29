@@ -1,0 +1,113 @@
+---
+title: "Guardrails"
+description: "The refusals built into the platform — what it declines to do even when the request is authenticated, authorized, and well-formed."
+---
+
+Security answers *who can reach what*. Guardrails answer a different question: what the platform
+declines to do **even when the caller is authenticated, authorized, and asking correctly**.
+
+The two are complementary, and the second is the one that catches the expensive mistakes. A valid
+secret key with full permissions can still be used to sell below cost, take a payment through a test
+processor, or run an automation into the ground. Every guardrail below exists because that outcome is
+worse than the request failing.
+
+They share one property: **they are enforced in the platform, not in the interface**. A guardrail that
+lives in a form is a suggestion — anything calling the API directly walks around it. These are checked
+where the write happens.
+
+---
+
+## Money never moves without a person
+
+The in-app assistant can prepare gift cards, promotions, and pricing rules from what it sees in a
+store. It cannot issue any of them.
+
+Each one is written as a **draft** — a real row, inert until approved — and surfaced where the
+merchant already manages that kind of thing. Approval is a separate, explicitly granted permission,
+checked on the server at the moment of approval rather than assumed from whoever created the draft.
+The limits are re-validated then too, against the row as it stands: a draft that was within bounds
+when prepared is checked again before it goes live, and a plan that lapsed in between blocks it.
+
+The same rule governs [standing workflows](/agentic-commerce). A workflow can rotate a collection or
+retag products on its own, because those are reversible. It cannot run a discount — it prepares one
+and waits.
+
+## Margin is not assumed
+
+Any automated action that affects price first checks that the store's cost data is complete enough to
+reason about.
+
+The reason is specific: when a cost price is missing, margin arithmetic treats it as zero, which
+reads as *100% margin*. A discount computed on that basis looks comfortably profitable and can be
+sold below cost. So rather than act on a plausible-looking number, the platform stops when coverage is
+too thin and says which products need costs filled in.
+
+This is a refusal, not a warning. It applies to the assistant, to standing workflows, and to
+advertising rules alike.
+
+## A test processor cannot take a real payment
+
+A store can be live while a payment provider is still configured with test credentials. Left
+unchecked, a shopper would complete checkout against a sandbox processor, see a confirmation, and pay
+nothing.
+
+On a production request, a provider whose credentials are not live-grade is **hidden from the
+available payment methods and refused at initialization**. The shopper cannot select it, and a direct
+API call gets an explicit error rather than a phantom success.
+
+The merchant's own in-store point of sale behaves differently on purpose: it warns rather than blocks,
+because that is the merchant's own device and they may be mid-setup. The distinction is who is
+transacting — never let a *customer* pay into a test account; do let a merchant test their own till.
+
+## Test and live data never mix
+
+The key prefix decides the environment, and it decides everything downstream: which partition is read
+and written, and which mode payment providers run in. There is no request that reads across the
+boundary, and no flag that relaxes it.
+
+This extends past data into behaviour. Notifications, automated actions, and scheduled work are all
+production-scoped — a sandbox order does not email anyone, and a sandbox automation does not act on a
+live store. Sandbox data is purged on a schedule, so test runs don't accumulate.
+
+## Automations stop themselves — and say so
+
+Anything that runs on its own carries a circuit breaker. Repeated consecutive failures disable it
+rather than letting it retry indefinitely; a single success resets the count, so a brief outage costs
+a few failed runs instead of the automation itself.
+
+The important half is the second one: **when something disables itself, the merchant is told.** A
+silently disabled automation is worse than one that never ran, because they still believe it is
+working and discover otherwise when something didn't happen. The same applies to autonomous action —
+an advertising rule that moves a budget or pauses a campaign says so, and says why.
+
+Every automated run is recorded with the figures that triggered it, so "why did this change?" always
+has an answer.
+
+## Prices are the server's to decide
+
+Order totals are computed from the catalog, the store's pricing rules, and any promotion that applies
+— never from amounts supplied by the caller. A client that submits its own price for a line item does
+not get that price.
+
+The same posture covers stock: availability is decided at reservation time inside a single-writer
+path, so two shoppers racing for the last unit produce one sale and one honest failure rather than an
+oversell.
+
+## Everything is bounded
+
+Requests are rate-limited per key, and generous per-store quotas cover the work that costs real money
+— API traffic, assistant usage, generated media. Crossing a quota is designed to be recoverable
+rather than a wall, but the ceiling is always present, and it is enforced server-side.
+
+Automated work carries its own bounds: a maximum number of steps per run, a timeout per call, a cap on
+how many standing rules a store can hold. None of these are configurable from the client.
+
+## What this means for an integration
+
+Most of the time these are invisible — a correct integration never meets them. When you do, you'll get
+an explicit error rather than a silent partial success, and that is deliberate: **a guardrail that
+fails quietly is worse than no guardrail**, because it teaches you to trust something that isn't
+happening.
+
+If a call is refused for one of these reasons, the response says which. Treat it as information about
+the state of the store, not as a transient failure to retry.
