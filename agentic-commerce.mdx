@@ -73,7 +73,19 @@ action follows a specific event.
 
 The split is unchanged. Reversible merchandising runs unattended: rotating a collection to current
 best sellers, retiring members that stopped selling, tagging what sells. Anything touching money
-still only prepares a draft and waits for approval, exactly as a conversation would.
+still only prepares a draft and waits for approval, exactly as a conversation would — promotions and
+clearances, gift cards for customers who pass a spending threshold in a window, and markdown pricing
+rules over stock that stopped moving.
+
+The money templates carry limits the reversible ones do not, in proportion to what they touch. A
+promotion template drafts one promotion; a gift-card template drafts one card per qualifying
+customer, and a gift card is a liability the merchant owes. So a single run is capped on both the
+number of recipients and their combined face value, and a rule matching more customers than the cap
+allows stops and reports that rather than silently drafting an arbitrary subset. A cooldown keeps the
+same customer from being rewarded again on the following run. A markdown rule is scoped to the
+specific products it identified rather than the whole catalogue, is drafted switched off, and leaves
+only one draft outstanding at a time so a weekly cadence cannot stack duplicates while the merchant
+decides. Every one of these limits is enforced in the database, not in the prompt.
 
 Dynamic workflows are managed at **Settings → Workflows**, which is also where each one can be paused
 or removed. Alongside the configuration is the record of every run — what it did, and the figures

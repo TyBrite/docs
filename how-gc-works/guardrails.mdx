@@ -28,9 +28,22 @@ checked on the server at the moment of approval rather than assumed from whoever
 The limits are re-validated then too, against the row as it stands: a draft that was within bounds
 when prepared is checked again before it goes live, and a plan that lapsed in between blocks it.
 
-The same rule governs [standing workflows](/agentic-commerce). A workflow can rotate a collection or
+The same rule governs [dynamic workflows](/agentic-commerce). A workflow can rotate a collection or
 retag products on its own, because those are reversible. It cannot run a discount — it prepares one
 and waits.
+
+Approval is not the only limit on those drafts, because "one approval at a time" is weaker than it
+sounds once a rule runs on a schedule. A workflow that drafts a gift card for every customer meeting
+a threshold is bounded on both how many it may prepare in one run and their combined face value, and
+a run matching more than that stops and reports it rather than quietly choosing a subset — being told
+the rule is too broad is more useful than a silent partial result. A cooldown prevents the same
+customer being rewarded again on the next run, which is the failure that would otherwise compound
+quietly at every cadence. These ceilings live in the database and are re-clamped on every call, so a
+rule can narrow them but never widen them, whatever the request asks for.
+
+A markdown pricing rule is bounded differently, by scope: it covers only the products it actually
+identified rather than the whole catalogue, and only one such draft is outstanding at a time so a
+weekly rule cannot stack duplicates while a merchant is deciding.
 
 ## Margin is not assumed
 
