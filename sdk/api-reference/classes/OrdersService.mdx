@@ -343,6 +343,17 @@ const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
 const order = await client.orders.getOrder({ id: 'order-uuid' });
 ```
 
+The response carries `status_notes` — customer-visible updates the merchant added as the order
+moved. These cover the stretch between payment and dispatch (preparation, checks, packing) that a
+shopper otherwise hears nothing about, so an order-status page reads as a timeline rather than a
+single status word. Oldest first. Internal notes are never included.
+
+```typescript
+for (const note of order.status_notes ?? []) {
+  console.log(note.created_at, note.to_status, note.body);
+}
+```
+
 ```json Response
 {
   "id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
