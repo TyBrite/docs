@@ -19514,6 +19514,31 @@ components:
           type: number
           format: float
           example: 1999.98
+    OrderStatusNote:
+      type: object
+      description: |
+        A customer-visible update on an order. One-way (store to shopper) and tied to the order itself —
+        distinct from a messaging thread, which is a two-way conversation.
+      properties:
+        id:
+          type: string
+          format: uuid
+        from_status:
+          type:
+            - string
+            - 'null'
+          description: The status the order moved from, when the note accompanied a transition.
+        to_status:
+          type:
+            - string
+            - 'null'
+          description: The status the order moved to, when the note accompanied a transition.
+        body:
+          type: string
+          description: The message shown to the shopper.
+        created_at:
+          type: string
+          format: date-time
     Order:
       type: object
       properties:
@@ -19634,6 +19659,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OrderItem'
+        status_notes:
+          type: array
+          description: |
+            Customer-visible updates the merchant added as the order moved — the work between payment and
+            dispatch (preparation, checks, packing) that a shopper otherwise hears nothing about. Oldest
+            first, so it reads as a timeline. Internal notes are never included.
+          items:
+            $ref: '#/components/schemas/OrderStatusNote'
         notes:
           type: string
         tracking_number:
