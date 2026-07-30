@@ -12080,6 +12080,8 @@ paths:
                     status: active
                     priority: normal
                     thread_type: order_inquiry
+                    order_id: 7c2f1b90-58a3-4a7e-9a1d-2b6c0e3f4a11
+                    product_id: null
                     last_message_at: '2026-06-20T13:48:15.303+00:00'
                     last_message_by: customer
                     unread_count_customer: 0
@@ -12700,6 +12702,31 @@ paths:
                         type: string
                       priority:
                         type: string
+                      thread_type:
+                        type: string
+                        description: 'What the conversation is about. Inferred from the request when not supplied: `order_inquiry` when `order_id` is given, `product_inquiry` when `product_id` is given, otherwise `general`.'
+                        enum:
+                          - general
+                          - order_inquiry
+                          - product_inquiry
+                          - support
+                          - complaint
+                          - delivery
+                          - return
+                          - refund
+                          - technical
+                      order_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                        description: The order this conversation is about, echoed from the request.
+                      product_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                        description: The product this conversation is about, echoed from the request.
                   message:
                     type: object
                     properties:

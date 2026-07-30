@@ -307,7 +307,10 @@ const { thread, message } = await client.messaging.createConversation({
     "id": "06084af6-7334-43d6-82c0-935f92335a25",
     "subject": "Missing Item - Order #8821",
     "status": "active",
-    "priority": "high"
+    "priority": "high",
+    "thread_type": "order_inquiry",
+    "order_id": "order-uuid-abc",
+    "product_id": null
   },
   "message": {
     "id": "c423c11e-ab5f-40ab-8e17-429a39710d60",
@@ -317,6 +320,11 @@ const { thread, message } = await client.messaging.createConversation({
 ```
 
 <Note>Whenever `body.customer_id` is supplied, it must match the `customer_id` on `xAuthToken`. Returns `201` with both the new `thread` and the initial `message`.</Note>
+
+`thread_type` is inferred when it is not supplied: `order_inquiry` when `order_id` is present,
+`product_inquiry` when `product_id` is present, and `general` otherwise. The response echoes the
+resolved `thread_type` along with `order_id` and `product_id`, so a storefront can confirm the
+classification its own request produced without a follow-up read.
 
 ---
 
