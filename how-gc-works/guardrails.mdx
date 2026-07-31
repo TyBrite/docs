@@ -68,6 +68,13 @@ On a production request, a provider whose credentials are not live-grade is **hi
 available payment methods and refused at initialization**. The shopper cannot select it, and a direct
 API call gets an explicit error rather than a phantom success.
 
+The check applies to production requests only. **A sandbox key sees every provider, including ones
+still on test credentials** — that is what sandbox is for, and hiding them would make the mode
+useless for the testing it exists to support. So a sandbox checkout listing providers marked `test`
+or `sandbox` is the system working, not a leak; point a live key at the same store and those
+providers are gone. The same asymmetry holds for every integration below: sandbox is permissive,
+production is strict.
+
 The merchant's own in-store point of sale behaves differently on purpose: it warns rather than blocks,
 because that is the merchant's own device and they may be mid-setup. The distinction is who is
 transacting — never let a *customer* pay into a test account; do let a merchant test their own till.
@@ -85,10 +92,23 @@ credentials:
   pricing stands.
 - **Subscription billing.** A billing processor configured with test credentials is not offered and
   is refused if named directly.
+- **Advertising.** Automation rules run against a real ad account and move real budget, so only rules
+  created in production ever execute. A rule authored while testing stays inert.
+- **Accounting.** Ledger entries are never posted into a sandbox accounting company. When the
+  connection is not pointed at a real one, entries stay queued rather than being sent — so nothing is
+  lost, and the queue delivers once the connection is corrected. An entry that posts into a test book
+  looks identical to a successful sync, which is precisely why it is refused instead.
 
 Where a sensible fallback exists the request degrades to it rather than failing; where a soft failure
-would leave a false record — an order marked shipped, a tracking number sent — it is refused outright.
-Either way the merchant is told, on a cadence set by how much the state is costing them.
+would leave a false record — an order marked shipped, a tracking number sent, a journal entry filed in
+the wrong book — it is refused outright. Either way the merchant is told, on a cadence set by how much
+the state is costing them: daily when nothing can be sold, weekly when the store still trades
+correctly but not the way they configured it.
+
+A guarded action is also not offered. The refusal exists because the API is callable directly, but a
+merchant meets a sentence explaining the state rather than a control that fails — and that state is
+shown on the surface whose owner can fix it: never to a shopper, to the merchant for their own
+integrations, and in full to the operator, who is the one who corrects it.
 
 ## Test and live data never mix
 
