@@ -85,6 +85,28 @@ function sync() {
         console.error(`Response-shapes generation failed (non-fatal): ${err.message}`);
     }
 
+    // Regenerate the service/method reference from the synced SDK source.
+    try {
+        const surface = path.join(TARGET_DIR, 'generate-sdk-surface.mjs');
+        if (fs.existsSync(surface)) {
+            console.log('Regenerating the SDK service reference...');
+            execFileSync(process.execPath, [surface], { cwd: TARGET_DIR, stdio: 'inherit' });
+        }
+    } catch (err) {
+        console.error(`SDK service reference generation failed (non-fatal): ${err.message}`);
+    }
+
+    // Reconcile the service map with the synced SDK source.
+    try {
+        const mapSync = path.join(TARGET_DIR, 'sync-service-map.mjs');
+        if (fs.existsSync(mapSync)) {
+            console.log('Reconciling the service map with the SDK source...');
+            execFileSync(process.execPath, [mapSync, '--fix'], { cwd: TARGET_DIR, stdio: 'inherit' });
+        }
+    } catch (err) {
+        console.error('\nService map differences require review (see above).');
+    }
+
     console.log('Sync completed successfully!');
 }
 

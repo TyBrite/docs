@@ -58,7 +58,7 @@ too thin and says which products need costs filled in.
 This is a refusal, not a warning. It applies to the assistant, to standing workflows, and to
 advertising rules alike.
 
-## A test processor cannot take a real payment
+## Test credentials cannot serve a real customer
 
 A store can be live while a payment provider is still configured with test credentials. Left
 unchecked, a shopper would complete checkout against a sandbox processor, see a confirmation, and pay
@@ -71,6 +71,24 @@ API call gets an explicit error rather than a phantom success.
 The merchant's own in-store point of sale behaves differently on purpose: it warns rather than blocks,
 because that is the merchant's own device and they may be mid-setup. The distinction is who is
 transacting — never let a *customer* pay into a test account; do let a merchant test their own till.
+
+The same rule extends past payments to every integration a merchant connects themselves, because
+every one of them has a test mode and a merchant can be live to shoppers while still holding test
+credentials:
+
+- **Tax.** A store connected to a sandbox tax account is not used to price real orders — a test
+  engine's rates are not the ones that get filed. The store's own configured rates apply instead, so
+  the shopper is still charged a number the merchant chose.
+- **Shipping.** A test carrier token cannot buy a label for a production order. A test label is not
+  accepted by any carrier, and buying one would mark the order shipped and send the customer a
+  tracking number that never moves. Live rates are simply not offered, and the store's own delivery
+  pricing stands.
+- **Subscription billing.** A billing processor configured with test credentials is not offered and
+  is refused if named directly.
+
+Where a sensible fallback exists the request degrades to it rather than failing; where a soft failure
+would leave a false record — an order marked shipped, a tracking number sent — it is refused outright.
+Either way the merchant is told, on a cadence set by how much the state is costing them.
 
 ## Test and live data never mix
 
