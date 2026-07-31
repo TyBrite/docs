@@ -56,6 +56,17 @@ reads: a test key sees only the orders, customers, and carts created in sandbox.
   create a real charge.
 </Warning>
 
+**A test key sees every provider and integration the merchant has configured, including ones still on
+test credentials.** That is deliberate: sandbox exists to exercise an integration before it is live,
+and hiding a half-configured one would make it impossible to test. So a sandbox checkout can list
+providers labelled `test` or `sandbox`, and that is the mode working as intended.
+
+Live keys are strict in the other direction. A provider or integration holding test credentials is
+not offered to a real customer and is refused if requested directly — see
+[Guardrails](/how-gc-works/guardrails). Building against sandbox therefore shows you the widest set of
+options; going live narrows it to the ones that can actually take money, ship a parcel, or file a
+number.
+
 ## Sandbox data is invisible in the merchant's app
 
 Sandbox rows exist **only for API testing**. They never appear in the merchant's admin dashboard, the
