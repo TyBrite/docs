@@ -42,7 +42,9 @@ products for shoppable posts (each entry in the `products` array carries the pro
 ```typescript
 const post = await client.cms.getPost({
   slug: 'best-tech-gifts-2026',
-  fields: 'title,content,products,published_at' // Optional
+  fields: 'title,content,products,published_at', // Optional
+  visitorId,                                     // Optional — see Attributing content views
+  sessionId
 });
 
 // `content` is a structured block document ({ blocks: [...] })
@@ -82,6 +84,22 @@ post.products?.forEach(p => console.log(`Featured: ${p.name} ($${p.price})`));
   ]
 }
 ```
+
+## Attributing content views
+
+`getPost` and `getLookbook` both accept a visitor and a session identifier, and record the view
+against them. That is what lets the merchant see which posts and lookbooks drive sales rather than
+just traffic — and it is the first half of the content funnel: pass the same `content_id` (with
+`content_type`) in the order's `attribution` at checkout and the sale is credited back to the
+content the shopper came from.
+
+| Parameter | Description |
+| :--- | :--- |
+| `visitorId` | Your stable per-visitor identifier — the same one you use for storefront analytics. Also accepted as the `x-visitor-id` header, which takes precedence. |
+| `sessionId` | The shopper's browsing session. Also accepted as the `x-session-id` header, which takes precedence. |
+
+Both are optional. When you omit them the view still counts, but it is attributed to a coarse
+fallback derived from the request, so repeat views by one shopper may not group together.
 
 ## Lookbooks
 

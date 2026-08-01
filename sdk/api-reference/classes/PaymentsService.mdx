@@ -345,8 +345,11 @@ The response shape depends on the `provider` field — one of four variants is r
 | `401` | Invalid API key, or invalid/expired HMAC signature (5-minute replay window). |
 | `403` | Publishable key supplied — initialize requires a secret key. |
 | `404` | `order_id` provided but no matching order exists. |
+| `409` | `provider_not_live` — the payment method is still configured with test credentials, so it cannot take a real payment. The merchant switches it to live mode in their dashboard. Sandbox requests are unaffected. |
 | `429` | Rate limit exceeded (100 / hour per API key on initialize). |
 | `500` | Upstream payment provider error or server configuration error. |
+| `502` | `provider_unavailable` — a payment method the merchant added themselves did not complete the request. Retry, or offer another method. |
+| `504` | `provider_timeout` — the provider did not respond in time. Safe to retry. |
 
 #### `verifyPayment`
 
@@ -356,8 +359,11 @@ The response shape depends on the `provider` field — one of four variants is r
 | `400` | Invalid request, or provider returned a validation error. |
 | `401` | Invalid API key. |
 | `403` | Publishable key supplied — verify requires a secret key. |
+| `404` | No payment matches the `reference`. |
 | `429` | Rate limit exceeded. |
 | `500` | Server error. |
+| `502` | `provider_unavailable` — a payment method the merchant added themselves did not complete the verification. The payment's real state is unchanged; retry. |
+| `504` | `provider_timeout` — the provider did not respond in time. Safe to retry. |
 
 #### `getPaymentMethods`
 

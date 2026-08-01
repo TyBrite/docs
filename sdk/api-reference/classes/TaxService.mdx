@@ -60,6 +60,9 @@ const tax = await client.tax.previewTax({
 | `ship_to` | yes | The destination. `country` is required; include `region`, `city`, and `postal_code` for accuracy. |
 | `lines` | yes | The cart lines. Each needs `amount` (the line total); include `quantity`, `item_code`, and `category_name` where you have them. |
 | `currency` | no | ISO 4217 code; defaults to the store currency. |
+| `ship_from` | no | The origin the goods ship from. Which jurisdictions may tax a sale depends on where it ships from as well as where it ships to, so send this when fulfilling from somewhere other than the store's own address. Defaults to the store's address. |
+| `customer_code` | no | Your identifier for the buyer. Send it when the buyer holds a tax exemption, so the estimate reflects it; otherwise the cart is priced as an ordinary retail sale. |
+| `doc_code` | no | Your own reference for this estimate, echoed back so you can tie it to a cart or quote in your system. |
 
 **Response**
 

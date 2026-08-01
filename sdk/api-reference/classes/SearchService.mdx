@@ -69,11 +69,22 @@ result.results.forEach(r => console.log(`${r.productId} — score ${r.score}`));
 
 #### Personalized results
 
-Pass `personalize: true` together with a signed-in customer's session token (the `x-auth-token`
-header) to nudge results toward that shopper's preferences. Query relevance stays primary —
-relevance is blended with the shopper's preference signal, not replaced — so results remain
-on-topic. Without a customer session, or for a shopper with no preference signal yet, ranking is
-by query relevance only.
+Pass `personalize: true` together with a credential identifying the shopper to nudge results toward
+their preferences. Query relevance stays primary — relevance is blended with the shopper's
+preference signal, not replaced — so results remain on-topic. Without a customer session, or for a
+shopper with no preference signal yet, ranking is by query relevance only.
+
+Send whichever credential matches how the shopper signed in — the same three this API accepts
+everywhere a shopper is identified:
+
+| Header | Use it when |
+| :--- | :--- |
+| `x-auth-token` | The shopper signed in through Galactic Core. |
+| `x-external-auth` | You authenticate shoppers with your own identity provider and send a signed assertion. |
+| `x-idp-token` | You pass your identity provider's own token straight through for Galactic Core to verify. |
+
+Personalization is best-effort: an absent, expired, or invalid credential returns unpersonalized
+results rather than an error, so search never fails because a session lapsed.
 
 ```typescript
 const personalized = new Tybrite({

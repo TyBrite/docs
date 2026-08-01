@@ -98,6 +98,33 @@ console.log(data.request.environment);  // "sandbox"
 
 Validation errors (unknown `client_id`, unregistered `redirect_uri`, invalid scopes) return a `400` response rather than a redirect, preventing open redirect attacks.
 
+## `postConnectAuthorize`
+
+Records the merchant's approval and returns the short-lived `code` to hand back to your
+`redirect_uri`. Like `getConnectAuthorize`, this is the hosted consent page's counterpart — the
+submit to its render — and is not something your integration calls. Your integration receives the
+resulting `code` on the redirect and exchanges it with [`connectToken`](#connecttoken).
+
+**Requires the merchant's own session** — it is their approval being recorded, so an anonymous call
+is rejected with `401`.
+
+```typescript
+const { code, redirect_uri } = await client.gcConnect.postConnectAuthorize({
+  requestBody: {
+    client_id: 'your-client-id',
+    redirect_uri: 'https://example.com/callback',   // must match the original request
+    scope: 'read orders:read',                      // must match the original request
+    state: 'a8f3d2e1c9b7',                          // carried through from the original request
+    environment: 'sandbox',
+    store_id: '3f1a2b4c-1111-2222-3333-444455556666'
+  }
+});
+```
+
+The `redirect_uri`, `scope`, and `state` must match the values the authorization request was opened
+with; a mismatch is rejected rather than honoured, so an approval cannot be replayed against a
+different destination or widened to scopes the merchant never saw.
+
 ---
 
 ## `connectToken`
