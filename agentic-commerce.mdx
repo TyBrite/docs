@@ -27,7 +27,7 @@ and happen directly.
 | **Build and manage a product collection** | Groups products into a curated collection (e.g. "Summer Picks", "Under $50", or your dormant/slow-moving stock — it can read which products haven't sold) that your storefront can feature, and adds or removes members of an existing collection. The members are exactly the products it lists; it's created live, and shows on the homepage unless you say otherwise. |
 | **Write a blog post** | Writes a real article — a buying guide, a new-arrivals piece — around products you actually sell, with a summary and search title and description filled in. Saved as a draft under CMS; it goes live when you publish it. |
 | **Create a lookbook** | Sets up a shoppable gallery around a theme, linked to real products, ready for you to add the imagery. Also saved as a draft. |
-| **Design a banner** | Creates or redraws the desktop and mobile artwork for a promotion or collection you already have. New promotions and collections get artwork automatically, so this is for changing what's there. Uses media credits. |
+| **Design a banner or cover** | Creates or redraws the desktop and mobile artwork for a promotion, collection, blog post or lookbook you already have. Anything it creates gets artwork automatically, so this is for changing what's there. A post or lookbook cover is treated as editorial artwork — no price, no discount, no call-to-action. Uses media credits. |
 | **Suggest reorders** | Surfaces a ranked list of what to restock — a recommendation, not an order. |
 
 Base product prices are off limits — the assistant only ever touches dynamic-pricing *rules*, never a
@@ -93,6 +93,39 @@ same customer from being rewarded again on the following run. A markdown rule is
 specific products it identified rather than the whole catalogue, is drafted switched off, and leaves
 only one draft outstanding at a time so a weekly cadence cannot stack duplicates while the merchant
 decides. Every one of these limits is enforced in the database, not in the prompt.
+
+### Content on a schedule
+
+Writing is a standing intent too: ask for a post or a lookbook on a recurring basis and each run
+produces a new one — a real piece, built around products you actually sell, with a cover image,
+saved as a draft under CMS. Nothing is published for you; it is your public voice, so you publish it.
+
+Give the rule either a fixed topic or a **category**. With a category it chooses its subject afresh
+every run from whatever shoppers are most drawn to there, so the piece follows real demand instead of
+repeating something you decided months ago. If nothing in that category drew interest that week, it
+writes nothing and tells you why. These run weekly at most, and a rule pauses itself once three of its
+drafts are waiting unread — publishing or discarding some starts it again.
+
+### Seasons and days
+
+Any workflow can be scoped to part of the year and to particular weekdays.
+
+A **season** recurs. Set up a Black Friday rule for November or a Valentine's rule for February once,
+and it wakes every year on its own; out of season it is skipped rather than switched off, so it comes
+back without you re-enabling it, keeping its name, settings and history instead of being deleted and
+rebuilt each year. A window can wrap the year end, for a mid-December to early-January run.
+
+**Weekdays** pin a rule to the days you mean. On its own a weekly rule is an interval, so it drifts by
+a day or so each time; naming Friday makes it land on Friday and stay there.
+
+They combine:
+
+| You want | How it is set up |
+| :--- | :--- |
+| A lookbook every Friday in December, featuring whatever is most in demand in Wearables | Weekly · Fridays · 1–31 December · category Wearables |
+| A clearance draft every year in the first week of January | Weekly · 1–7 January |
+| A post about new arrivals every week, all year | Weekly · no season |
+| Featured rotated to current best sellers every Monday | Weekly · Mondays |
 
 Dynamic workflows are managed at **Settings → Workflows**, which is also where each one can be paused
 or removed. Alongside the configuration is the record of every run — what it did, and the figures
