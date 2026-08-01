@@ -118,6 +118,12 @@ Tybrite calculates prices in a specific waterfall priority:
 2.  **Customer Segments**: Price rules targeting groups like "Wholesalers" (Champions, Loyal, etc.).
 3.  **Regional Rules**: Region-specific discounts or markups (e.g., a UK promotional discount, an EU regional rule).
 4.  **Volume Tiers**: Price reductions triggered by the `quantity` parameter.
+5.  **Order Value Rules**: Discounts that depend on what the shopper is spending overall, such as "5% off orders over $100", triggered by the `orderTotal` parameter.
+
+An order-value rule can only be evaluated when `orderTotal` is present, so send the shopper's current
+cart subtotal on pricing calls made once there is a cart. Without it those rules are skipped and the
+shopper sees the undiscounted price — the request still succeeds, which is why a missing `orderTotal`
+shows up as a discount that silently never applies rather than as an error.
 
 <Note>
   **Pro Tip**: Always use `display_price` for the final price shown to the user. This field has already been processed through the pricing engine, converted to the detected currency, and rounded according to currency rules.

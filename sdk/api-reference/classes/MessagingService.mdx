@@ -17,6 +17,11 @@ Messaging threads carry sensitive customer information — order inquiries, comp
 
 Obtain a customer session via `client.authentication.login(...)` or `client.authentication.verifyOtp(...)` and pass `customerSession.access_token` as `xAuthToken` on every call below.
 
+If you authenticate shoppers with your own identity provider rather than through Galactic Core, send
+`xExternalAuth` (a signed identity assertion) or `xIdpToken` (your provider's own token, which
+Galactic Core forwards to the store's configured verifier) in place of `xAuthToken`. The examples
+below use `xAuthToken`, but every one of these endpoints accepts any of the three — send exactly one.
+
 <Tip>
   Each `Thread` object returned by `listThreads` and `getThread` includes an `unread_count_customer` field. Sum these client-side to compute a customer's total unread count — no separate endpoint is needed.
 </Tip>

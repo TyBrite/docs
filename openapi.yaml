@@ -1750,6 +1750,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -1806,6 +1808,8 @@ paths:
                 total: 3
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -2079,6 +2083,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           description: |
             Product or variant not found for the given ID.
@@ -2323,6 +2329,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           description: |
             Product not found for the given slug.
@@ -2946,6 +2954,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -2994,6 +3004,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -3134,6 +3146,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -3229,6 +3243,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -3737,6 +3753,75 @@ paths:
                     `apply_store_credit` is true) up to the full order total is applied.
                     The applied amount never exceeds the available balance or the total.
                   example: 25
+                order_number:
+                  type: string
+                  description: Your own order reference. When omitted, Galactic Core generates one. Use this to keep order numbers aligned with a system you already run.
+                  example: ORD-10432
+                currency:
+                  type: string
+                  description: ISO 4217 currency code the order is priced in. When omitted, the store's default storefront currency is used. Set it when you present prices in a currency the shopper selected, so the order is recorded in the same currency it was paid in.
+                  example: USD
+                reservation_ids:
+                  type: array
+                  description: Stock reservation ids returned by `POST /v1/checkout/reserve`. Supplying them commits the stock already held for this shopper instead of decrementing it again, which is what keeps a high-demand drop from overselling between reservation and payment.
+                  items:
+                    type: string
+                  example:
+                    - 8f2c1a9b-4d7e-4f10-9a3b-2c5e7f1d0a44
+                shipping_latitude:
+                  type: number
+                  format: float
+                  description: Delivery latitude, used to resolve the delivery zone or distance tier that prices shipping. Send it with `shipping_longitude` when the shopper's coordinates are known; the server re-derives the shipping cost from them rather than trusting a client total.
+                  example: 40.7128
+                shipping_longitude:
+                  type: number
+                  format: float
+                  description: Delivery longitude. See `shipping_latitude`.
+                  example: -74.006
+                shippo_rate_id:
+                  type: string
+                  description: The id of the shipping rate the shopper chose, when rates came from a multi-carrier quote. The rate is re-fetched and validated server-side before it is charged, so a modified or stale rate is rejected rather than honoured.
+                  example: rate_8f2c1a9b4d7e4f109a3b2c5e7f1d0a44
+                attribution:
+                  type:
+                    - object
+                    - 'null'
+                  description: Where this order came from, recorded for the merchant's analytics. Accepts the fields below; the same fields are also read from the top level of the request body if you already send them there. Promotions that actually applied are recorded from the server-validated result, so `promotion_ids` never inflates what a shopper received.
+                  properties:
+                    session_id:
+                      type: string
+                      description: The shopper's storefront session, linking the order to their visit.
+                      example: s_4d7e2f10
+                    utm_source:
+                      type: string
+                      example: google
+                    utm_medium:
+                      type: string
+                      example: cpc
+                    utm_campaign:
+                      type: string
+                      example: spring-sale
+                    referrer:
+                      type: string
+                      example: https://www.google.com/
+                    promotion_ids:
+                      type: array
+                      items:
+                        type: string
+                      description: Promotions the storefront applied.
+                    pricing_rule_ids:
+                      type: array
+                      items:
+                        type: string
+                      description: Dynamic-pricing rules the storefront applied.
+                    content_id:
+                      type: string
+                      description: The blog post or lookbook the shopper came from, for the content funnel.
+                    content_type:
+                      type: string
+                      enum:
+                        - post
+                        - lookbook
                 gclid:
                   type:
                     - string
@@ -3968,6 +4053,16 @@ paths:
           $ref: '#/components/responses/NotFoundError'
         '409':
           $ref: '#/components/responses/ConflictError'
+        '422':
+          description: The store runs its own order-validation rule and that rule rejected the order. The `message` carries the reason the store gave. No order is created. This is also returned when the store requires validation but the rule could not be reached, so an order is never created unchecked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: order_rejected
+                  message: Order rejected by store validation rule
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -4201,6 +4296,17 @@ paths:
                   format: date-time
                   description: Timestamp when order was delivered
                   example: '2026-02-15T14:30:00Z'
+                payment_reference:
+                  type: string
+                  description: The reference your payment provider issued for this payment. Send it when marking an order paid that was charged outside Galactic Core, so the payment can be traced back to the provider's own record. When the store has added its own payment method, the reference is checked with that provider before the order is accepted as paid.
+                  example: ch_3PqR2sK7xYzAbCdE1fGhIjKl
+                reservation_ids:
+                  type: array
+                  description: Stock reservation ids returned by `POST /v1/checkout/reserve`. Supplying them commits the stock already held for this shopper rather than decrementing it a second time.
+                  items:
+                    type: string
+                  example:
+                    - 8f2c1a9b-4d7e-4f10-9a3b-2c5e7f1d0a44
             examples:
               mark_as_paid:
                 summary: Mark order as paid
@@ -4318,6 +4424,16 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '422':
+          description: You marked the order paid with a `payment_reference`, but the payment method the merchant added does not report that reference as paid. The order is left unchanged rather than accepted on an unverified claim.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: payment_not_verified
+                  message: The payment provider does not report this reference as paid
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -4707,6 +4823,10 @@ paths:
                     Customer phone number (required for M-Pesa)
                     - M-Pesa: Format 254XXXXXXXXX (Kenya)
                   example: '254712345678'
+                country:
+                  type: string
+                  description: ISO 3166-1 alpha-2 country code for the payer. Passed through to a payment method the merchant has added themselves, which may use it to offer the local payment options for that country. The built-in methods ignore it.
+                  example: US
                 order_id:
                   type: string
                   format: uuid
@@ -5017,10 +5137,40 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: The payment method is still configured with test credentials and cannot take a real payment. The store must switch it to live mode first. On a sandbox request this does not apply.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_not_live
+                  message: stripe is configured with sandbox/test credentials and cannot process live payments. The store must switch stripe to live mode before accepting real payments.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+        '502':
+          description: A payment method the merchant added themselves did not complete the request. Retry, or fall back to another method.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_unavailable
+                  message: custom payment provider failed to initialize
+        '504':
+          description: The payment provider did not respond in time. Safe to retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_timeout
+                  message: The payment provider did not respond in time.
   /v1/payments/verify:
     post:
       operationId: verifyPayment
@@ -5367,10 +5517,32 @@ paths:
                     error:
                       code: forbidden
                       message: Payment verification requires a secret key.
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+        '502':
+          description: A payment method the merchant added themselves did not complete the verification. The payment's real state is unchanged; retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_unavailable
+                  message: custom payment provider failed to verify
+        '504':
+          description: The payment provider did not respond in time. Safe to retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_timeout
+                  message: The payment provider did not respond in time.
   /v1/cart:
     get:
       operationId: getCart
@@ -5988,6 +6160,19 @@ paths:
             type: string
             format: uuid
           example: 990e8400-e29b-41d4-a716-446655440004
+        - name: customer_id
+          in: query
+          required: false
+          description: The signed-in shopper whose cart line is being removed. Send this together with a customer credential header; for an anonymous cart send `X-Session-Id` instead.
+          schema:
+            type: string
+            format: uuid
+        - name: X-Session-Id
+          in: header
+          description: Session ID for anonymous carts. Required for ownership verification when `customer_id` is not provided.
+          schema:
+            type: string
+          example: session-abc123-xyz789
       responses:
         '200':
           description: Item removed successfully
@@ -6008,10 +6193,14 @@ paths:
               example:
                 success: true
                 message: Item removed from cart
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -6674,6 +6863,19 @@ paths:
         Requires the marketplace operator key.
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-customer-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Session token of a shopper signed in through Galactic Core, tying the checkout to their account rather than treating it as a guest checkout. Optional. Also accepted as `x-auth-token`.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Alias of `x-customer-token`.
       requestBody:
         required: true
         content:
@@ -6744,6 +6946,26 @@ paths:
                       gift_card_code:
                         type: string
                         description: A gift card code to redeem against this merchant's portion.
+                attribution:
+                  type: object
+                  description: Where the shopper came from, recorded so the sale is credited to the right traffic source in the merchant's reports. The same fields are also accepted at the top level of this request body if you already send them that way.
+                  properties:
+                    session_id:
+                      type: string
+                      description: The shopper's storefront session, linking the order to their visit.
+                      example: s_4d7e2f10
+                    utm_source:
+                      type: string
+                      example: google
+                    utm_medium:
+                      type: string
+                      example: cpc
+                    utm_campaign:
+                      type: string
+                      example: spring-sale
+                    referrer:
+                      type: string
+                      example: https://www.google.com/
             example:
               items:
                 - product_id: 11111111-1111-1111-1111-111111111111
@@ -7211,6 +7433,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -7295,6 +7519,35 @@ paths:
                         description: The product's category, used to pick the right tax code.
                       description:
                         type: string
+                ship_from:
+                  type: object
+                  description: The origin the goods ship from. Which jurisdictions may tax a sale depends on where it ships from as well as where it ships to, so send this when fulfilling from a location other than the store's own address. Defaults to the store's address.
+                  properties:
+                    line1:
+                      type: string
+                      example: 1 Warehouse Way
+                    city:
+                      type: string
+                      example: Newark
+                    region:
+                      type: string
+                      example: NJ
+                      description: State / province / region code.
+                    country:
+                      type: string
+                      example: US
+                      description: ISO 3166-1 alpha-2 country code.
+                    postal_code:
+                      type: string
+                      example: '07102'
+                customer_code:
+                  type: string
+                  description: Your identifier for the buyer. Send it when the buyer holds a tax exemption, so the estimate reflects it. Omitted, the cart is priced as an ordinary retail sale.
+                  example: CUST-10432
+                doc_code:
+                  type: string
+                  description: Your own reference for this estimate, echoed back so you can tie it to a cart or quote in your system.
+                  example: QUOTE-10432
                 currency:
                   type: string
                   example: USD
@@ -7495,6 +7748,9 @@ paths:
                 content_id:
                   type: string
                   description: For `post_view` / `lookbook_view` / `content_click` — the CMS post or lookbook id. (Also accepted as `cms_content_id`.)
+                cms_content_id:
+                  type: string
+                  description: Alias of `content_id`. Send one or the other, not both.
                 content_product_id:
                   type: string
                   format: uuid
@@ -7552,8 +7808,12 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/search:
     get:
       operationId: searchProducts
@@ -7658,6 +7918,25 @@ paths:
         merchants in the marketplace.
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Session token of a customer signed in through Galactic Core. Only used when `personalize` is true, to rank results toward that shopper's preferences. Optional everywhere else, and an absent or invalid credential simply returns unpersonalized results rather than an error.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Signed identity assertion for a customer authenticated with your own identity provider. Serves the same purpose as `x-auth-token`; send whichever matches how the shopper signed in.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from your own identity provider, which Galactic Core forwards to the store's configured Auth verifier. Serves the same purpose as `x-auth-token`.
       requestBody:
         required: true
         content:
@@ -7717,6 +7996,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -8500,6 +8781,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '409':
           $ref: '#/components/responses/ConflictError'
         '429':
@@ -8607,6 +8890,8 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/customers/{id}:
     get:
       operationId: getCustomer
@@ -8921,6 +9206,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
       operationId: createAddress
       tags:
@@ -9065,6 +9352,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/customers/{id}/addresses/{addressId}:
     patch:
       operationId: updateAddress
@@ -9198,6 +9487,8 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
     delete:
       operationId: deleteAddress
       tags:
@@ -9280,6 +9571,8 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/gift-cards:
     get:
       operationId: listGiftCards
@@ -9828,7 +10121,12 @@ paths:
               properties:
                 cart:
                   type: array
-                  description: The cart lines to calculate the discount against.
+                  description: The cart lines to calculate the discount against. Also accepted under the name `items`, which behaves identically; send whichever matches your storefront's own cart shape, and `cart` when both are present.
+                  items:
+                    $ref: '#/components/schemas/PromotionCartItem'
+                items:
+                  type: array
+                  description: Alias of `cart`. Send one or the other, not both.
                   items:
                     $ref: '#/components/schemas/PromotionCartItem'
             example:
@@ -9914,7 +10212,12 @@ paths:
               properties:
                 cart:
                   type: array
-                  description: The cart lines to evaluate promotions against.
+                  description: The cart lines to evaluate promotions against. Also accepted under the name `items`, which behaves identically; send whichever matches your storefront's own cart shape, and `cart` when both are present.
+                  items:
+                    $ref: '#/components/schemas/PromotionCartItem'
+                items:
+                  type: array
+                  description: Alias of `cart`. Send one or the other, not both.
                   items:
                     $ref: '#/components/schemas/PromotionCartItem'
             example:
@@ -10092,6 +10395,42 @@ paths:
             - `view_count`, `product_count`, `seo_title`, `seo_description`
             - `created_at`, `updated_at`, `products`, `lookbooks`
           example: title,slug,content,products
+        - name: visitor_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Identifies the shopper viewing the post, so the view is attributed to them in
+            your content analytics. Send the same value you use for other storefront
+            analytics calls. When omitted, the view is attributed to a coarse fallback
+            derived from the request, so repeat views by one shopper may not group together.
+
+            The `x-visitor-id` header carries the same value and takes precedence.
+          example: v_8f2c1a9b
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Groups this view into a browsing session. When omitted, a session is derived
+            from the visitor identity.
+
+            The `x-session-id` header carries the same value and takes precedence.
+          example: s_4d7e2f10
+        - name: x-visitor-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Header form of `visitor_id`. Takes precedence over the query parameter when both are sent.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Header form of `session_id`. Takes precedence over the query parameter when both are sent.
       responses:
         '200':
           description: Success
@@ -10239,6 +10578,42 @@ paths:
             - `id`, `title`, `slug`, `description`, `featured_image`
             - `collection_id`, `published_at`, `created_at`, `images`
           example: title,description,images
+        - name: visitor_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Identifies the shopper viewing the lookbook, so the view is attributed to them in
+            your content analytics. Send the same value you use for other storefront
+            analytics calls. When omitted, the view is attributed to a coarse fallback
+            derived from the request, so repeat views by one shopper may not group together.
+
+            The `x-visitor-id` header carries the same value and takes precedence.
+          example: v_8f2c1a9b
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Groups this view into a browsing session. When omitted, a session is derived
+            from the visitor identity.
+
+            The `x-session-id` header carries the same value and takes precedence.
+          example: s_4d7e2f10
+        - name: x-visitor-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Header form of `visitor_id`. Takes precedence over the query parameter when both are sent.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Header form of `session_id`. Takes precedence over the query parameter when both are sent.
       responses:
         '200':
           description: Success
@@ -10500,6 +10875,14 @@ paths:
             type: integer
             minimum: 1
           description: Quantity for volume-based pricing discounts
+        - name: order_total
+          in: query
+          schema:
+            type: number
+            format: float
+            minimum: 0
+          description: 'The shopper''s current cart subtotal. Send it whenever you know the cart total: pricing rules that depend on order value ("spend over $100") can only be evaluated when it is present, and are skipped otherwise.'
+          example: 149.99
       responses:
         '200':
           description: |
@@ -10753,6 +11136,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -10878,6 +11263,14 @@ paths:
             type: integer
             minimum: 1
           description: Quantity for volume-based pricing
+        - name: order_total
+          in: query
+          schema:
+            type: number
+            format: float
+            minimum: 0
+          description: 'The shopper''s current cart subtotal. Send it whenever you know the cart total: pricing rules that depend on order value ("spend over $100") can only be evaluated when it is present, and are skipped otherwise.'
+          example: 149.99
       responses:
         '200':
           description: |
@@ -11373,6 +11766,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -11504,6 +11899,14 @@ paths:
             type: integer
             minimum: 1
           description: Quantity for volume-based pricing
+        - name: order_total
+          in: query
+          schema:
+            type: number
+            format: float
+            minimum: 0
+          description: 'The shopper''s current cart subtotal. Send it whenever you know the cart total: pricing rules that depend on order value ("spend over $100") can only be evaluated when it is present, and are skipped otherwise.'
+          example: 149.99
       responses:
         '200':
           description: |
@@ -11937,6 +12340,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -11958,8 +12363,20 @@ paths:
       parameters:
         - name: x-auth-token
           in: header
-          required: true
-          description: Customer session access_token. Required to prove ownership of the thread/message being accessed.
+          required: false
+          description: Session token of a customer signed in through Galactic Core, proving they own the threads being read. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: Signed identity assertion for a customer authenticated with your own identity provider. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: 'A raw token from your own identity provider, which Galactic Core forwards to the store''s configured Auth verifier. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.'
           schema:
             type: string
         - name: customer_id
@@ -13091,6 +13508,24 @@ paths:
             authorize the subscription. May also be sent as the `x-external-auth` header.
           schema:
             type: string
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Header form of `auth_token`, for non-browser clients that can set request headers on the handshake.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Header form of `external_auth`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Header form of `idp_token`.
         - name: idp_token
           in: query
           required: false
@@ -15056,6 +15491,8 @@ paths:
                 data:
                   store_credit_id: 47a1e70f-8cb1-4595-b1b7-e598f74fc1d0
                   amount: 24.95
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -15154,6 +15591,8 @@ paths:
               example:
                 data:
                   status: refund_requested
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -15529,6 +15968,8 @@ paths:
                   thread_id: 5f0d2a11-3c9e-4b7a-9d21-6d0f2c8b4a10
                   created_at: '2026-07-17T09:12:44.201Z'
                   resolved_at: '2026-07-17T15:02:10.882Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '404':
@@ -15610,6 +16051,8 @@ paths:
                 data:
                   id: 8c714568-64cf-40af-a372-ea34200cd5a6
                   status: cancelled
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -15777,6 +16220,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
       operationId: createRfq
       tags:
@@ -15872,6 +16317,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/rfqs/{id}:
     get:
       operationId: getRfq
@@ -15930,6 +16377,8 @@ paths:
                     $ref: '#/components/schemas/B2bRfq'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/quotes/{id}:
     get:
       operationId: getQuote
@@ -15995,6 +16444,8 @@ paths:
                     $ref: '#/components/schemas/B2bQuote'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/quotes/{id}/accept:
     post:
       operationId: acceptQuote
@@ -16062,6 +16513,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/quotes/{id}/reject:
     post:
       operationId: rejectQuote
@@ -16119,6 +16572,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/purchase-orders:
     get:
       operationId: listPurchaseOrders
@@ -16177,6 +16632,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/purchase-orders/{id}:
     get:
       operationId: getPurchaseOrder
@@ -16237,6 +16694,8 @@ paths:
                     $ref: '#/components/schemas/B2bPurchaseOrder'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/invoices:
     get:
       operationId: listInvoices
@@ -16295,6 +16754,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/invoices/{id}:
     get:
       operationId: getInvoice
@@ -16355,6 +16816,8 @@ paths:
                     $ref: '#/components/schemas/B2bInvoice'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/invoices/{id}/pay:
     post:
       operationId: payInvoice
@@ -16444,6 +16907,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/b2b/orders:
     post:
       operationId: createDirectOrder
@@ -16602,6 +17067,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/webhook_endpoints:
     post:
       operationId: createWebhookEndpoint
@@ -18037,6 +18504,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/marketplace/ad-events:
     post:
       operationId: logAdEvent
@@ -18115,6 +18584,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/marketplace/collections:
     get:
       operationId: listMarketplaceCollections
@@ -18176,6 +18647,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/marketplace/collections/{slug}:
     get:
       operationId: getMarketplaceCollection
@@ -18237,6 +18710,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/sandbox/reset:
     post:
       operationId: resetSandbox
