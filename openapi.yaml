@@ -3913,6 +3913,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Order'
+              example:
+                id: 7f3c1e88-2b4a-4c9e-9d21-5a6b7c8d9e01
+                order_number: ORD-20260804-4f2a91
+                order_status: processing
+                payment_status: paid
+                total_amount: 324.5
         '201':
           description: Order created successfully
           headers:
@@ -10873,6 +10879,9 @@ paths:
                   already_subscribed:
                     type: boolean
                     example: true
+              example:
+                subscribed: true
+                already_subscribed: true
         '201':
           description: Subscribed (new).
           content:
@@ -10886,6 +10895,9 @@ paths:
                   already_subscribed:
                     type: boolean
                     example: false
+              example:
+                subscribed: true
+                already_subscribed: false
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -13980,6 +13992,27 @@ paths:
                           format: date-time
                         location:
                           type: object
+              example:
+                carrier: usps
+                tracking_number: '9400111899223197428490'
+                status: TRANSIT
+                status_details: Arrived at USPS Regional Facility
+                eta: '2026-08-07T17:00:00Z'
+                history:
+                  - status: TRANSIT
+                    status_details: Arrived at USPS Regional Facility
+                    status_date: '2026-08-04T09:12:00Z'
+                    location:
+                      city: Springfield
+                      state: VA
+                      country: US
+                  - status: TRANSIT
+                    status_details: Accepted at USPS Origin Facility
+                    status_date: '2026-08-03T18:40:00Z'
+                    location:
+                      city: Richmond
+                      state: VA
+                      country: US
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -16741,6 +16774,10 @@ paths:
                       status:
                         type: string
                         example: rejected
+              example:
+                data:
+                  quote_id: 5a566f3d-1798-461a-926f-4c38602965ce
+                  status: rejected
         '400':
           $ref: '#/components/responses/BadRequestError'
         '404':
@@ -19072,6 +19109,13 @@ paths:
                     type: array
                     items:
                       type: object
+              example:
+                replayed_event_id: 9c2f1a44-77bd-4e10-a3c6-1b8e5d0f7a22
+                results:
+                  - endpoint_id: 3e7a9c10-45bf-4a2e-9f88-6d2c1b4e0a35
+                    url: https://example.com/webhooks/gc
+                    status: delivered
+                    response_status: 200
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
