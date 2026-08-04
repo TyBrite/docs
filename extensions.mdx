@@ -308,6 +308,17 @@ Automations subscribe to the same event vocabulary as webhooks. The events that 
   <Card title="Content & collections" icon="newspaper">
     `collection.created` · `collection.updated` · `post.published` · `lookbook.published` · `review.approved`
   </Card>
+  <Card title="Deletion & restore" icon="trash">
+    `product.deleted` · `promotion.deleted` · `collection.deleted` · `post.deleted` ·
+    `lookbook.deleted` · `pricing_rule.deleted` · `subcategory.deleted` · `customer.deleted` —
+    the record has left the API. Each has a matching `.restored`, since deleting is reversible for
+    90 days; the payload carries `restorable_until`.
+  </Card>
+  <Card title="Visibility" icon="eye-slash">
+    `category.activated` · `category.deactivated` · `subcategory.activated` ·
+    `subcategory.deactivated` — a category switched off is filtered out of every catalog read, so it
+    leaves a storefront just as a deleted one would.
+  </Card>
   <Card title="Store lifecycle" icon="store">
     `store.updated` · `payment_provider.connected` · `shipping_provider.connected` · `channel.connected`
   </Card>
