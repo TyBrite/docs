@@ -426,6 +426,19 @@ Subscribe to any of these (or `["*"]` for everything):
 - **Content & collections** — `collection.created`, `collection.updated` (name / banner / homepage
   placement changed, **or membership changed** — products added, removed, or re-ordered, carrying
   `members_changed: true`), `post.published`, `lookbook.published`, `review.approved`
+- **Deletion & restore** — `product.deleted`, `product_variant.deleted`, `promotion.deleted`,
+  `collection.deleted`, `post.deleted`, `lookbook.deleted`, `pricing_rule.deleted`,
+  `subcategory.deleted`, `customer.deleted`. The record has left the API: it is gone from every
+  list, cannot be fetched by id, and stops taking effect. This is the signal to tear down whatever
+  you built from it — a page, a menu entry, a mirrored row. Deleting is reversible for 90 days, so
+  each has a matching `.restored` and the payload carries `restorable_until`: you can remove your
+  copy now and rebuild it if the restore arrives, or wait out the window. Deleting a product also
+  deletes its variants, so `product.deleted` is followed by a `product_variant.deleted` for each
+- **Visibility** — `category.activated` / `category.deactivated`, `subcategory.activated` /
+  `subcategory.deactivated`. A category switched off is filtered out of every catalog read, so it
+  leaves a storefront exactly as a deleted one would. Categories cannot be deleted (they are a fixed
+  set a merchant enables or disables), so these are the only lifecycle events they emit — subscribe
+  if you render navigation or any layout built from the taxonomy
 - **Store lifecycle & configuration** — `store.updated` (name / logo / branding / contact / base
   currency; carries `changed_fields`), `payment_provider.connected`, `shipping_provider.connected`,
   `channel.connected`

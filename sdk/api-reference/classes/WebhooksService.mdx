@@ -148,6 +148,8 @@ await client.webhooks.createWebhookEndpoint({
 | Promotions | `promotion.applied`, `promotion.created`, `promotion.activated`, `promotion.deactivated` |
 | Pricing | `pricing_rule.created`, `pricing_rule.activated`, `pricing_rule.updated`, `pricing_rule.deactivated` |
 | Content & collections | `collection.created`, `collection.updated` (includes membership changes, carrying `members_changed`), `post.published`, `lookbook.published`, `review.approved` |
+| Deletion & restore | `product.deleted`, `product_variant.deleted`, `promotion.deleted`, `collection.deleted`, `post.deleted`, `lookbook.deleted`, `pricing_rule.deleted`, `subcategory.deleted`, `customer.deleted` — the record has left the API. Each has a matching `.restored` (deleting is reversible for 90 days); payloads carry `deleted_at` and `restorable_until`. Deleting a product also deletes its variants |
+| Visibility | `category.activated` / `category.deactivated`, `subcategory.activated` / `subcategory.deactivated` — a category switched off is filtered out of every catalog read. Categories cannot be deleted, so these are their only lifecycle events |
 | Store lifecycle | `store.updated`, `payment_provider.connected`, `shipping_provider.connected`, `channel.connected` |
 | Feature availability | `feature.status_changed` (a capability crossed between `available` / `awaiting_data` / `not_in_plan` — carries `feature`, `status`, `previous_status`) |
 | Catalog Sync | `feed.sync.completed` (a scheduled inbound feed-pull finished — carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished — carries pushed/rejected counts) |

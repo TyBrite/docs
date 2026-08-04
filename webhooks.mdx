@@ -182,6 +182,33 @@ price is stale the moment one of these fires.
 | `lookbook.published` | A shoppable lookbook is published |
 | `review.approved` | A product review passes moderation and becomes visible. Carries `product_id`, `rating`, `verified_purchase` |
 
+### Deletion & restore
+
+A deleted record has left the API: it no longer appears in any list, cannot be fetched by id, and stops taking effect — a deleted promotion stops discounting, a deleted product cannot be bought. Every deletion carries the record's `id` and `name`, plus `deleted_at` and `restorable_until`.
+
+Deleting is reversible for 90 days, so each of these has a matching `.restored` event. `restorable_until` is there so you can choose: tear your copy down immediately and rebuild it if the restore arrives, or hold it until the window closes.
+
+| Event | Fired when |
+| :--- | :--- |
+| `product.deleted` / `product.restored` | A product is deleted or brought back. Deleting a product also deletes its variants, so a `product_variant.deleted` follows for each one; restoring the product restores them together |
+| `product_variant.deleted` / `product_variant.restored` | A single variant is deleted or brought back |
+| `promotion.deleted` / `promotion.restored` | A promotion is deleted — it stops discounting immediately — or brought back |
+| `collection.deleted` / `collection.restored` | A collection is deleted or brought back. Its membership is preserved, so a restored collection returns with the products it had |
+| `post.deleted` / `post.restored` | A blog post is deleted or brought back |
+| `lookbook.deleted` / `lookbook.restored` | A lookbook is deleted or brought back |
+| `pricing_rule.deleted` / `pricing_rule.restored` | A dynamic-pricing rule is deleted — the prices it produced revert — or brought back |
+| `subcategory.deleted` / `subcategory.restored` | A subcategory is deleted or brought back |
+| `customer.deleted` | A customer record is deleted. Their orders, returns and invoices are unaffected and keep resolving |
+
+### Visibility
+
+A category that is switched off is filtered out of every catalog read, so it disappears from a storefront exactly as a deleted one would. Categories cannot be deleted — they are a fixed set a merchant enables or disables — so these are the only lifecycle events they produce. Subscribe if you render navigation, a category strip, or any layout built from the taxonomy.
+
+| Event | Fired when |
+| :--- | :--- |
+| `category.activated` / `category.deactivated` | A category is switched on or off. Carries `id`, `name`, `active` |
+| `subcategory.activated` / `subcategory.deactivated` | A subcategory is switched on or off. Carries `category_id` and `parent_id` so you can place it in the tree |
+
 ### Store lifecycle & configuration
 
 | Event | Fired when |
