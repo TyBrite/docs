@@ -7705,6 +7705,7 @@ paths:
                     - post_view
                     - lookbook_view
                     - content_click
+                    - search
                   description: |
                     `session_start` for the first event of a session, `page_view` on each route
                     change, and `page_close` (with `duration_ms`) fired on page hide to capture
@@ -7716,6 +7717,32 @@ paths:
                     they click through to a product from inside that content (send `content_id` +
                     `content_product_id`). To close the funnel, pass `content_id` (+ `content_type`)
                     in the order's `attribution` at checkout — see the Orders API.
+
+                    `search` records what a shopper searched for. Send it with `search_query` and the
+                    `search_result_count` the search returned, so a merchant can see which searches
+                    their catalogue answers badly. The term is normalised before it is stored, and a
+                    search event is never associated with a customer.
+                search_query:
+                  type: string
+                  maxLength: 200
+                  description: |
+                    The shopper's search term. Required when `event_type` is `search`, ignored
+                    otherwise. Leading, trailing and repeated whitespace is collapsed and the term is
+                    lowercased before storage, so casing and spacing do not fragment the reporting.
+                    May also be sent as `q`.
+                q:
+                  type: string
+                  maxLength: 200
+                  description: |
+                    Alias for `search_query`. Accepted so a storefront can reuse the same field name it
+                    sends to the search endpoint; `search_query` takes precedence when both are given.
+                search_result_count:
+                  type: integer
+                  minimum: 0
+                  description: |
+                    How many results the search returned. Send `0` when it returned none — that is the
+                    signal a merchant most needs, marking a search the catalogue could not answer at
+                    all. Only meaningful when `event_type` is `search`.
                 visitor_id:
                   type: string
                   description: A stable per-visitor identifier persisted in the browser (e.g. localStorage). Used to distinguish new vs returning visitors.
@@ -7766,6 +7793,14 @@ paths:
                   referrer: https://www.google.com/
                   utm_source: google
                   utm_medium: organic
+              search:
+                summary: A shopper searched and got no results
+                value:
+                  event_type: search
+                  visitor_id: v_8f2a1c
+                  session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
+                  search_query: winter jacket
+                  search_result_count: 0
               pageView:
                 summary: A subsequent page view
                 value:
@@ -22953,7 +22988,7 @@ components:
         created_at:
           type: string
           format: date-time
-    B2bDirectOrderResponse:
+    B2bDirectOrder:
       type: object
       description: The result of a direct wholesale order. `settlement` is `terms` (a terms invoice was issued — `invoice_id`, `invoice_number`, and `due_date` are present) or `pay_now` (the order awaits payment — `order_id`, `order_number`, and `amount` are present; complete payment through the standard payment flow using `order_id`). `purchase_order_id`, `po_number`, and `currency` are always present.
       required:
@@ -23012,6 +23047,14 @@ components:
         amount:
           type: number
           description: The amount to pay, tax included (present on a pay-now order).
+    B2bDirectOrderResponse:
+      type: object
+      description: The response body for a direct wholesale order. The order itself is under `data`.
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/B2bDirectOrder'
     WebhookEndpoint:
       type: object
       properties:
