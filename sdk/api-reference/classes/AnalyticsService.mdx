@@ -83,15 +83,34 @@ await client.analytics.collectAnalyticsEvent({
 // → 202 { recorded: true }
 ```
 
+```typescript Search result click
+// Which result the shopper clicked, and where it sat in the list. This is what makes
+// merchandising measurable — without it a rule can only be judged by whether searches
+// matching it happened to convert.
+await client.analytics.collectAnalyticsEvent({
+  requestBody: {
+    event_type: 'search_result_click',
+    visitor_id: 'v_8f2a1c',
+    session_id: 'browser-session-id',
+    search_query: 'winter jacket',
+    search_result_product_id: '02525ff5-0916-4f00-857c-c2c6237e671b',
+    search_result_position: 1
+  }
+});
+// → 202 { recorded: true }
+```
+
 </CodeGroup>
 
 **Parameters:**
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| `requestBody.event_type` | `string` | `session_start` (first event of a session), `page_view` (each route change), `page_close` (on page hide, with `duration_ms`, to capture time-on-page and exit pages — send via `navigator.sendBeacon`), or `search` (what the shopper searched for). |
+| `requestBody.event_type` | `string` | `session_start` (first event of a session), `page_view` (each route change), `page_close` (on page hide, with `duration_ms`, to capture time-on-page and exit pages — send via `navigator.sendBeacon`), `search` (what the shopper searched for), or `search_result_click` (which result they clicked). |
 | `requestBody.search_query` | `string` | The shopper's search term. Required with `search`, ignored otherwise. Casing and extra spacing are normalised before storage, so they do not fragment the reporting. May also be sent as `q`. |
 | `requestBody.search_result_count` | `number` | How many results the search returned. Send `0` when it found nothing — that marks a search the catalogue could not answer. |
+| `requestBody.search_result_product_id` | `string` | The product the shopper clicked. Required with `search_result_click` — a click with no product cannot be attributed to anything. |
+| `requestBody.search_result_position` | `number` | Its 1-based position in the results as shown. Optional, but worth sending: it distinguishes a product clicked because it was featured from one that would have been found anyway. |
 | `requestBody.duration_ms` | `number` | Time on the page in milliseconds; send with `page_close` to power average time-on-page and session-duration. |
 | `requestBody.visitor_id` | `string` | A stable per-visitor identifier you persist in the browser (e.g. localStorage). Lets returning visitors be recognised. |
 | `requestBody.session_id` | `string` | The browsing-session identifier — the same one you use for an anonymous cart. May also be sent as the `x-session-id` header. |
@@ -114,9 +133,9 @@ request automatically — there is no client-side tracking script to add and no
 fingerprinting. Only the pathname is stored (query strings are dropped), keeping the
 capture privacy-light.
 
-A `search` event is stored without a customer, even when one is signed in and
-`customer_id` is sent. The reporting question is how a search term performs, which the
-term and its result count answer on their own.
+A `search` or `search_result_click` event is stored without a customer, even when one is
+signed in and `customer_id` is sent. The reporting question is how a search term and its
+results perform, which the term, the product and the counts answer on their own.
 
 ## Attributing revenue to a source
 

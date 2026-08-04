@@ -7706,6 +7706,7 @@ paths:
                     - lookbook_view
                     - content_click
                     - search
+                    - search_result_click
                   description: |
                     `session_start` for the first event of a session, `page_view` on each route
                     change, and `page_close` (with `duration_ms`) fired on page hide to capture
@@ -7722,6 +7723,13 @@ paths:
                     `search_result_count` the search returned, so a merchant can see which searches
                     their catalogue answers badly. The term is normalised before it is stored, and a
                     search event is never associated with a customer.
+
+                    `search_result_click` records which result the shopper clicked. Send it with the
+                    same `search_query`, the `search_result_product_id` they clicked, and its
+                    `search_result_position` in the list as shown. This is what makes merchandising
+                    measurable: without it, a rule can only be judged by whether searches matching it
+                    happened to convert, which counts a shopper who ignored the featured product
+                    exactly the same as one who clicked it.
                 search_query:
                   type: string
                   maxLength: 200
@@ -7736,6 +7744,19 @@ paths:
                   description: |
                     Alias for `search_query`. Accepted so a storefront can reuse the same field name it
                     sends to the search endpoint; `search_query` takes precedence when both are given.
+                search_result_product_id:
+                  type: string
+                  format: uuid
+                  description: |
+                    The product the shopper clicked. Required when `event_type` is
+                    `search_result_click` — a click with no product cannot be attributed to anything.
+                search_result_position:
+                  type: integer
+                  minimum: 1
+                  description: |
+                    Its 1-based position in the results as they were shown. Optional, but worth
+                    sending: it is what distinguishes a product that was clicked because it was
+                    featured from one that would have been found anyway.
                 search_result_count:
                   type: integer
                   minimum: 0
@@ -7801,6 +7822,15 @@ paths:
                   session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
                   search_query: winter jacket
                   search_result_count: 0
+              searchResultClick:
+                summary: A shopper clicked the first result
+                value:
+                  event_type: search_result_click
+                  visitor_id: v_8f2a1c
+                  session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
+                  search_query: winter jacket
+                  search_result_product_id: 02525ff5-0916-4f00-857c-c2c6237e671b
+                  search_result_position: 1
               pageView:
                 summary: A subsequent page view
                 value:
