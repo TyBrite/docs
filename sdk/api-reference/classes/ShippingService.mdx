@@ -120,7 +120,30 @@ render the status timeline **inside** your own UI.
 
 ```typescript
 const status = await client.shipping.trackShipment({ carrier: 'usps', number: order.tracking_number });
-// returns { carrier, tracking_number, status, status_details, eta, history: [...] }
+```
+
+```json Response
+{
+  "carrier": "usps",
+  "tracking_number": "9400111899223197428490",
+  "status": "TRANSIT",
+  "status_details": "Arrived at USPS Regional Facility",
+  "eta": "2026-08-07T17:00:00Z",
+  "history": [
+    {
+      "status": "TRANSIT",
+      "status_details": "Arrived at USPS Regional Facility",
+      "status_date": "2026-08-04T09:12:00Z",
+      "location": { "city": "Springfield", "state": "VA", "country": "US" }
+    },
+    {
+      "status": "TRANSIT",
+      "status_details": "Accepted at USPS Origin Facility",
+      "status_date": "2026-08-03T18:40:00Z",
+      "location": { "city": "Richmond", "state": "VA", "country": "US" }
+    }
+  ]
+}
 ```
 
 <Tip>
