@@ -3,7 +3,7 @@ title: "Smart Search"
 description: "Reference for the SearchService class in the Tybrite SDK."
 ---
 
-The `SearchService` class (accessed via `client.search`) provides both traditional keyword-based search and advanced AI-powered semantic search capabilities.
+The `SearchService` class (accessed via `client.search`) provides keyword search, type-ahead suggestions, and semantic search.
 
 ## Methods
 
@@ -30,6 +30,67 @@ console.log(`Found ${result.totalResults} results`);
   "totalResults": 1
 }
 ```
+
+#### Misspellings
+
+When exact matching finds nothing, the query is retried against a similarity match over product
+names and brands, so a typo still reaches the product.
+
+Those results carry a `matchReason` of `Similar name` or `Similar brand` rather than `Text match`,
+which lets you label them — "showing results for snowboard" — instead of presenting an approximate
+match as an exact one. Exact matches always rank first: the fallback runs only when there were none,
+so a query that already worked behaves exactly as before.
+
+```typescript
+const result = await client.search.searchProducts({ q: 'snoboard' });
+// result.results[0].matchReason === 'Similar name'
+```
+
+```json Response
+{
+  "query": "snoboard",
+  "results": [
+    { "productId": "02525ff5-0916-4f00-857c-c2c6237e671b", "score": 0.583333, "matchReason": "Similar name" }
+  ],
+  "totalResults": 1
+}
+```
+
+---
+
+### `autocompleteSearch`
+
+Suggestions for a partial query, for a search box that completes as the shopper types. Call it on
+each keystroke from the second character; it returns terms to suggest, not products, so run
+`searchProducts` once the shopper picks one.
+
+Suggestions come from what the store actually sells — its product names, its brands, and the
+merchant's own subcategories — so there is nothing to configure and nothing that drifts from the
+catalogue. Each carries a `kind` so you can group or badge them.
+
+Prefixes match first, with similarity as a fallback, so a suggestion still appears when the first
+characters are already mistyped. Fewer than two characters returns an empty list with a `200` — a
+shopper mid-word has not done anything wrong.
+
+```typescript
+const result = await client.search.autocompleteSearch({
+  q: 'sno',   // 'prefix' also accepted
+  limit: 5
+});
+```
+
+```json Response
+{
+  "query": "sno",
+  "suggestions": [
+    { "suggestion": "Snowboard Vendor", "kind": "brand", "score": 0.9025 },
+    { "suggestion": "snowboard", "kind": "subcategory", "score": 0.81 },
+    { "suggestion": "The Draft Snowboard", "kind": "product", "score": 0.75 }
+  ]
+}
+```
+
+Requires a store-scoped key; marketplace operator keys are rejected.
 
 ---
 

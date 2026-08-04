@@ -7833,6 +7833,14 @@ paths:
         cancellation"), use the semantic `POST /v1/search` (`semanticSearch`) instead, which scores
         by meaning rather than literal terms.
 
+        **Typo tolerance.** When exact matching finds nothing, the query is retried against a
+        similarity match over product names and brands, so a misspelling still reaches the product
+        — "snoboard" finds the snowboards. Those results carry a `matchReason` of `Similar name` or
+        `Similar brand` rather than `Text match`, so a storefront can label them ("showing results
+        for …") instead of presenting an approximate match as an exact one. Exact matches always
+        rank first: the fallback only runs when there were none, so a query that already worked is
+        unaffected.
+
         **Marketplace:** when called with a marketplace operator key, searches products across all
         merchants in the marketplace; pass `?store_id=<merchant>` to narrow results to a single
         merchant.
@@ -8002,6 +8010,106 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/search/autocomplete:
+    get:
+      operationId: autocompleteSearch
+      tags:
+        - Search
+      summary: Type-ahead suggestions
+      description: |
+        Suggestions for a partial query, for a search box that completes as the shopper types.
+
+        Suggestions are drawn from what the store actually sells — product names, brands, and the
+        merchant's own subcategories — so there is no keyword list to configure and nothing that can
+        drift from the catalogue. Each suggestion carries a `kind` (`product`, `brand`, or
+        `subcategory`) so a storefront can group or badge them, and a `score` for ordering.
+
+        Prefixes match first, with similarity as a fallback, so a suggestion still appears when the
+        first characters are already mistyped.
+
+        **Auth:** accepts a publishable (`tybrite_pk_*`) key, so it is safe to call from client-side
+        storefront code on every keystroke. Requires a store-scoped key — marketplace operator keys
+        are rejected.
+
+        **Fewer than two characters** returns an empty `suggestions` array with a `200`, not an
+        error: a shopper mid-word has not done anything wrong.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The partial query typed so far. Either `q` or `prefix` is required.
+          example: sno
+        - name: prefix
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Alternative spelling of `q`; use whichever reads better in your client.
+          example: sno
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 8
+            minimum: 1
+            maximum: 20
+          description: Maximum suggestions to return.
+      responses:
+        '200':
+          description: Suggestions for the partial query
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: string
+                    description: The prefix that was searched.
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        suggestion:
+                          type: string
+                          description: The completed term to offer the shopper.
+                        kind:
+                          type: string
+                          enum:
+                            - product
+                            - brand
+                            - subcategory
+                          description: What the suggestion refers to.
+                        score:
+                          type: number
+                          format: float
+                          description: Relevance, highest first.
+              example:
+                query: sno
+                suggestions:
+                  - suggestion: Snowboard Vendor
+                    kind: brand
+                    score: 0.9
+                  - suggestion: snowboard
+                    kind: subcategory
+                    score: 0.81
+                  - suggestion: The Draft Snowboard
+                    kind: product
+                    score: 0.8
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
   /v1/auth/register:
     post:
       operationId: register
