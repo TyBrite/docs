@@ -24,7 +24,7 @@ waiting for the automatic 30-day cleanup. Returns `204 No Content`.
 
 ```typescript
 await client.sandbox.resetSandbox();
-// → 204 No Content (your sandbox is now empty)
+// returns 204 No Content (your sandbox is now empty)
 ```
 
 `deleteSandboxData` (mapped to `DELETE /v1/sandbox/data`) is an exact alias if you prefer a DELETE:
@@ -44,7 +44,7 @@ without waiting. The response reports what was shifted and what was intentionall
 const result = await client.sandbox.advanceSandboxTime({
   requestBody: { advance_days: 30 }
 });
-// → {
+// returns {
 //     advanced_days: 30,
 //     shifted: { shopping_carts: 3, stock_reservations: 1, storefront_events: 120 },
 //     not_shifted: { promotions: "...", gift_cards: "...", trial: "...", subscription_renewal: "..." }
@@ -70,7 +70,7 @@ unchanged.
 const res = await client.sandbox.replaySandboxWebhook({
   requestBody: { type: 'order.created' }
 });
-// → { replayed_event_id: '…', results: [ { endpoint_id, success, status_code }, … ] }
+// returns { replayed_event_id: '…', results: [ { endpoint_id, success, status_code }, … ] }
 ```
 
 ```typescript By event id

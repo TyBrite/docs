@@ -562,7 +562,7 @@ await market.marketplace.logAdEvent({
     session_id: storefrontSessionId,   // optional, helps de-duplicate
   },
 });
-// → 202 { recorded: true, billable: true }
+// returns 202 { recorded: true, billable: true }
 
 // When the shopper clicks it:
 await market.marketplace.logAdEvent({
@@ -573,7 +573,7 @@ await market.marketplace.logAdEvent({
     session_id: storefrontSessionId,
   },
 });
-// → 202 { recorded: true, billable: true }
+// returns 202 { recorded: true, billable: true }
 ```
 
 The response is `{ recorded: true, billable }`. `billable` tells you whether the event counted toward billing after de-duplication and invalid-traffic filtering — it's informational, so you don't need to act on it.

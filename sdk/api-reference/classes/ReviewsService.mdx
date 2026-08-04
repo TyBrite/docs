@@ -228,7 +228,7 @@ await client.reviews.deleteReview({
   id: '11bc03d9-d1cb-4833-b9d2-f0b016104cde',
   xAuthToken: customerSessionToken,
 });
-// → { success: true, message: 'Review deleted' }
+// returns { success: true, message: 'Review deleted' }
 ```
 
 **Parameters**
@@ -248,7 +248,7 @@ Increments the `helpful_count` on an approved review. Use this to surface the mo
 const { helpful_count } = await client.reviews.markReviewHelpful({
   id: '11bc03d9-d1cb-4833-b9d2-f0b016104cde',
 });
-// → { helpful_count: 1 }
+// returns { helpful_count: 1 }
 console.log(`${helpful_count} people found this helpful`);
 ```
 

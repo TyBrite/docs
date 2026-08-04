@@ -183,7 +183,7 @@ if (promo.type === 'bogo') {
 ```typescript
 const promo = await client.promotions.getPromotion({ id: 'promotion_uuid' });
 // without expand, products are ids only:
-// → promo.bundle_products = [{ productId, quantity, discountedPrice }]
+// returns promo.bundle_products = [{ productId, quantity, discountedPrice }]
 
 if (promo.type === 'bundle') {
   const items = await Promise.all(
@@ -288,7 +288,7 @@ const promo = await client.promotions.getPromotion({
   storeId: merchant_store_id,
   expand: 'products',
 });
-// → same Promotion shape as above, scoped to merchant_store_id
+// returns same Promotion shape as above, scoped to merchant_store_id
 
 // Compute the discount against that merchant's cart:
 const result = await client.promotions.calculatePromotionDiscount({
@@ -296,14 +296,14 @@ const result = await client.promotions.calculatePromotionDiscount({
   storeId: merchant_store_id,
   requestBody: { cart: [{ product_id: 'prod_a', quantity: 1, price: 25.0 }] },
 });
-// → { promotion_id, type, eligible, discount, reason }
+// returns { promotion_id, type, eligible, discount, reason }
 
 // Or find the best deal among that merchant's promotions:
 const best = await client.promotions.calculateBestPromotion({
   storeId: merchant_store_id,
   requestBody: { cart: [{ product_id: 'prod_a', quantity: 1, price: 25.0 }] },
 });
-// → { promotion: { id, name, type } | null, discount }
+// returns { promotion: { id, name, type } | null, discount }
 ```
 
 A marketplace key may read and calculate a single merchant's promotions this way; it cannot list promotions.

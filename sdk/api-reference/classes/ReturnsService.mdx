@@ -416,7 +416,7 @@ await client.returns.requestReturnRefund({
   id: returnId,
   xAuthToken: customerSessionToken,
 });
-// → { data: { status: 'refund_requested' } }
+// returns { data: { status: 'refund_requested' } }
 ```
 
 ### Spending store credit at checkout
@@ -432,7 +432,7 @@ const { data: order } = await client.orders.createOrder({
     // store_credit_amount: 10,   // optional — cap how much to use; omit to use as much as applies
   },
 });
-// → { data: { id, order_number, total, store_credit_applied: 24.95, payment_status, ... } }
+// returns { data: { id, order_number, total, store_credit_applied: 24.95, payment_status, ... } }
 
 console.log(`Applied ${order.store_credit_applied} of store credit`);
 ```
@@ -446,7 +446,7 @@ A complete "the merchant offered me store credit, what now?" screen:
 ```typescript
 // 1. Load the return and check for a pending offer
 const { data: ret } = await client.returns.getReturn({ id: returnId, xAuthToken });
-// → { data: { ...the Return object, credit_offer: { status: 'pending', amount: 24.95 } } }
+// returns { data: { ...the Return object, credit_offer: { status: 'pending', amount: 24.95 } } }
 
 if (ret.credit_offer?.status === 'pending') {
   // 2. Show the shopper the choice
@@ -455,14 +455,14 @@ if (ret.credit_offer?.status === 'pending') {
   // 3a. They take the credit →
   onAccept(async () => {
     const { data } = await client.returns.acceptReturnCredit({ id: returnId, xAuthToken });
-    // → { data: { store_credit_id: '90cfe13f-...', amount: 24.95 } }
+    // returns { data: { store_credit_id: '90cfe13f-...', amount: 24.95 } }
     toast(`Added ${data.amount} to your store credit — use it any time.`);
   });
 
   // 3b. They'd rather have their money →
   onRequestRefund(async () => {
     await client.returns.requestReturnRefund({ id: returnId, xAuthToken });
-    // → { data: { status: 'refund_requested' } }
+    // returns { data: { status: 'refund_requested' } }
     toast(`No problem — we'll arrange your refund.`);
   });
 }
@@ -479,7 +479,7 @@ if (ret.credit_offer?.status === 'pending') {
 ```typescript
 // 1. Show the reason picker (no sign-in needed yet)
 const { data: reasons } = await client.returns.listReturnReasons();
-// → { data: [ { code: 'damaged', label: 'Arrived damaged' }, ... ] }
+// returns { data: [ { code: 'damaged', label: 'Arrived damaged' }, ... ] }
 renderReasonDropdown(reasons);
 
 // 2. After the customer signs in and picks items, lodge the return
@@ -494,13 +494,13 @@ const { data: lodged } = await client.returns.createReturn({
     })),
   },
 });
-// → { data: { id, return_number, status: 'pending', items: [...] } }
+// returns { data: { id, return_number, status: 'pending', items: [...] } }
 
 // 3. Track it from the customer's account page
 const { data: history } = await client.returns.listReturns({
   xAuthToken: customerSessionToken,
 });
-// → { data: [ { id, return_number, status, items: [...] }, ... ] }
+// returns { data: [ { id, return_number, status, items: [...] }, ... ] }
 ```
 
 ---

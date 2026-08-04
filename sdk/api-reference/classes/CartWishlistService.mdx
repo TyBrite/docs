@@ -98,7 +98,7 @@ await client.cartWishlist.addToCart({
     customer_id: 'customer-uuid'
   }
 });
-// → { items: [...] } — the full updated cart (same shape as getCart)
+// returns { items: [...] } — the full updated cart (same shape as getCart)
 ```
 
 ### `updateCartItem`
@@ -124,7 +124,7 @@ await client.cartWishlist.updateCartItem({
     customer_id: 'customer-uuid'
   }
 });
-// → { items: [...] } — the full updated cart with the new quantity + recomputed total_price
+// returns { items: [...] } — the full updated cart with the new quantity + recomputed total_price
 ```
 
 ### `clearCart`
@@ -142,7 +142,7 @@ await client.cartWishlist.clearCart({
   xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
-// → { items: [] } — the now-empty cart
+// returns { items: [] } — the now-empty cart
 ```
 
 ### `removeCartItem`
@@ -162,7 +162,7 @@ await client.cartWishlist.removeCartItem({
   xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
-// → { items: [...] } — the cart with that item removed
+// returns { items: [...] } — the cart with that item removed
 ```
 
 ### `mergeCart`
@@ -181,7 +181,7 @@ await client.cartWishlist.mergeCart({
     customer_id: 'authenticated-customer-uuid'
   }
 });
-// → { items: [...] } — the merged customer cart (guest lines folded in)
+// returns { items: [...] } — the merged customer cart (guest lines folded in)
 ```
 
 ## Wishlist Management
@@ -233,7 +233,7 @@ await client.cartWishlist.addToWishlist({
     customer_id: 'customer-uuid'
   }
 });
-// → 201 { items: [...] } — the full wishlist including the newly saved item
+// returns 201 { items: [...] } — the full wishlist including the newly saved item
 //   (adding a variant already on the wishlist returns 409)
 ```
 
@@ -247,7 +247,7 @@ await client.cartWishlist.removeFromWishlist({
   xAuthToken: customerSession.access_token,
   customerId: 'customer-uuid'
 });
-// → { items: [...] } — the wishlist with that item removed
+// returns { items: [...] } — the wishlist with that item removed
 ```
 
 ### `moveWishlistToCart`
@@ -413,7 +413,7 @@ const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
           customer_id: customerSession.customer_id
         }
       });
-      // → { items: [...] } — re-render the cart badge from items.length
+      // returns { items: [...] } — re-render the cart badge from items.length
     } else {
       // Anonymous path — session-only cart
       const { items } = await client.cartWishlist.addToCart({
@@ -423,7 +423,7 @@ const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
           quantity
         }
       });
-      // → { items: [...] }
+      // returns { items: [...] }
     }
   } catch (error) {
     if (error.code === 'insufficient_stock') {

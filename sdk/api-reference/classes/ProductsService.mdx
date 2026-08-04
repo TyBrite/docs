@@ -101,7 +101,7 @@ const { products } = await personalized.products.listProducts({
   limit: 20,
   fields: 'name,price,thumbnail_url'
 });
-// → products re-ordered by how closely each matches this shopper; same row shape as above:
+// returns products re-ordered by how closely each matches this shopper; same row shape as above:
 //   [ { name: "Sony WH-1000XM4", price: 349.99, thumbnail_url: "https://cdn.example.com/..." }, ... ]
 ```
 
@@ -197,7 +197,7 @@ const product = await client.products.getProductBySlug({
   slug: 'sony-wh-1000xm4-a089d-7d425c0a',
   fields: 'seo_title,seo_description,thumbnail_url,media,price_range,variants.*'
 });
-// → identical structure to getProduct: root metadata + (for multi-variant products)
+// returns identical structure to getProduct: root metadata + (for multi-variant products)
 //   price_range, total_stock, and a variants[] array. See the getProduct response above.
 ```
 
@@ -212,7 +212,7 @@ detail pages:
 
 ```typescript
 const product = await client.products.getProductBySlug({ slug: 'sony-wh-1000xm4-a089d-7d425c0a' });
-// → product.seo_title, product.seo_description, and product.seo_keywords (string[]) are present
+// returns product.seo_title, product.seo_description, and product.seo_keywords (string[]) are present
 //   when set, e.g. seo_title: "Nebula Ceramic Mug | 350ml Dishwasher Safe",
 //   seo_keywords: ["ceramic mug", "stoneware mug", "coffee mug", "dishwasher safe mug"]
 document.title = product.seo_title ?? product.name;

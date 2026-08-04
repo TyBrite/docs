@@ -51,7 +51,7 @@ const shipping = await client.shipping.calculateShipping({
     order_total: 50
   }
 });
-// → { fee: 9.99, tier_name: "Metro (10–50 km)", is_free: false, applied_rule: "distance", ... }
+// returns { fee: 9.99, tier_name: "Metro (10–50 km)", is_free: false, applied_rule: "distance", ... }
 ```
 
 ```typescript Via Coordinates
@@ -63,7 +63,7 @@ const shipping = await client.shipping.calculateShipping({
     order_total: 50 // Order subtotal in the store's currency (USD)
   }
 });
-// → { fee: 5.99, tier_name: "Local (within 10 km)", is_free: false, applied_rule: "distance", ... }
+// returns { fee: 5.99, tier_name: "Local (within 10 km)", is_free: false, applied_rule: "distance", ... }
 ```
 
 </CodeGroup>
@@ -120,7 +120,7 @@ render the status timeline **inside** your own UI.
 
 ```typescript
 const status = await client.shipping.trackShipment({ carrier: 'usps', number: order.tracking_number });
-// → { carrier, tracking_number, status, status_details, eta, history: [...] }
+// returns { carrier, tracking_number, status, status_details, eta, history: [...] }
 ```
 
 <Tip>

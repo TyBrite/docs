@@ -138,7 +138,7 @@ Invalidate the current session. Revokes both the access and refresh tokens on th
 
 ```typescript
 await client.authentication.logout();
-// → { message: 'Logout successful' }
+// returns { message: 'Logout successful' }
 
 // Then clear local storage
 localStorage.removeItem('tybrite_access_token');
@@ -175,7 +175,7 @@ const { user, customer, session } = await client.authentication.verifyOtp({
     token: '123456' // The 6-digit code from email
   }
 });
-// → same shape as login: { message, user, customer, session }
+// returns same shape as login: { message, user, customer, session }
 //   session.access_token is the JWT you pass as xAuthToken thereafter
 ```
 
@@ -194,7 +194,7 @@ await client.authentication.resetPassword({
     redirect_to: 'https://shop.example.com/reset-callback' // optional
   }
 });
-// → { message: 'Password reset email sent', email: 'jane.doe@tybritelabs.com' }
+// returns { message: 'Password reset email sent', email: 'jane.doe@tybritelabs.com' }
 ```
 
 ---
@@ -216,7 +216,7 @@ await client.authentication.updatePassword({
     password: 'newSecurePassword456'
   }
 });
-// → {
+// returns {
 //     message: 'Password updated successfully',
 //     user: { id: 'df648f68-39b3-4ba6-9be2-ff0a9393c02b', email: 'jane.doe@tybritelabs.com' }
 //   }
@@ -236,7 +236,7 @@ const { session } = await client.authentication.refreshToken({
     refresh_token: localStorage.getItem('tybrite_refresh_token')!
   }
 });
-// → { message: 'Token refreshed successfully', session: {
+// returns { message: 'Token refreshed successfully', session: {
 //       access_token: 'eyJ...<redacted>.signature',
 //       refresh_token: 'v1.MROK...<redacted>',  // rotated — supersedes the old one
 //       expires_in: 3600,
@@ -313,7 +313,7 @@ const { customer, session } = await client.authentication.login({
     password: 'securePassword123'
   }
 });
-// → { message: 'Login successful', user, customer, session }
+// returns { message: 'Login successful', user, customer, session }
 
 const token = session.access_token;
 
@@ -326,7 +326,7 @@ await client.cartWishlist.addToCart({
     quantity: 2
   }
 });
-// → { items: [ { product_name, variant_name, quantity, unit_price, total_price, ... } ] }
+// returns { items: [ { product_name, variant_name, quantity, unit_price, total_price, ... } ] }
 
 // 3. CHECKOUT — order creation is sk-only + idempotent + HMAC-signed
 //    (uses your server-side secret key, not the customer JWT)
@@ -336,17 +336,17 @@ const order = await serverClient.orders.createOrder({
   xSignature: signature,
   requestBody: { customer_id: customer.id, items: [...] }
 });
-// → { data: { id, order_number, payment_status: 'paid', total, ... } }
+// returns { data: { id, order_number, payment_status: 'paid', total, ... } }
 
 // 4. REFRESH — if the access_token is near expiry
 const { session: refreshed } = await client.authentication.refreshToken({
   requestBody: { refresh_token: session.refresh_token }
 });
-// → { message: 'Token refreshed successfully', session: { access_token, refresh_token, ... } }
+// returns { message: 'Token refreshed successfully', session: { access_token, refresh_token, ... } }
 
 // 5. LOGOUT — revoke tokens server-side
 await client.authentication.logout();
-// → { message: 'Logout successful' }
+// returns { message: 'Logout successful' }
 ```
 
 ---

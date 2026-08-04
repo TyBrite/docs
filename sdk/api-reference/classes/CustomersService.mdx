@@ -201,7 +201,7 @@ const updated = result.customer;
     xAuthToken: customerSession.access_token,
     requestBody: { address: '350 Fifth Avenue, New York, NY 10118' }
   });
-  // → { customer: { ... } } — same response shape as above
+  // returns { customer: { ... } } — same response shape as above
   ```
 
   You can also pass a raw identity-provider token (for example a Firebase ID token) as `xIdpToken`, which Galactic Core forwards to your store's Auth verifier — fail-closed, so a rejected or unreachable verifier returns `401`:
@@ -331,7 +331,7 @@ const { address } = await client.customers.updateAddress({
     is_default_billing: true,
   },
 });
-// → { address: { id, customer_id, line2: 'Suite 200', is_default_billing: true, ... } }
+// returns { address: { id, customer_id, line2: 'Suite 200', is_default_billing: true, ... } }
 //   (the full updated address, same shape as createAddress)
 ```
 
@@ -345,7 +345,7 @@ await client.customers.deleteAddress({
   addressId: existingAddressId,
   xAuthToken: session.session.access_token,
 });
-// → { success: true, message: 'Address deleted' }
+// returns { success: true, message: 'Address deleted' }
 ```
 
 
@@ -368,14 +368,14 @@ The `getCustomer` and `updateCustomer` methods require the shopper to be identif
 const session = await client.authentication.login({
   requestBody: { email: 'jane.doe@tybritelabs.com', password: '...' }
 });
-// → { message: 'Login successful', user, customer, session }
+// returns { message: 'Login successful', user, customer, session }
 
 // 2. Use the returned access_token for subsequent customer-scoped calls
 const profile = await client.customers.getCustomer({
   id: session.customer.id,
   xAuthToken: session.session.access_token
 });
-// → { id, name, email, tier: 'bronze', address, store_credit_balance, store_metrics, ... }
+// returns { id, name, email, tier: 'bronze', address, store_credit_balance, store_metrics, ... }
 //   (customer fields at the top level — not wrapped in a `customer` key)
 ```
 

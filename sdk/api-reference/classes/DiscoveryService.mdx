@@ -29,7 +29,7 @@ const popular = await client.discovery.getMostViewedProducts({
   windowHours: 720,  // 1 | 24 | 168 | 720  (default 24)
   limit: 12,
 });
-// → {
+// returns {
 //     metric: 'most-viewed',
 //     window_hours: 720,
 //     products: [
@@ -52,7 +52,7 @@ const trendingInCarts = await client.discovery.getMostAddedToCartProducts({
   windowHours: 168,  // 24 | 168  (default 24)
   limit: 12,
 });
-// → { metric: 'most-added-to-cart', window_hours: 168,
+// returns { metric: 'most-added-to-cart', window_hours: 168,
 //     products: [ { product_id: '0186665f-…', score: 6 } ] }
 ```
 
@@ -70,7 +70,7 @@ const favorites = await client.discovery.getBestConvertingProducts({
   windowHours: 720,  // 168 | 720  (default 168)
   limit: 12,
 });
-// → { metric: 'best-converting', window_hours: 720,
+// returns { metric: 'best-converting', window_hours: 720,
 //     products: [
 //       { product_id: '0186665f-…', score: 1.7333 },
 //       { product_id: '0c498ac2-…', score: 0.375 },

@@ -113,7 +113,7 @@ const order = await client.orders.createOrder({
     }
   }
 });
-// → { order: { id, total_amount, payment_status, … }, post_processing_warnings? }
+// returns { order: { id, total_amount, payment_status, … }, post_processing_warnings? }
 // A failed redemption surfaces as a post_processing_warnings entry — see OrdersService.
 ```
 
@@ -149,14 +149,14 @@ const result = await client.authentication.login({
     password: 'their-password'
   }
 });
-// → { user: { id, email, … }, session: { access_token, refresh_token, expires_at } }
+// returns { user: { id, email, … }, session: { access_token, refresh_token, expires_at } }
 
 // 2. Use the returned session access token to list their gift cards
 const { gift_cards } = await client.giftCards.listGiftCards({
   customerId: result.user.id,
   xAuthToken: result.session.access_token
 });
-// → { gift_cards: [{ code, balance, status, expiry_date }, …] }
+// returns { gift_cards: [{ code, balance, status, expiry_date }, …] }
 ```
 
 The resolved customer identity must match the requested `customerId` before any gift cards are returned.

@@ -18,7 +18,7 @@ const { categories, pagination } = await client.taxonomy.listCategories({
   limit: 50,
   fields: 'id,name,image'
 });
-// → { id: "c7f18400-eec6-448d-a599-cf871cf80b31", name: "Audio & Headphones",
+// returns { id: "c7f18400-eec6-448d-a599-cf871cf80b31", name: "Audio & Headphones",
 //     active: true, image: "https://..." }
 
 console.log(`Has more categories: ${pagination.has_more}`);
@@ -37,7 +37,7 @@ const category = await client.taxonomy.getCategory({
 });
 
 console.log(`Category Banner: ${category.image}`);
-// → {
+// returns {
 //     id: "28186b12-5790-4a50-ab87-a7b70d301d00",
 //     name: "Bags & Accessories",
 //     description: "Handbags, wallets, belts",
@@ -125,9 +125,9 @@ const { subcategories } = await client.taxonomy.listSubcategories({
 
 // Or fetch one level at a time, lazy-loading as the shopper drills in:
 const roots = await client.taxonomy.listSubcategories({ categoryId: 'apparel-uuid', rootOnly: true });
-// → { subcategories: [ { id: 'shoes', name: 'Shoes', parent_id: null, ... } ], pagination: {...} }
+// returns { subcategories: [ { id: 'shoes', name: 'Shoes', parent_id: null, ... } ], pagination: {...} }
 const children = await client.taxonomy.listSubcategories({ parentId: 'shoes' });
-// → { subcategories: [ { id: 'mens', name: "Men's", parent_id: 'shoes', ... } ], pagination: {...} }
+// returns { subcategories: [ { id: 'mens', name: "Men's", parent_id: 'shoes', ... } ], pagination: {...} }
 ```
 
 ---
@@ -209,7 +209,7 @@ const sub = await client.taxonomy.getSubcategory({
 // }
 
 // Build a breadcrumb: [...sub.ancestors, sub].map(s => s.name).join(' › ')
-// → "Computers › Laptops › Gaming Laptops"
+// returns "Computers › Laptops › Gaming Laptops"
 ```
 
 You can combine both in one request — `include: 'ancestors,children'` returns the node with
@@ -227,7 +227,7 @@ const products = await client.products.listProducts({
   categoryId: 'electronics-uuid',
   limit: 24
 });
-// → { products: [ { product_id, name, category_name: "Electronics", price, stock, ... } ],
+// returns { products: [ { product_id, name, category_name: "Electronics", price, stock, ... } ],
 //     pagination: { limit: 24, next_cursor, has_more } }  — see ProductsService for the full row shape
 ```
 
@@ -237,7 +237,7 @@ const products = await client.products.listProducts({
 const smartphones = await client.products.listProducts({
   subcategoryId: 'smartphones-uuid'
 });
-// → { products: [ { product_id: "2f571a46-e02a-44ea-9a68-0772381e6da2",
+// returns { products: [ { product_id: "2f571a46-e02a-44ea-9a68-0772381e6da2",
 //                   name: "Compact Mechanical Keyboard", subcategory_name: "Keyboards",
 //                   price: 89, ... } ], pagination: {...} }
 //   (a subcategory filter matches its whole subtree)
@@ -256,7 +256,7 @@ const results = await client.products.listProducts({
   categoryId: 'electronics-uuid',
   subcategoryId: 'smartphones-uuid'
 });
-// → { products: [...], pagination: {...} } — same row shape as above, scoped to both filters
+// returns { products: [...], pagination: {...} } — same row shape as above, scoped to both filters
 ```
 
 ---
