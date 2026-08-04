@@ -36,7 +36,6 @@ await client.analytics.collectAnalyticsEvent({
     utm_medium: 'organic'
   }
 });
-// → 202 { recorded: true }
 ```
 
 ```typescript Page view
@@ -50,7 +49,6 @@ await client.analytics.collectAnalyticsEvent({
     customer_id: 'customer-uuid'            // include once the shopper signs in
   }
 });
-// → 202 { recorded: true }
 ```
 
 ```typescript Page close (dwell time)
@@ -65,7 +63,6 @@ await client.analytics.collectAnalyticsEvent({
     duration_ms: 45000                       // ms spent on the page
   }
 });
-// → 202 { recorded: true }
 ```
 
 ```typescript Search
@@ -80,7 +77,6 @@ await client.analytics.collectAnalyticsEvent({
     search_result_count: 0
   }
 });
-// → 202 { recorded: true }
 ```
 
 ```typescript Search result click
@@ -97,10 +93,18 @@ await client.analytics.collectAnalyticsEvent({
     search_result_position: 1
   }
 });
-// → 202 { recorded: true }
 ```
 
 </CodeGroup>
+
+```json Response
+{
+  "recorded": true
+}
+```
+
+Every event type returns the same acknowledgement with a `202`. The collector is a fire-and-forget
+beacon: it never returns data to read, and a failed write is never surfaced to the shopper.
 
 **Parameters:**
 

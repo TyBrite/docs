@@ -33,11 +33,34 @@ const { products, pagination, pricing_context } = await client.pricing.getProduc
   fields: 'name,display_price,display_currency,currency_symbol,has_variants,thumbnail_url'
 });
 
-// → { name: "Samsung Galaxy Watch 6", display_price: 299, display_currency: "USD", currency_symbol: "$", ... }
-
 // Access global pricing context
 console.log(`Currency: ${pricing_context.currency}`); // "USD"
 console.log(`Has more: ${pagination.has_more}`);
+```
+
+```json Response
+{
+  "products": [
+    {
+      "name": "The 3p Fulfilled Snowboard",
+      "display_price": 2997.43,
+      "display_currency": "USD",
+      "currency_symbol": "$",
+      "has_variants": false,
+      "thumbnail_url": "https://cdn.example.com/snowboard-main.jpg"
+    }
+  ],
+  "pagination": { "limit": 20, "next_cursor": "MDI1MjVmZjUtMDkxNi00ZjAw", "has_more": true },
+  "pricing_context": {
+    "location": null,
+    "region": "United States",
+    "customer_segment": null,
+    "customer_tier": null,
+    "quantity": null,
+    "currency": "USD",
+    "exchange_rate": 1.13973
+  }
+}
 ```
 
 Pass a non-US location to convert into that region's currency — Galactic Core detects the currency
@@ -49,8 +72,11 @@ const uk = await client.pricing.getProductPrices({
   placeName: 'London, UK',
   fields: 'name,display_price,display_currency,currency_symbol'
 });
-// → { name: "Samsung Galaxy Watch 6", display_price: 236.21, display_currency: "GBP", currency_symbol: "£", ... }
 ```
+
+The same catalog comes back priced in the detected currency — `display_price` converted,
+`display_currency` and `currency_symbol` changed, and `pricing_context.exchange_rate` showing the
+rate applied.
 
 ---
 
@@ -92,7 +118,7 @@ const pricing = await client.pricing.getProductPriceBySlug({
   latitude: 51.5074,  // London → GBP
   longitude: -0.1278
 });
-// → identical shape to getProductPrice: root metadata + price_range + variants[], each variant
+// Same shape as getProductPrice: root metadata + price_range + variants[], each variant
 //   carrying base_price, resolved_price, display_price, and a price_breakdown with the
 //   currency_conversion applied. For a London shopper display_currency is "GBP" (symbol "£").
 ```

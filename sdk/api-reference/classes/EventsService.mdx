@@ -29,7 +29,6 @@ await client.events.recordEvent({
     session_id: 'browser-session-id'                     // your stable per-session identifier
   }
 });
-// → 202 { recorded: true }
 ```
 
 ```typescript Add to Cart
@@ -41,10 +40,19 @@ await client.events.recordEvent({
     customer_id: 'customer-uuid'      // include when the shopper is signed in
   }
 });
-// → 202 { recorded: true }
 ```
 
 </CodeGroup>
+
+```json Response
+{
+  "recorded": true
+}
+```
+
+Both event types return the same acknowledgement with a `202`. Recording an event is
+fire-and-forget: it returns nothing to read, and a failed write is never surfaced to the shopper.
+
 
 The call returns `{ recorded: true }` with a `202 Accepted`.
 

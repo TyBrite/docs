@@ -132,7 +132,7 @@ await client.webhooks.createWebhookEndpoint({
     events: ['*'], // receive everything
   }
 });
-// → { webhook_endpoint: { id, url, events: ['*'], enabled: true, signing_secret, … } }
+// returns { webhook_endpoint: { id, url, events: ['*'], enabled: true, signing_secret, … } }
 ```
 
 **Supported event types:**
@@ -235,7 +235,7 @@ await client.webhooks.updateWebhookEndpoint({
   id: 'endpoint-uuid',
   requestBody: { enabled: true } // resets consecutive_failures, clears disabled_reason
 });
-// → { webhook_endpoint: { …, enabled: true, consecutive_failures: 0, disabled_reason: null, disabled_at: null } }
+// returns { webhook_endpoint: { …, enabled: true, consecutive_failures: 0, disabled_reason: null, disabled_at: null } }
 ```
 
 ---
@@ -250,7 +250,7 @@ await client.webhooks.updateWebhookEndpoint({
   id: 'endpoint-uuid',
   requestBody: { enabled: false }
 });
-// → { webhook_endpoint: { …, enabled: false } }
+// returns { webhook_endpoint: { …, enabled: false } }
 
 // Change subscribed events
 const { webhook_endpoint } = await client.webhooks.updateWebhookEndpoint({
@@ -291,7 +291,7 @@ Soft-deletes the endpoint. In-flight deliveries are not cancelled.
 
 ```typescript
 await client.webhooks.deleteWebhookEndpoint({ id: 'endpoint-uuid' });
-// → { success: true, message: 'Webhook endpoint deleted' }
+// returns { success: true, message: 'Webhook endpoint deleted' }
 ```
 
 ---

@@ -80,7 +80,7 @@ const { threads } = await client.messaging.listThreads({
 });
 
 const totalUnread = threads.reduce((sum, t) => sum + (t.unread_count_customer || 0), 0);
-// → e.g. 3   (each thread carries its own unread_count_customer)
+// returns e.g. 3   (each thread carries its own unread_count_customer)
 ```
 
 To fetch only threads with unread messages, pass `?unread=true` as a filter.
@@ -146,7 +146,7 @@ await client.messaging.updateThread({
     muted: true
   }
 });
-// → { thread: { id, status: 'resolved', priority: 'normal', is_archived: true, is_muted: true, is_pinned: false, … } }
+// returns { thread: { id, status: 'resolved', priority: 'normal', is_archived: true, is_muted: true, is_pinned: false, … } }
 ```
 
 ---
@@ -160,7 +160,7 @@ await client.messaging.markThreadRead({
   xAuthToken: customerSession.access_token, // Must own this thread
   id: 'thread-uuid-123'
 });
-// → { success: true, thread_id: '06084af6-7334-43d6-82c0-935f92335a25' }
+// returns { success: true, thread_id: '06084af6-7334-43d6-82c0-935f92335a25' }
 ```
 
 <Note>The caller must own the thread. The `id` must be a valid UUID — malformed values return `400`.</Note>
@@ -228,7 +228,7 @@ await client.messaging.sendMessage({
     message: "We've received your request and are looking into it."
   }
 });
-// → { message: { id: '33e2c744-37a9-42df-a9df-447715526a41', created_at: '2026-06-20T11:29:02.467216+00:00' } }
+// returns { message: { id: '33e2c744-37a9-42df-a9df-447715526a41', created_at: '2026-06-20T11:29:02.467216+00:00' } }
 ```
 
 <Note>The caller must own the thread. Returns `201` with the newly persisted message body on success.</Note>
@@ -278,7 +278,7 @@ await client.messaging.deleteMessage({
   xAuthToken: customerSession.access_token, // Must be the original sender
   id: 'cc64ce9a-51ba-4860-ba1a-85f14899f5bf'
 });
-// → { success: true, message_id: 'cc64ce9a-51ba-4860-ba1a-85f14899f5bf', deleted_at: '2026-06-21T10:16:33.419Z' }
+// returns { success: true, message_id: 'cc64ce9a-51ba-4860-ba1a-85f14899f5bf', deleted_at: '2026-06-21T10:16:33.419Z' }
 ```
 
 <Note>Same ownership check as `editMessage` — you can only delete a message you authored. Soft delete only; the row is retained for audit.</Note>
