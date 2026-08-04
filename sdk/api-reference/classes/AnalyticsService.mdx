@@ -68,13 +68,30 @@ await client.analytics.collectAnalyticsEvent({
 // → 202 { recorded: true }
 ```
 
+```typescript Search
+// What the shopper searched for, and how many results came back. Send 0 when the
+// search found nothing — that is the case worth knowing about.
+await client.analytics.collectAnalyticsEvent({
+  requestBody: {
+    event_type: 'search',
+    visitor_id: 'v_8f2a1c',
+    session_id: 'browser-session-id',
+    search_query: 'winter jacket',
+    search_result_count: 0
+  }
+});
+// → 202 { recorded: true }
+```
+
 </CodeGroup>
 
 **Parameters:**
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| `requestBody.event_type` | `string` | `session_start` (first event of a session), `page_view` (each route change), or `page_close` (on page hide, with `duration_ms`, to capture time-on-page and exit pages — send via `navigator.sendBeacon`). |
+| `requestBody.event_type` | `string` | `session_start` (first event of a session), `page_view` (each route change), `page_close` (on page hide, with `duration_ms`, to capture time-on-page and exit pages — send via `navigator.sendBeacon`), or `search` (what the shopper searched for). |
+| `requestBody.search_query` | `string` | The shopper's search term. Required with `search`, ignored otherwise. Casing and extra spacing are normalised before storage, so they do not fragment the reporting. May also be sent as `q`. |
+| `requestBody.search_result_count` | `number` | How many results the search returned. Send `0` when it found nothing — that marks a search the catalogue could not answer. |
 | `requestBody.duration_ms` | `number` | Time on the page in milliseconds; send with `page_close` to power average time-on-page and session-duration. |
 | `requestBody.visitor_id` | `string` | A stable per-visitor identifier you persist in the browser (e.g. localStorage). Lets returning visitors be recognised. |
 | `requestBody.session_id` | `string` | The browsing-session identifier — the same one you use for an anonymous cart. May also be sent as the `x-session-id` header. |
@@ -96,6 +113,10 @@ Device type, browser, operating system, and country/region are detected from the
 request automatically — there is no client-side tracking script to add and no
 fingerprinting. Only the pathname is stored (query strings are dropped), keeping the
 capture privacy-light.
+
+A `search` event is stored without a customer, even when one is signed in and
+`customer_id` is sent. The reporting question is how a search term performs, which the
+term and its result count answer on their own.
 
 ## Attributing revenue to a source
 
