@@ -1135,6 +1135,7 @@ paths:
                       timezone: America/New_York
                       created_at: '2026-06-19T19:59:48.799138+00:00'
                       commerce_model: retail
+                      vendor_type: null
                     catalog:
                       products:
                         total: 53
@@ -1309,6 +1310,7 @@ paths:
                       timezone: America/New_York
                       created_at: '2026-06-19T19:59:48.799138+00:00'
                       commerce_model: retail
+                      vendor_type: null
                     catalog:
                       products:
                         total: 53
@@ -18645,6 +18647,7 @@ paths:
                       timezone: America/Chicago
                       created_at: '2025-12-16T07:20:56.276495+00:00'
                       commerce_model: retail
+                      vendor_type: null
                     marketplace:
                       mode: marketplace
                       marketplace_enabled: true
@@ -19289,6 +19292,23 @@ components:
                   pay-now checkout; buyers request a quote, receive a quote, place a purchase order, and
                   are billed on a terms invoice. A wholesale storefront should surface the request-for-quote
                   flow instead of an add-to-cart checkout.
+            vendor_type:
+              type:
+                - string
+                - 'null'
+              enum:
+                - supplier
+                - manufacturer
+                - distributor
+                - wholesaler
+                - null
+              description: |-
+                Where a wholesale store sits in the supply chain, listed upstream to downstream. This is the store's position; `commerce_model` is how it sells.
+                - `supplier` — supplies raw materials, components, or unbranded goods to other producers.
+                - `manufacturer` — makes the finished products it sells.
+                - `distributor` — an authorised reseller for a brand or manufacturer, usually in set regions.
+                - `wholesaler` — buys in bulk and resells to other businesses.
+                `null` on a retail store, and on a wholesale store that has not stated a position. A buyer uses this to find the right tier of seller — buying direct from a manufacturer and buying from a wholesaler differ in price, minimum order quantity, and lead time.
         catalog:
           type: object
           description: Catalog overview (optional, included when requested)

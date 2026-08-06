@@ -11,7 +11,7 @@ Access this service via `client.system`.
 
 Retrieve comprehensive store metadata, configuration, and catalog statistics in a single API call. This endpoint is specifically optimized for initial data synchronizations, AI agent context setting, and dashboard overviews.
 
-The `store` section includes business context — `name`, `logo_url`, `description`, `website`, `phone`, `email`, and `address` (any of which may be `null`) — alongside currencies, timezone, and creation date. It also carries `commerce_model`, which tells a storefront which experience to build: `retail` (a normal browse → add-to-cart → pay-now storefront) or `wholesale` (the store sells to business buyers on terms, so there is no direct checkout — build the request-for-quote flow instead). The `catalog.products` block includes a thin `sample` array (at most 10 items, each `{ id, name, category, price, image, featured }`) — a small sample of products for context; use `client.products.listProducts` to browse the full catalog.
+The `store` section includes business context — `name`, `logo_url`, `description`, `website`, `phone`, `email`, and `address` (any of which may be `null`) — alongside currencies, timezone, and creation date. It also carries `commerce_model`, which tells a storefront which experience to build: `retail` (a normal browse → add-to-cart → pay-now storefront) or `wholesale` (the store sells to business buyers on terms, so there is no direct checkout — build the request-for-quote flow instead). A wholesale store additionally carries `vendor_type`, its position in the supply chain from upstream to downstream: `supplier` (raw materials, components, or unbranded goods sold to other producers), `manufacturer` (makes the finished product), `distributor` (an authorised reseller for a brand, usually in set regions), or `wholesaler` (buys in bulk and resells to businesses). It is `null` on a retail store. Where `commerce_model` decides how a storefront sells, `vendor_type` identifies who the seller is — buying direct from a manufacturer and buying from a wholesaler differ in price, minimum order quantity, and lead time. The `catalog.products` block includes a thin `sample` array (at most 10 items, each `{ id, name, category, price, image, featured }`) — a small sample of products for context; use `client.products.listProducts` to browse the full catalog.
 
 *   **Caching**: Responses are cached for 5 minutes by default.
 *   **Selective Loading**: Use the `sections` parameter to tailor the response and reduce payload size by up to 80%.
@@ -51,7 +51,8 @@ const freshData = await client.system.getStoreInfo({ cache: false });
     "currencies": ["USD", "GBP", "EUR"],
     "timezone": "America/New_York",
     "created_at": "2026-06-19T19:59:48.799138+00:00",
-    "commerce_model": "retail"
+    "commerce_model": "retail",
+    "vendor_type": null
   },
   "marketplace": { "mode": "standard", "marketplace_enabled": false },
   "catalog": {
