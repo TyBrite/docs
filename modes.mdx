@@ -68,6 +68,14 @@ returned by [`GET /v1/store/info`](/sdk/api-reference/classes/SystemService), id
 storefront. Because the value is per store, it is the reliable signal even when the deployment itself
 serves both kinds of store.
 
+Alongside it, a wholesale store reports a `vendor_type` — its position in the supply chain, from
+upstream to downstream: `supplier` (raw materials, components, or unbranded goods sold to other
+producers), `manufacturer` (makes the finished product), `distributor` (an authorised reseller for a
+brand, usually in set regions), or `wholesaler` (buys in bulk and resells to businesses). It is `null`
+on a retail store. The two fields answer different questions: `commerce_model` is how a store sells,
+and `vendor_type` is who the seller is. The distinction carries commercial weight, since price,
+minimum order quantity, and lead time all shift depending on which tier a buyer sources from.
+
 Mode-specific surface: **`client.b2B`** — see the
 [B2B service](/sdk/api-reference/classes/B2BService).
 
