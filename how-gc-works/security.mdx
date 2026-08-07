@@ -30,6 +30,15 @@ than raw records, and can never reach another tenant's data or a table the autom
 see. This lets a merchant's logic act on rich, meaningful signals while the underlying data stays walled
 off — the same isolation that protects the storefront protects what an automation can read.
 
+Isolation and permission are separate questions, and both are answered in the database. Beyond *which
+store* a row belongs to, each staff member's role determines *which tables they may read and write* —
+resolved on the server for every request and applied as a database policy per operation, so reading a
+record and changing it can require different permissions. A cashier can complete a sale without being
+able to open the general ledger or alter a customer record, and that holds regardless of what the
+interface offers, because the boundary is enforced beneath the application rather than inside it. Roles
+are per store and fully customizable: a store defines the roles it needs, and the permissions attached
+to each are what the database enforces.
+
 ## Authentication and access
 
 Access to the API is by key, and the key type determines what it can do.
