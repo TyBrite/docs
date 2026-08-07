@@ -55,11 +55,18 @@ Mode-specific surface: **`client.marketplace`** — see the
 [Marketplace service](/sdk/api-reference/classes/MarketplaceService).
 
 ### B2B (Wholesale)
-A wholesale store sells to business **buyers** at negotiated or tiered prices, on payment terms. The
-wholesale flow runs from request for quote to quote to purchase order to terms invoice, with buyer
+A wholesale store sells to business **buyers** at negotiated or tiered prices, often on payment terms.
+The negotiated path runs from request for quote to quote to purchase order to terms invoice, with buyer
 credit and payment on net terms. Buyer-facing actions form an API surface; the supplier prices quotes
-and manages the pipeline in their admin. A wholesale store has no direct pay-now checkout — its
-storefront surfaces the request-for-quote flow rather than an add-to-cart checkout.
+and manages the pipeline in their admin.
+
+An approved buyer reordering routine items does not need that round trip. A wholesale storefront
+therefore supports both flows: direct checkout against the buyer's already-resolved price, and
+request for quote for negotiated or bespoke orders. A direct order returns a `settlement` of `terms`
+(a terms invoice was issued, and is paid against the invoice) or `pay_now` (the order awaits payment,
+completed against the returned `order_id` exactly like a retail order). Which one applies is resolved
+server-side from the buyer's own terms and the supplier's policy, so a storefront builds both paths
+and branches on that response.
 
 Wholesale is a per-store capability rather than a whole-deployment setting, so a retail store and a
 wholesale store can run side by side on the same standalone deployment. Each store's `commerce_model`,
