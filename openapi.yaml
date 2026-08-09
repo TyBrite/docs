@@ -124,6 +124,20 @@ info:
       
     Generate API keys from your Tybrite dashboard under the Integrations page (Developer section).
       
+    ## Money and currency
+
+    **Every amount in this API is in major currency units.** A price of `369.99` is three hundred and
+    sixty-nine dollars and ninety-nine cents. This holds everywhere without exception — catalog prices,
+    cart and order totals, payment amounts, refunds, gift-card balances and store credit.
+
+    Never send minor units. Payment processors have their own conventions (Stripe counts in cents,
+    Paystack in kobo) and Galactic Core converts to and from those internally, so a `100.00` payment
+    reaches Stripe as `10000` without you doing anything. Sending `10000` yourself for a `100.00` order
+    is rejected with `amount_mismatch` rather than charging a hundred times the intended amount.
+
+    **Currency codes are ISO 4217 and case-insensitive.** `usd` and `USD` are equivalent on the wire;
+    each is normalised to whatever the chosen processor expects.
+
     ## Environments
 
     The API uses a single endpoint (`https://api.tybritelabs.com`) with the environment determined by your API key prefix:
@@ -4809,12 +4823,22 @@ paths:
                   type: number
                   format: float
                   minimum: 0.01
-                  description: Payment amount (must be greater than 0)
+                  description: |
+                    Payment amount in MAJOR currency units — `100.00` is one hundred dollars, not one
+                    dollar. This matches every other amount in the API: catalog prices, order totals
+                    and refunds are all major units. Conversion to a processor's minor units (Stripe
+                    cents, Paystack kobo) happens server-side; never send minor units here.
+
+                    When `order_id` is supplied the amount must equal that order's total to the cent,
+                    or the request is rejected with `amount_mismatch`. Sending `10000` for a `100.00`
+                    order fails that check rather than charging a hundred times over.
                   example: 100
                 currency:
                   type: string
                   description: |
-                    Currency code (ISO 4217). Required for Stripe and Paystack.
+                    Currency code (ISO 4217). Case-insensitive — it is normalised to whatever the
+                    chosen processor expects, so `usd` and `USD` behave identically.
+                    Required for Stripe and Paystack.
                     - Stripe: Defaults to store's default currency
                     - PayPal: Defaults to store's default currency
                     - Paystack: Must be one of NGN, GHS, ZAR, KES, USD
@@ -19766,17 +19790,17 @@ components:
           example: SNY-WH1002
         price:
           type: number
-          description: Base price in cents
-          example: 36999
+          description: Base price in major currency units (369.99 = $369.99), not minor units
+          example: 369.99
         sale_price:
           type:
             - number
             - 'null'
-          description: Sale price in cents (null if not on sale)
+          description: Sale price in major currency units (369.99 = $369.99); null if not on sale
         selling_price:
           type: number
-          description: Actual customer-facing price in cents (considers sale_price)
-          example: 34999
+          description: Actual customer-facing price in major currency units (considers sale_price)
+          example: 349.99
         stock:
           type: integer
           description: Available stock quantity for this variant
@@ -20029,19 +20053,19 @@ components:
           type:
             - number
             - 'null'
-          description: Base price in cents (only present for simple products or list endpoint)
-          example: 36999
+          description: Base price in major currency units (369.99 = $369.99), not minor units. Only present for simple products or the list endpoint.
+          example: 369.99
         sale_price:
           type:
             - number
             - 'null'
-          description: Sale price in cents if on sale
+          description: Sale price in major currency units (369.99 = $369.99) if on sale
         selling_price:
           type:
             - number
             - 'null'
           description: Actual customer-facing price (considers sale_price)
-          example: 34999
+          example: 349.99
         stock:
           type:
             - integer
@@ -20086,11 +20110,11 @@ components:
           properties:
             min:
               type: number
-              description: Minimum selling price in cents
-              example: 34999
+              description: Minimum selling price in major currency units (369.99 = $369.99)
+              example: 349.99
             max:
               type: number
-              description: Maximum selling price in cents
+              description: Maximum selling price in major currency units (369.99 = $369.99)
               example: 38999
         has_variants:
           type: boolean
@@ -20648,12 +20672,12 @@ components:
           type: number
           format: float
           description: Price per unit
-          example: 34999
+          example: 349.99
         selling_price:
           type: number
           format: float
           description: Actual customer-facing price (includes sale price if applicable)
-          example: 34999
+          example: 349.99
         total_price:
           type: number
           format: float
@@ -20720,7 +20744,7 @@ components:
           type: number
           format: float
           description: Variant selling price
-          example: 36999
+          example: 369.99
         thumbnail_url:
           type:
             - string
