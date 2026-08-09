@@ -3,7 +3,22 @@ title: "Taxonomy (Categories)"
 description: "Reference for the TaxonomyService class in the Tybrite SDK."
 ---
 
-The `TaxonomyService` class (accessed via `client.taxonomy`) allows you to browse and retrieve the hierarchical structure of your store's product catalog. Each resource supports an `image` field for building visual navigation menus and category-based landing pages.
+The `TaxonomyService` class (accessed via `client.taxonomy`) allows you to browse and retrieve the hierarchical structure of your store's product catalog. Each resource supports an `image` field for building visual navigation menus and category-based landing pages, and a `slug` for addressing it in a URL.
+
+## Slugs
+
+Every category and subcategory carries a `slug` alongside its `id` — a lowercase, URL-safe
+identifier such as `electronics`, `audio-headphones` or `computer-peripherals`. A slug is
+**stable across renames**: editing a category's display name leaves its slug untouched, so a
+category-page URL built from a slug keeps resolving and keeps its search ranking.
+
+Categories are a fixed, platform-wide set, so a given category slug identifies the same category
+in every store — `electronics` means the same thing everywhere, which makes it safe to hard-code
+in routes or share across storefronts. Subcategory slugs are unique within their store, category
+and parent; where two names in that scope would reduce to the same slug, a numeric suffix
+distinguishes them.
+
+Slugs address a resource; `id` remains the value the filter and lookup parameters take.
 
 ## Category Management
 
@@ -16,12 +31,27 @@ const { categories, pagination } = await client.taxonomy.listCategories({
   search: 'audio',
   active: true,
   limit: 50,
-  fields: 'id,name,image'
 });
-// returns { id: "c7f18400-eec6-448d-a599-cf871cf80b31", name: "Audio & Headphones",
-//     active: true, image: "https://..." }
 
 console.log(`Has more categories: ${pagination.has_more}`);
+```
+
+```json Response
+{
+  "categories": [
+    {
+      "id": "c7f18400-eec6-448d-a599-cf871cf80b31",
+      "name": "Audio & Headphones",
+      "slug": "audio-headphones",
+      "description": "Speakers, headphones and audio accessories",
+      "active": true,
+      "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80",
+      "created_at": "2026-06-19T20:07:35.277495+00:00",
+      "updated_at": "2026-06-20T10:11:03.932255+00:00"
+    }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
 ```
 
 ---
@@ -32,20 +62,24 @@ Retrieve details for a single category, including its description and metadata.
 
 ```typescript
 const category = await client.taxonomy.getCategory({
-  id: '28186b12-5790-4a50-ab87-a7b70d301d00', // e.g. "Bags & Accessories"
-  fields: 'name,description,image' // Optional
+  id: '28186b12-5790-4a50-ab87-a7b70d301d00', // e.g. "Accessories & Cables"
 });
 
 console.log(`Category Banner: ${category.image}`);
-// returns {
-//     id: "28186b12-5790-4a50-ab87-a7b70d301d00",
-//     name: "Bags & Accessories",
-//     description: "Handbags, wallets, belts",
-//     active: true,
-//     image: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&q=80",
-//     created_at: "2026-06-19T20:07:35.277495+00:00",
-//     updated_at: "2026-06-20T10:11:03.932255+00:00"
-//   }
+console.log(`Category URL: /c/${category.slug}`);
+```
+
+```json Response
+{
+  "id": "28186b12-5790-4a50-ab87-a7b70d301d00",
+  "name": "Accessories & Cables",
+  "slug": "accessories-cables",
+  "description": "Cables, adapters and everyday accessories",
+  "active": true,
+  "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&q=80",
+  "created_at": "2026-06-19T20:07:35.277495+00:00",
+  "updated_at": "2026-06-20T10:11:03.932255+00:00"
+}
 ```
 
 ## Subcategory Management
@@ -77,6 +111,7 @@ const { subcategories, pagination } = await client.taxonomy.listSubcategories({
     {
       "id": "690804ac-0cdc-4d3e-9b84-e18475fe6d16",
       "name": "T-Shirts",
+      "slug": "t-shirts",
       "description": "Graphic and plain tees",
       "category_id": "de4df100-8080-4a32-9987-8480f0233f1b",
       "active": true,
@@ -88,6 +123,7 @@ const { subcategories, pagination } = await client.taxonomy.listSubcategories({
     {
       "id": "58061675-bdbe-4ea7-94e9-8d13b1ac61fa",
       "name": "Graphic Tees",
+      "slug": "graphic-tees",
       "description": "Printed graphic t-shirts",
       "category_id": "de4df100-8080-4a32-9987-8480f0233f1b",
       "active": true,
@@ -105,29 +141,89 @@ const { subcategories, pagination } = await client.taxonomy.listSubcategories({
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
-| `tree` | `boolean` | Return subcategories as a nested hierarchy. Each subcategory includes a `children` array of its nested subcategories. The response is **not paginated** in this mode — the full tree is returned in one call. |
+| `tree` | `boolean` | Return subcategories as a nested hierarchy. Each subcategory includes a `children` array of its nested subcategories. The response carries `"tree": true` and is **not paginated** in this mode — the full tree is returned in one call. |
 | `rootOnly` | `boolean` | Return only top-level subcategories (those with no parent). Ideal for rendering the first level of a category's menu. |
 | `parentId` | `string` | Return only the direct children of the given subcategory. Pass `"null"` to return only top-level subcategories. |
 
 ```typescript
 // Fetch the full nested hierarchy for a category
-const { subcategories } = await client.taxonomy.listSubcategories({
-  categoryId: 'apparel-uuid',
+const { subcategories, tree } = await client.taxonomy.listSubcategories({
+  categoryId: '8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05', // "Wearables"
   tree: true,
 });
-// [
-//   { id: 'shoes', name: 'Shoes', parent_id: null, children: [
-//       { id: 'mens', name: "Men's", parent_id: 'shoes', children: [
-//           { id: 'sneakers', name: 'Sneakers', parent_id: 'mens', children: [] }
-//       ] }
-//   ] }
-// ]
+```
 
-// Or fetch one level at a time, lazy-loading as the shopper drills in:
-const roots = await client.taxonomy.listSubcategories({ categoryId: 'apparel-uuid', rootOnly: true });
-// returns { subcategories: [ { id: 'shoes', name: 'Shoes', parent_id: null, ... } ], pagination: {...} }
-const children = await client.taxonomy.listSubcategories({ parentId: 'shoes' });
-// returns { subcategories: [ { id: 'mens', name: "Men's", parent_id: 'shoes', ... } ], pagination: {...} }
+```json Response
+{
+  "tree": true,
+  "subcategories": [
+    {
+      "id": "4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34",
+      "name": "Clothing",
+      "slug": "clothing",
+      "description": "Everyday apparel",
+      "category_id": "8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05",
+      "active": true,
+      "image": "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=800&q=80",
+      "parent_id": null,
+      "created_at": "2026-06-20T10:19:02.864081+00:00",
+      "updated_at": "2026-06-20T12:13:59.35115+00:00",
+      "children": [
+        {
+          "id": "b73d0a19-6e42-4c8b-8a15-9f0e3d24c7a8",
+          "name": "Hoodies",
+          "slug": "hoodies",
+          "description": "Pullover and zip hoodies",
+          "category_id": "8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05",
+          "active": true,
+          "image": null,
+          "parent_id": "4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34",
+          "created_at": "2026-06-20T10:22:14.206787+00:00",
+          "updated_at": "2026-06-20T10:22:14.206787+00:00",
+          "children": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+The `tree` marker confirms the hierarchy was returned. Because nesting is opt-in and a flat list
+arrives as the same `subcategories` array, a bare array is ambiguous: a first page of flat results
+is indistinguishable from a complete forest, and a navigation menu built from one silently omits
+most of the catalog. Checking `tree === true` before rendering a hierarchy rules that out. A tree
+response carries no `pagination` object.
+
+Fetching one level at a time lazy-loads the hierarchy as the shopper drills in:
+
+```typescript
+const roots = await client.taxonomy.listSubcategories({
+  categoryId: '8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05',
+  rootOnly: true,
+});
+const children = await client.taxonomy.listSubcategories({
+  parentId: '4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34',
+});
+```
+
+```json Response
+{
+  "subcategories": [
+    {
+      "id": "b73d0a19-6e42-4c8b-8a15-9f0e3d24c7a8",
+      "name": "Hoodies",
+      "slug": "hoodies",
+      "description": "Pullover and zip hoodies",
+      "category_id": "8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05",
+      "active": true,
+      "image": null,
+      "parent_id": "4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34",
+      "created_at": "2026-06-20T10:22:14.206787+00:00",
+      "updated_at": "2026-06-20T10:22:14.206787+00:00"
+    }
+  ],
+  "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
+}
 ```
 
 ---
@@ -138,8 +234,7 @@ Retrieve details for a specific subcategory.
 
 ```typescript
 const sub = await client.taxonomy.getSubcategory({
-  id: 'macbooks-uuid',
-  fields: 'name,description,image' // Optional
+  id: '6dbda630-ad89-4659-a5ef-3b0aae0dba7b',
 });
 ```
 
@@ -147,6 +242,8 @@ const sub = await client.taxonomy.getSubcategory({
 {
   "id": "6dbda630-ad89-4659-a5ef-3b0aae0dba7b",
   "name": "Keyboards",
+  "slug": "keyboards",
+  "type": "subcategory",
   "description": "Mechanical and compact keyboards",
   "category_id": "7bf671dd-f49e-492c-b89f-a2892931f88f",
   "active": true,
@@ -157,6 +254,41 @@ const sub = await client.taxonomy.getSubcategory({
 }
 ```
 
+**Resolving either level**
+
+The endpoint accepts a category ID as well as a subcategory ID. When the ID belongs to a category
+of the store, the response is that category, carrying `"type": "category"` and an empty `ancestors`
+array. An ID that matches neither returns `404`.
+
+One call therefore resolves an ID at either level, which is what a breadcrumb walk needs: following
+`parent_id` upward eventually arrives at a category, and the same lookup handles that final hop.
+
+```typescript
+const node = await client.taxonomy.getSubcategory({
+  id: '8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05', // a category ID
+  include: 'ancestors',
+});
+
+if (node.type === 'category') {
+  // top of the hierarchy — stop walking
+}
+```
+
+```json Response
+{
+  "id": "8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05",
+  "name": "Wearables",
+  "slug": "wearables",
+  "type": "category",
+  "description": "Watches, trackers and wearable tech",
+  "active": true,
+  "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80",
+  "ancestors": [],
+  "created_at": "2026-06-19T20:07:35.277495+00:00",
+  "updated_at": "2026-06-20T10:11:03.932255+00:00"
+}
+```
+
 **Include direct children**
 
 Pass `include: 'children'` to receive the subcategory's **direct** child subcategories
@@ -164,20 +296,40 @@ Pass `include: 'children'` to receive the subcategory's **direct** child subcate
 as the shopper drills into your navigation. The array is empty for a leaf subcategory.
 
 ```typescript
-const computers = await client.taxonomy.getSubcategory({
-  id: 'computers-uuid',
+const clothing = await client.taxonomy.getSubcategory({
+  id: '4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34',
   include: 'children',
 });
+```
 
-// {
-//   id: 'computers-uuid',
-//   name: 'Computers',
-//   parent_id: null,
-//   children: [
-//     { id: 'desktops-uuid', name: 'Desktops', parent_id: 'computers-uuid' },
-//     { id: 'laptops-uuid',  name: 'Laptops',  parent_id: 'computers-uuid' }
-//   ]
-// }
+```json Response
+{
+  "id": "4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34",
+  "name": "Clothing",
+  "slug": "clothing",
+  "type": "subcategory",
+  "description": "Everyday apparel",
+  "category_id": "8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05",
+  "active": true,
+  "image": "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=800&q=80",
+  "parent_id": null,
+  "created_at": "2026-06-20T10:19:02.864081+00:00",
+  "updated_at": "2026-06-20T12:13:59.35115+00:00",
+  "children": [
+    {
+      "id": "b73d0a19-6e42-4c8b-8a15-9f0e3d24c7a8",
+      "name": "Hoodies",
+      "slug": "hoodies",
+      "description": "Pullover and zip hoodies",
+      "category_id": "8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05",
+      "active": true,
+      "image": null,
+      "parent_id": "4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34",
+      "created_at": "2026-06-20T10:22:14.206787+00:00",
+      "updated_at": "2026-06-20T10:22:14.206787+00:00"
+    }
+  ]
+}
 ```
 
 <Note>
@@ -187,30 +339,65 @@ const computers = await client.taxonomy.getSubcategory({
 
 **Include the ancestor breadcrumb chain**
 
-Pass `include: 'ancestors'` to receive the chain of parent subcategories from the top-level
-subcategory down to the immediate parent, as an `ancestors` array ordered **root-first** —
-exactly the shape you need to render a breadcrumb (`Home › Computers › Laptops › Gaming Laptops`).
-The array is empty for a top-level subcategory.
+Pass `include: 'ancestors'` to receive the full trail above a subcategory as an `ancestors` array
+ordered **root-first**: the owning category comes first, followed by the subcategory chain down to
+the immediate parent. That is the complete shape a breadcrumb needs
+(`Home › Wearables › Clothing › Hoodies`), with the category included so the trail reaches the top
+of the hierarchy. A top-level subcategory returns a single entry — its category.
+
+Each entry carries a `type` of either `"category"` or `"subcategory"`. The two are separate
+resources served by separate endpoints (`/v1/categories` and `/v1/subcategories`), so a client
+turning a crumb into a link or a follow-up lookup reads `type` to know which it holds.
 
 ```typescript
 const sub = await client.taxonomy.getSubcategory({
-  id: 'gaming-laptops-uuid',
+  id: 'b73d0a19-6e42-4c8b-8a15-9f0e3d24c7a8', // "Hoodies"
   include: 'ancestors',
 });
 
-// {
-//   id: 'gaming-laptops-uuid',
-//   name: 'Gaming Laptops',
-//   parent_id: 'laptops-uuid',
-//   ancestors: [
-//     { id: 'computers-uuid', name: 'Computers', parent_id: null },
-//     { id: 'laptops-uuid',   name: 'Laptops',   parent_id: 'computers-uuid' }
-//   ]
-// }
+const breadcrumb = [...sub.ancestors, sub].map((n) => n.name).join(' › ');
+// "Wearables › Clothing › Hoodies"
 
-// Build a breadcrumb: [...sub.ancestors, sub].map(s => s.name).join(' › ')
-// returns "Computers › Laptops › Gaming Laptops"
+const href = (n) => (n.type === 'category' ? `/c/${n.slug}` : `/s/${n.slug}`);
 ```
+
+```json Response
+{
+  "id": "b73d0a19-6e42-4c8b-8a15-9f0e3d24c7a8",
+  "name": "Hoodies",
+  "slug": "hoodies",
+  "type": "subcategory",
+  "description": "Pullover and zip hoodies",
+  "category_id": "8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05",
+  "active": true,
+  "image": null,
+  "parent_id": "4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34",
+  "created_at": "2026-06-20T10:22:14.206787+00:00",
+  "updated_at": "2026-06-20T10:22:14.206787+00:00",
+  "ancestors": [
+    {
+      "id": "8f2a1c64-95f7-4a0e-9d3b-1c7f4e2a6b05",
+      "name": "Wearables",
+      "slug": "wearables",
+      "type": "category",
+      "parent_id": null
+    },
+    {
+      "id": "4c1e9f22-7b3d-4a58-9f61-2d8c05a71e34",
+      "name": "Clothing",
+      "slug": "clothing",
+      "type": "subcategory",
+      "parent_id": null
+    }
+  ]
+}
+```
+
+<Note>
+  The first `ancestors` entry is always the owning category, so a breadcrumb rendered from
+  `[...node.ancestors, node]` starts at the top of the catalog rather than at the node's
+  top-level subcategory.
+</Note>
 
 You can combine both in one request — `include: 'ancestors,children'` returns the node with
 both its breadcrumb trail and its direct children, enough to render a full category page
@@ -222,26 +409,24 @@ Once you have a category or subcategory ID, you can use it to filter products us
 
 ### Filter by Category
 ```typescript
-// Get products in a specific category (e.g., "Electronics")
+// Get products in a specific category
 const products = await client.products.listProducts({
-  categoryId: 'electronics-uuid',
+  categoryId: '7bf671dd-f49e-492c-b89f-a2892931f88f',
   limit: 24
 });
-// returns { products: [ { product_id, name, category_name: "Electronics", price, stock, ... } ],
-//     pagination: { limit: 24, next_cursor, has_more } }  — see ProductsService for the full row shape
 ```
+
+See `ProductsService` for the full product row shape.
 
 ### Filter by Subcategory
 ```typescript
-// Get products in a specific subcategory (e.g., "Smartphones")
-const smartphones = await client.products.listProducts({
-  subcategoryId: 'smartphones-uuid'
+// Get products in a specific subcategory
+const keyboards = await client.products.listProducts({
+  subcategoryId: '6dbda630-ad89-4659-a5ef-3b0aae0dba7b'
 });
-// returns { products: [ { product_id: "2f571a46-e02a-44ea-9a68-0772381e6da2",
-//                   name: "Compact Mechanical Keyboard", subcategory_name: "Keyboards",
-//                   price: 89, ... } ], pagination: {...} }
-//   (a subcategory filter matches its whole subtree)
 ```
+
+A subcategory filter matches the whole subtree beneath it.
 
 <Note>
   Filtering products by a subcategory automatically includes products in **all of its nested
@@ -253,11 +438,12 @@ const smartphones = await client.products.listProducts({
 ```typescript
 // Precise filtering for nested navigation
 const results = await client.products.listProducts({
-  categoryId: 'electronics-uuid',
-  subcategoryId: 'smartphones-uuid'
+  categoryId: '7bf671dd-f49e-492c-b89f-a2892931f88f',
+  subcategoryId: '6dbda630-ad89-4659-a5ef-3b0aae0dba7b'
 });
-// returns { products: [...], pagination: {...} } — same row shape as above, scoped to both filters
 ```
+
+The response has the same shape as above, scoped to both filters.
 
 ---
 
@@ -276,6 +462,6 @@ All taxonomy endpoints are `GET` and accept both **publishable** and **secret** 
 | `200` | Success. |
 | `400` | Invalid request — malformed UUID, bad query parameters, or invalid `fields` selector. |
 | `401` | Invalid or missing API key. |
-| `404` | Category or subcategory not found (single-resource endpoints only). List endpoints return `200` with an empty array. |
+| `404` | No category or subcategory in the store matches the given ID (single-resource endpoints only). List endpoints return `200` with an empty array. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |
