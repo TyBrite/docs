@@ -1483,18 +1483,23 @@ paths:
           in: query
           description: |
             Filter products by category UUID. Use this to build category-specific product pages.
-              
+
+            **Covers descendants.** A category matches products filed directly against it AND
+            products filed under any of its subcategories, at any depth, so a category page shows
+            everything beneath it rather than only what was filed at the top level.
+
+            **Accepts several ids.** Repeat the parameter (`category_id=a&category_id=b`), bracket
+            it (`category_id[]=a&category_id[]=b`), or comma-separate it (`category_id=a,b`).
+            Passing several ids in one request keeps a single pagination cursor valid across the
+            whole set; issuing one request per category gives separate cursors that cannot be
+            combined into a coherent page 2.
+
             **Validation:**
-            - Must be a valid UUID format
-            - Category must exist in your store
-              
-            **Use Cases:**
-            - Category navigation pages
-            - Category-specific product grids
-            - Filtered product listings
-              
-            **Combine with subcategory_id** for hierarchical filtering:
-              
+            - Each value must be a valid UUID
+            - An id that matches nothing returns an empty result rather than an error
+
+            **Combine with subcategory_id** to narrow further — both filters must match.
+
             **Related:** Use `GET /v1/categories` to retrieve available categories.
           schema:
             type: string
@@ -1504,18 +1509,22 @@ paths:
           in: query
           description: |
             Filter products by subcategory UUID for more granular filtering.
-              
+
+            **Covers descendants.** A subcategory matches products filed against it and against
+            every nested subcategory beneath it, so browsing a parent surfaces its children's
+            products too.
+
+            **Accepts several ids**, in the same three forms as `category_id`.
+
             **Validation:**
-            - Must be a valid UUID format
-            - Subcategory must exist in your store
-              
+            - Each value must be a valid UUID
+            - An id that matches nothing returns an empty result rather than an error
+
             **Hierarchical Filtering:**
             - Can be used alone or combined with category_id
             - When combined, both filters must match
-              
-            **Example:**
-              
-            **Related:** Use `GET /v1/categories/{id}/subcategories` to retrieve subcategories for a category.
+
+            **Related:** Use `GET /v1/subcategories?category_id=...` to retrieve the subcategories of a category.
           schema:
             type: string
             format: uuid
@@ -3065,7 +3074,7 @@ paths:
             default: false
         - name: tree
           in: query
-          description: 'When true, return subcategories as a nested hierarchy: each subcategory includes a children array of its nested subcategories. The response is not paginated in this mode — the full tree is returned in one call.'
+          description: 'When true, return subcategories as a nested hierarchy: each subcategory includes a children array of its nested subcategories. The response is not paginated in this mode — the full forest is returned in one call, and carries `tree: true` so a client can confirm it received a hierarchy rather than the first page of a flat list.'
           schema:
             type: boolean
             default: false
@@ -3186,7 +3195,7 @@ paths:
             format: uuid
         - name: include
           in: query
-          description: 'Comma-separated list of related data to nest on the response. Supported values: children (the subcategory''s direct, one-level-down child subcategories, as a children array) and ancestors (the breadcrumb chain from the top-level subcategory down to the immediate parent, as an ancestors array ordered root-first; empty for a top-level subcategory). Combine them, e.g. include=ancestors,children. Omit for a flat subcategory object.'
+          description: 'Comma-separated list of related data to nest on the response. Supported values: children (the subcategory''s direct, one-level-down child subcategories, as a children array) and ancestors (the breadcrumb chain as an ancestors array ordered root-first). The trail begins with the owning category and continues down to the immediate parent, so a top-level subcategory returns a single entry: its category. Each entry carries a `type` of `category` or `subcategory`, because the two are different resources — a category is addressed on /v1/categories and a subcategory on /v1/subcategories — and a client linking a crumb needs to know which it holds. Combine them, e.g. include=ancestors,children. Omit for a flat subcategory object.'
           schema:
             type: string
             example: ancestors,children
@@ -3245,15 +3254,24 @@ paths:
                     name: Gaming Keyboards
                     active: true
                     ancestors:
+                      - id: 7bf671dd-f49e-492c-b89f-a2892931f88f
+                        name: Electronics
+                        slug: electronics
+                        type: category
+                        active: true
                       - id: c62e2103-7bf1-4dc3-996d-22f937d42147
                         category_id: 7bf671dd-f49e-492c-b89f-a2892931f88f
                         parent_id: null
                         name: Computer Peripherals
+                        slug: computer-peripherals
+                        type: subcategory
                         active: true
                       - id: 6dbda630-ad89-4659-a5ef-3b0aae0dba7b
                         category_id: 7bf671dd-f49e-492c-b89f-a2892931f88f
                         parent_id: c62e2103-7bf1-4dc3-996d-22f937d42147
                         name: Keyboards
+                        slug: keyboards
+                        type: subcategory
                         active: true
         '400':
           $ref: '#/components/responses/BadRequestError'
@@ -19451,6 +19469,10 @@ components:
                             description: Category image URL, if the merchant set one.
                           product_count:
                             type: integer
+                            description: Products filed DIRECTLY against this category. Excludes products filed under its subcategories, so a category whose products all sit in subcategories reads 0 here.
+                          product_count_including_descendants:
+                            type: integer
+                            description: Products under this category at any depth, including those filed under its subcategories. This is the figure that matches what `GET /v1/products?category_id=...` returns.
                 subcategories:
                   type: object
                   properties:
@@ -19502,6 +19524,10 @@ components:
                               format: uuid
                           product_count:
                             type: integer
+                            description: Products filed DIRECTLY against this subcategory, excluding those under its nested children.
+                          product_count_including_descendants:
+                            type: integer
+                            description: Products under this subcategory at any depth. This is the figure that matches what `GET /v1/products?subcategory_id=...` returns.
             specifications:
               type: object
               properties:
@@ -20204,6 +20230,10 @@ components:
         name:
           type: string
           example: Electronics
+        slug:
+          type: string
+          example: electronics
+          description: URL-safe identifier for the category, stable across renames — use it to build a durable category page URL rather than deriving one from the name. Categories are a fixed platform-wide set, so the same slug identifies the same category in every store.
         description:
           type: string
         image:
@@ -20239,6 +20269,10 @@ components:
         name:
           type: string
           example: Keyboards
+        slug:
+          type: string
+          example: keyboards
+          description: URL-safe identifier for the subcategory, stable across renames. Unique within its store, category and parent; where two names in that scope would produce the same slug, a numeric suffix is appended.
         description:
           type: string
         image:
@@ -20257,9 +20291,15 @@ components:
             $ref: '#/components/schemas/Subcategory'
         ancestors:
           type: array
-          description: Ancestor breadcrumb chain, ordered from the top-level subcategory down to the immediate parent (root-first). Only included when fetching a single subcategory with include=ancestors; empty for a top-level subcategory, omitted otherwise.
+          description: 'Ancestor breadcrumb chain, ordered root-first. Begins with the owning category and continues down to the immediate parent, so a top-level subcategory returns one entry: its category. Each entry carries a `type` of `category` or `subcategory` — the two are addressed on different endpoints, so a client linking a crumb needs to know which it holds. Only included when fetching a single subcategory with include=ancestors.'
           items:
             $ref: '#/components/schemas/Subcategory'
+        type:
+          type: string
+          enum:
+            - category
+            - subcategory
+          description: Which level of the taxonomy this entry is. Present on entries of an ancestors chain, where both levels appear; omitted on an ordinary subcategory object.
         created_at:
           type: string
           format: date-time

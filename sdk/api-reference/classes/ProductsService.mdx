@@ -112,6 +112,39 @@ pair it with `listBrands` below to render a "shop by brand" row, then list the c
 const { products } = await client.products.listProducts({ brand: 'Samsung', limit: 20 });
 ```
 
+#### Filter by category and subcategory
+
+`category_id` and `subcategory_id` both match a whole branch of the taxonomy rather than a single
+node. A category matches products filed directly against it **and** products filed under any of its
+subcategories, at any depth; a subcategory matches products filed against it and every nested
+subcategory beneath it. A category page therefore returns the products of the branch as a shopper
+understands it — a "Computers" category includes everything under "Laptops" without listing each
+subcategory separately.
+
+```typescript
+const { products, pagination } = await client.products.listProducts({
+  categoryId: '0a4c2c19-16a6-4b1e-9d0e-4d8f1a6b2c37',
+  limit: 20
+});
+```
+
+Each value must be a valid UUID. An id that matches nothing returns an empty `products` array with a
+`200`, not an error. The two filters can be combined, in which case a product must match both.
+The subcategories of a category are available from `GET /v1/subcategories?category_id=…`.
+
+**Several ids in one request.** Both parameters accept multiple ids, in three forms:
+
+| Form | Example |
+| :--- | :--- |
+| Repeated | `category_id=a&category_id=b` |
+| Bracketed | `category_id[]=a&category_id[]=b` |
+| Comma-separated | `category_id=a,b` |
+
+Passing several ids to one request keeps a single pagination cursor valid across the combined set.
+One request per category yields a separate cursor per response, and those cursors cannot be merged
+into a coherent page 2 — so a landing page spanning several categories is built from one multi-id
+request, not from several single-id requests stitched together.
+
 ---
 
 ### `listBrands`

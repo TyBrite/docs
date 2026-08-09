@@ -115,6 +115,71 @@ const freshData = await client.system.getStoreInfo({ cache: false });
   The `store` section (ID, Name, Timezone, Currencies) is **always included** regardless of the filtered sections.
 </Note>
 
+#### Category and subcategory counts
+
+The `catalog` section carries a `taxonomy` block listing every category and subcategory. Each entry
+reports two product counts, and they answer different questions:
+
+| Field | Counts |
+| :--- | :--- |
+| `product_count` | Products filed **directly** against that node. |
+| `product_count_including_descendants` | Products under that node at **any depth**, including those filed against nested subcategories. |
+
+The two differ wherever a merchant files products against subcategories rather than the category
+itself: a category holding nothing directly reports `product_count: 0` while the branch beneath it
+holds products, so the inclusive figure is the one to render on category navigation. It is also the
+figure that matches what `GET /v1/products?category_id=…` returns, because that filter covers
+descendants.
+
+A subcategory entry additionally carries `category` and `category_id` (its parent category),
+`parent_id` and `parent_name` (`null` for a top-level subcategory), and `children` — the ids of its
+direct children, so a client renders breadcrumbs and the nested tree without further calls.
+
+```json Response
+{
+  "catalog": {
+    "taxonomy": {
+      "categories": {
+        "total": 2,
+        "list": [
+          {
+            "id": "0a4c2c19-16a6-4b1e-9d0e-4d8f1a6b2c37",
+            "name": "Accessories & Cables",
+            "image": null,
+            "product_count": 3,
+            "product_count_including_descendants": 5
+          },
+          {
+            "id": "7c1f9b84-2d63-4a70-8f52-1b9e6c0a4d81",
+            "name": "Audio & Headphones",
+            "image": null,
+            "product_count": 2,
+            "product_count_including_descendants": 4
+          }
+        ]
+      },
+      "subcategories": {
+        "total": 1,
+        "list": [
+          {
+            "id": "b83d5f10-6c47-42a9-9e15-3f7a20d8c6b4",
+            "name": "Over-Ear Headphones",
+            "image": null,
+            "category": "Audio & Headphones",
+            "category_id": "7c1f9b84-2d63-4a70-8f52-1b9e6c0a4d81",
+            "parent_id": null,
+            "parent_name": null,
+            "children": [],
+            "product_count": 2,
+            "product_count_including_descendants": 2
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
 The `features` block is a flat set of booleans your storefront uses to show or hide capabilities: `ai_recommendations`, `semantic_search`, `multi_currency`, `dynamic_pricing`, `cms` (blog posts), `lookbooks` (shoppable lookbooks — separate from `cms`), `returns`, `gift_cards`, `promotions`, `messaging`, `specifications`, and `collections`.
 
 #### What `true` / `false` mean
