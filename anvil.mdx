@@ -84,6 +84,12 @@ Small edits stay in plain language: describe what should be different, see it on
 it live. Requests that need real code, pricing or checkout changes are refused and pointed at a full
 build rather than half-applied.
 
+The mechanism behind this is ordinary platform machinery rather than anything private to Anvil. A
+storefront subscribes to the same lifecycle events any tool can subscribe to — a collection published,
+a payment provider connected, a capability becoming available on the store's plan — and each one is
+what prompts the matching storefront change. [Webhooks & automation](/workflows/webhooks-automation)
+covers the event catalogue and how to build against it.
+
 ## Store types
 
 Anvil builds **retail** storefronts by default, and **wholesale** storefronts with both buying flows —
