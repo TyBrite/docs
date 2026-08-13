@@ -1,27 +1,72 @@
 ---
 title: "Galactic Core"
-description: "A global-first, headless commerce and marketplace platform — the full operating layer for a store (catalog, checkout, payments, accounting, search, recommendations, returns, analytics, and more) behind one coherent API and a typed SDK."
+description: "Galactic Core (GC) is programmable commerce infrastructure — the commerce engine and operational layer behind stores, wholesalers, marketplaces and agencies. Catalog, checkout, payments, tax, accounting, search, returns and analytics through one REST API and a typed TypeScript SDK."
 ---
 
-**Galactic Core** is a headless commerce and marketplace platform. It exposes a complete
-store — catalog, cart, checkout, payments, customers, accounting, search, recommendations,
-promotions, gift cards, returns, messaging, content, and storefront analytics — through **one
-coherent REST API** and an **auto-generated TypeScript SDK**, served from the edge.
+**Galactic Core** — **GC** — is programmable commerce infrastructure: the engine that runs the
+commerce, and the operational layer around it. Catalog, cart, checkout, payments, tax, inventory,
+double-entry accounting, search, recommendations, promotions, gift cards, returns, messaging, content
+and analytics are all part of the platform, reached through one REST API and a typed TypeScript SDK.
 
-The storefront experience is yours to build: bring your own front end (web, mobile, an
-AI-generated storefront, or a backend service), call the API, and the commerce logic — inventory
-math, order lifecycle, payment capture, tax, double-entry accounting, fulfillment — is handled for
-you.
+The storefront is yours. Bring a web front end, a mobile app, an AI-generated storefront or a backend
+service; call the API, and the commerce logic behind it — inventory math, order lifecycle, payment
+capture, tax resolution, ledger entries, fulfilment — is already handled.
+
+## Who Galactic Core is for
+
+GC is the layer other commerce businesses are built on, so the answer to "is this for me?" depends on
+what you are running rather than how large it is.
+
+<Columns cols={2}>
+  <Card title="A merchant selling direct" icon="store">
+    You need a real store — products, checkout, payments, tax, returns, books — without assembling it
+    from separate services. Build the front end yourself, or generate one with
+    [Anvil](/anvil) and connect it to the same API.
+  </Card>
+  <Card title="A wholesaler selling to businesses" icon="handshake">
+    Your buyers negotiate. Quotes, purchase orders, invoices, net terms, per-buyer price lists and
+    credit limits are part of the platform rather than a spreadsheet beside it. See
+    [B2B](/modes#b2b-wholesale).
+  </Card>
+  <Card title="Someone running a marketplace" icon="shop">
+    Many sellers behind one storefront, one cart spanning several of them, and a single shopper
+    payment split to each seller at capture. See [Marketplace](/modes#marketplace) and
+    [Marketplaces at Scale](/how-gc-works/marketplace-scale).
+  </Card>
+  <Card title="An agency or software company" icon="building">
+    Your customers are merchants. Run GC as your own commerce platform — your brand, your domain,
+    your plans and prices, your merchants — with the engine out of sight. See [Agencies](/agencies).
+  </Card>
+</Columns>
+
+The agency case covers more kinds of company than the name suggests: development studios building
+storefronts for clients, marketing agencies who want the commerce behind the campaigns they already
+run, and software companies generating front ends with AI that need a deterministic commerce backend
+underneath. What they share is that the merchant is *their* customer, and GC stays out of sight.
+
+Every one of these runs on the same engine. What differs is who the operator serves — see
+[Deployment Modes](/modes) for how a deployment is configured for each.
+
+## Building with an AI agent
+
+Storefronts are increasingly written by an agent rather than typed by hand, and an agent needs a
+backend whose behaviour is fixed and whose contract it can read. Every endpoint, request and response
+is published as an OpenAPI specification and a generated SDK, so an agent works from what is deployed
+rather than from what it recalls.
+
+Inside the platform, the assistant works the same way. It prepares gift cards, promotions and pricing
+rules from a store's own data as drafts a human approves, and refuses actions it cannot cover — see
+[Agentic commerce](/agentic-commerce) for what it can and cannot do on its own.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
     Make your first authenticated call and render a product in a few minutes.
   </Card>
+  <Card title="Deployment Modes" icon="sliders" href="/modes">
+    Vanilla, marketplace and B2B — what each adds, and which one a deployment runs.
+  </Card>
   <Card title="TypeScript SDK" icon="js" href="/sdk/introduction">
     A type-safe client covering every service, with retries, pagination, and HMAC built in.
-  </Card>
-  <Card title="API Reference" icon="terminal" href="/api-reference/introduction">
-    Every endpoint, request, and response — generated from the OpenAPI spec.
   </Card>
   <Card title="Core Concepts" icon="diagram-project" href="/concepts">
     Keys, environments, isolation, edge caching, and how money flows.
@@ -30,8 +75,8 @@ you.
 
 ## What you can build
 
-The API spans **29 services across ~145 operations**, grouped by the job they do. A typical
-storefront calls a handful of them.
+The API spans **29 services across ~145 operations**, grouped by the job they do. A typical storefront
+calls a handful of them.
 
 <CardGroup cols={3}>
   <Card title="Catalog & Discovery" icon="magnifying-glass">
@@ -69,9 +114,9 @@ storefront calls a handful of them.
     Your in-app assistant prepares gift cards, promotions, and dynamic-pricing rules from your store's
     own data as drafts you approve, protects your margin, and tidies your catalogue directly.
   </Card>
-  <Card title="Integrations" icon="plug">
-    Outbound webhooks, catalog ingestion (push or scheduled feed pull), and "Log in with GC" for
-    third-party tools.
+  <Card title="Native integrations" icon="plug" href="/integrations">
+    Payment processors, ad platforms, catalog channels, shipping, accounting, messaging and tax —
+    connected with a merchant's own credentials, and open to any provider through an extension.
   </Card>
   <Card title="Global by default" icon="earth-americas">
     Per-store currency, multi-currency catalogs, and geographic pricing — currency always read from
