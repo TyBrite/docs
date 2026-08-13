@@ -132,15 +132,15 @@ calls a handful of them.
     sparse field selection hold across every endpoint, so a convention learned on one is the
     convention everywhere.
   </Card>
-  <Card title="Commerce, not just storage" icon="layer-group">
+  <Card title="Commerce, not just storage" icon="layer-group" href="/how-gc-works/request-lifecycle">
     Orders create journal entries, reduce stock, redeem gift cards, and update customer metrics
     automatically. You call one endpoint; the operational side effects are handled.
   </Card>
-  <Card title="Edge-first performance" icon="bolt">
+  <Card title="Edge-first performance" icon="bolt" href="/how-gc-works/caching">
     Reads are served from a multi-tier edge cache, so catalog and pricing calls return in tens of
     milliseconds worldwide.
   </Card>
-  <Card title="Tenant isolation" icon="shield-halved">
+  <Card title="Tenant isolation" icon="shield-halved" href="/how-gc-works/data-model">
     Row-level security keeps every store's data private on the shared platform; marketplace and
     enterprise tenants run on a dedicated stack of their own. See [Core Concepts](/concepts).
   </Card>
@@ -148,11 +148,16 @@ calls a handful of them.
     Every endpoint has a test environment keyed by your API key — build and test against realistic
     data without touching production.
   </Card>
-  <Card title="Generate a storefront" icon="wand-magic-sparkles">
-    The SDK is consumable by AI storefront generators, so a complete, commerce-wired storefront can
+  <Card title="Build a storefront" icon="wand-magic-sparkles">
+    The SDK is consumable by AI storefront builders, so a complete, commerce-wired storefront can
     be produced from the API surface alone.
   </Card>
 </Columns>
+
+Behaviour under load, and what happens when something fails, is covered in
+[Scaling & Reliability](/how-gc-works/scaling-reliability) — and for a marketplace, where thousands of
+sellers share one storefront, in [Marketplaces at Scale](/how-gc-works/marketplace-scale). The limits
+on automated and AI-driven actions are in [Guardrails](/how-gc-works/guardrails).
 
 ## Two ways to integrate
 
