@@ -1,57 +1,120 @@
 ---
 title: "Anvil"
-description: "Generate a complete, Galactic Core-wired storefront from a description — no boilerplate. Anvil is the AI storefront generator built natively on the Galactic Core SDK."
+description: "Anvil is an autonomous storefront studio for commerce: describe the shop you want and it builds a complete, production-ready storefront wired to Galactic Core — catalog, checkout, payments and orders — from the first line of code."
 ---
 
-**Anvil** turns a plain-language description of a store into a complete, deployed storefront,
-already wired to your Galactic Core catalog, cart, checkout, payments, search, and the rest of the
-SDK — the layer that sits on top of this API, generated rather than hand-built.
+**Anvil** is an autonomous storefront studio for commerce, built by Tybrite Labs alongside Galactic
+Core. A merchant describes the shop they want in plain language, and Anvil plans and writes a complete
+React and TypeScript storefront — browse, search, product detail, cart, customer accounts, checkout,
+payments, order history and shipping — deploys it to the edge, and returns a live URL.
 
-<Card title="Try Anvil" icon="wand-magic-sparkles" href="https://anvil.tybritelabs.com">
-  Describe your store and watch a working, commerce-wired storefront come together at
-  **anvil.tybritelabs.com**.
+It builds against a merchant's live Galactic Core store rather than placeholder data, so the shop has
+working stock levels, real prices in the merchant's own currencies, working customer accounts, and a
+checkout that takes real payments through the merchant's own payment accounts. There is no step where
+mock data is later swapped for a real backend.
+
+<Card title="anvil.tybritelabs.com" icon="hammer" href="https://anvil.tybritelabs.com">
+  The product site — what Anvil builds, how it is priced, and how to start.
 </Card>
 
-## What it generates against
+## How Anvil and Galactic Core divide the work
 
-Everything documented here — the [TypeScript SDK](/sdk/introduction), the service surface, the
-conventions in [Core Concepts](/concepts) — is the same surface Anvil generates against. A
-storefront it produces calls the documented methods (`client.products.listProducts`,
-`client.orders`, `client.payments`, `client.search`, recommendations, analytics, multi-currency
-pricing) exactly as hand-written integration code would.
+Anvil builds the shopfront; Galactic Core runs the commerce. The catalog, stock, prices and orders a
+shopper sees in an Anvil storefront are the same records the merchant manages in GC Admin, because the
+storefront reads and writes this API rather than a copy of it.
+
+A merchant needs a GC store to use Anvil — without one there is nothing for a storefront to sell.
+Anvil handles no money itself: payments settle through the merchant's own payment accounts, configured
+in GC.
+
+The division also shows up in credentials. Storefront reads use a client-safe publishable key;
+anything writing an order or taking a payment goes through the storefront's own server with a secret
+key and a signed request, so credentials that can move money never reach a browser — the same split
+described in [Authentication](/authentication).
+
+## What Anvil builds
 
 <Columns cols={2}>
-  <Card title="Built on this SDK" icon="js">
-    Anvil generates against the documented SDK, so the output is ordinary integration code you can
-    read, edit, and extend.
+  <Card title="A complete storefront, not a landing page" icon="store">
+    The whole path a shopper takes from arriving to being emailed a receipt: browse and search,
+    product detail, cart, accounts, checkout, payments, order history and shipping.
   </Card>
-  <Card title="Commerce-aware out of the box" icon="cart-shopping">
-    Catalog pages, cart, checkout, customer accounts, search and recommendations are wired from the
-    start, including storefront analytics and the correct store currency.
+  <Card title="An experience, not a set of pages" icon="wand-magic-sparkles">
+    Anvil decides the interface, the shopper's path, and which surfaces the shop needs — reviews, a
+    currency switcher, filters open or collapsed — from what the store actually sells.
   </Card>
-  <Card title="Standard or marketplace" icon="store">
-    Generate a single-merchant store or a multi-merchant marketplace storefront — Anvil knows the
-    difference and uses the right endpoints.
+  <Card title="A treatment that follows the catalogue" icon="palette">
+    An editorial treatment for beauty and fashion, a dense specification-forward one for tools and
+    parts. It is a starting default rather than a constraint: a merchant who asks for something else
+    gets it.
   </Card>
-  <Card title="Yours to own" icon="code-branch">
-    The result is your codebase, deployable and editable — Anvil gets you to a working storefront
-    fast, then you take it from there.
+  <Card title="Code the merchant owns" icon="code">
+    An ordinary React and TypeScript codebase built on the documented SDK, which can be exported and
+    read like any other integration.
   </Card>
 </Columns>
 
-## When to reach for it
+## What happens after it is built
 
-- You want a storefront live quickly without writing the integration plumbing first.
-- You're prototyping a concept and want a real, data-backed store to react to.
-- You're a partner who wants to offer customers an AI-generated storefront on top of their own
-  Galactic Core backend.
+A storefront Anvil builds keeps up with the business rather than freezing at launch, which is the part
+that distinguishes it from a website builder.
 
-Building by hand is equally supported, from the [Quickstart](/quickstart) and the
-[TypeScript SDK](/sdk/introduction). Both routes end up on the same API surface, so a generated
-storefront and a hand-written one are extended the same way.
+<Columns cols={2}>
+  <Card title="It follows the store" icon="arrows-rotate">
+    When the store gains a category, starts collecting reviews, or turns on a second currency, Anvil
+    proposes the matching storefront change. Routine ones can apply unattended; anything touching
+    checkout, payments or pricing waits for approval.
+  </Card>
+  <Card title="It repairs itself" icon="wrench">
+    A live storefront reports its own faults. Anvil groups them, fixes what is safe to fix, and shows
+    a preview before anything goes live. A repair that makes things worse is reverted automatically,
+    and repairs are never charged.
+  </Card>
+  <Card title="Changes are staged and previewable" icon="eye">
+    Every staged change — an automatic update, a repair, an A/B variant — is previewable on the
+    merchant's own storefront before a shopper sees it, and applies without a rebuild.
+  </Card>
+  <Card title="Tests and scheduling" icon="flask">
+    Run two versions and let the winner promote itself on statistical significance, or schedule a
+    change for a date and timezone.
+  </Card>
+</Columns>
 
-<Note>
-  Anvil is a separate product with its own home at
-  [anvil.tybritelabs.com](https://anvil.tybritelabs.com). This page is a pointer — head there for
-  the full experience.
-</Note>
+Small edits stay in plain language: describe what should be different, see it on the storefront, make
+it live. Requests that need real code, pricing or checkout changes are refused and pointed at a full
+build rather than half-applied.
+
+## Store types
+
+Anvil builds **retail** storefronts by default, and **wholesale** storefronts with both buying flows —
+direct checkout for an approved buyer reordering routine items, and request-for-quote for negotiated
+orders that become a quote, a purchase order and an invoice on terms. Whether an order settles
+immediately or on terms is decided per order by the buyer's terms, so a wholesale shop is never
+quote-only. Both map onto the modes described in [Deployment Modes](/modes).
+
+## Where Anvil fits for a developer
+
+Anvil consumes this API through the [TypeScript SDK](/sdk/introduction), so what it produces is
+ordinary integration code against the same contract you would write by hand. Reading a storefront it
+built is a reasonable way to see the conventions in [Core Concepts](/concepts) applied end to end.
+
+<Columns cols={2}>
+  <Card title="Reach for Anvil when" icon="check">
+    A merchant needs a working shop without hiring a developer; a storefront should track the
+    catalogue without someone maintaining it; or you are an agency running storefronts for many
+    clients under your own brand and domain.
+  </Card>
+  <Card title="Build directly when" icon="code">
+    The front end is unusual enough that generated structure would get in the way, it must live
+    inside an existing application, or the client is not a web storefront at all — a kiosk, a mobile
+    app, an internal tool.
+  </Card>
+</Columns>
+
+Both routes end up on the same API, so a storefront Anvil built and one written by hand are the same
+kind of thing to Galactic Core, and a merchant can move between them without changing their store.
+
+<Card title="Custom Extensions" icon="puzzle-piece" href="/byo-compute">
+  Anvil can scaffold a custom payment or shipping integration — describe it and Anvil writes the
+  function skeleton against the provider interface.
+</Card>
