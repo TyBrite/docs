@@ -46,9 +46,7 @@ indexed lookup instead of a fan-out of joins assembled at request time.
 
 ## Two tiers of isolation
 
-Isolation comes at two levels, and which one applies depends on the tenant, not on the code. Row-level
-security separates stores that share a database; a dedicated deployment separates a tenant physically from
-everyone else. Most tenants need the first; some need the second.
+Isolation comes at two levels, and which one applies depends on the tenant rather than on the code.
 
 The **shared platform** is the default. A single merchant runs here: their store shares one multi-tenant
 database with many others, and row-level security is the boundary — the same guarantee described above, and
@@ -68,7 +66,7 @@ serving one tenant.
     A dedicated deployment's data lives in its own database, never in a pool shared with other tenants —
     a product guarantee rather than a query filter.
   </Card>
-  <Card title="Contained blast radius" icon="shield-halved">
+  <Card title="An incident reaches one tenant" icon="shield-halved">
     A dedicated deployment's load spike, migration, or incident cannot affect another tenant, because it
     shares no database or compute. On the shared platform, per-store limits and quotas keep one store's
     load from crowding out its neighbours.
@@ -79,11 +77,11 @@ serving one tenant.
   </Card>
 </Columns>
 
-The same codebase serves both tiers, so a tenant can start on the shared platform and graduate to a
-dedicated deployment without a rewrite. Taken together, the two tiers cover the confidentiality and
-integrity sides of the CIA triad: row-level security and — where it applies — physical isolation keep each
-tenant's data confidential, and the server-side pricing authority and ACID writes described in the
-[Request Lifecycle](/how-gc-works/request-lifecycle) keep it intact. Availability — the third side — is the
+The same codebase serves both tiers, so a tenant can start on the shared platform and move to a dedicated
+deployment without a rewrite. Between them the two tiers cover the confidentiality and integrity sides of
+the CIA triad: row-level security and, where it applies, physical isolation keep each tenant's data
+confidential, and the server-side pricing authority and ACID writes described in the
+[Request Lifecycle](/how-gc-works/request-lifecycle) keep it intact. Availability, the third side, is the
 subject of [Scaling & Reliability](/how-gc-works/scaling-reliability).
 
 ## Production and sandbox share a stack, not data

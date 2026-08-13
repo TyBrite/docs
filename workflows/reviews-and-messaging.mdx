@@ -3,35 +3,32 @@ title: "Shopper Engagement: Wishlist, Reviews & Messaging"
 description: "Everything that keeps a shopper engaged around a purchase — saving items to a wishlist and moving them to the cart, writing and voting on reviews (including the duplicate-review conflict), and running a real-time support conversation (both realtime modes, plus edit/delete)."
 ---
 
-This flow follows **one signed-in shopper** through the three surfaces that surround a purchase:
-they **save the Watch to their wishlist**, then move it into the cart; later they **review** the
-product they bought; and they open a **support thread** to ask about the order. Each step shows the
-real variant cases an integrator must handle — the atomic wishlist→cart move, a *second* review
-hitting a `409`, a deleted message, and the two different realtime connection shapes — threaded as
-one continuous story.
+One signed-in shopper moves through the three surfaces that surround a purchase: they save the Watch
+to their wishlist and later move it into the cart, they review the product they bought, and they open
+a support thread about the order. Along the way come the atomic wishlist-to-cart move, a second
+review meeting a `409`, a deleted message, and the two realtime connection shapes.
 
-Every call here acts on a **signed-in shopper's own data**, so it pairs an API key with the
-shopper's session token in `xAuthToken`. (See [Workflow Examples](/workflows/introduction) for the
-client setup, and [Storefront Checkout](/workflows/storefront-checkout#3-sign-the-shopper-in) for how
-to mint that session token.) We carry one shopper — **Jane Doe**, customer
-`9489529e-69b0-4e84-bea7-62c499085bd9` — and one product, the **Samsung Galaxy Watch 6**
-(`0186665f-…`, variant `e98631a9-…`), throughout.
+Every call here acts on a signed-in shopper's own data, so it pairs an API key with the shopper's
+session token in `xAuthToken`. [Workflow Examples](/workflows/introduction) has the client setup, and
+[Storefront Checkout](/workflows/storefront-checkout#3-signing-the-shopper-in) covers minting that
+session token. One shopper — Jane Doe, customer `9489529e-69b0-4e84-bea7-62c499085bd9` — and one
+product, the Samsung Galaxy Watch 6 (`0186665f-…`, variant `e98631a9-…`), carry throughout.
 
 <Info>
-  Wishlist, review, and messaging writes are **browser-origin storefront writes**, so the
-  **publishable** client is fine — the shopper's `xAuthToken` is what proves ownership. Only the
-  merchant admin can moderate reviews or reply from the store side; those are not API actions.
+  Wishlist, review, and messaging writes are browser-origin storefront writes, so the publishable
+  client covers them; the shopper's `xAuthToken` is what proves ownership. Moderating reviews and
+  replying from the store side happen in the merchant admin and are not API actions.
 </Info>
 
 ## Wishlist
 
-The shopper isn't ready to buy — they **save the Watch for later**. Wishlists are always
-customer-scoped, so every call carries `customer_id` **and** the matching `xAuthToken`.
+The shopper is not ready to buy, and saves the Watch for later. Wishlists are always
+customer-scoped, so every call carries `customer_id` and the matching `xAuthToken`.
 
-### 1. Add to the wishlist
+### 1. Adding to the wishlist
 
-`addToWishlist` saves a variant and returns the refreshed wishlist (`201 Created`). Note the items
-carry `product_price` (the wishlist quotes the saved price) — a field the cart's items don't have.
+`addToWishlist` saves a variant and returns the refreshed wishlist (`201 Created`). Its items carry
+`product_price`, the price quoted at the time of saving — a field the cart's items do not have.
 
 ```typescript
 const wishlist = await storefront.cartWishlist.addToWishlist({
@@ -62,16 +59,15 @@ const wishlist = await storefront.cartWishlist.addToWishlist({
 ```
 
 <Note>
-  A variant can be saved **once** per customer — adding the same variant again returns `409
-  Conflict` (`{ "error": { "code": "conflict", "message": "Item already exists in wishlist" } }`)
-  rather than creating a duplicate. Check membership in your UI, or treat the `409` as "already
-  saved."
+  A variant can be saved once per customer. Adding the same variant again returns `409 Conflict`
+  (`{ "error": { "code": "conflict", "message": "Item already exists in wishlist" } }`) rather than
+  creating a duplicate, which makes the `409` itself a reliable "already saved" signal.
 </Note>
 
-### 2. Read the wishlist
+### 2. Reading the wishlist
 
-`getWishlist` lists the customer's saved items — same item shape as the add response. `customer_id`
-is required (anonymous wishlists are not supported).
+`getWishlist` lists the customer's saved items in the same item shape as the add response.
+`customer_id` is required, as anonymous wishlists are not supported.
 
 ```typescript
 const { items } = await storefront.cartWishlist.getWishlist({
@@ -99,12 +95,12 @@ const { items } = await storefront.cartWishlist.getWishlist({
 }
 ```
 
-### 3. Move a saved item to the cart (atomic)
+### 3. Moving a saved item to the cart (atomic)
 
-The shopper decides to buy. `moveWishlistToCart` does it in **one atomic step**: it validates stock,
-adds the item to (or merges it with) the cart, removes it from the wishlist, and returns the
-**refreshed cart**. The response echoes `removed_wishlist_item_id` so you know which saved item is
-gone, and the returned cart item has a *new* id (it's a cart row now, not the wishlist row).
+The shopper decides to buy. `moveWishlistToCart` is one atomic step: it validates stock, adds the
+item to the cart or merges it with an existing line, removes it from the wishlist, and returns the
+refreshed cart. The response echoes `removed_wishlist_item_id` to identify the saved item that is
+gone, and the returned cart item carries a new id, being a cart row rather than the wishlist row.
 
 ```typescript
 const cart = await storefront.cartWishlist.moveWishlistToCart({
@@ -137,10 +133,10 @@ const cart = await storefront.cartWishlist.moveWishlistToCart({
 }
 ```
 
-### 4. Remove a saved item
+### 4. Removing a saved item
 
-If instead the shopper just discards a saved item, `removeFromWishlist` deletes it by id (the
-`customer_id` query param is required so the delete is ownership-scoped).
+A shopper discarding a saved item instead reaches `removeFromWishlist`, which deletes it by id. The
+`customer_id` query param is required, which is what scopes the delete to its owner.
 
 ```typescript
 const removed = await storefront.cartWishlist.removeFromWishlist({
@@ -156,21 +152,21 @@ const removed = await storefront.cartWishlist.removeFromWishlist({
 ```
 
 <Tip>
-  The wishlist sits next to the cart in the same `cartWishlist` service. From here the shopper carries
-  the Watch into the [storefront checkout](/workflows/storefront-checkout) and pays — then comes back
-  to review it.
+  The wishlist sits alongside the cart in the same `cartWishlist` service. From here the Watch goes
+  into the [storefront checkout](/workflows/storefront-checkout) and is paid for, and the shopper
+  returns to review it.
 </Tip>
 
 ## Reviews
 
-The shopper received the Watch and wants to review it. Reviews start hidden and only go public once
-the merchant approves them.
+The Watch has arrived and the shopper wants to review it. Reviews start hidden and become public only
+once the merchant approves them.
 
-### 5. Submit a review (starts `pending`)
+### 5. Submitting a review (starts `pending`)
 
-`submitReview` creates the review `status: "pending"`; it appears in public listings only after the
-merchant approves it in their admin. Pass an `order_id` that belongs to the shopper to have the
-review flagged `verified_purchase: true`.
+`submitReview` creates the review with `status: "pending"`, and it appears in public listings only
+after the merchant approves it in their admin. An `order_id` belonging to the shopper flags the
+review `verified_purchase: true`.
 
 ```typescript
 const { review } = await storefront.reviews.submitReview({
@@ -207,11 +203,10 @@ const { review } = await storefront.reviews.submitReview({
 }
 ```
 
-### 6. The duplicate-review variant → `409 Conflict`
+### 6. The duplicate review → `409 Conflict`
 
-A shopper may hold only **one** non-rejected review per product. If Jane tries to submit a *second*
-review for the same Watch, the call returns `409` — handle it by editing the existing review in your
-UI, not by retrying the submit.
+A shopper holds only one non-rejected review per product, so a second review from Jane for the same
+Watch returns `409`. The resolution is editing the existing review rather than retrying the submit.
 
 ```typescript
 try {
@@ -238,12 +233,11 @@ try {
 }
 ```
 
-### 7. List approved reviews (public, with summary)
+### 7. Listing approved reviews (public, with summary)
 
-Once the merchant approves the first review, render the product page's review section with
-`listReviews`. On a **publishable** key this returns only `approved` reviews and always includes a
-`summary` block (average rating + star distribution). No customer token needed — this is public
-catalog data.
+Once the merchant approves the first review, `listReviews` backs the product page's review section.
+On a publishable key it returns only `approved` reviews and always includes a `summary` block —
+average rating plus star distribution. This is public catalog data, so no customer token is involved.
 
 ```typescript
 const { reviews, summary } = await storefront.reviews.listReviews({
@@ -289,15 +283,15 @@ const { reviews, summary } = await storefront.reviews.listReviews({
 ```
 
 <Tip>
-  Filter and sort with `rating`, `sort` (`newest` / `oldest` / `highest` / `lowest`), and page with
-  the `cursor` from `pagination.next_cursor`. Fetch one review by id with
-  `storefront.reviews.getReview({ id })`.
+  `rating` and `sort` (`newest` / `oldest` / `highest` / `lowest`) filter and order the list, and the
+  `cursor` from `pagination.next_cursor` pages it. `storefront.reviews.getReview({ id })` fetches one
+  review by id.
 </Tip>
 
-### 8. Mark a review helpful
+### 8. Marking a review helpful
 
-Let shoppers upvote reviews they found useful so you can surface them first. Only approved reviews
-accept votes; there's no built-in dedup, so track per-shopper voting in your own UI if you need it.
+Upvotes let a product page surface the reviews shoppers found useful. Only approved reviews accept
+votes, and there is no built-in de-duplication, so per-shopper voting state belongs in your own UI.
 
 ```typescript
 const { helpful_count } = await storefront.reviews.markReviewHelpful({
@@ -318,15 +312,14 @@ const { helpful_count } = await storefront.reviews.markReviewHelpful({
 
 ## Messaging
 
-The shopper opens a support thread about the order — and we keep it live so the store's replies
-stream in without polling.
+The shopper opens a support thread about the order, and it stays live so the store's replies arrive
+without polling.
 
-### 9. Start a conversation
+### 9. Starting a conversation
 
-`createConversation` opens a thread **and** posts the shopper's first message in one call.
-`thread_type` classifies the inquiry (`general`, `order_inquiry`, `product_inquiry`, `support`,
-`complaint`, `delivery`, `return`, `refund`, `technical`). When you pass `customer_id`, include the
-matching `xAuthToken`.
+`createConversation` opens a thread and posts the shopper's first message in one call. `thread_type`
+classifies the inquiry (`general`, `order_inquiry`, `product_inquiry`, `support`, `complaint`,
+`delivery`, `return`, `refund`, `technical`). A `customer_id` comes with the matching `xAuthToken`.
 
 ```typescript
 const { thread } = await storefront.messaging.createConversation({
@@ -358,10 +351,10 @@ const { thread } = await storefront.messaging.createConversation({
 }
 ```
 
-### 10. Send a follow-up message
+### 10. Sending a follow-up message
 
-`sendMessage` appends to the thread we just opened. The token must own the thread, otherwise the call
-returns `403`. (The message text goes in `message`.)
+`sendMessage` appends to the thread just opened, with the text in `message`. The token must own the
+thread; otherwise the call returns `403`.
 
 ```typescript
 const { message } = await storefront.messaging.sendMessage({
@@ -380,10 +373,10 @@ const { message } = await storefront.messaging.sendMessage({
 }
 ```
 
-### 11. List threads and read the conversation
+### 11. Listing threads and reading the conversation
 
-Show the shopper's inbox with `listThreads` (filter by `customer_id`; pinned threads come first),
-then load one conversation's messages with `getThreadMessages` (oldest-first by default).
+`listThreads` backs the shopper's inbox, filtered by `customer_id`, with pinned threads first;
+`getThreadMessages` loads one conversation's messages, oldest-first by default.
 
 ```typescript
 const { threads } = await storefront.messaging.listThreads({
@@ -462,12 +455,12 @@ const { messages } = await storefront.messaging.getThreadMessages({
 }
 ```
 
-### 12. Edit or delete a message
+### 12. Editing or deleting a message
 
-The shopper can revise or retract a message they sent. **Both require a secret key** (run them
-server-side). `editMessage` rewrites the content and stamps `is_edited: true` + `edited_at`;
-`deleteMessage` **soft-deletes** (the row stays, marked `is_deleted` and excluded from the default
-message list) and returns the `deleted_at` timestamp.
+A shopper can revise or retract a message they sent. Both calls require a secret key and so run
+server-side. `editMessage` rewrites the content and stamps `is_edited: true` plus `edited_at`;
+`deleteMessage` soft-deletes — the row stays, marked `is_deleted` and excluded from the default
+message list — and returns the `deleted_at` timestamp.
 
 ```typescript
 const edited = await server.messaging.editMessage({
@@ -505,9 +498,9 @@ const deleted = await server.messaging.deleteMessage({
 }
 ```
 
-### 13. Mark the thread read
+### 13. Marking the thread read
 
-When the shopper opens the conversation, clear their unread state.
+Opening the conversation clears the shopper's unread state.
 
 ```typescript
 const result = await storefront.messaging.markThreadRead({
@@ -523,13 +516,12 @@ const result = await storefront.messaging.markThreadRead({
 }
 ```
 
-### 14. Stream replies in real time
+### 14. Streaming replies in real time
 
-Polling for new messages is wasteful. Instead, open a **WebSocket** to the thread with the
-`subscribeToThread` helper and receive the store's replies the moment they're sent. One call covers
-every shopper — whether they signed in through Galactic Core or through your own identity provider —
-and it needs **no extra packages** (it uses the platform `WebSocket`, available in browsers, Deno,
-Bun, and Node 22+).
+The `subscribeToThread` helper opens a WebSocket to the thread, delivering the store's replies as
+they are sent rather than on a polling interval. The same call covers a shopper who signed in through
+Galactic Core and one who signed in through your own identity provider, and it pulls in no extra
+packages: it uses the platform `WebSocket`, available in browsers, Deno, Bun, and Node 22+.
 
 ```typescript
 import { subscribeToThread } from '@tybrite-labs/sdk';
@@ -548,8 +540,8 @@ const unsubscribe = subscribeToThread({
 unsubscribe();
 ```
 
-For a shopper authenticated with **your own** identity provider, pass the signed assertion as
-`externalAuth` instead of `authToken` — everything else is identical:
+For a shopper authenticated with your own identity provider, the signed assertion goes in
+`externalAuth` in place of `authToken`; everything else is identical:
 
 ```typescript
 const unsubscribe = subscribeToThread({
@@ -565,23 +557,24 @@ thread's participant before the socket is accepted, so a shopper only ever recei
 thread's messages.
 
 <Note>
-  Prefer to manage the connection yourself? Open a WebSocket to
-  `GET /v1/messaging/threads/{id}/subscribe` with `?api_key=` and either `?auth_token=` or
-  `?external_auth=` in the URL (browsers cannot set request headers on a WebSocket). The server pushes
-  one JSON frame per new message: `{ "type": "message.created", "payload": { "thread_id", "message" } }`.
-  Send the text frame `ping` to keep an idle connection alive; the server replies `pong`.
+  A connection managed directly, without the helper, is a WebSocket to
+  `GET /v1/messaging/threads/{id}/subscribe` carrying `?api_key=` and either `?auth_token=` or
+  `?external_auth=` in the URL, since browsers cannot set request headers on a WebSocket. The server
+  pushes one JSON frame per new message:
+  `{ "type": "message.created", "payload": { "thread_id", "message" } }`. The text frame `ping` keeps
+  an idle connection alive, and the server replies `pong`.
 
-  Want to bring your own identity provider? See
-  [Customer authentication](/authentication#customer-session-tokens-xauthtoken).
+  [Customer authentication](/authentication#customer-session-tokens-xauthtoken) covers bringing your
+  own identity provider.
 </Note>
 
 ## What's next
 
-- The shopper came from a [storefront checkout](/workflows/storefront-checkout) — wire the wishlist,
-  reviews, and a support thread in around the order.
+- The shopper arrived from a [storefront checkout](/workflows/storefront-checkout), which the
+  wishlist, reviews, and support thread sit around.
 - A returning shopper can [track orders and lodge a return](/workflows/returning-customer), often
   opening a `return`-type thread from the same inbox.
-- Discovery feeds this flow: [Search & Discovery](/workflows/search-and-discovery) captures the
-  `add_to_wishlist` event that put the Watch on the wishlist in the first place.
-- Building a multi-merchant storefront? Wishlist, reviews, and messaging carry over — see the
+- [Search & Discovery](/workflows/search-and-discovery) captures the `add_to_wishlist` event that put
+  the Watch on the wishlist to begin with.
+- Wishlist, reviews, and messaging carry over to a multi-merchant storefront — see the
   [Marketplace](/workflows/marketplace) split checkout and unified shopper profile.

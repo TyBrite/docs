@@ -5,13 +5,10 @@ description: 'Reference for the Tybrite API and the Galactic Core infrastructure
 
 # Galactic Core
 
-**The Programmable Commerce Platform by Tybrite Labs**
+Galactic Core exposes a production retail system — inventory, orders, accounting, payments, customers —
+through versioned REST endpoints, so an application can run commerce without implementing it.
 
-Galactic Core is the programmable interface layer that transforms GalacticOS into a globally accessible **Backend-as-a-Service (BaaS)** for commerce. Rather than rebuilding commerce logic from scratch, Galactic Core re-exposes the operational depth of a production-grade retail system through clean, versioned REST APIs.
-
-## Why Galactic Core?
-
-Instead of building commerce software, you are building on **commerce infrastructure**. This programmable foundation allows developers to leverage years of operational hardening through simple API calls:
+## What the API provides
 
 <CardGroup cols={2}>
   <Card title="Operational Depth" icon="layer-group">
@@ -21,16 +18,16 @@ Instead of building commerce software, you are building on **commerce infrastruc
     Globally distributed delivery with fast response times and aggressive caching for read-heavy endpoints.
   </Card>
   <Card title="Unified Logic" icon="puzzles-piece">
-    Centralized business rules—no data silos or duplicated logic across different sales channels.
+    Centralized business rules, so a sales channel does not carry its own copy of them.
   </Card>
   <Card title="Auditability" icon="shield-check">
     Every state change is tracked and traceable, providing a complete audit trail of commerce operations.
   </Card>
 </CardGroup>
 
-## Platform Pillars
+## Endpoint groups
 
-Our architecture is divided into five main functional pillars, accessible via our REST endpoints:
+The endpoints fall into four functional groups:
 
 <CardGroup cols={2}>
   <Card title="Core Commerce" icon="shopping-bag">
@@ -49,18 +46,16 @@ Our architecture is divided into five main functional pillars, accessible via ou
 
 ## Performance & Reliability
 
-Galactic Core is designed for high-scale, production-grade applications:
-
-- **Ultra-Low Latency**: Responses are served from the edge to ensure maximum performance globally.
-- **Idempotency**: All write operations (like order creation) support idempotency keys to prevent duplicates on retry.
-- **Field Filtering**: Most list endpoints support the `fields` parameter, allowing you to reduce payload size by up to 90%.
+- **Edge-served responses**: reads are answered from the network edge, close to the caller.
+- **Idempotency**: write operations such as order creation accept an idempotency key, so a retry cannot produce a duplicate.
+- **Field filtering**: most list endpoints accept a `fields` parameter, which cuts response size by 50–90%.
 
 ## Authentication
 
-All API requests require an API key in the `Authorization` header. We support two distinct key types for security:
+All API requests carry an API key in the `Authorization` header. There are two key types:
 
-- **Publishable Keys (`pk_...`)**: Safe for client-side use in websites and mobile apps. Limited to read-only operations.
-- **Secret Keys (`sk_...`)**: For secure, backend-only environments. grants full read/write access.
+- **Publishable keys (`pk_...`)**: safe for client-side use in websites and mobile apps, and limited to reads and the writes a shopper makes on their own behalf.
+- **Secret keys (`sk_...`)**: full read/write access, for backend-only environments.
 
 ```bash
 Authorization: Bearer tybrite_sk_live_YOUR_KEY

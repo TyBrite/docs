@@ -3,16 +3,15 @@ title: "Storefront Checkout"
 description: "The core shopper journey end to end — browse the catalog, build a cart, sign in, quote shipping, place the order, and take payment."
 ---
 
-This is the flow most integrations start with: a shopper goes from browsing to a paid order. Steps
-1–6 run with the **publishable** client in the browser (catalog, cart, shipping, an optional stock
-reservation); the order and payment in steps 7–8 run with the **secret** client on your server. We
-build the *same* order three ways in step 7 — base, with a promotion, with a promotion **and** a gift
-card — so you see every response shape and the two failure variants you'll actually hit. (See
-[Workflow Examples](/workflows/introduction) for the client setup.)
+A shopper goes from browsing to a paid order. Steps 1–6 run with the publishable client in the
+browser (catalog, cart, shipping, an optional stock reservation); the order and payment in steps 7–8
+run with the secret client on your server. Step 7 builds the same order three ways — base, with a
+promotion, with a promotion and a gift card — alongside the two rejections that guard the totals.
+[Workflow Examples](/workflows/introduction) has the client setup.
 
-## 1. Browse the catalog
+## 1. Browsing the catalog
 
-Start with a plain list, then narrow and trim it the way a real grid does.
+A plain list, then the narrowing and trimming a real grid does.
 
 ```typescript
 const { products } = await storefront.products.listProducts({ limit: 20 });
@@ -38,8 +37,8 @@ const { products } = await storefront.products.listProducts({ limit: 20 });
 }
 ```
 
-**Trim the payload with sparse fieldsets.** A grid needs a few columns, not the full product — pass
-`fields` to fetch only those and keep the response small (faster lists, less to render):
+A grid needs a few columns, not the full product. `fields` fetches only those, keeping the response
+small:
 
 ```typescript
 const { products } = await storefront.products.listProducts({
@@ -57,8 +56,8 @@ const { products } = await storefront.products.listProducts({
   interchangeable.
 </Note>
 
-**Page through with the cursor.** Lists are cursor-based — feed `next_cursor` back as `cursor` until
-`has_more` is false (don't compute offsets):
+Lists are [cursor-paged](/sdk/introduction#cursor-based-pagination): `next_cursor` goes back as
+`cursor` until `has_more` is false.
 
 ```typescript
 let cursor: string | undefined;
@@ -69,7 +68,7 @@ do {
 } while (cursor);
 ```
 
-**Filter to a category** (build a category page) — combine with `subcategoryId` for hierarchy:
+A category page filters on `categoryId`, and combines with `subcategoryId` for hierarchy:
 
 ```typescript
 const { products } = await storefront.products.listProducts({
@@ -84,7 +83,7 @@ const { products } = await storefront.products.listProducts({
   publishable-key — see [Search & discovery](/workflows/search-and-discovery).
 </Tip>
 
-## 2. Add to an anonymous cart
+## 2. Adding to an anonymous cart
 
 A shopper who isn't signed in gets a **session cart** keyed by an `X-Session-Id` you generate and
 persist (a UUID in a cookie). No customer token needed yet.
@@ -120,24 +119,23 @@ const cart = await storefront.cartWishlist.addToCart({
 }
 ```
 
-Note the line item's **`id`** (`09695de2-…`) — that's the **cart-item id**, not the product or
-variant id. It's the handle you use to update or remove that line. (It's distinct from `variant_id`:
-the same variant added twice is still one line you mutate by its `id`.)
+The line item's `id` (`09695de2-…`) is the cart-item id, not the product or variant id, and it is the
+handle for updating or removing that line. It is distinct from `variant_id`: the same variant added
+twice remains one line, mutated by its `id`.
 
-## 2b. Manage the cart — view, update, remove, clear
+## 2b. Managing the cart — view, update, remove, clear
 
-Real carts aren't add-once. The shopper changes their mind, so handle the whole lifecycle. Every
-call here is the **same identity** as the add — pass `xSessionId` for an anonymous cart (or
-`xAuthToken` once signed in); the SDK targets the right cart.
+The rest of the cart lifecycle runs on the same identity as the add: `xSessionId` for an anonymous
+cart, or `xAuthToken` once the shopper signs in.
 
-**Read the current cart** (e.g. to render the cart drawer or recompute a badge):
+Reading the current cart, for a cart drawer or a badge count:
 
 ```typescript
 const cart = await storefront.cartWishlist.getCart({ xSessionId: sessionId });
 // → { items: [...], total_items: 2, subtotal: 598 }
 ```
 
-**Change a line's quantity** — address the line by its cart-item `id`, not the variant:
+Changing a line's quantity addresses the line by its cart-item `id`, not the variant:
 
 ```typescript
 await storefront.cartWishlist.updateCartItem({
@@ -148,12 +146,11 @@ await storefront.cartWishlist.updateCartItem({
 ```
 
 <Note>
-  **`quantity: 0` removes the line.** `updateCartItem` with `quantity: 0` is equivalent to
-  `removeCartItem` — handy when a quantity stepper is decremented to zero, so you don't need a
-  separate branch.
+  `updateCartItem` with `quantity: 0` is equivalent to `removeCartItem`, so a quantity stepper
+  decremented to zero needs no separate branch.
 </Note>
 
-**Remove a single line** explicitly (e.g. a "✕" on the row):
+Removing a single line explicitly, for a "✕" on the row:
 
 ```typescript
 await storefront.cartWishlist.removeCartItem({
@@ -163,21 +160,21 @@ await storefront.cartWishlist.removeCartItem({
 // → { success: true, message: 'Item removed from cart' }
 ```
 
-**Empty the whole cart** (a "Clear cart" action, or resetting after an abandoned checkout):
+Emptying the whole cart, for a "Clear cart" action or a reset after an abandoned checkout:
 
 ```typescript
 await storefront.cartWishlist.clearCart({ xSessionId: sessionId });
 // → { success: true, message: 'Cart cleared' }
 ```
 
-Re-add an item before continuing so the rest of the walkthrough has a populated cart. The
-wishlist mirrors this shape — `addToWishlist` / `removeFromWishlist` / `moveWishlistToCart` (which
-hands a saved item back into the cart flow above).
+The steps that follow assume a populated cart, so re-add an item after clearing. The wishlist mirrors
+this shape — `addToWishlist` / `removeFromWishlist` / `moveWishlistToCart`, the last of which hands a
+saved item back into the cart flow above.
 
-## 3. Sign the shopper in
+## 3. Signing the shopper in
 
-When the shopper is ready to check out, mint a session for them. Registration / login runs on your
-**server** with the secret client — these are `sk`-only endpoints.
+Checkout needs a session for the shopper. Registration and login are `sk`-only endpoints, so they run
+on your server with the secret client.
 
 ```typescript
 // On your server
@@ -201,9 +198,9 @@ const { customer, session } = await server.authentication.login({
   (`sendMagicLink` → `verifyOtp`) — both return the same `{ user, customer, session }` envelope.
 </Tip>
 
-## 4. Merge the anonymous cart into the customer
+## 4. Merging the anonymous cart into the customer
 
-Carry everything the shopper added before logging in onto their account.
+Everything the shopper added before signing in carries onto their account.
 
 ```typescript
 const merged = await storefront.cartWishlist.mergeCart({
@@ -213,10 +210,11 @@ const merged = await storefront.cartWishlist.mergeCart({
 // merged.customer_id === customer.id  → the cart now belongs to the signed-in shopper
 ```
 
-## 5. Quote shipping
+## 5. Quoting shipping
 
-Quote delivery for the shopper's address before you total the order. Read-only — publishable key.
-The amount you show here is the same one the order endpoint validates, so use it for the total.
+Delivery is quoted for the shopper's address before the order is totalled. Read-only, publishable
+key. The amount returned here is the one the order endpoint validates against, so it is the amount
+the total is built from.
 
 ```typescript
 const quote = await storefront.shipping.calculateShipping({
@@ -241,8 +239,8 @@ this fee and validates `shipping_amount` against it.
 
 ### With multi-carrier shipping (Shippo)
 
-If the store has multi-carrier shipping connected, also pass a destination `address_to` + a `parcel`
-to get **live carrier rates** the shopper can choose from. The response then carries `rates[]` and
+When the store has multi-carrier shipping connected, a destination `address_to` plus a `parcel`
+returns live carrier rates for the shopper to choose from. The response then carries `rates[]` and
 `rate_source: "shippo"`.
 
 ```typescript
@@ -267,15 +265,15 @@ const quote = await storefront.shipping.calculateShipping({
 }
 ```
 
-Show `rates[]`, let the shopper pick one, set `shipping_amount` to that rate's `amount`, and carry its
-`rate_id` into the order as `shippo_rate_id` — the server validates the amount against that real
-carrier quote.
+The shopper picks from `rates[]`; `shipping_amount` becomes that rate's `amount`, and its `rate_id`
+travels into the order as `shippo_rate_id`, which the server validates the amount against.
 
-## 6. (Optional) Reserve stock before you check out
+## 6. Reserving stock before checkout (optional)
 
-If checkout might take a while — an async payment flow, a multi-page wizard — hold the stock so the
-shopper can't be oversold mid-checkout. Each hold expires automatically after `ttl_seconds`. This is
-a publishable-key call (it originates in the browser). Carry the `variant_id` forward from the cart.
+Where checkout takes a while — an async payment flow, a multi-page wizard — a reservation holds the
+stock so the shopper cannot be oversold partway through. Each hold expires by itself after
+`ttl_seconds`. The call originates in the browser, so it takes a publishable key, and the
+`variant_id` comes forward from the cart.
 
 ```typescript
 const { reservation_ids } = await storefront.orders.reserveStock({
@@ -302,22 +300,21 @@ const { reservation_ids } = await storefront.orders.reserveStock({
   stock at creation.
 </Note>
 
-## 7. Place the order (server, signed)
+## 7. Placing the order (server, signed)
 
-Order creation is a **secret-key** call and must be **HMAC-signed** with an **idempotency key** —
-this is what makes a retried checkout safe (the same key returns the original order, never a
-duplicate). See [HMAC Signing](/authentication#advanced-security-hmac-signing) for the helper.
+Order creation is a secret-key call, HMAC-signed and carrying an idempotency key. The idempotency key
+is what makes a retried checkout safe: the same key returns the original order rather than a
+duplicate. [HMAC Signing](/authentication#advanced-security-hmac-signing) has the helper.
 
-We'll build up the **same order three ways** so you see every shape: the base order, then the same
-cart with a promotion, then a promotion *and* a gift card. Each one carries the 2 Galaxy Watches
-from the cart in step 2 forward.
+The three orders below are the same cart — the 2 Galaxy Watches from step 2 — priced three ways:
+base, with a promotion, then with a promotion and a gift card.
 
 <Note>
-  **Carry the `variant_id` from the cart straight into the order line.** Order items take
-  `variant_id` (preferred — the exact SKU the shopper picked) or `product_id` (which resolves the
-  product's *default* variant). Send the same `variant_id` you added to the cart; if you send both,
-  `variant_id` wins. Dropping to `product_id` at checkout can silently order the wrong variant on a
-  multi-variant product. See [Products and variants](/concepts#products-and-variants-which-id-to-send-where).
+  Order items take `variant_id` (the exact SKU the shopper picked) or `product_id` (which resolves
+  the product's default variant). When both are sent, `variant_id` wins. On a multi-variant product,
+  dropping to `product_id` at checkout can order a different variant than the one in the cart, so the
+  `variant_id` added to the cart is the one to carry into the order line. See
+  [Products and variants](/concepts#products-and-variants-which-id-to-send-where).
 </Note>
 
 ### 7a. The base order
@@ -386,20 +383,20 @@ const { order } = await server.orders.createOrder({
 ```
 
 <Warning>
-  **Always inspect `post_processing_warnings` on every create** — even on a `201`. It's empty here,
-  but a paid order can succeed while a downstream step (gift card redemption, stock reduction) fails;
-  those surface here, not as an HTTP error. We hit that case in **7d** below.
+  `post_processing_warnings` is present on every create, including a `201`. It is empty here, but a
+  paid order can succeed while a downstream step — gift card redemption, stock reduction — fails, and
+  those failures surface in this array rather than as an HTTP error. 7d shows a non-empty one.
 </Warning>
 
-### 7b. The same order WITH a promotion applied
+### 7b. The same order with a promotion applied
 
-The shopper's cart subtotal is **$598**, which clears the **Spring Sale — 15% off (min $50)**
-promotion (`df290d89-0400-4b2c-aa56-11fcc486150c`). Quote the discount first with
-`storefront.promotions.calculatePromotionDiscount(...)`, then send it on the order as
-`discount_amount` plus a `promotion_usages` entry so the usage is tracked.
+The cart subtotal of $598 clears the Spring Sale — 15% off (min $50) promotion
+(`df290d89-0400-4b2c-aa56-11fcc486150c`). `storefront.promotions.calculatePromotionDiscount(...)`
+quotes the discount; the order then carries it as `discount_amount` plus a `promotion_usages` entry,
+which is what tracks the usage.
 
-15% of $598 = **$89.70**. The total recomputes: `subtotal − discount + shipping` = `598 − 89.70 +
-5.99` = **$514.29**.
+15% of $598 is $89.70, so the total becomes `subtotal − discount + shipping` = `598 − 89.70 + 5.99` =
+$514.29.
 
 ```typescript
 const ts2 = Math.floor(Date.now() / 1000);
@@ -440,21 +437,20 @@ const { order: promoOrder } = await server.orders.createOrder({
 }
 ```
 
-### 7c. The same order WITH a gift card too — how it lowers the total
+### 7c. The same order with a gift card as well
 
-Now the shopper also redeems gift card **`GTSA-1B2C-3D4E-5F6G`** ($100 balance) for **$50** toward
-this order. Add a `gift_card_redemption: { code, amount }` block **and** fold the $50 into
-`discount_amount` so the total reflects it.
+The shopper also redeems gift card `GTSA-1B2C-3D4E-5F6G` ($100 balance) for $50 against this order,
+as a `gift_card_redemption: { code, amount }` block with the $50 folded into `discount_amount`.
 
 <Note>
-  **A gift card reduces the total — it's part of `discount_amount`.** The server validates
+  A gift card reduces the total as part of `discount_amount`. The server validates
   `total_amount === subtotal + tax + shipping − discount_amount`, and the discount it accepts is the
-  sum of every real entitlement: promotions **plus** the gift card's redeemable amount. So with
-  subtotal 598, shipping 5.99, the $89.70 promo **and** a $50 gift card, `discount_amount` is
-  **$139.70** and `total_amount` is **`464.29`** (598 + 5.99 − 139.70). The gift card balance is
-  drawn down by the redeemed amount after the order is created. Sending the gift card with a
-  `discount_amount` that doesn't include it (so the total stays $514.29) means the card reduces
-  nothing — and over-claiming a card with no balance is rejected as `discount_invalid` (see 7d).
+  sum of every real entitlement: promotions plus the gift card's redeemable amount. With subtotal
+  598, shipping 5.99, the $89.70 promotion and a $50 gift card, `discount_amount` is $139.70 and
+  `total_amount` is `464.29` (598 + 5.99 − 139.70). The gift card balance is drawn down by the
+  redeemed amount once the order is created. A gift card sent with a `discount_amount` that omits it
+  — leaving the total at $514.29 — reduces nothing, and over-claiming a card beyond its balance is
+  rejected as `discount_invalid` (7d).
 </Note>
 
 ```typescript
@@ -495,24 +491,24 @@ const { order: gcOrder, post_processing_warnings } = await server.orders.createO
 ```
 
 <Tip>
-  Simplest mental model, end to end: a **$50 gift card on a $250 cart** → send `discount_amount: 50`,
-  `total_amount: 200`, and `gift_card_redemption: { code, amount: 50 }`. The shopper pays **$200** and
-  the card's balance drops by $50. (Verified live: a $50 redemption on a $239.98 cart + $5.99 shipping
+  Reduced to its simplest case: a $50 gift card on a $250 cart is `discount_amount: 50`,
+  `total_amount: 200`, and `gift_card_redemption: { code, amount: 50 }`. The shopper pays $200 and the
+  card's balance drops by $50. (Verified live: a $50 redemption on a $239.98 cart plus $5.99 shipping
   produced `total_amount: 195.97`.)
 </Tip>
 
-### 7d. The failure variants you'll actually hit
+### 7d. The two rejections
 
 <Note>
-  **The server is the price authority — don't compute or invent amounts client-side.** Order creation
-  recomputes every item price from the live catalog and validates your `discount_amount` against the
-  promotions / gift card you actually claim. Send the **real catalog prices** and the shopper's **real
-  entitlements**; the guards below are what you hit if you don't.
+  The server is the price authority. Order creation recomputes every item price from the live catalog
+  and validates the claimed `discount_amount` against the promotions and gift card named on the
+  order, so amounts computed client-side carry no weight. The two guards below are what a mismatch
+  meets.
 </Note>
 
-**Wrong total → `400 price_mismatch`.** `total_amount` must equal `subtotal + tax + shipping −
-discount_amount`. If they don't reconcile — e.g. you put the gift card in `discount_amount` but forget
-to lower the total — the price guard rejects it before the order is ever created:
+A `total_amount` that does not equal `subtotal + tax + shipping − discount_amount` is rejected as
+`400 price_mismatch` before the order is created — here the gift card is in `discount_amount` but the
+total was left unchanged:
 
 ```typescript
 // discount_amount includes the $50 gift card, but total_amount wasn't lowered to match
@@ -530,11 +526,11 @@ await server.orders.createOrder({ /* …signed… */, requestBody: bad });
 }
 ```
 
-**Fabricated / over-stated discount → `400 discount_invalid`.** The total math being *consistent*
-isn't enough — the server recomputes the maximum discount your claimed promotions + gift card actually
-grant, and rejects a `discount_amount` that exceeds it (a discount with no real promotion or
-gift-card balance behind it → max is `0`). So you can't lower the price with a made-up discount, and
-you can't redeem more than a card's balance:
+Consistent total math is not on its own sufficient. The server recomputes the maximum discount the
+claimed promotions and gift card actually grant and rejects a `discount_amount` above it as
+`400 discount_invalid` — a discount with no promotion or gift-card balance behind it has a maximum of
+`0`, which is why neither an invented discount nor a redemption beyond a card's balance lowers the
+price:
 
 ```typescript
 // $598 cart, but claim a $290 discount with no promotion (or an over-stated one)
@@ -552,10 +548,9 @@ await server.orders.createOrder({ /* …signed… */, requestBody: bogus });
 }
 ```
 
-**Bad gift card → still `201`, but with `post_processing_warnings`.** A *paid* order that redeems a
-gift card the store doesn't recognize is **not** rolled back — the order is created and the warning
-is surfaced (and stamped onto `order.notes`). This is exactly why step 7's `<Warning>` says to
-inspect `post_processing_warnings` every time.
+An unrecognized gift card behaves differently again: a paid order redeeming one is not rolled back.
+The order is created, returns `201`, and the failure arrives in `post_processing_warnings` and
+stamped onto `order.notes`.
 
 ```typescript
 const withBadCard = { ...orderWithPromo, payment_status: 'paid', gift_card_redemption: { code: 'NOPE-0000-0000-0000', amount: 50 } };
@@ -582,17 +577,16 @@ const { order, post_processing_warnings } = await server.orders.createOrder({ /*
 ```
 
 <Note>
-  Stock reduction fails the same way: a paid order short on inventory still returns `201` with a
-  `{ "stage": "stock_reduction", ... }` warning and a `[STOCK_REDUCTION_PARTIAL]` note. Treat a
-  non-empty `post_processing_warnings` as "order placed, but a human needs to follow up."
+  Stock reduction fails the same way: a paid order short on inventory still returns `201`, with a
+  `{ "stage": "stock_reduction", ... }` warning and a `[STOCK_REDUCTION_PARTIAL]` note. A non-empty
+  `post_processing_warnings` means the order was placed and a person needs to follow up on it.
 </Note>
 
-## 8. Take payment (server, signed)
+## 8. Taking payment (server, signed)
 
-Initialize a payment for the order — also `sk` + HMAC + idempotency. The shopper is redirected to the
-returned `checkout_url`; you finalize the order from the provider's webhook. Charge the order's
-`total_amount` — here the promo+gift-card order from **7c**, **$514.29** (the gift card is settled as
-part of that payment, it doesn't change the amount charged).
+Payment initialization is also `sk` + HMAC + idempotency. The shopper is redirected to the returned
+`checkout_url`, and the order is finalized from the provider's webhook. The amount charged is the
+order's own `total_amount`, which already reflects any gift card folded into its `discount_amount`.
 
 ```typescript
 const payment = await server.payments.initializePayment({
@@ -601,7 +595,7 @@ const payment = await server.payments.initializePayment({
   xSignature: paymentSignature, // sign the payment body the same way as the order
   requestBody: {
     provider: 'stripe',
-    amount: 514.29, // gcOrder.total_amount from step 7c
+    amount: 464.29, // gcOrder.total_amount from step 7c
     currency: 'usd',
     email: 'john.doe@example.com',
     success_url: 'https://example.com/payment-success',
@@ -625,40 +619,40 @@ const payment = await server.payments.initializePayment({
 ```
 
 <Note>
-  When the provider confirms payment, your webhook handler patches the order to `paid`
+  When the provider confirms payment, the webhook handler patches the order to `paid`
   (`server.orders.updateOrder(...)`). Galactic Core then reduces stock, books the sale, and updates
-  the customer's metrics automatically — you don't orchestrate those yourself. Wire this up in
-  [Webhooks & automation](/workflows/webhooks-automation).
+  the customer's metrics, so none of that is orchestrated by the integration.
+  [Webhooks & automation](/workflows/webhooks-automation) covers the handler.
 </Note>
 
-## 9. Fulfill & track
+## 9. Fulfilment and tracking
 
-Once paid, the **merchant** buys the carrier label from their admin (multi-carrier / Shippo). Buying a
-label is a fulfillment action — it charges the merchant's carrier account, marks the order shipped,
-stamps the order's `tracking_number`, and fires an `order.shipped` webhook — so it isn't a storefront
-SDK call.
+Once the order is paid, the merchant buys the carrier label from their admin. Buying a label charges
+the merchant's carrier account, marks the order shipped, stamps the order's `tracking_number`, and
+fires an `order.shipped` webhook — it is a fulfilment action, not a storefront SDK call.
 
-**The simplest way to let a shopper track is to link to the carrier's own tracking page.** When the
-label is bought, the carrier tracking URL is saved on the order at
-`shipping_metadata.shippo.tracking_url`. Render it as a "Track your package" link — no API call:
+The carrier's own tracking page is the shortest route to shopper-visible tracking. When the label is
+bought, the carrier tracking URL is saved on the order at `shipping_metadata.shippo.tracking_url`,
+and rendering it as a link needs no API call:
 
 ```tsx
 const trackingUrl = order.shipping_metadata?.shippo?.tracking_url;
 {trackingUrl && <a href={trackingUrl} target="_blank" rel="noopener noreferrer">Track your package</a>}
 ```
 
-**Optionally**, if you'd rather show the status *inside* your storefront, call `trackShipment` to fetch
-the live status and render your own timeline:
+For a status rendered inside the storefront instead, `trackShipment` returns the live status and
+history to build a timeline from:
 
 ```typescript
 const status = await storefront.shipping.trackShipment({ carrier: 'usps', number: order.tracking_number });
 // → { carrier, tracking_number, status, eta, history: [...] }
 ```
 
-Listen for the `order.shipped` webhook to notify the shopper and surface either of the above.
+The `order.shipped` webhook is the moment either of the above becomes available to show.
 
 ## What's next
 
-- The shopper can now [track the order and lodge returns](/workflows/returning-customer).
-- Encourage a [review and open a support thread](/workflows/reviews-and-messaging).
-- Building a multi-merchant storefront? See the [Marketplace](/workflows/marketplace) split checkout.
+- The shopper can [track the order and lodge returns](/workflows/returning-customer).
+- [Reviews and support threads](/workflows/reviews-and-messaging) pick up after the purchase.
+- A multi-merchant storefront checks out through the [Marketplace](/workflows/marketplace) split
+  checkout instead.

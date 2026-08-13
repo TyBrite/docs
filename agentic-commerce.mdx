@@ -10,10 +10,9 @@ commerce lets it act on what it sees. It can prepare the things it would otherwi
 for a lapsed customer, a promotion on slow-moving stock, a dynamic-pricing rule that targets a customer
 segment — and it handles the reversible catalogue housekeeping outright.
 
-The line it never crosses is approval on anything that moves money. A gift card, a promotion, or a pricing
-rule arrives as a **draft you approve**; it is inert until you do. The organisational actions — creating a
-subcategory, enabling a category, tagging a product, grouping products into a collection — are reversible
-and happen directly.
+Anything that moves money arrives as a **draft you approve** — a gift card, a promotion, a pricing
+rule — and is inert until you do. The organisational actions, which are reversible, happen directly:
+creating a subcategory, enabling a category, tagging a product, grouping products into a collection.
 
 ## What it can do
 
@@ -38,11 +37,11 @@ Written content needs your storefront URL set first (CMS → Settings). The prod
 built against it, so without one they would only resolve on your own site and break as soon as the post is
 shared — the assistant says so and stops rather than writing a post that falls apart.
 
-A lookbook hotspot claims a product is *at that point in that picture*, so it is only ever placed from
-what is actually visible in the scene. A product the assistant cannot find in the frame is left off and
-reported, never dropped at a guess — a page with two hotspots that land beats one with five where three
-point at nothing. If a scene cannot be produced at all, the lookbook is still created, with your products
-confirmed against the catalogue and a plain note that they are not placed yet.
+A lookbook hotspot claims a product is *at that point in that picture*, so it is only ever placed
+from what is actually visible in the scene. A product the assistant cannot find in the frame is left
+off and reported by name, rather than given a hotspot at an approximate position. If a scene cannot
+be produced at all, the lookbook is still created, with your products confirmed against the
+catalogue and a plain note that they are not placed yet.
 
 ## Approving a draft
 
@@ -67,18 +66,16 @@ Every value the assistant proposes is in your store's currency, and every money 
 It reads each product's cost to make sure a discount never sells below cost, and it prefers higher-margin or
 slow-moving stock.
 
-When too many products have no cost price set, margin can't be trusted — so the assistant declines to prepare
-any gift card, promotion, or pricing rule and points you to **Inventory → Bulk Edit** to fill in the missing
-costs first. This is deliberate: a campaign that looks good but sells below cost is a real loss, and the
-assistant would rather ask you to set costs than risk it. The reversible catalogue actions stay available in
-the meantime.
+When too many products have no cost price set, the margin figure it would be checking against is
+itself unreliable, so it declines to prepare any gift card, promotion, or pricing rule and points you
+to **Inventory → Bulk Edit** to fill in the missing costs. The reversible catalogue actions stay
+available in the meantime.
 
 ## Dynamic workflows
 
-Everything above happens once, when asked, and the intent ends with the conversation. A **dynamic
-workflow** is the same intent kept running: ask for something ongoing — "keep my featured collection
-showing what's actually selling", "every week, check for slow stock" — and it becomes a rule that
-re-evaluates on a schedule.
+A request in conversation runs once and ends there. A **dynamic workflow** is the same intent kept
+running: ask for something ongoing — "keep my featured collection showing what's actually selling",
+"every week, check for slow stock" — and it becomes a rule that re-evaluates on a schedule.
 
 They are dynamic rather than fixed: each evaluation re-reads the store's current figures and decides
 whether anything warrants doing, so the outcome follows the business rather than a predetermined
@@ -86,30 +83,30 @@ sequence — the same workflow features different products as the sales change. 
 distinguishes them from [event-driven automations](/workflows/webhooks-automation), where a defined
 action follows a specific event.
 
-The split is unchanged. Reversible merchandising runs unattended: rotating a collection to current
-best sellers, retiring members that stopped selling, tagging what sells. Anything touching money
-still only prepares a draft and waits for approval, exactly as a conversation would — promotions and
-clearances, gift cards for customers who pass a spending threshold in a window, and markdown pricing
-rules over stock that stopped moving.
+A workflow observes the same approval boundary as a conversation. Reversible merchandising runs
+unattended: rotating a collection to current best sellers, retiring members that stopped selling,
+tagging what sells. Anything touching money prepares a draft and waits — promotions and clearances,
+gift cards for customers who pass a spending threshold in a window, and markdown pricing rules over
+stock that stopped moving.
 
-Search merchandising works the same way on a schedule. A workflow can keep watching which searches
-convert badly and draft a rule when one is worth fixing, which is the useful form of that question:
-whichever search is failing changes with the season, the stock and the catalogue. It proposes only
-when a search is both busy and converting well below your baseline, and only ever features a product
-that search already matches. A busy search that returns nothing at all is reported as a stocking
-decision instead — no ordering of results fixes an empty shelf. Where there is no cost data to choose
-by margin it says so rather than guessing, and it will not draft a second rule while one is still
+Search merchandising works the same way on a schedule. A workflow keeps watching which searches
+convert badly and drafts a rule when one is worth fixing, so it follows whichever search is failing
+this season rather than the one that was failing when the rule was written. It proposes only when a
+search is both busy and converting well below your baseline, and only ever features a product that
+search already matches. A busy search that returns nothing at all is reported as a stocking decision
+instead, since a reordering rule has nothing to reorder. Where there is no cost data to choose by
+margin it says so rather than guessing, and it will not draft a second rule while one is still
 waiting for you.
 
-The money templates carry limits the reversible ones do not, in proportion to what they touch. A
-promotion template drafts one promotion; a gift-card template drafts one card per qualifying
-customer, and a gift card is a liability the merchant owes. So a single run is capped on both the
-number of recipients and their combined face value, and a rule matching more customers than the cap
-allows stops and reports that rather than silently drafting an arbitrary subset. A cooldown keeps the
-same customer from being rewarded again on the following run. A markdown rule is scoped to the
-specific products it identified rather than the whole catalogue, is drafted switched off, and leaves
-only one draft outstanding at a time so a weekly cadence cannot stack duplicates while the merchant
-decides. Every one of these limits is enforced in the database, not in the prompt.
+The money templates carry per-run limits. A promotion template drafts one promotion. A gift-card
+template drafts one card per qualifying customer, each of which is a liability the merchant owes, so
+a single run is capped on both the number of recipients and their combined face value; a rule
+matching more customers than the cap allows stops and reports that rather than drafting an arbitrary
+subset, and a cooldown keeps the same customer from being rewarded again on the following run. A
+markdown rule is scoped to the specific products it identified rather than the whole catalogue, is
+drafted switched off, and leaves only one draft outstanding at a time, so a weekly cadence cannot
+stack duplicates while the merchant decides. Every one of these limits is enforced in the database,
+not in the prompt.
 
 ### Content on a schedule
 
@@ -151,10 +148,10 @@ behind the decision, so a change always has an explanation attached rather than 
 
 A workflow that fails repeatedly switches itself off and says so, rather than retrying indefinitely.
 
-## Human in the loop, by design
+## Where the decision sits
 
-The assistant proposes; you decide. It never issues a gift card, activates a promotion, or turns on a pricing
-rule on its own — and it cannot be talked into bypassing the margin check or the approval step, because those
-are enforced in Galactic Core's own code rather than left to the assistant's judgement. Those checks are part of a
-wider set of platform [guardrails](/how-gc-works/guardrails). Every action it takes
-is recorded in your activity log under its own name, so an AI-assisted change is as traceable as a manual one.
+The assistant never issues a gift card, activates a promotion, or turns on a pricing rule on its own.
+The margin check and the approval step are enforced in Galactic Core's own code rather than left to
+the assistant's judgement, so a prompt cannot talk its way past either; they are part of a wider set
+of platform [guardrails](/how-gc-works/guardrails). Every action it takes is recorded in your
+activity log under its own name, so an AI-assisted change is as traceable as a manual one.

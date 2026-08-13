@@ -8,12 +8,12 @@ description: "The full-control path to a Custom Integration: run your own servic
 The full-control path to a **Custom Integration**: run your own code, on your own infrastructure, and drive Galactic Core from the outside over the public API and webhooks. Nothing to register.
 
 <Note>
-  **Reach for [Extensions](/extensions) first.** For the common cases — react to a store event, or become the provider Galactic Core calls for payments / shipping / tax / email / SMS / marketing / a sales channel — an Extension does the plumbing for you (registered, signed, retried, revalidated, run-logged), and your secrets can stay entirely on your side. Use this page only when you need free-form orchestration that an Extension doesn't cover.
+  [Extensions](/extensions) cover the common cases — reacting to a store event, or becoming the provider Galactic Core calls for payments, shipping, tax, email, SMS, marketing, or a sales channel — with the plumbing handled for you (registered, signed, retried, revalidated, run-logged) and your secrets still able to stay entirely on your side. This page is the remainder: free-form orchestration outside those seams.
 </Note>
 
 ## The pattern
 
-Galactic Core is the system of record — orders, inventory, accounting, customers. Your service does the provider-specific work and tells Galactic Core the result over the API. The clearest example is a **custom payment provider** (any provider beyond the built-in Stripe, PayPal, Paystack, and M-Pesa):
+Galactic Core is the system of record — orders, inventory, accounting, customers. Your service does the provider-specific work and tells Galactic Core the result over the API. A **custom payment provider** (any provider beyond the built-in Stripe, PayPal, Paystack, and M-Pesa) follows the shape in three steps:
 
 1. **Create the order as `pending`** in Galactic Core to get a permanent `order_id`.
 2. **Charge through your provider** from your own function, tagging the transaction with that `order_id`.
@@ -53,12 +53,12 @@ The same shape works for **custom shipping**: run a function that fetches a live
 | `payment_reference` | the provider's transaction id |
 | `payment_metadata` | optional provider-specific data |
 
-## Guidelines
+## Properties of this pattern
 
-- **Run it anywhere** — any serverless platform (Vercel, Netlify, Deno Deploy, AWS Lambda) or your own server.
-- **Keep provider secrets on your side** — they never touch Galactic Core or your storefront.
-- **Verify your provider's webhook signature** before trusting a payment result.
-- **Use an `Idempotency-Key`** on the update so a retried webhook can't double-post accounting.
+- **It runs anywhere** — any serverless platform (Vercel, Netlify, Deno Deploy, AWS Lambda) or your own server.
+- **Provider secrets stay on your side** — they never touch Galactic Core or your storefront.
+- **The payment result is only as trustworthy as its source** — a provider webhook whose signature has not been verified is unauthenticated input.
+- **An `Idempotency-Key` on the update** is what keeps a retried webhook from double-posting accounting.
 
 Anvil can scaffold this for you — describe a custom payment integration and it generates the `initialize` / `webhook` / `verify` function skeleton, with templates for common providers.
 

@@ -3,15 +3,14 @@ title: "How GC Works"
 description: "The system behind the API: how Galactic Core serves reads from the edge, keeps writes consistent, and isolates every tenant."
 ---
 
-Galactic Core is more than a database with an API in front of it. Reads are served by stateless compute
-at the network edge and answered, in most cases, from cache before they ever reach a database. Writes run
-a full commerce engine — an order reduces stock, redeems gift cards, posts accounting entries, and updates
-customer metrics in one transaction. And every tenant is isolated — by row-level security on the shared
-platform, and on a dedicated stack of their own where a tenant needs one.
+Galactic Core runs the commerce logic behind a storefront so an integration does not have to. Reads are
+served by stateless compute at the network edge and answered, in most cases, from cache before they ever
+reach a database. Writes run a full commerce engine — an order reduces stock, redeems gift cards, posts
+accounting entries, and updates customer metrics in one transaction. Every tenant is isolated, by
+row-level security on the shared platform and on a dedicated stack of their own where a tenant needs one.
 
-The pages in this section describe how that works, in enough detail to make an architecture decision. If
-you have not yet read [Core Concepts](/concepts) — keys, environments, and the conventions that hold
-across every endpoint — start there; this section assumes it.
+Keys, environments and the conventions that hold across every endpoint are covered in
+[Core Concepts](/concepts).
 
 ## The shape of the system
 
@@ -30,23 +29,21 @@ graph TD
 </Frame>
 
 A request enters through a single gateway, which routes it to the worker that owns its domain — catalog,
-orders, payments, search, and so on. Each layer shields the one beneath it. A catalog read that hits the
-edge never reaches a worker; one that reaches a worker usually answers from cache; only a genuinely cold
-read reaches Postgres, and even then it is a single indexed query. Catalog and pricing calls return in
-tens of milliseconds worldwide, and the database sees a small fraction of total traffic.
+orders, payments, search, and so on. A catalog read that hits the edge never reaches a worker; one that
+reaches a worker usually answers from cache; only a genuinely cold read reaches Postgres, and even then it
+is a single indexed query. Catalog and pricing calls return in tens of milliseconds worldwide, and the
+database sees a small fraction of total traffic.
 
 Postgres is the system of record. Everything else — the caches, the search index, the recommendation
 models — is derived from it and can be rebuilt from it.
 
 ## Reads and writes take different paths
 
-The split between reads and writes is the organising idea behind the whole design.
-
 Reads are cacheable and are served from the edge and the distributed cache; they are the bulk of commerce
 traffic and rarely touch the database. Writes are the minority, are never edge-cached, and are the only
-traffic that must reach the primary. So a surge of shoppers browsing and checking out is dominated by
-cache-served reads — the pattern the system is tuned for. The [Caching Pipeline](/how-gc-works/caching)
-covers how reads are served; the [Request Lifecycle](/how-gc-works/request-lifecycle) walks through both.
+traffic that must reach the primary. A surge of shoppers browsing and checking out is therefore dominated
+by cache-served reads. The [Caching Pipeline](/how-gc-works/caching) covers how reads are served; the
+[Request Lifecycle](/how-gc-works/request-lifecycle) walks through both.
 
 ## Where to go from here
 
@@ -65,6 +62,16 @@ covers how reads are served; the [Request Lifecycle](/how-gc-works/request-lifec
   </Card>
   <Card title="Scaling & Reliability" icon="earth-americas" href="/how-gc-works/scaling-reliability">
     Read replicas, rate limits, idempotency, and graceful degradation.
+  </Card>
+  <Card title="Marketplaces at Scale" icon="store" href="/how-gc-works/marketplace-scale">
+    How one seller's traffic spike is absorbed, and what moving a seller onto their own database
+    involves.
+  </Card>
+  <Card title="Security" icon="shield-halved" href="/how-gc-works/security">
+    Tenant isolation, permissions, credential storage, and the environment boundary.
+  </Card>
+  <Card title="Guardrails" icon="hand" href="/how-gc-works/guardrails">
+    The limits on automated and AI-driven actions, and where a human decision is required.
   </Card>
 </CardGroup>
 

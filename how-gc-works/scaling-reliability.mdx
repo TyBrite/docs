@@ -3,9 +3,9 @@ title: "Scaling & Reliability"
 description: "The stateless-edge model, regional read replicas, rate limiting and quotas, idempotency, and how the platform degrades gracefully under stress."
 ---
 
-Galactic Core is designed to scale horizontally under load and to degrade gracefully rather than fail
-outright. This page covers the properties that matter once traffic is heavy: how the platform scales, how
-it limits load, and how it behaves when something goes wrong.
+Galactic Core scales horizontally under load and degrades gracefully rather than failing outright. Below
+are the properties that matter once traffic is heavy: how capacity is added, how load is bounded, what
+happens when something goes wrong, and how the database is recovered.
 
 ## Scaling
 
@@ -42,13 +42,12 @@ graph TD
   </Card>
 </Columns>
 
-In short, the layers that are cheap to scale — edge compute, cache, replicas — carry the load, and the
-primary database, the one layer that must stay consistent, sees only writes and genuine cold reads.
+Edge compute, cache and replicas carry the load; the primary database sees only writes and genuine cold
+reads.
 
-## Controlling load
+## Limits on load
 
-Layered limits protect the platform and every tenant on it, enforced at the edge before a request reaches
-the workers or the database.
+Limits are enforced at the edge, before a request reaches the workers or the database.
 
 Rate limits are tiered by key type: publishable keys are limited per IP and per key, secret keys per key,
 with tighter limits on sensitive endpoints such as payments and authentication. A throttled request
@@ -63,29 +62,27 @@ Under stress the platform aims to return a slower or slightly-stale response rat
 <Steps>
   <Step title="Stale responses during an incident">
     Public catalog responses carry `stale-if-error`, so if the origin has a bad moment the edge keeps
-    serving the last-known-good response instead of a `500`. For a catalog, a slightly-stale page is
-    almost always preferable to a failed one. The caching directives are covered in
+    serving the last-known-good response instead of a `500`. The caching directives are covered in
     [The Caching Pipeline](/how-gc-works/caching).
   </Step>
-  <Step title="Safe retries">
+  <Step title="Retries that cannot duplicate">
     Order creation is idempotent: an `Idempotency-Key` ensures a retried request never creates a
     duplicate, so a client whose response was lost in transit can retry without risk.
   </Step>
-  <Step title="Consistent under concurrency">
+  <Step title="Money math under concurrency">
     Totals, discounts, and gift-card redemption are computed in atomic database functions, so
     concurrent orders for the same customer do not produce lost updates or inconsistent balances.
   </Step>
-  <Step title="No overselling in a rush on limited stock">
-    When tens of thousands of shoppers try to reserve the same item at once — a limited drop, a flash
-    sale — each unit is claimed by exactly one shopper. Stock reservation is serialized per item at
-    the edge: the decision to grant or decline a reservation is made in memory, close to the shopper,
-    without a database round trip, so a single hot item sustains tens of thousands of reservation
-    decisions per second and a shopper who missed out is told instantly rather than after a slow wait.
-    The item's stock can never be reserved below zero, no matter how many requests arrive at the same
-    instant. A reservation holds the stock for a short window and is released automatically if the
-    shopper does not complete checkout, returning the units to available inventory.
+  <Step title="Contention on a single item">
+    When tens of thousands of shoppers reserve the same item at once — a limited drop, a flash sale —
+    each unit is claimed by exactly one shopper. Reservation is serialized per item at the edge and
+    decided in memory, without a database round trip, so a shopper who missed out is answered
+    immediately and the item can never be reserved below zero however many requests arrive at the same
+    instant. A reservation holds the units for a short window and returns them to available inventory
+    if checkout is not completed. The full mechanism is in
+    [Marketplaces at Scale](/how-gc-works/marketplace-scale#claiming-stock).
   </Step>
-  <Step title="Contained failures">
+  <Step title="Failures that reach one tenant">
     A tenant on a dedicated deployment is physically isolated, so its load spike or incident cannot reach
     another tenant — there is no shared database or compute to contend for. On the shared platform, the
     per-store rate limits and atomic quotas above keep one store's traffic from degrading its neighbours.

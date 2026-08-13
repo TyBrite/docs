@@ -1,15 +1,14 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get a key, initialize the SDK or a REST client, and make your first authenticated call against a live store."
 ---
 
-## Fast Track to Galactic Commerce
+Four steps take you from an empty project to a rendered product list: get a key, initialize a
+client, read the catalog, and read the store's own configuration.
 
-Get your commerce backend running in three steps using the Tybrite API or TypeScript SDK.
+### Step 1: Obtain your API keys
 
-### Step 1: Obtain your API Keys
-
-Before you can make any requests, you need to authorized your application.
+Every request is authenticated, so a key comes first.
 
 <AccordionGroup>
   <Accordion icon="key" title="Tybrite Dashboard">
@@ -19,8 +18,9 @@ Before you can make any requests, you need to authorized your application.
     - **Publishable Key (`tybrite_pk_...`)**: Used for frontend applications (Web/Mobile).
     - **Secret Key (`tybrite_sk_...`)**: Used for backend services and administrative tasks.
   </Accordion>
-  <Accordion icon="shield" title="Security Best Practice">
-    **Never** include your Secret Key in client-side code. Use Publishable Keys for search and product browsing, and Secret Keys for checkout and accounting from your server.
+  <Accordion icon="shield" title="Where each key belongs">
+    A secret key belongs only in server-side code. Publishable keys cover search and product
+    browsing; checkout and accounting run from your server with a secret key.
   </Accordion>
 </AccordionGroup>
 

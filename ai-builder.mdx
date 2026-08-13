@@ -25,8 +25,8 @@ asks instead of substituting a close-sounding alternative.
 In your admin, under **Settings → Extensions → Build with AI**. Agencies get the same builder inside
 their own portal, for the billing rails they offer their merchants.
 
-Each build consumes AI credits from your plan's allowance, so an unclear prompt that produces something
-you discard still costs a little. Being specific is cheaper as well as better.
+Each build consumes AI credits from your plan's allowance, and a build you discard has already spent
+them.
 
 ## What it produces
 
@@ -48,9 +48,9 @@ directly instead of inventing an extension to satisfy the prompt.
 
 ## Writing a good prompt
 
-The Builder decides four things from your description: the **kind** of extension, the **trigger**, the
-**execution mode**, and the **shape of the outbound call**. A prompt that settles those needs no
-follow-up.
+The Builder decides four things from your description: the **kind** of extension, the **trigger**,
+the **execution mode**, and the **shape of the outbound call**. Where the description leaves one of
+them open, it asks a follow-up question instead of choosing.
 
 <CodeGroup>
 
@@ -66,10 +66,11 @@ Connect my ERP.
 
 </CodeGroup>
 
-The first names the event, the condition, the destination, the auth style, and the payload — it builds
-in one pass. The second could be a dozen different extensions, so the Builder asks rather than guesses.
+The first names the event, the condition, the destination, the auth style, and the payload, and
+builds in one pass. The second matches a dozen different extensions, so the Builder asks rather than
+guesses.
 
-Three things worth stating explicitly when they matter:
+Three details the Builder cannot infer from the store itself:
 
 - **Which event**, if it's an automation. "When an order is paid" is unambiguous; "when something
   changes" is not.
@@ -79,8 +80,8 @@ Three things worth stating explicitly when they matter:
 
 ## Reviewing the output
 
-Read `notes` first: it explains what the extension does and flags anything unfinished. Then check four
-things.
+`notes` explains what the extension does and flags anything unfinished. Four further things decide
+whether a draft is ready to enable.
 
 <AccordionGroup>
   <Accordion title="Does the trigger match what you meant?">
@@ -93,8 +94,9 @@ things.
     the handler reads nothing and the call to your system goes out unauthenticated.
   </Accordion>
   <Accordion title="Does the outbound call match the other system's contract?">
-    This is the part the Builder is least able to verify — it knows Galactic Core's API exactly, and
-    yours not at all. Check the URL, the headers and the body shape against your own documentation.
+    The Builder's grounding covers Galactic Core's API and not your system's, so the URL, headers and
+    body shape here come from your description rather than from an indexed contract. They are worth
+    reading against your own documentation.
   </Accordion>
   <Accordion title="Is the failure behaviour what you want?">
     Sync providers default to `fail_mode: 'open'` so a broken extension never blocks a sale. Switch to
@@ -117,9 +119,10 @@ and shows you the real result — including the actual request your endpoint rec
 
 ## Keeping it current
 
-The Builder's grounding is re-indexed whenever the API surface changes, so a newly-added endpoint or
-event becomes available to it. If it seems unaware of something recent, the index is the thing to
-refresh — the model itself has no memory of your store between builds.
+The Builder's grounding is re-indexed whenever the API surface changes, which is how an added
+endpoint or event becomes available to it. The index is the only thing carrying that knowledge — the
+model itself retains nothing about your store between builds — so an endpoint the Builder does not
+recognise is one the index has yet to pick up.
 
 <Note>
   Each build sees only your prompt and the grounded API surface. It does not see your catalogue,
@@ -128,12 +131,11 @@ refresh — the model itself has no memory of your store between builds.
 
 ## The other builder
 
-The same describe-it-and-get-it-built idea appears once more in Galactic Core, aimed at a different
-job. The **ad campaign builder** takes a plain-language brief — what to advertise, and what the
-campaign is for — and produces a complete campaign: structure, keywords, audiences, budgets, and ad
-copy, grounded in the store's own catalogue and margins rather than generic suggestions. Where this
-page's Builder writes an integration you review and deploy, that one drafts advertising a merchant
-reviews and publishes. It is documented with [Advertising](/advertising).
+Galactic Core has a second builder, aimed at a different job. The **ad campaign builder** takes a
+plain-language brief — what to advertise, and what the campaign is for — and produces a complete
+campaign: structure, keywords, audiences, budgets, and ad copy, drawn from the store's own catalogue
+and margins. Its output is advertising a merchant reviews and publishes, rather than an integration
+you review and deploy. It is documented with [Advertising](/advertising).
 
 ## Next
 

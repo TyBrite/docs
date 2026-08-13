@@ -5,11 +5,10 @@ description: "Galactic Core keeps a store's books as it trades. Every sale, cost
 
 # Accounting
 
-Galactic Core is a store's accounting system, not just a place that records orders. Every store gets a
-full set of business books — a chart of accounts, double-entry journals, and the standard financial
-statements — and Galactic Core keeps them up to date on its own as the store trades. A merchant does not
-post entries by hand: a sale, its cost of goods, a refund, an expense, a gift card each write the correct
-balanced entry the moment the business event happens.
+Every store gets a full set of business books — a chart of accounts, double-entry journals, and the
+standard financial statements — which Galactic Core keeps up to date as the store trades. A merchant does
+not post entries by hand: a sale, its cost of goods, a refund, an expense, a gift card each write the
+correct balanced entry the moment the business event happens.
 
 <Note>
   Accounting is **built in and automatic** — it is not something a developer wires up through the API,
@@ -53,17 +52,16 @@ does nothing. The full set of events that post to the books:
 | **Payroll** | Payroll runs and adjustments. |
 | **Automation rewards** | Rewards granted by a merchant's automation rules. |
 
-Posting is resilient: if an entry can't be written for some reason, the sale or refund itself still goes
-through — the books flag the gap rather than blocking the business, and a background process reconciles
-anything outstanding.
+If an entry cannot be written, the sale or refund itself still goes through: the books flag the gap rather
+than blocking the transaction, and a background process reconciles anything outstanding.
 
 ## The reports a merchant gets
 
-Because the entries are real double-entry, the standard financial statements come straight out of them —
-a **trial balance**, an **income statement (profit & loss)**, a **balance sheet**, and a **cash-flow**
-view — plus the underlying **journals** and the **chart of accounts** itself, all in the store's admin.
-Since Galactic Core also holds the store's costs and every sale, the profit figures are the store's actual
-gross profit, not an estimate.
+The standard financial statements come straight out of the entries — a **trial balance**, an **income
+statement (profit & loss)**, a **balance sheet**, and a **cash-flow** view — alongside the underlying
+**journals** and the **chart of accounts** itself, all in the store's admin. Because Galactic Core holds
+the store's costs as well as every sale, the profit figures are computed from recorded cost of goods
+rather than a margin assumption.
 
 ## Sync to QuickBooks
 

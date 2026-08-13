@@ -5,21 +5,16 @@ description: "Run Galactic Core as your own branded commerce platform: your name
 
 # Agencies — run commerce as your own platform
 
-Most of this documentation is written for someone building **on** Galactic Core. This page is for
-someone building **a business on top of it** — an agency, a studio, or a software company whose own
-customers are merchants.
+An agency, a studio, or a software company whose own customers are merchants can run Galactic Core as
+its own commerce platform. You bring the merchants and the brand; Galactic Core is the commerce engine
+underneath and stays out of sight. Your merchants sign in to your product, at your domain, and the API
+keys they copy carry your name.
 
-You bring the merchants and the brand. Galactic Core is the commerce engine underneath, and it stays
-out of sight: your merchants sign in to your product, at your domain, and the API keys they copy
-carry your name, not ours.
-
-The chain looks like this:
+The chain runs:
 
 ```
 Galactic Core  →  your platform  →  your merchants  →  their customers
 ```
-
-You are a distribution layer, not a reseller of someone else's dashboard.
 
 <CardGroup cols={2}>
   <Card title="White-label" icon="palette">
@@ -47,9 +42,9 @@ API, the assistant — under your identity:
 | API keys | `youragency_sk_live_…` instead of `tybrite_sk_live_…` |
 | The assistant | Named by you, if you'd rather it wasn't "Raf" |
 
-Branding is presentational. It changes what a merchant reads, never how commerce behaves: orders,
+Branding is presentational. It changes what a merchant reads, not how commerce behaves: orders,
 payments, and webhook signatures are issued and verified by Galactic Core exactly as they are for a
-direct store, so integrity is never something a white-label layer can weaken.
+direct store.
 
 <Note>
   Branding covers identity — name, logo, wording, domain, sender, key prefix. The interface keeps its
@@ -74,10 +69,8 @@ between tiers at any time.
 
 ## Your plans, your prices
 
-This is the part that makes it a business rather than a rebrand: **price is data you own.**
-
-Galactic Core defines what each tier can *do*. You decide what the tiers are *called* and what they
-*cost*:
+Price is data you own. Galactic Core defines what each tier can *do*; you decide what the tiers are
+*called* and what they *cost*:
 
 <CardGroup cols={2}>
   <Card title="You control" icon="circle-check">
@@ -112,7 +105,8 @@ integration and it will be used for subscriptions, credit top-ups, and renewals 
 
 Separately from all of that, Galactic Core invoices **you** at wholesale: a base fee per active
 merchant store, plus metered usage. Your dashboard shows revenue, wholesale cost, and the margin
-between them per merchant, so an unprofitable account is visible before it becomes a problem.
+between them per merchant, so an account costing more than it earns is visible per merchant rather
+than only in the monthly total.
 
 Merchants on a free trial are not billable to you.
 

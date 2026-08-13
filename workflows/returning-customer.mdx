@@ -3,17 +3,17 @@ title: "Returning Customer"
 description: "The post-purchase journey for a signed-in shopper — sign in, review order history and profile, lodge and track a return, and spend store credit on the next order."
 ---
 
-This is the flow for a shopper who already has an account and an order behind them: they sign back
-in, look at their history and profile, lodge a return, and redeem the store credit they're offered
-on their next purchase. Customer-self reads (profile, returns) run with the **publishable** client
-plus the shopper's session token; order history and sign-in run with the **secret** client on your
-server. (See [Workflow Examples](/workflows/introduction) for the client setup.)
+A shopper with an account and an order behind them signs back in, looks at their history and profile,
+lodges a return, and redeems the store credit they are offered against their next purchase.
+Customer-self reads (profile, returns) run with the publishable client plus the shopper's session
+token; order history and sign-in run with the secret client on your server.
+[Workflow Examples](/workflows/introduction) has the client setup.
 
-## 1. Sign the shopper back in
+## 1. Signing the shopper back in
 
-Login is a **secret-key** call on your server (a publishable key returns `403`). It returns the
-customer record and a `session` whose `access_token` is the shopper's session token — you hand that
-back to the browser to use as `xAuthToken` on the customer-self calls below.
+Login is a secret-key call on your server; a publishable key returns `403`. It returns the customer
+record and a `session` whose `access_token` is the shopper's session token, which goes back to the
+browser as `xAuthToken` for the customer-self calls below.
 
 ```typescript
 // On your server — secret client
@@ -45,16 +45,16 @@ const { customer, session } = await server.authentication.login({
 ```
 
 <Tip>
-  Passwordless? `server.authentication.sendMagicLink(...)` and the OTP pair (`sendMagicLink` →
-  `verifyOtp`) return the same `{ user, customer, session }` envelope. Token expiring? Refresh it
-  with `server.authentication.refreshSession(...)`.
+  For passwordless sign-in, `server.authentication.sendMagicLink(...)` and the OTP pair
+  (`sendMagicLink` → `verifyOtp`) return the same `{ user, customer, session }` envelope.
+  `server.authentication.refreshToken(...)` renews an expiring token.
 </Tip>
 
-## 2. Show order history
+## 2. Order history
 
-Order history is a **secret-key** read on your server. `listOrders` returns the customer's orders
-newest-first; filter by `payment_status` or page with the cursor. (A publishable key returns `403`
-here — order data never leaves your server.)
+Order history is a secret-key read on your server. `listOrders` returns the customer's orders
+newest-first, filtered by `payment_status` or paged with the cursor. A publishable key returns `403`
+here, so order data never leaves your server.
 
 ```typescript
 // On your server — secret client
@@ -85,7 +85,7 @@ const { orders } = await server.orders.listOrders({ limit: 5 });
 }
 ```
 
-Drill into one order — line items included — with `getOrder`:
+`getOrder` returns one order with its line items:
 
 ```typescript
 const order = await server.orders.getOrder({ id: '0468af54-5f6b-4be5-a4e6-3aa7a79450ba' });
@@ -114,12 +114,12 @@ const order = await server.orders.getOrder({ id: '0468af54-5f6b-4be5-a4e6-3aa7a7
 }
 ```
 
-## 3. Show the customer's profile
+## 3. The customer's profile
 
-The shopper can read their own profile with the **publishable** client plus their session token.
-`getCustomer` requires the `{id}` to match the resolved session — a mismatch returns `403`, so a
-shopper can only ever read their own record. Note the nullable fields (`address`, `last_purchase`,
-`store_metrics`) and the loyalty `tier`.
+The shopper reads their own profile with the publishable client plus their session token.
+`getCustomer` requires the `{id}` to match the resolved session, and a mismatch returns `403`, so a
+shopper can only ever read their own record. `address`, `last_purchase`, and `store_metrics` are
+nullable; `tier` is the loyalty tier.
 
 ```typescript
 const profile = await storefront.customers.getCustomer({
@@ -154,13 +154,13 @@ const profile = await storefront.customers.getCustomer({
   either. See [Authentication](/authentication) for the assertion format.
 </Note>
 
-## 4. Lodge a return
+## 4. Lodging a return
 
-A shopper returns part or all of a delivered order with `createReturn` (publishable client +
-session token). Pick a `reason_code` from the public reason list, a `return_type`, and the order
-line(s) to send back. The return lands in `pending` for the merchant to review.
+`createReturn` (publishable client plus session token) returns part or all of a delivered order. It
+takes a `reason_code` from the public reason list, a `return_type`, and the order lines being sent
+back, and the return lands in `pending` for the merchant to review.
 
-First, fetch the reason codes to populate the form — no session needed:
+The reason codes that populate the form need no session:
 
 ```typescript
 const { data: reasons } = await storefront.returns.listReturnReasons();
@@ -181,7 +181,7 @@ const { data: reasons } = await storefront.returns.listReturnReasons();
 }
 ```
 
-Then lodge the return:
+The return itself:
 
 ```typescript
 const { data: ret } = await storefront.returns.createReturn({
@@ -239,10 +239,10 @@ const { data: ret } = await storefront.returns.createReturn({
   a merchant action done in admin — not via this API.
 </Note>
 
-## 5. Track the return
+## 5. Tracking the return
 
-The shopper watches their returns with `listReturns` (all of their own returns) or `getReturn` (one
-by id) — publishable client + session token.
+`listReturns` gives the shopper all of their own returns and `getReturn` one by id, both on the
+publishable client plus session token.
 
 ```typescript
 const { data: myReturns } = await storefront.returns.listReturns({
@@ -271,13 +271,13 @@ const { data: myReturns } = await storefront.returns.listReturns({
 }
 ```
 
-## 6. The resolution branches: take store credit OR request a refund
+## 6. The resolution branches: store credit or a refund
 
-When the merchant reviews the return, they can offer **store credit** instead of a cash refund. The
-return's `credit_offer.status` flips to `offered`/`pending` with an `amount`, and now the shopper
-**chooses one of two paths**. Both run on the **publishable** client + session token.
+Reviewing the return, the merchant can offer store credit instead of a cash refund. The return's
+`credit_offer.status` flips to `offered`/`pending` with an `amount`, and the shopper takes one of two
+paths from there. Both run on the publishable client plus session token.
 
-First, check the balance *before* any resolution — a brand-new shopper has nothing yet:
+The balance before any resolution — a shopper who has never been credited has nothing yet:
 
 ```typescript
 const { data: before } = await storefront.returns.getStoreCredit({
@@ -291,15 +291,15 @@ const { data: before } = await storefront.returns.getStoreCredit({
 ```
 
 <Note>
-  `currency` is `null` here — the store-credit ledger does not stamp a currency code, so this field
-  stays `null` even after credit is issued (the balance is always in the store's own currency). Read
-  `balance` as the amount; don't rely on `currency` to be populated.
+  `currency` is `null` here, and stays `null` even after credit is issued: the store-credit ledger
+  does not stamp a currency code, because the balance is always in the store's own currency.
+  `balance` is the amount.
 </Note>
 
-### Path A — accept the store credit
+### Path A — accepting the store credit
 
-The shopper takes the credit with `acceptReturnCredit`. Galactic Core issues it to their balance and
-returns the new credit record.
+`acceptReturnCredit` takes the credit. Galactic Core issues it to the shopper's balance and returns
+the new credit record.
 
 ```typescript
 const { data: credit } = await storefront.returns.acceptReturnCredit({
@@ -315,7 +315,7 @@ const { data: credit } = await storefront.returns.acceptReturnCredit({
 }
 ```
 
-Read the balance *after* accepting — it's now populated (`currency` stays `null`, as noted above):
+The balance after accepting is populated, with `currency` still `null`:
 
 ```typescript
 const { data: after } = await storefront.returns.getStoreCredit({
@@ -327,11 +327,11 @@ const { data: after } = await storefront.returns.getStoreCredit({
 { "data": { "balance": 24.95, "currency": null } }
 ```
 
-### Path B — decline the credit and request a cash refund instead
+### Path B — declining the credit for a cash refund
 
-If the shopper would rather have their money back, they decline the offer with `requestReturnRefund`.
-The return moves to `refund_requested` and the merchant handles the payout outside this API. (This is
-only valid while a store-credit offer is pending; otherwise it returns `409`.)
+A shopper who would rather have their money back declines the offer with `requestReturnRefund`. The
+return moves to `refund_requested` and the merchant handles the payout outside this API. The call is
+valid only while a store-credit offer is pending, and returns `409` otherwise.
 
 ```typescript
 const { data: refund } = await storefront.returns.requestReturnRefund({
@@ -348,18 +348,18 @@ const { data: refund } = await storefront.returns.requestReturnRefund({
 ```
 
 <Note>
-  These two are mutually exclusive on the same offer — the shopper takes **either** the credit
-  (Path A) **or** the refund (Path B), not both. The rest of this page follows **Path A** (the
-  shopper kept the $24.95 credit) so we can spend it on the next order.
+  The two paths are mutually exclusive on the same offer: the shopper takes either the credit
+  (Path A) or the refund (Path B), never both. The step below follows Path A, where the shopper kept
+  the $24.95 credit.
 </Note>
 
-## 7. Spend the credit on the next order
+## 7. Spending the credit on the next order
 
-On the shopper's next checkout, apply the **$24.95** they kept in Path A at order creation: set
-`apply_store_credit: true` on the order body (optionally cap it with `store_credit_amount`). The
-amount actually applied comes back as `store_credit_applied`. This runs on your server — order
-creation is a secret-key, HMAC-signed call (see [Storefront checkout](/workflows/storefront-checkout#7-place-the-order-server-signed)
-for the signing recipe).
+At the shopper's next checkout, `apply_store_credit: true` on the order body applies the $24.95 kept
+in Path A, optionally capped with `store_credit_amount`. The amount actually applied comes back as
+`store_credit_applied`. Order creation is a secret-key, HMAC-signed call, so this runs on your server
+— [Storefront checkout](/workflows/storefront-checkout#7-placing-the-order-server-signed) has the
+signing recipe.
 
 ```typescript
 const { order } = await server.orders.createOrder({
@@ -399,22 +399,21 @@ const { order } = await server.orders.createOrder({
 ```
 
 <Note>
-  `store_credit_applied` (verified live 2026-06-21) is the amount of the customer's balance Galactic
-  Core spent against this order — here mirroring the $24.95 kept in Path A. When the credit fully
-  covers the order, Galactic Core also reflects it in the order's `discount_amount` and stamps the
-  order `notes` with `[STORE_CREDIT_APPLIED <amount>]`.
+  `store_credit_applied` is the amount of the customer's balance Galactic Core spent against this
+  order, here the $24.95 kept in Path A. Where the credit fully covers the order, Galactic Core also
+  reflects it in the order's `discount_amount` and stamps the order `notes` with
+  `[STORE_CREDIT_APPLIED <amount>]`.
 </Note>
 
 <Tip>
-  Store credit is deducted from the order total automatically — you don't move money yourself. The
+  Store credit comes off the order total automatically, without the integration moving money. The
   remaining balance is charged through the normal payment step.
 </Tip>
 
 ## What's next
 
-- Find more to buy: [Search & discovery](/workflows/search-and-discovery) covers search,
-  recommendations, and dynamic pricing.
-- New shopper instead? Walk the full guest-to-paid path in
-  [Storefront checkout](/workflows/storefront-checkout).
-- Encourage a [review and open a support thread](/workflows/reviews-and-messaging) after the return
-  resolves.
+- [Search & discovery](/workflows/search-and-discovery) covers search, recommendations, and dynamic
+  pricing for the next purchase.
+- [Storefront checkout](/workflows/storefront-checkout) walks the full guest-to-paid path for a new
+  shopper.
+- [Reviews and support threads](/workflows/reviews-and-messaging) follow once the return resolves.

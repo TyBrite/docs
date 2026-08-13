@@ -3,7 +3,7 @@ title: "Tax"
 description: "Show the right tax at checkout. Preview jurisdiction-accurate tax for a destination and cart before the order is placed, then submit the tax-inclusive total — every order carries its full tax breakdown."
 ---
 
-Getting tax right is one of the hardest parts of selling across regions — rates differ by country, state, county, and city, and they change. Galactic Core handles this for you: when a store turns on **automatic tax**, the platform calculates the correct tax for each order's shipping destination and records a full per-jurisdiction breakdown on the order. Your storefront's only job is to **show the shopper the right total before they pay**, which you do with a single preview call.
+When a store turns on **automatic tax**, the platform calculates tax for each order's shipping destination — rates differ by country, state, county, and city, and they change — and records a full per-jurisdiction breakdown on the order. A storefront's part is to show the shopper the right total before they pay, which takes a single preview call.
 
 ## How tax works
 
@@ -82,7 +82,7 @@ If you send your own `tax_amount` (because you calculate tax elsewhere), it is h
 
 ## When automatic tax isn't configured
 
-`previewTax` returns `{ "tax_source": "fallback" }` (no breakdown). Apply the store's own configured rate to compute the total — the order endpoint uses that same rate, so the totals agree. Automatic tax is also self-healing: if it's ever momentarily unavailable while placing an order, the order is calculated with the store's rate and marked `tax_source: "fallback"` rather than failing, so a sale is never blocked.
+`previewTax` returns `{ "tax_source": "fallback" }` (no breakdown). Apply the store's own configured rate to compute the total — the order endpoint uses that same rate, so the totals agree. The same fallback covers a momentary outage: if automatic tax is unavailable while an order is being placed, the order is calculated with the store's rate and marked `tax_source: "fallback"` rather than failing, so a sale is never blocked.
 
 ## Returns
 

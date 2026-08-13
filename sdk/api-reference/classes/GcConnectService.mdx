@@ -14,7 +14,7 @@ When a merchant authorizes your application, Galactic Core provisions a key pair
 1. Redirect the merchant to `https://gc.tybritelabs.com/connect/authorize` with your `client_id`, `redirect_uri`, `scope`, and `state`.
 2. After the merchant approves, Galactic Core redirects to your `redirect_uri` with a short-lived `code`.
 3. Your **server** calls `connectToken` to exchange the code for `sk` + `pk`.
-4. Store the `sk` securely server-side. Use it for all API calls on behalf of the merchant.
+4. The `sk` is held server-side and authenticates every subsequent API call made on that merchant's behalf.
 
 <Note>
   Your application must be approved by Galactic Core before you can use these endpoints. Apply via the [Developer Portal](https://gc.tybritelabs.com/developers).

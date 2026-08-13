@@ -3,18 +3,16 @@ title: "Webhooks & Automation"
 description: "React to commerce events in real time instead of polling — register an endpoint, read its health, verify deliveries cryptographically, test (success AND failure), and handle the auto-disable case."
 ---
 
-Webhooks let your systems **react to commerce events the moment they happen** — a new order, a
-successful payment, a completed catalog sync — instead of polling the API on a timer. You register an
-HTTPS endpoint, subscribe it to the events you care about, and Galactic Core POSTs a signed envelope
-to it on every matching event.
+Webhooks deliver commerce events — a new order, a successful payment, a completed catalog sync — as
+they happen, in place of polling the API on a timer. An HTTPS endpoint is registered and subscribed
+to a set of events, and Galactic Core POSTs a signed envelope to it on every matching event.
 
-This page follows **one endpoint through its whole life** and shows every shape the integration hits —
-not just the happy path: create it (and capture the one-time secret), read its health, verify a
-delivery, test it both when it **succeeds** and when it **fails**, watch it auto-disable after
-repeated failures, and handle `order.paid` end to end.
+One endpoint runs through its whole life here: created, with its one-time secret captured; read for
+health; a delivery verified; tested when it succeeds and when it fails; auto-disabled after repeated
+failures; and finally handling `order.paid` end to end.
 
-All webhook management is **secret-key only** (`sk`). A publishable key returns `403`. These calls
-run on your server.
+All webhook management is secret-key only (`sk`), so these calls run on your server. A publishable
+key returns `403`.
 
 ```typescript
 import { Tybrite } from '@tybrite-labs/sdk';
@@ -22,11 +20,11 @@ import { Tybrite } from '@tybrite-labs/sdk';
 const server = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
 ```
 
-## 1. Register an endpoint
+## 1. Registering an endpoint
 
-Create an endpoint pointed at your handler URL and list the events to subscribe to (or `["*"]` for
-all of them). The response includes a **`signing_secret` returned exactly once** — store it
-immediately; it cannot be retrieved again. If you lose it, delete the endpoint and re-create it.
+An endpoint points at your handler URL and lists the events it subscribes to, or `["*"]` for all of
+them. The response includes a `signing_secret` returned exactly once and never retrievable again — a
+lost secret is recovered by deleting the endpoint and re-creating it.
 
 ```typescript
 const { webhook_endpoint } = await server.webhooks.createWebhookEndpoint({
@@ -57,17 +55,16 @@ const { webhook_endpoint } = await server.webhooks.createWebhookEndpoint({
 ```
 
 <Warning>
-  The **create** response is the only one that ever includes `signing_secret`. `getWebhookEndpoint`
-  and `listWebhookEndpoints` deliberately omit it — there is no way to read it back. Capture it at
-  creation. (The mirror image is also true: create has **no** health fields or `delivery_stats`;
-  those only appear on get/list — see step 2.)
+  The create response is the only one that ever includes `signing_secret`; `getWebhookEndpoint` and
+  `listWebhookEndpoints` omit it, and there is no way to read it back. The mirror also holds: create
+  carries no health fields and no `delivery_stats`, which appear only on get and list (step 2).
 </Warning>
 
-## 2. List and inspect endpoints (and their health)
+## 2. Listing and inspecting endpoints and their health
 
-`listWebhookEndpoints` returns every endpoint with its **delivery-health fields** —
-`last_success_at`, `last_failure_at`, `consecutive_failures`, `disabled_reason`, and `disabled_at`.
-A freshly created endpoint has them all at their zero state (`null` / `0`).
+`listWebhookEndpoints` returns every endpoint with its delivery-health fields: `last_success_at`,
+`last_failure_at`, `consecutive_failures`, `disabled_reason`, and `disabled_at`. A freshly created
+endpoint carries them all at their zero state, `null` or `0`.
 
 ```typescript
 const { webhook_endpoints } = await server.webhooks.listWebhookEndpoints();
@@ -126,7 +123,7 @@ const { webhook_endpoint } = await server.webhooks.getWebhookEndpoint({
 }
 ```
 
-**Create vs. get — the field map at a glance:**
+The field map across the two:
 
 | Field | `createWebhookEndpoint` | `getWebhookEndpoint` / `listWebhookEndpoints` |
 | --- | --- | --- |
@@ -170,8 +167,8 @@ const { webhook_endpoint } = await server.webhooks.getWebhookEndpoint({
 }
 ```
 
-Once your handler is healthy again, re-enable it by patching `enabled: true` — that also resets the
-failure counter and clears `disabled_reason`:
+Patching `enabled: true` re-enables a recovered handler, which also resets the failure counter and
+clears `disabled_reason`:
 
 ```typescript
 const { webhook_endpoint } = await server.webhooks.updateWebhookEndpoint({
@@ -183,16 +180,16 @@ const { webhook_endpoint } = await server.webhooks.updateWebhookEndpoint({
 
 ## 4. The event envelope
 
-Every delivery is a POST of the same envelope shape. The `data.object` holds the resource that
-triggered the event; the top-level fields tell you how to handle it:
+Every delivery is a POST of the same envelope. `data.object` holds the resource that triggered the
+event, and the top-level fields describe it:
 
-- **`type`** — the event type (e.g. `order.created`).
-- **`livemode`** — `true` for a live key, `false` for a test key. Branch on this so test events never
-  touch production systems.
-- **`api_version`** — the contract version (`v1`).
-- **`environment`** — `production` or `sandbox`.
+- `type` — the event type, such as `order.created`.
+- `livemode` — `true` for a live key, `false` for a test key. This is the field that keeps test
+  events away from production systems.
+- `api_version` — the contract version (`v1`).
+- `environment` — `production` or `sandbox`.
 
-Here's a real `order.created` envelope as it lands in your handler (lifted from the event log):
+An `order.created` envelope as it lands in a handler, taken from the event log:
 
 ```json
 {
@@ -214,8 +211,8 @@ Here's a real `order.created` envelope as it lands in your handler (lifted from 
 }
 ```
 
-When that same order's payment confirms, an `order.paid` envelope for the **same** order id follows —
-identical envelope shape, different `type`:
+When that order's payment confirms, an `order.paid` envelope for the same order id follows, identical
+in shape and differing only in `type`:
 
 ```json
 {
@@ -237,12 +234,12 @@ identical envelope shape, different `type`:
 }
 ```
 
-## 5. Verify the signature in your handler
+## 5. Verifying the signature in your handler
 
-This is **your** server code, so it's free to name your own stack. Galactic Core signs every delivery
-and sends the signature in the `X-Tybrite-Signature` header as `t=<timestamp>,v1=<hex hmac>`.
-Recompute the HMAC over `` `${t}.${rawBody}` `` with your stored `signing_secret` and compare in
-constant time **before** trusting the payload:
+Galactic Core signs every delivery and sends the signature in the `X-Tybrite-Signature` header as
+`t=<timestamp>,v1=<hex hmac>`. A handler recomputes the HMAC over `` `${t}.${rawBody}` `` with its
+stored `signing_secret` and compares in constant time before trusting the payload. The example below
+is handler code, so it names its own stack:
 
 ```typescript
 // Your webhook handler (Express example) — verify before you act.
@@ -276,17 +273,18 @@ app.post('/webhooks/tybrite', express.raw({ type: 'application/json' }), (req, r
 ```
 
 <Tip>
-  Acknowledge fast (`200` immediately) and process asynchronously. A slow handler causes timeouts,
-  which count as delivery failures and push the endpoint toward auto-disable (step 3).
+  A handler that answers `200` immediately and processes asynchronously stays healthy under load. A
+  slow one causes timeouts, which count as delivery failures and move the endpoint toward
+  auto-disable (step 3).
 </Tip>
 
-## 6. Test, audit, and retry deliveries
+## 6. Testing, auditing, and retrying deliveries
 
-**Send a test event** to verify connectivity and your signature check end to end. The payload carries
-`test: true` and placeholder data — your handler should no-op on it (don't fulfil or charge). The
-response reports the actual `status_code` your endpoint returned.
+A test event exercises connectivity and the signature check end to end. Its payload carries
+`test: true` and placeholder data, so a handler treats it as a no-op rather than fulfilling or
+charging against it. The response reports the `status_code` the endpoint returned.
 
-When your handler answers `200`, the test succeeds:
+A handler answering `200` makes the test succeed:
 
 ```typescript
 const test = await server.webhooks.sendTestWebhookEvent({
@@ -306,9 +304,8 @@ const test = await server.webhooks.sendTestWebhookEvent({
 }
 ```
 
-When your endpoint is down or rejects the request, the **same call** comes back with `success: false`
-and the failing `status_code` — this is what a broken endpoint looks like, and it's how a run of
-these eventually trips the auto-disable in step 3:
+An endpoint that is down or rejects the request returns the same call with `success: false` and the
+failing `status_code`. A run of these is what trips the auto-disable in step 3:
 
 ```json Response
 {
@@ -321,8 +318,8 @@ these eventually trips the auto-disable in step 3:
 }
 ```
 
-**Audit the event log** to debug deliveries or replay history. Reverse-chronological, cursor-paged,
-filterable by `type` and `environment`:
+The event log is where deliveries are debugged and history replayed from. It is
+reverse-chronological, cursor-paged, and filterable by `type` and `environment`:
 
 ```typescript
 const { webhook_events } = await server.webhooks.listWebhookEvents({ limit: 10, type: 'order.paid' });
@@ -360,12 +357,12 @@ const { webhook_events } = await server.webhooks.listWebhookEvents({ limit: 10, 
 ```
 
 <Tip>
-  Add `environment: 'sandbox'` to see only test-key events, or `'production'` for live ones — the
-  same filter the `livemode` flag reflects on each envelope.
+  `environment: 'sandbox'` narrows the log to test-key events and `'production'` to live ones — the
+  same distinction the `livemode` flag carries on each envelope.
 </Tip>
 
-**Manually re-deliver** an event to every enabled, subscribed endpoint — each retry is logged as a
-new attempt. `retried` counts how many endpoints were hit, and `results[]` reports each one's outcome:
+A manual re-delivery sends an event to every enabled, subscribed endpoint, logging each retry as a
+new attempt. `retried` counts the endpoints hit, and `results[]` reports each one's outcome:
 
 ```typescript
 const retry = await server.webhooks.retryWebhookEvent({ id: 'evt_1781955476025_lp1jafe' });
@@ -384,11 +381,10 @@ const retry = await server.webhooks.retryWebhookEvent({ id: 'evt_1781955476025_l
 
 ## 7. Handling `order.paid` end to end
 
-Here's the important mental model: **you do not patch the order to `paid` from the webhook.** When a
-payment confirms, Galactic Core already marks the order paid, reduces stock, books the sale, and
-updates the customer's metrics — automatically. The `order.paid` webhook fires **so that *your* other
-systems can react** — push the order into your ERP, send a custom confirmation email, update your
-analytics warehouse, notify a fulfilment partner.
+The order is not patched to `paid` from the webhook. When a payment confirms, Galactic Core has
+already marked the order paid, reduced stock, booked the sale, and updated the customer's metrics.
+`order.paid` fires so that other systems can react to that — pushing the order into an ERP, sending a
+custom confirmation email, updating an analytics warehouse, notifying a fulfilment partner.
 
 ```typescript
 // Inside your verified handler (after the signature check in step 5):
@@ -405,7 +401,7 @@ if (event.type === 'order.paid' && event.livemode) {
 
 ## Supported event types
 
-Subscribe to any of these (or `["*"]` for everything):
+An endpoint subscribes to any of these, or to `["*"]` for everything:
 
 - **Order lifecycle** — `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`,
   `order.cancelled`, `order.refunded`, `order.updated`
@@ -429,16 +425,17 @@ Subscribe to any of these (or `["*"]` for everything):
 - **Deletion & restore** — `product.deleted`, `product_variant.deleted`, `promotion.deleted`,
   `collection.deleted`, `post.deleted`, `lookbook.deleted`, `pricing_rule.deleted`,
   `subcategory.deleted`, `customer.deleted`. The record has left the API: it is gone from every
-  list, cannot be fetched by id, and stops taking effect. This is the signal to tear down whatever
-  you built from it — a page, a menu entry, a mirrored row. Deleting is reversible for 90 days, so
-  each has a matching `.restored` and the payload carries `restorable_until`: you can remove your
-  copy now and rebuild it if the restore arrives, or wait out the window. Deleting a product also
-  deletes its variants, so `product.deleted` is followed by a `product_variant.deleted` for each
+  list, cannot be fetched by id, and stops taking effect — which makes each of these the moment
+  anything built from that record, a page, a menu entry, a mirrored row, no longer has a source.
+  Deleting is reversible for 90 days, so each event has a matching `.restored` and the payload
+  carries `restorable_until`, leaving room either to remove a copy now and rebuild it if the restore
+  arrives, or to wait the window out. Deleting a product also deletes its variants, so
+  `product.deleted` is followed by a `product_variant.deleted` for each
 - **Visibility** — `category.activated` / `category.deactivated`, `subcategory.activated` /
   `subcategory.deactivated`. A category switched off is filtered out of every catalog read, so it
-  leaves a storefront exactly as a deleted one would. Categories cannot be deleted (they are a fixed
-  set a merchant enables or disables), so these are the only lifecycle events they emit — subscribe
-  if you render navigation or any layout built from the taxonomy
+  leaves a storefront exactly as a deleted one would. Categories cannot be deleted — they are a fixed
+  set a merchant enables or disables — so these are the only lifecycle events they emit, and the only
+  signal available to navigation or any layout built from the taxonomy
 - **Store lifecycle & configuration** — `store.updated` (name / logo / branding / contact / base
   currency; carries `changed_fields`), `payment_provider.connected`, `shipping_provider.connected`,
   `channel.connected`
@@ -453,36 +450,35 @@ Subscribe to any of these (or `["*"]` for everything):
 
 ## Keeping a storefront in step with the store
 
-The order, payment, and inventory events above react to a *transaction*. The **store lifecycle**,
-**content & collections**, and **feature availability** events react to the store *growing* — and they
-are what an automation tool listens to when it keeps a storefront current without anyone rebuilding it.
+The order, payment, and inventory events above track a transaction. The store lifecycle, content and
+collections, and feature availability events track the store itself changing, and they are what an
+automation tool listens to to keep a storefront current without anyone rebuilding it.
 
-A store rarely arrives fully-formed. A merchant starts with a thin catalog and no reviews, no
-promotions, no published content — and the matching storefront surfaces have nothing to show. As the
-store fills in, these events fire at the exact moment each surface earns its place:
+A store rarely arrives fully formed. A merchant starts with a thin catalog and no reviews, no
+promotions, and no published content, leaving the matching storefront surfaces with nothing to show.
+As the store fills in, these events mark the moment each surface has something behind it:
 
-- `promotion.activated` → render the live promotion's banner and badge the eligible products; retire
-  them on `promotion.deactivated`.
-- `review.approved` → show the star summary and reviews block on the product page once there is a real
-  review to display.
-- `collection.updated` (banner added, `show_on_homepage` turned on, **or its membership changed**) →
-  add the collection to the homepage merchandising, and re-read its products when
-  `members_changed: true`. Membership churn matters more than it sounds: a merchant can set a
-  collection to refresh itself on a schedule, so "current best sellers" is a shelf whose contents
-  change on their own. The event fires once per collection per change, not once per product, so a
-  ten-product rotation is one event.
-- `pricing_rule.activated` / `.updated` / `.deactivated` → re-read prices for the affected scope. A
-  dynamic-pricing rule changes what every shopper pays without touching a single product record, so
-  a cached price is stale the moment one of these fires.
-- `feature.status_changed` (`awaiting_data → available`) → light up a capability the moment its data
-  exists — for example, switch on recommendations shelves once there is enough signal, or a currency
-  switcher once a second currency is configured. A `not_in_plan → available` transition is the same
-  signal after a plan upgrade unlocks the capability.
+- `promotion.activated` carries the live promotion a banner and product badges render from, and
+  `promotion.deactivated` marks when they stop applying.
+- `review.approved` is the point at which a product page has a real review behind its star summary
+  and reviews block.
+- `collection.updated` covers a banner being added, `show_on_homepage` being turned on, and
+  membership changing, the last carrying `members_changed: true` and calling for a re-read of the
+  collection's products. Membership churn is not only a manual edit: a merchant can set a collection
+  to refresh itself on a schedule, so a shelf like "current best sellers" changes contents on its
+  own. The event fires once per collection per change rather than once per product, so a ten-product
+  rotation is one event.
+- `pricing_rule.activated` / `.updated` / `.deactivated` bound the validity of a cached price. A
+  dynamic-pricing rule changes what every shopper pays without touching a single product record, so a
+  cached price is stale from the moment one of these fires.
+- `feature.status_changed` (`awaiting_data → available`) is the moment a capability's data exists —
+  recommendations shelves once there is enough signal, a currency switcher once a second currency is
+  configured. A `not_in_plan → available` transition is the same signal arriving after a plan upgrade
+  unlocks the capability.
 
-This is how **Anvil**, Galactic Core's storefront generator, powers its self-improving storefronts: it
-subscribes to these events and, when one fires, proposes the matching storefront change for the
-merchant to preview and approve — no rebuild, no downtime. Any tool can do the same by subscribing to
-the same events.
+Anvil, Galactic Core's storefront generator, builds its self-improving storefronts on exactly these
+events: it subscribes, and when one fires it proposes the matching storefront change for the merchant
+to preview and approve, without a rebuild or downtime. The same events are available to any tool.
 
 ## What's next
 

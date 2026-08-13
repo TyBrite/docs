@@ -4,34 +4,29 @@ description: "The guarantees Galactic Core makes about isolation, authentication
 ---
 
 Security in a commerce platform is a shared responsibility. Galactic Core secures the infrastructure, the
-data boundaries, and the money path; your integration secures its keys and its own request handling. This
-page states what the platform guarantees and where your responsibilities begin, so there is no ambiguity
-about who owns what.
-
-The theme throughout is that the important boundaries are enforced below the application, in the
-infrastructure — so a bug in application code cannot cross them.
+data boundaries, and the money path; your integration secures its keys and its own request handling. The
+platform's boundaries are enforced below the application, in the infrastructure, so a bug in application
+code cannot cross them. Where each responsibility sits is set out below and summarized in the table at the
+end.
 
 ## Tenant isolation
 
-Every merchant's data is isolated, and it never depends on application code remembering to filter. On the
-shared platform, row-level security in the database scopes every read and write to a single store, so a
-query cannot reach another store's data even on a shared table. Tenants who need physical separation rather
-than a logical one — a marketplace operator, an enterprise client — run on a dedicated deployment: a
-separate database and API layer whose incident cannot affect another tenant. This is covered in depth in
-[Data Model & Multi-tenancy](/how-gc-works/data-model) — the short version is that isolation is a property
-of the infrastructure, not a filter an engineer has to remember.
+Every merchant's data is isolated, and the isolation never depends on application code remembering to
+filter. On the shared platform, row-level security in the database scopes every read and write to a single
+store, so a query cannot reach another store's data even on a shared table. Tenants who need physical
+separation rather than a logical one — a marketplace operator, an enterprise client — run on a dedicated
+deployment: a separate database and API layer whose incident cannot affect another tenant. Both are
+covered in depth in [Data Model & Multi-tenancy](/how-gc-works/data-model).
 
-Automations extend this guarantee. When a merchant's own automation — a custom extension, or an
-AI-generated one such as an ad-optimization rule — needs to read the store's data, it does **not** get
-direct database access. It reads a **governed set of business concepts** (revenue and margin by product,
-stock at risk, campaign performance, active promotions, and the like) exposed as a fixed, read-only
-interface. Every concept is scoped to the automation's own store, returns computed business facts rather
-than raw records, and can never reach another tenant's data or a table the automation wasn't meant to
-see. This lets a merchant's logic act on rich, meaningful signals while the underlying data stays walled
-off — the same isolation that protects the storefront protects what an automation can read.
+A merchant's own automation — a custom extension, or an AI-generated one such as an ad-optimization rule —
+does not get direct database access when it needs to read the store's data. It reads a governed set of
+business concepts (revenue and margin by product, stock at risk, campaign performance, active promotions,
+and the like) exposed as a fixed, read-only interface. Every concept is scoped to the automation's own
+store and returns computed business facts rather than raw records, so an automation can act on detailed
+signals without being able to reach another tenant's data or a table it was not meant to see.
 
-Isolation and permission are separate questions, and both are answered in the database. Beyond *which
-store* a row belongs to, each staff member's role determines *which tables they may read and write* —
+Which store a row belongs to and which staff member may act on it are separate questions, and both are
+answered in the database. Each staff member's role determines which tables they may read and write —
 resolved on the server for every request and applied as a database policy per operation, so reading a
 record and changing it can require different permissions. A cashier can complete a sale without being
 able to open the general ledger or alter a customer record, and that holds regardless of what the
@@ -122,10 +117,10 @@ a live key to read sandbox data or the reverse.
 
 ## Data protection and privacy
 
-Galactic Core is built for GDPR and CCPA from the ground up. The data in a store belongs to the merchant,
-and the tools to exercise data-subject rights over it are self-service — the merchant runs them directly,
-from their own dashboard, without going through us. Your store's data is never shared with anyone else; we
-would only step in to help produce an export if a merchant were unable to run one themselves.
+The data in a store belongs to the merchant, and the tools to exercise GDPR and CCPA data-subject rights
+over it are self-service: the merchant runs them directly, from their own dashboard, without going through
+us. A store's data is never shared with anyone else; we would only step in to help produce an export if a
+merchant were unable to run one themselves.
 
 <Columns cols={2}>
   <Card title="Access and portability" icon="download">
@@ -181,6 +176,6 @@ split:
 ## What the platform refuses to do
 
 Security decides who can reach what. A separate set of rules decides what Galactic Core declines to do
-even for a caller who is fully authorized — selling below cost, taking a live payment through a test
-processor, letting an automation run unattended forever. Those are covered in
+even for a caller who is fully authorized: selling below cost, taking a live payment through a test
+processor, letting an automation run unattended indefinitely. Those are covered in
 [Guardrails](/how-gc-works/guardrails).

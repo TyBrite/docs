@@ -366,7 +366,7 @@ classification its own request produced without a follow-up read.
 
 ## Realtime messaging
 
-Instead of polling `getThreadMessages` on a timer, you can receive a thread's new messages the moment they are sent — over a **WebSocket**. Use the `subscribeToThread` helper, exported from the SDK package root. It works out of the box on browsers, Deno, Bun, and Node 22+ — **no extra packages to install**.
+A thread's new messages arrive as they are sent over a **WebSocket**, rather than on the interval a `getThreadMessages` poll would impose. The `subscribeToThread` helper is exported from the SDK package root and uses the runtime's built-in WebSocket, so it runs on browsers, Deno, Bun, and Node 22+ with no additional dependency.
 
 ### `subscribeToThread`
 

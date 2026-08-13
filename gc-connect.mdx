@@ -216,9 +216,9 @@ pattern for keeping a storefront in step with a store is in
 
 ## Scopes
 
-Request the **narrowest** set of scopes your integration needs — merchants see exactly what you're asking for on the consent screen, and a tight scope list earns trust. Pass them space-separated in the `scope` parameter.
+Scopes are passed space-separated in the `scope` parameter, and the merchant sees exactly the set you asked for on the consent screen.
 
-Scopes are **enforced on every request** — a key is rejected with `403 insufficient_scope` if it calls an endpoint it wasn't granted, so request exactly what you need and nothing more.
+They are enforced on every request: a key calling an endpoint it was not granted is rejected with `403 insufficient_scope`. A scope requested but never used therefore costs nothing at runtime and everything on the consent screen, which is the reason to request the narrowest set the integration needs.
 
 | Scope | Access |
 | :--- | :--- |

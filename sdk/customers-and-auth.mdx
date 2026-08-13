@@ -3,16 +3,14 @@ title: "Customers and Auth"
 description: "Two integration paths for managing customer identity in Galactic Core."
 ---
 
-Galactic Core gives you two ways to manage who your customers are. Pick the one that matches your stack.
+Galactic Core gives you two ways to manage who your customers are, differing in which system holds the shopper's login.
 
 ## How the two services split the work
 
-Before we dig into the paths, the mental model:
+- **`AuthenticationService` (`client.auth`)** owns identity and sessions: register, log in, log out, password reset, OTP, magic links, session refresh, and a "who am I?" check (`getCurrentUser` → returns the user id and a few identifying fields).
+- **`CustomersService` (`client.customers`)** owns the customer profile resource: provision a customer record, read the full profile (with addresses, store metrics, purchase history, status), update profile fields, and link to an external identity via `external_id`.
 
-- **`AuthenticationService` (`client.auth`)** owns **identity and sessions**: register, log in, log out, password reset, OTP, magic links, session refresh, and a tiny "who am I?" check (`getCurrentUser` → returns the user id and a few identifying fields). That's it.
-- **`CustomersService` (`client.customers`)** owns **the customer profile resource**: provision a customer record, read the full profile (with addresses, store metrics, purchase history, status), update profile fields, and link to an external identity via `external_id`.
-
-The split is not "Path A uses one service and Path B uses the other." Both services are part of both paths. Even a Path A storefront — where the customer logs in via Galactic Core — fetches and edits the customer's profile through `CustomersService`, not through `AuthenticationService`. The auth service tells you *who* the customer is; the customers service tells you *what* the customer looks like.
+Both services are part of both paths, rather than one service belonging to each. A Path A storefront — where the customer logs in via Galactic Core — still fetches and edits the customer's profile through `CustomersService`. The auth service resolves *who* the customer is; the customers service holds *what* the customer looks like.
 
 Where Path A and Path B differ is **how you prove the caller is the customer** when calling `CustomersService`:
 
@@ -184,12 +182,12 @@ async function handleCustomerProfileFetch(req, res) {
 }
 ```
 
-The dev's backend signs the assertion server-side; the storefront never sees `hmac_secret`. Each assertion is single-use (just expire fast), so a leaked assertion is useless after a few minutes.
+The assertion is signed in your backend, so the storefront never holds `hmac_secret`. The 300-second cap on `exp - iat` bounds how long a leaked assertion remains valid.
 
 ## What Path B still doesn't give you
 
-- **No password reset / magic link / OTP delivery.** Those live in your identity provider.
-- **Sessions are your provider's job.** Galactic Core never issues a JWT to the customer; your provider does. The `x-external-auth` assertion is a per-request claim from your backend, not a long-lived customer token.
+- **No password reset, magic link, or OTP delivery.** Those live in your identity provider.
+- **No customer sessions.** Galactic Core never issues a JWT to the customer; your provider does. The `x-external-auth` assertion is a per-request claim from your backend rather than a long-lived customer token.
 
 ## What Path A doesn't give you
 

@@ -39,13 +39,13 @@ graph TD
   </Step>
 </Steps>
 
-## The hot-path budget
+## What an authenticated read is allowed to cost
 
-An authenticated read is held to a fixed budget: at most one database call and one cache round trip. Two
-choices make that possible. First, authentication and tenant scoping are combined into a single database
-function, so validating the key does not cost a separate lookup. Second, when many requests for the same
-cold entry arrive at one location together, they are coalesced into a single database fetch and the rest
-wait on its result, so a cache stampede cannot reach the database more than once.
+An authenticated read is held to a fixed ceiling: at most one database call and one cache round trip.
+Authentication and tenant scoping are combined into a single database function, so validating the key does
+not cost a separate lookup. And when many requests for the same cold entry arrive at one location
+together, they are coalesced into a single database fetch and the rest wait on its result, so a cache
+stampede cannot reach the database more than once.
 
 ## Write-through invalidation
 
@@ -60,10 +60,9 @@ response from the shared edge cache in every location, so a shopper anywhere see
 right away rather than the copy their nearest edge happened to be holding. (Product responses are tagged
 so the whole set for a store can be dropped from the edge in one operation the moment its stock moves.)
 
-Every cached entry still carries a **TTL as a backstop**, though — write-through is the primary mechanism,
-not the only one. If an invalidation were ever missed, the entry still ages out on its own (the hot catalog
-entries within about fifteen minutes) rather than serving stale data indefinitely. In normal operation you
-never see that window, because the write already refreshed the entry; the TTL is the safety net beneath it.
+Every cached entry also carries a TTL. If an invalidation were ever missed, the entry ages out on its own —
+the hot catalog entries within about fifteen minutes — rather than serving stale data indefinitely. In
+normal operation that window is never reached, because the write already refreshed the entry.
 
 <Note>
   The catalog is cached under **two separate keys** — one for the merchant's in-store/admin view (every
@@ -72,39 +71,34 @@ never see that window, because the write already refreshed the entry; the TTL is
 </Note>
 
 <Note>
-  Availability is never *guaranteed* by cache freshness alone. The authoritative check on whether stock is
-  actually available happens at checkout, when the order is placed against live inventory — so even in the
-  brief moment before a cache refresh lands, the platform will not let two shoppers buy the last unit.
-  Fresh catalog reads keep the *displayed* stock honest; the checkout is what prevents overselling.
+  Cache freshness governs the stock figure a shopper is *shown*. The authoritative check happens at
+  checkout, when the order is placed against live inventory, so even in the brief moment before a cache
+  refresh lands the platform will not let two shoppers buy the last unit.
 </Note>
 
 <Warning>
-  **For a high-traffic store, or any limited or flash-sale item, reserve stock before checkout.** A cached
-  catalog read shows a shopper what was in stock a moment ago; between that read and their checkout, other
-  shoppers may take the last units. To guarantee the units are theirs while they pay, call
-  [`client.orders.reserveStock`](/sdk/api-reference/classes/OrdersService#reservestock) first — it holds
-  the stock atomically (all-or-nothing; you get `409 insufficient_stock` if a unit is already gone) for a
-  short window, and the hold converts straight into the order when they complete checkout. This is the same
-  mechanism that lets a single hot item survive [tens of thousands of simultaneous
-  buyers](/how-gc-works/scaling-reliability) without ever going below zero. It is **optional** — a normal
-  order still can't oversell, because the final stock check happens at order time — but for busy or
-  scarce-inventory storefronts it is **strongly recommended**: it turns "sorry, it sold out while you were
-  paying" into a held unit and a smooth checkout.
+  A cached catalog read shows a shopper what was in stock a moment ago; between that read and their
+  checkout, other shoppers may take the last units.
+  [`client.orders.reserveStock`](/sdk/api-reference/classes/OrdersService#reservestock) holds the units
+  while they pay — atomically, all-or-nothing, returning `409 insufficient_stock` if one is already gone —
+  and the hold converts straight into the order at checkout. It is optional, since the final stock check
+  at order time prevents an oversell either way; on a busy storefront or a scarce item the difference is
+  whether the shopper learns the item is gone before paying or after. The same mechanism carries a limited
+  drop, described in [Marketplaces at Scale](/how-gc-works/marketplace-scale#claiming-stock).
 </Warning>
 
 Short-lived external data, such as geolocation lookups and currency snapshots, leans on its TTL directly.
 Business data leans on write-through first and the TTL only as a fallback — but in both cases a TTL is
 present.
 
-## Warming ahead of the shopper
+## Scheduled warming
 
-Write-through keeps a busy store's cache warm on its own: every edit repopulates what it changed. The one
-moment a shopper could still pay for a cold read is the first request after a quiet store's entry ages out,
-or just after a deployment. To keep even that request fast, the hot storefront entries — the catalog, the
-product specifications, and the store's default currency — are refreshed on a short schedule for active
-stores, so the entry is already present when the next shopper arrives. Dormant stores are skipped, so the
-warming does no work for catalogs no one is browsing. The effect is that the occasional cold-start cost is
-absorbed ahead of time rather than landing on a real request.
+Write-through keeps a busy store's cache warm on its own: every edit repopulates what it changed. A cold
+read remains possible on the first request after a quiet store's entry ages out, or just after a
+deployment. For active stores the hot storefront entries — the catalog, the product specifications, and
+the store's default currency — are therefore refreshed on a short schedule, so the entry is already
+present when the next shopper arrives and the cold-start cost lands on the schedule rather than on a real
+request. Dormant stores are skipped, so the warming does no work for catalogs no one is browsing.
 
 ## Freshness and resilience directives
 
@@ -128,9 +122,9 @@ Cache-Control: public, max-age=60, s-maxage=300,
     When an entry goes stale, the edge serves the stale copy **immediately** and refreshes it in the
     background — the shopper never waits for a revalidation.
   </Card>
-  <Card title="stale-if-error — serve over a 500" icon="shield-halved">
-    If the origin errors (a database hiccup, a worker fault), the edge keeps serving the
-    last-known-good response for up to a day. For a catalog, slightly-stale data beats a failed page.
+  <Card title="stale-if-error — the response outlives an origin error" icon="shield-halved">
+    If the origin errors — a database hiccup, a worker fault — the edge keeps serving the last-known-good
+    response for up to a day rather than returning a `500`.
   </Card>
   <Card title="Vary — safe personalization" icon="code-branch">
     Responses that legitimately differ by currency, language, or auth are keyed on those headers, so

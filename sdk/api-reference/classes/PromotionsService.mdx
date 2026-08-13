@@ -10,12 +10,11 @@ The `PromotionsService` class (accessed via `client.promotions`) handles active 
 </Tip>
 
 <Note>
-  **Never compute discounts yourself.** Galactic Core calculates the exact discount for
-  any cart server-side via `calculatePromotionDiscount` (one promotion) and
-  `calculateBestPromotion` (pick the winner). The number you get back always matches what
-  the merchant sees in their POS — so you never reimplement `subtotal × percentage`,
-  bundle math, or BOGO logic on the storefront. See
-  [Calculating a discount](#calculating-a-discount) below.
+  Discounts are calculated server-side: `calculatePromotionDiscount` evaluates one promotion
+  against a cart, and `calculateBestPromotion` selects the highest-value one. Both return the
+  same figure the merchant sees in their POS, which a storefront reimplementation of
+  `subtotal × percentage`, bundle math, or BOGO logic would have to keep matching as those
+  rules change. See [Calculating a discount](#calculating-a-discount) below.
 </Note>
 
 ## Methods
