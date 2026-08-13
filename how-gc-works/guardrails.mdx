@@ -3,21 +3,17 @@ title: "Guardrails"
 description: "The refusals built into the platform — what it declines to do even when the request is authenticated, authorized, and well-formed."
 ---
 
-Security answers *who can reach what*. Guardrails answer a different question: what the platform
-declines to do **even when the caller is authenticated, authorized, and asking correctly**.
+Security answers who can reach what. Guardrails answer a different question: what the platform declines to
+do even when the caller is authenticated, authorized, and asking correctly. A valid secret key with full
+permissions can still be used to sell below cost, take a payment through a test processor, or run an
+automation into the ground, and each of those is refused.
 
-The two are complementary, and the second is the one that catches the expensive mistakes. A valid
-secret key with full permissions can still be used to sell below cost, take a payment through a test
-processor, or run an automation into the ground. Every guardrail below exists because that outcome is
-worse than the request failing.
-
-They share one property: **they are enforced in the platform, not in the interface**. A guardrail that
-lives in a form is a suggestion — anything calling the API directly walks around it. These are checked
-where the write happens.
+Every guardrail below is checked where the write happens rather than in the interface, so a request made
+directly against the API meets the same refusal a form would.
 
 ---
 
-## Money never moves without a person
+## Human approval on anything worth money
 
 The in-app assistant can prepare gift cards, promotions, and pricing rules from what it sees in a
 store. It cannot issue any of them.
@@ -32,52 +28,45 @@ The same rule governs [dynamic workflows](/agentic-commerce). A workflow can rot
 retag products on its own, because those are reversible. It cannot run a discount — it prepares one
 and waits.
 
-Approval is not the only limit on those drafts, because "one approval at a time" is weaker than it
-sounds once a rule runs on a schedule. A workflow that drafts a gift card for every customer meeting
-a threshold is bounded on both how many it may prepare in one run and their combined face value, and
-a run matching more than that stops and reports it rather than quietly choosing a subset — being told
-the rule is too broad is more useful than a silent partial result. A cooldown prevents the same
-customer being rewarded again on the next run, which is the failure that would otherwise compound
-quietly at every cadence. These ceilings live in the database and are re-clamped on every call, so a
-rule can narrow them but never widen them, whatever the request asks for.
+A rule that runs on a schedule carries further limits beyond approval. A workflow that drafts a gift card
+for every customer meeting a threshold is bounded on both how many it may prepare in one run and their
+combined face value, and a run matching more than that stops and reports it rather than choosing a subset.
+A cooldown prevents the same customer being rewarded again on the next run, which would otherwise compound
+at every cadence. These ceilings live in the database and are re-clamped on every call, so a rule can
+narrow them but never widen them, whatever the request asks for.
 
 A markdown pricing rule is bounded differently, by scope: it covers only the products it actually
 identified rather than the whole catalogue, and only one such draft is outstanding at a time so a
 weekly rule cannot stack duplicates while a merchant is deciding.
 
-## Margin is not assumed
+## Cost coverage before any pricing action
 
 Any automated action that affects price first checks that the store's cost data is complete enough to
-reason about.
+reason about. When a cost price is missing, margin arithmetic treats it as zero, which reads as 100%
+margin — a discount computed on that basis looks comfortably profitable and can be sold below cost. When
+coverage is too thin the action is refused, not merely flagged, and the response names the products whose
+costs are missing.
 
-The reason is specific: when a cost price is missing, margin arithmetic treats it as zero, which
-reads as *100% margin*. A discount computed on that basis looks comfortably profitable and can be
-sold below cost. So rather than act on a plausible-looking number, the platform stops when coverage is
-too thin and says which products need costs filled in.
-
-This is a refusal, not a warning. It applies to the assistant, to standing workflows, and to
-advertising rules alike.
+The check applies to the assistant, to standing workflows, and to advertising rules alike.
 
 ## Test credentials cannot serve a real customer
 
-A store can be live while a payment provider is still configured with test credentials. Left
-unchecked, a shopper would complete checkout against a sandbox processor, see a confirmation, and pay
-nothing.
+A store can be live while a payment provider is still configured with test credentials, in which case a
+shopper would complete checkout against a sandbox processor, see a confirmation, and pay nothing.
 
-On a production request, a provider whose credentials are not live-grade is **hidden from the
-available payment methods and refused at initialization**. The shopper cannot select it, and a direct
-API call gets an explicit error rather than a phantom success.
+On a production request, a provider whose credentials are not live-grade is hidden from the available
+payment methods and refused at initialization. The shopper cannot select it, and a direct API call gets an
+explicit error rather than a phantom success.
 
-The check applies to production requests only. **A sandbox key sees every provider, including ones
-still on test credentials** — that is what sandbox is for, and hiding them would make the mode
-useless for the testing it exists to support. So a sandbox checkout listing providers marked `test`
-or `sandbox` is the system working, not a leak; point a live key at the same store and those
-providers are gone. The same asymmetry holds for every integration below: sandbox is permissive,
-production is strict.
+The check applies to production requests only. A sandbox key sees every provider, including ones still on
+test credentials, since hiding them would make the mode useless for the testing it exists to support. A
+sandbox checkout listing providers marked `test` or `sandbox` is therefore the system working; point a
+live key at the same store and those providers are gone. The same asymmetry holds for every integration
+below.
 
-The merchant's own in-store point of sale behaves differently on purpose: it warns rather than blocks,
-because that is the merchant's own device and they may be mid-setup. The distinction is who is
-transacting — never let a *customer* pay into a test account; do let a merchant test their own till.
+The merchant's own in-store point of sale warns rather than blocks, because that is the merchant's own
+device and they may be mid-setup. What differs between the two cases is who is transacting: a customer is
+never allowed to pay into a test account, while a merchant may test their own till.
 
 The same rule extends past payments to every integration a merchant connects themselves, because
 every one of them has a test mode and a merchant can be live to shoppers while still holding test
@@ -95,50 +84,48 @@ credentials:
 - **Advertising.** Automation rules run against a real ad account and move real budget, so only rules
   created in production ever execute. A rule authored while testing stays inert.
 - **Accounting.** Ledger entries are never posted into a sandbox accounting company. When the
-  connection is not pointed at a real one, entries stay queued rather than being sent — so nothing is
-  lost, and the queue delivers once the connection is corrected. An entry that posts into a test book
-  looks identical to a successful sync, which is precisely why it is refused instead.
+  connection is not pointed at a real one, entries stay queued rather than being sent, so nothing is
+  lost and the queue delivers once the connection is corrected. An entry posted into a test book would
+  be indistinguishable from a successful sync.
 
-Where a sensible fallback exists the request degrades to it rather than failing; where a soft failure
+Where a sensible fallback exists the request degrades to it rather than failing. Where a soft failure
 would leave a false record — an order marked shipped, a tracking number sent, a journal entry filed in
-the wrong book — it is refused outright. Either way the merchant is told, on a cadence set by how much
-the state is costing them: daily when nothing can be sold, weekly when the store still trades
-correctly but not the way they configured it.
+the wrong book — it is refused outright. Either way the merchant is told, on a cadence set by what the
+state is costing them: daily when nothing can be sold, weekly when the store still trades correctly but
+not the way they configured it.
 
-A guarded action is also not offered. The refusal exists because the API is callable directly, but a
-merchant meets a sentence explaining the state rather than a control that fails — and that state is
-shown on the surface whose owner can fix it: never to a shopper, to the merchant for their own
-integrations, and in full to the operator, who is the one who corrects it.
+A guarded action is also withheld from the interface, so a merchant meets a sentence explaining the state
+rather than a control that fails. That state is shown on the surface whose owner can fix it: never to a
+shopper, to the merchant for their own integrations, and in full to the operator, who is the one who
+corrects it.
 
-## Test and live data never mix
+## The environment boundary
 
-The key prefix decides the environment, and it decides everything downstream: which partition is read
-and written, and which mode payment providers run in. There is no request that reads across the
-boundary, and no flag that relaxes it.
+The key prefix decides the environment, and with it which partition is read and written and which mode
+payment providers run in — described in
+[Security & Compliance](/how-gc-works/security#environment-separation). No request reads across that
+boundary and no flag relaxes it.
 
-This extends past data into behaviour. Notifications, automated actions, and scheduled work are all
-production-scoped — a sandbox order does not email anyone, and a sandbox automation does not act on a
-live store. Sandbox data is purged on a schedule, so test runs don't accumulate.
+The boundary extends past data into behaviour. Notifications, automated actions, and scheduled work are
+all production-scoped: a sandbox order does not email anyone, and a sandbox automation does not act on a
+live store.
 
-## Automations stop themselves — and say so
+## Automatic shutdown, with notification
 
 Anything that runs on its own carries a circuit breaker. Repeated consecutive failures disable it
 rather than letting it retry indefinitely; a single success resets the count, so a brief outage costs
 a few failed runs instead of the automation itself.
 
-The important half is the second one: **when something disables itself, the merchant is told.** A
-silently disabled automation is worse than one that never ran, because they still believe it is
-working and discover otherwise when something didn't happen. The same applies to autonomous action —
-an advertising rule that moves a budget or pauses a campaign says so, and says why.
-
-Every automated run is recorded with the figures that triggered it, so "why did this change?" always
-has an answer.
+When something disables itself the merchant is notified, so a stopped automation is not mistaken for a
+working one until something expected fails to happen. Autonomous action is announced the same way: an
+advertising rule that moves a budget or pauses a campaign reports the change and the figures behind it.
+Every automated run is recorded with the figures that triggered it, so a change can always be traced to
+its cause.
 
 A standing rule also stops when its output is not being used. A rule that writes content pauses once
-three of its drafts are sitting unread, and resumes on its own once some are published or discarded.
-The merchant has already shown they are not reading them, and every further run would spend a model
-call and image credits producing more of the same — so the backlog is the signal, and clearing it is
-the reset. Nothing has to be re-enabled by hand.
+three of its drafts are sitting unread, and resumes on its own once some are published or discarded —
+further runs would spend a model call and image credits producing more of what is not being read.
+Nothing has to be re-enabled by hand.
 
 A rule scoped to a season behaves the same way: out of season it is skipped rather than switched off,
 which is what lets it come back the following year with its settings and history intact.
@@ -151,39 +138,35 @@ even though the same verbs appear in both. An explicit instruction to hold off (
 yet", "don't create it") outranks everything else in the turn, including a request that would
 otherwise read as a command.
 
-The bias is deliberate: a question mistaken for an instruction leaves the merchant with something to
-undo, while an instruction mistaken for a question costs one more message. Where the reading is
-genuinely ambiguous, the assistant asks.
+The assistant errs toward answering rather than acting, since a question mistaken for an instruction
+leaves the merchant with something to undo while an instruction mistaken for a question costs one more
+message. Where the reading is genuinely ambiguous, the assistant asks.
 
 Written content is never published on the merchant's behalf, whether a person asked for it or a
 schedule produced it. It is their public voice, so it lands as a draft and stays there until they
 publish it.
 
-## Prices are the server's to decide
+## Server-side prices and stock
 
-Order totals are computed from the catalog, the store's pricing rules, and any promotion that applies
-— never from amounts supplied by the caller. A client that submits its own price for a line item does
-not get that price.
+Order totals are computed from the catalog, the store's pricing rules, and any promotion that applies —
+never from amounts supplied by the caller. A client that submits its own price for a line item does not
+get that price.
 
-The same posture covers stock: availability is decided at reservation time inside a single-writer
-path, so two shoppers racing for the last unit produce one sale and one honest failure rather than an
-oversell.
+Availability is decided the same way, at reservation time inside a single-writer path, so two shoppers
+racing for the last unit produce one sale and one refusal rather than an oversell.
 
-## Everything is bounded
+## Ceilings on cost
 
-Requests are rate-limited per key, and generous per-store quotas cover the work that costs real money
-— API traffic, assistant usage, generated media. Crossing a quota is designed to be recoverable
-rather than a wall, but the ceiling is always present, and it is enforced server-side.
+Requests are rate-limited per key, and per-store quotas cover the work that costs real money — API
+traffic, assistant usage, generated media. Crossing a quota is recoverable rather than terminal, but the
+ceiling is always present and enforced server-side.
 
 Automated work carries its own bounds: a maximum number of steps per run, a timeout per call, a cap on
 how many standing rules a store can hold. None of these are configurable from the client.
 
-## What this means for an integration
+## What an integration sees
 
-Most of the time these are invisible — a correct integration never meets them. When you do, you'll get
-an explicit error rather than a silent partial success, and that is deliberate: **a guardrail that
-fails quietly is worse than no guardrail**, because it teaches you to trust something that isn't
-happening.
-
-If a call is refused for one of these reasons, the response says which. Treat it as information about
-the state of the store, not as a transient failure to retry.
+A correct integration rarely meets these. When it does, the response is an explicit error naming the
+guardrail rather than a silent partial success, so a refusal is never mistaken for a completed action.
+It reports the state of the store rather than a transient failure, and retrying an identical request
+produces the same refusal.

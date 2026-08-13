@@ -5,7 +5,7 @@ description: "The platform-native way to build a Custom Integration: automations
 
 # Custom Integrations — Extensions
 
-**Custom Integrations** are how you make Galactic Core work the way your business does. There are two ways to build one, and this page covers the platform-native path — **Extensions** — where Galactic Core does the plumbing for you. (The other path, running your own service entirely outside the platform and driving it over the API, is [Bring Your Own Compute](/byo-compute) — reach for it when an Extension doesn't cover what you need.)
+**Extensions** let your own logic run inside Galactic Core's own flows — reacting to store events, or standing in for a built-in integration at the seam where the platform calls one. Registration, signing, retries, revalidation and run logging are handled by the platform. (The other route to a Custom Integration runs your own service entirely outside the platform and drives it over the API: [Bring Your Own Compute](/byo-compute), for orchestration an Extension doesn't cover.)
 
 With Extensions there are two things you can build:
 
@@ -125,16 +125,16 @@ In remote mode, Galactic Core POSTs the **same input a hosted handler would rece
 | `X-Tybrite-Extension` | The extension's id. |
 | `X-Tybrite-Kind` | The extension kind / interface being invoked. |
 
-Three details decide whether your verification works:
+Three details govern whether verification succeeds:
 
-- **Sign the raw header string and the raw body bytes.** Re-serialising the parsed JSON changes key
-  order and spacing, and the signature will not match.
-- **`X-Timestamp` is milliseconds**, so compare it against `Date.now()` directly.
-- **Require the signature.** Galactic Core sends no `X-Signature` at all when an extension has no
-  signing secret configured, so an endpoint that verifies "only if the header is present" is open to
-  anyone who omits it.
+- **The signed input is the raw header string and the raw body bytes.** Re-serialising the parsed
+  JSON changes key order and spacing, and the signature will not match.
+- **`X-Timestamp` is in milliseconds**, so it compares directly against `Date.now()`.
+- **An absent signature is not an exemption.** Galactic Core sends no `X-Signature` at all when an
+  extension has no signing secret configured, so an endpoint that verifies only when the header is
+  present accepts anything from a caller that omits it.
 
-Verify every request before acting on it:
+A verification pass ahead of any handling:
 
 ```ts
 // Your endpoint — e.g. an Express route on your own infrastructure
@@ -222,10 +222,10 @@ Each interface operation receives an `input` (with an `operation` discriminator 
 running its own commerce platform charges *its* merchants for their plan — the merchant pays the
 agency, on the agency's own payment account, and Galactic Core never touches that money.
 
-Most agencies never need this interface. Stripe, Lemon Squeezy and Paddle are supported directly, and
-Paystack in its markets, so an agency picks one in their portal and connects it. Build a
-`SubscriptionBillingProvider` when you need a processor we don't ship — a regional gateway, or your
-own billing system that already holds the customer relationship.
+Stripe, Lemon Squeezy and Paddle are supported directly, and Paystack in its markets, so an agency
+using one of those connects it in their portal rather than building anything. A
+`SubscriptionBillingProvider` covers the remaining cases — a regional gateway outside that set, or an
+agency's own billing system that already holds the customer relationship.
 
 <Note>
   This is a **different money flow** from `PaymentProvider`, which is a shopper paying a merchant at
@@ -327,15 +327,16 @@ Automations subscribe to the same event vocabulary as webhooks. The events that 
   </Card>
 </CardGroup>
 
-The store-lifecycle, content, and feature-availability triggers fire as the store *grows* — an
-automation can react to a promotion going live, a review being approved, or a licensed capability
-gaining its first data. See the [Webhooks](/webhooks) reference for each event's payload.
+The store-lifecycle, content, and feature-availability triggers fire as the store *grows* rather than
+per transaction, so an automation can react to a promotion going live, a review being approved, or a
+licensed capability gaining its first data. Each event's payload is documented in the
+[Webhooks](/webhooks) reference.
 
 ---
 
 ## Safety
 
-Custom code can shape your store's behavior without ever putting a sale at risk. The guarantees:
+Custom code sits on paths a sale runs through, so the platform bounds what a failure in it can reach:
 
 <CardGroup cols={2}>
   <Card title="Automations never block" icon="shield-check">
@@ -356,9 +357,9 @@ Every extension is also protected by a per-extension **circuit breaker** — aft
 
 ### Budgets
 
-These are ceilings, not suggestions. A `timeout_ms` on your extension can only make its budget
-*smaller* — it can never raise the ceiling, so an endpoint written for a longer budget is cut off at
-the limit for its class.
+Each budget below is a ceiling for its class. A `timeout_ms` on your extension can only make its
+budget *smaller*, never larger, so an endpoint written against a longer budget is cut off at the
+limit for the class it runs in.
 
 | Limit | Value |
 | :--- | :--- |
@@ -370,15 +371,16 @@ the limit for its class.
 | Response body | 1 MB |
 | Hosted function source | 64 KB |
 
-The shopper-facing budgets are tight on purpose: someone is waiting on a page render. Admin-plane work
-gets more room because a merchant clicked a button and can wait — a real billing provider needs two
-round trips (authenticate, then create) and does not fit a checkout budget.
+A shopper-facing hook runs while a page render waits on it, which is what sets those budgets in
+hundreds of milliseconds. The admin-plane budget is larger because a merchant has clicked a button
+and the work happens in front of them: a billing provider makes two round trips, authenticating then
+creating, which does not fit inside a checkout budget.
 
 <Warning>
-  Measure your endpoint's **slowest** path against these, not its typical one. A lookup for a reference
-  the provider has never seen is often far slower than a normal call, and an endpoint that sits just
-  under the ceiling on average will fail intermittently — which looks like flakiness rather than
-  misconfiguration.
+  These ceilings apply to every individual call, so an endpoint's **slowest** path is the one that
+  determines whether it fits. A lookup for a reference the provider has never seen is often far slower
+  than a normal call, and an endpoint sitting just under the ceiling on average fails intermittently,
+  which surfaces as flakiness rather than as a misconfiguration.
 </Warning>
 
 ---

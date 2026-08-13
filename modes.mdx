@@ -5,8 +5,8 @@ description: "Galactic Core wears three faces — a standalone store, a marketpl
 
 Galactic Core is one commerce core that ships in three shapes. The vast majority of the API is
 **identical across all three** — the same catalog, cart, checkout, payments, customers, search, and
-webhooks. Each mode then adds a small, focused surface on top for its shape. Read this first so you
-know which parts you can build once and reuse, and which are specific to the store you're integrating.
+webhooks — and each mode adds a small, focused surface on top for its shape. Most of an integration
+is therefore built once and reused across modes.
 
 <CardGroup cols={3}>
   <Card title="Vanilla GC (standard)" icon="store">
@@ -75,24 +75,22 @@ returned by [`GET /v1/store/info`](/sdk/api-reference/classes/SystemService), id
 storefront. Because the value is per store, it is the reliable signal even when the deployment itself
 serves both kinds of store.
 
-Alongside it, a wholesale store reports a `vendor_type` — its position in the supply chain, from
-upstream to downstream: `supplier` (raw materials, components, or unbranded goods sold to other
-producers), `manufacturer` (makes the finished product), `distributor` (an authorised reseller for a
-brand, usually in set regions), or `wholesaler` (buys in bulk and resells to businesses). It is `null`
-on a retail store. The two fields answer different questions: `commerce_model` is how a store sells,
-and `vendor_type` is who the seller is. The distinction carries commercial weight, since price,
-minimum order quantity, and lead time all shift depending on which tier a buyer sources from.
+Alongside it, a wholesale store reports a `vendor_type` — who the seller is, by position in the
+supply chain from upstream to downstream: `supplier` (raw materials, components, or unbranded goods
+sold to other producers), `manufacturer` (makes the finished product), `distributor` (an authorised
+reseller for a brand, usually in set regions), or `wholesaler` (buys in bulk and resells to
+businesses). It is `null` on a retail store. Price, minimum order quantity, and lead time all shift
+depending on which tier a buyer sources from, so the value carries commercial weight beyond
+labelling.
 
 Mode-specific surface: **`client.b2B`** — see the
 [B2B service](/sdk/api-reference/classes/B2BService).
 
 <Note>
-  Marketplace and wholesale sit at different levels. Marketplace is a property of the whole deployment:
-  a single operator key spans every merchant behind one storefront. Wholesale is a property of the
-  individual store, so retail and wholesale stores can share one deployment. `GET /v1/store/info`
-  reports each store's `commerce_model` (`retail` or `wholesale`), which is how a storefront determines
-  the right experience regardless of the deployment it runs on. The shared core is always present; the
-  mode-specific surface — marketplace or B2B — appears only where it applies.
+  Marketplace and wholesale sit at different levels. Marketplace is a property of the whole
+  deployment: a single operator key spans every merchant behind one storefront. Wholesale is a
+  property of the individual store, which is why retail and wholesale stores can share one
+  deployment and why `commerce_model` is read per store rather than per deployment.
 </Note>
 
 ## Where to go next

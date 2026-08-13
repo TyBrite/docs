@@ -3,10 +3,11 @@ title: "Every Method by Task"
 description: "A complete, grouped index of every SDK method — each shown in a short, real call with its response — so you can find the one you need by the job it does."
 ---
 
-The use-case walkthroughs cover the main flows; this page is the **completeness reference**: every
-method on every service, grouped by the task it does, each with a short call and its response shape.
-If a method isn't shown in a walkthrough, it's here. (Setup is the two-client pattern from
-[the overview](/workflows/introduction): `storefront` = publishable key, `server` = secret key.)
+Where the use-case pages cover the main flows, this one covers the whole surface: every method on
+every service, grouped by the task it does, each with a short call and its response shape. A method
+absent from the other pages appears here. Setup is the two-client pattern from
+[the overview](/workflows/introduction) — `storefront` on a publishable key, `server` on a secret
+key.
 
 ## Catalog & taxonomy
 
@@ -309,7 +310,7 @@ const { gift_cards } = await storefront.giftCards.listGiftCards({ xAuthToken: to
 ```typescript
 // One return's detail, and escalating a pending credit offer to a cash refund
 const { data: ret } = await storefront.returns.getReturn({ id: '75eef130-...', xAuthToken: token });
-// → { id: '75eef130-...', status: 'pending', reason_code: 'damaged', credit_offer: null }
+// → { id: '75eef130-...', status: 'pending', reason_code: 'damaged', credit_offer: { status: 'none', amount: null } }
 
 const { data: refund } = await storefront.returns.requestReturnRefund({ id: '75eef130-...', xAuthToken: token });
 // → { status: 'refund_requested' }
@@ -415,6 +416,6 @@ await server.webhooks.deleteWebhookEndpoint({ id: 'ac6737d6-12b9-446d-a6c4-10774
 
 ---
 
-Every method on every service now appears either in a use-case walkthrough or here. For the full
-parameter list and field-by-field response of any method, jump to its
+Every method on every service appears either in a use-case page or here. The full parameter list and
+field-by-field response of any method live on its
 [service reference page](/sdk/api-reference/classes/ProductsService).

@@ -3,8 +3,10 @@ title: "Core Concepts"
 description: "The handful of ideas that make every Galactic Core integration predictable — keys and sessions, environments, isolation, conventions, performance, and the side effects an order triggers."
 ---
 
-A short tour of how Galactic Core works. Understanding these once makes every endpoint behave the
-way you'd expect.
+Galactic Core holds a handful of ideas constant across every endpoint — who a request is
+authenticated as, which environment it lands in, how errors and pages are shaped, and what the
+platform does on your behalf when an order is created. They are set out here once, and every service
+page assumes them.
 
 ## Storefront-facing by design
 
@@ -14,8 +16,9 @@ cart, checking out, paying, and tracking their own orders and returns. Merchant/
 Galactic Core admin, **not** through this API. The one exception is **catalog ingestion**, where a
 merchant syncs their own product feed in — see [Catalog Ingestion](/ingestion).
 
-This is why some actions are read-only over the API and others require elevated keys: the surface
-is shaped around what a storefront legitimately does.
+Key requirements follow from that boundary: catalog reads are open to a publishable key a browser
+can hold, while writes that a storefront's *server* performs on a shopper's behalf — creating an
+order, taking payment — require a secret key.
 
 ## Keys and sessions
 
@@ -61,8 +64,6 @@ row-level security described above.
 
 ## Conventions that hold everywhere
 
-Once you've learned them on one endpoint, they apply to all:
-
 - **Errors** — every error is `{ "error": { "code": "…", "message": "…", "details"?: … } }` with a
   standard HTTP status. Codes are stable strings you can branch on.
 - **Pagination** — list endpoints are **cursor-based**: a response carries a `next_cursor`; pass it
@@ -93,7 +94,7 @@ Once you've learned them on one endpoint, they apply to all:
 A **product** is the catalog entry a shopper browses (the "Cotton Hoodie"). A **variant** is a
 specific buyable SKU of it (the "Cotton Hoodie / Navy / M"). Every product has at least one
 variant, and one is marked the **default**. Two ID types follow from this — `product_id` and
-`variant_id` — and the rule is consistent once you see it:
+`variant_id` — and which one an endpoint takes follows from what it acts on:
 
 - **Money and inventory are variant-grained.** A shopper buys a *specific* SKU, so anything that
   touches a cart, the stock count, or what gets charged uses **`variant_id`**.
@@ -152,9 +153,8 @@ automatically and atomically:
 - records attribution for analytics.
 
 If a non-fatal step partially fails (e.g. a gift-card redemption), the order is **still recorded**
-and the response includes a `post_processing_warnings` array — surface it rather than assuming
-silent success. This "call one endpoint, the side effects are handled" model is the core reason to
-build on Galactic Core rather than wiring these systems together yourself.
+and the response includes a `post_processing_warnings` array, so a partial failure is visible in the
+response rather than inferred later from the ledger.
 
 ## Currency
 

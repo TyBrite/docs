@@ -3,7 +3,7 @@ title: "Orders"
 description: "Reference for the OrdersService class in the Tybrite SDK."
 ---
 
-The `OrdersService` class (accessed via `client.orders`) manages the entire commerce lifecycle. All order write operations require mandatory **HMAC Security** to ensure complete data integrity.
+The `OrdersService` class (accessed via `client.orders`) covers the order lifecycle: reserving stock at checkout, creating an order, retrieving and listing orders, and moving one through its payment and fulfilment states. Creating and updating an order additionally carry an **HMAC signature** over the request body, so the server can confirm the payload was not altered in transit.
 
 <Note>
   **Sandbox isolation:** Orders created with a `tybrite_sk_test_*` key are stored in the sandbox environment and are never visible to production keys, and vice versa. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment your key resolved to.
@@ -136,7 +136,7 @@ do {
 
 Use it when there's a gap between "customer commits to buy" and "payment confirms" — card redirects, 3-D Secure, mobile-money prompts — so the stock is claimed *before* the customer pays. For instant-capture or synchronous flows you can skip it and call `createOrder` directly; Galactic Core still prevents stock from going negative at order time. Reserving is a stronger guarantee for async payments, **not** a mandatory step before every order.
 
-Reservations are all-or-nothing: if any item lacks available stock, nothing is reserved and you get `409 insufficient_stock`. Each hold expires automatically (15 minutes by default); an abandoned checkout simply lets the hold lapse — no explicit release needed. Works with publishable or secret keys.
+Reservations are all-or-nothing: if any item lacks available stock, nothing is reserved and you get `409 insufficient_stock`. Each hold expires automatically (15 minutes by default), so an abandoned checkout lets the hold lapse without an explicit release call. Works with publishable or secret keys.
 
 ```typescript
 const { reservation_ids, expires_in_seconds } = await client.orders.reserveStock({

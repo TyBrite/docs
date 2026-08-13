@@ -463,7 +463,7 @@ A marketplace storefront can show **placements** in named **slots** (a hero bann
 Two operator-key methods cover the whole storefront side: `getAdSlot` fetches what to show in a slot, and `logAdEvent` reports impressions and clicks. Booking placements, setting rates, and managing slot inventory are **operator back-office** tasks done in the Super Admin app — they're not part of this API.
 
 <Warning>
-  Render the `disclosure_label` (for example `"Sponsored"`) on **every placement where `sponsored` is `true`** so shoppers can tell it apart from organic results. This is a requirement, not a suggestion. Curated fallback placements (`sponsored: false`) are not paid advertising and do not carry the label.
+  Paid placements carry a `disclosure_label` (for example `"Sponsored"`), and advertising-disclosure rules in most jurisdictions require it to be rendered wherever `sponsored` is `true`, so a shopper can distinguish it from an organic result. Curated fallback placements (`sponsored: false`) are not paid advertising and do not carry the label.
 </Warning>
 
 ### `getAdSlot` — what to show in a slot

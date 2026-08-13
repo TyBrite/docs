@@ -1,0 +1,212 @@
+---
+title: "Native Integrations"
+description: "Galactic Core integrates natively with Stripe, PayPal, Paystack and M-Pesa for payments, Lemon Squeezy and Paddle for subscription billing, Google Ads and Meta Ads for advertising, Shopify, Google and Meta for catalog channels, Shippo for shipping, QuickBooks for accounting, Klaviyo, Twilio and Resend for messaging, and Avalara for tax."
+---
+
+Galactic Core connects to the services a commerce business already runs on. Each integration below is
+built into the platform: a merchant supplies their own credentials and the capability works, with no
+code to write and nothing to host.
+
+Integrations are grouped by capability rather than by vendor, because that is how the decision is made
+— a merchant picks *a way to take payments*, then picks which processor. Where a service is not
+listed, the same capability is open to any provider through an extension, and each section names the
+interface that applies.
+
+## Payments
+
+Taking money from a shopper at checkout, across the storefront API and the in-store point of sale.
+Availability is filtered by the store's country, so a merchant is only offered processors that operate
+where they trade. A processor still configured with test credentials is withheld from live shoppers
+entirely rather than offered as a checkout that cannot charge.
+
+### Stripe
+
+Cards and wallets in most markets. Stripe is also the processor behind marketplace split payments: an
+operator's merchants are onboarded as connected accounts, and a single shopper payment is divided
+between them at capture, so the platform never holds or forwards their money.
+
+### PayPal
+
+Wallet and express checkout, for shoppers who prefer to pay without entering card details.
+
+### Paystack
+
+Cards, bank transfer and mobile money across Nigeria, Ghana, South Africa, Kenya and Côte d'Ivoire —
+the payment methods those markets actually use, which card-only processors do not reach.
+
+### M-Pesa
+
+Mobile money in Kenya, both as a prompt sent to the shopper's phone at checkout and as a
+customer-initiated payment to a merchant's paybill, with a validation step before the payment is
+accepted.
+
+### Cash
+
+In-store and cash on delivery, recorded against the order and settled outside any processor.
+
+**Bring your own:** any processor can be added through the `PaymentProvider` extension interface — it
+appears at checkout alongside the built-in options and settles through your own integration.
+
+**Reference:** [PaymentsService](/sdk/api-reference/classes/PaymentsService) ·
+[Storefront checkout](/workflows/storefront-checkout) · [Custom Extensions](/extensions)
+
+## Subscription billing
+
+Charging merchants for their own plan and usage. This is the platform's own billing rail, configured
+by whoever operates the deployment, and it is separate from the payments a merchant takes from
+shoppers.
+
+### Stripe and Paystack
+
+Subscriptions and metered overage, billed on the same processor accounts described above.
+
+### Lemon Squeezy and Paddle
+
+Merchant of record. Both differ from the first two in kind rather than degree: they take on sales-tax
+liability and invoicing on the seller's behalf, which suits selling into many jurisdictions without
+registering in each.
+
+An operator enables one or several; where more than one is live, the payer chooses.
+
+**Bring your own:** the `SubscriptionBillingProvider` interface, used by agencies billing their own
+merchants through rails the platform does not carry natively.
+
+**Reference:** [Agencies](/agencies)
+
+## Advertising
+
+Creating and managing paid campaigns from inside the platform, with performance measured against real
+margin rather than ad-platform revenue figures alone. Both providers run through the same rule engine,
+goals and experiments, so a campaign behaves the same way whichever platform serves it.
+
+### Google Ads
+
+Search, Shopping and Performance Max campaigns, with conversions uploaded back so bidding optimises
+against orders that actually completed.
+
+### Meta Ads
+
+Facebook and Instagram campaigns, with conversions reported server-side rather than from the browser,
+so they survive tracking restrictions that drop client-side events.
+
+**Bring your own:** the `AdsProvider` interface. Conversion reporting is a separate seam, so a provider
+can supply campaign management, conversion reporting, or both.
+
+**Reference:** [Advertising](/advertising)
+
+## Catalog channels
+
+Publishing a merchant's catalog to places shoppers already are, and pulling an existing catalog in.
+
+### Shopify
+
+Bidirectional. An existing Shopify catalog imports into Galactic Core, and inventory stays in step
+afterwards in both directions — a sale in either system adjusts the other, with echo suppression so an
+update does not bounce back and forth between them.
+
+### Google
+
+Products published to Google Shopping, kept current as the catalog changes.
+
+### Meta
+
+Products published to Facebook and Instagram catalogs, which is what campaigns run through Meta Ads
+draw their product data from.
+
+A catalog can also be pushed in directly or pulled from a feed on a schedule without a named channel,
+and a store can publish its own feed for any system to read — see [Ingestion](/ingestion).
+
+**Bring your own:** the `SalesChannelProvider` interface.
+
+**Reference:** [Catalog sync](/workflows/catalog-sync)
+
+## Shipping
+
+### Shippo
+
+Live rates, label purchase and tracking across many carriers through one connection, so adding a
+carrier does not mean adding an integration.
+
+Carrier rates sit alongside the platform's own delivery zones, which price by distance or by drawn
+area. Where both apply, the merchant's own zone takes precedence — their pricing for their own
+neighbourhood is deliberate, and a carrier quote should not override it.
+
+**Bring your own:** the `ShippingProvider` interface, for a carrier account or rate engine the platform
+does not carry.
+
+**Reference:** [ShippingService](/sdk/api-reference/classes/ShippingService)
+
+## Accounting
+
+### QuickBooks
+
+Journal entries for sales, refunds and expenses, posted against a mapped chart of accounts so a
+merchant's books stay current without re-keying.
+
+The platform keeps double-entry books of its own regardless of whether an external system is
+connected, so accounting is never dependent on an integration being present.
+
+**Bring your own:** the `AccountingProvider` interface.
+
+**Reference:** [Accounting](/accounting)
+
+## Marketing and messaging
+
+These carry the merchant's own credentials rather than the platform's, so messages send from their
+domain and sending reputation, and their subscriber data stays in an account they control.
+
+### Klaviyo
+
+Customer profiles, order events and abandoned-cart flows, synchronised as they happen rather than on a
+nightly export.
+
+### Twilio
+
+Transactional SMS — order confirmations, shipping updates, delivery notifications.
+
+### Resend
+
+Transactional email from the merchant's own verified domain.
+
+**Bring your own:** `MarketingProvider`, `EmailProvider` and `SmsProvider` are separate interfaces, so
+one can be replaced without disturbing the others.
+
+## Tax
+
+### Avalara
+
+Jurisdiction-accurate calculation, address validation, and adjustment on refund. Tax resolves at
+checkout for the online path and at the register for in-store sales, using the same calculation either
+way.
+
+If the service cannot be reached, checkout falls back to the store's own configured rates rather than
+failing — a sale completes at an approximate rate rather than not completing at all.
+
+**Bring your own:** the `TaxProvider` interface.
+
+**Reference:** [Tax](/tax)
+
+## Identity
+
+Shoppers can authenticate against the platform directly, or a storefront can bring its own identity
+provider and assert a shopper's identity with a signed token, so no shopper record has to be
+duplicated between systems.
+
+**Bring your own:** the `AuthProvider` interface.
+
+**Reference:** [Authentication](/authentication)
+
+## Connecting something that is not listed
+
+Every capability above is an interface, not a fixed list. An integration the platform does not carry
+natively is added as an extension: it registers against the same interface the built-in providers use,
+receives the same events, and appears in the same places in the merchant's settings.
+
+That applies to all eleven interfaces — payments, subscription billing, advertising, catalog channels,
+shipping, accounting, marketing, email, SMS, tax and identity. An extension runs as a hosted function
+or points at an endpoint you already operate.
+
+<Card title="Custom Extensions" icon="puzzle-piece" href="/extensions">
+  How to build against a provider interface, what each one receives, and how an extension is tested
+  before it goes live.
+</Card>

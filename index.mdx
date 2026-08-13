@@ -8,8 +8,7 @@ store — catalog, cart, checkout, payments, customers, accounting, search, reco
 promotions, gift cards, returns, messaging, content, and storefront analytics — through **one
 coherent REST API** and an **auto-generated TypeScript SDK**, served from the edge.
 
-It's built for teams who've outgrown template platforms and want to own the storefront
-experience without rebuilding commerce from scratch: bring your own front end (web, mobile, an
+The storefront experience is yours to build: bring your own front end (web, mobile, an
 AI-generated storefront, or a backend service), call the API, and the commerce logic — inventory
 math, order lifecycle, payment capture, tax, double-entry accounting, fulfillment — is handled for
 you.
@@ -31,8 +30,8 @@ you.
 
 ## What you can build
 
-The API spans **29 services across ~145 operations**, grouped by the job they do. A storefront
-typically touches a handful; everything is available when you need it.
+The API spans **29 services across ~145 operations**, grouped by the job they do. A typical
+storefront calls a handful of them.
 
 <CardGroup cols={3}>
   <Card title="Catalog & Discovery" icon="magnifying-glass">
@@ -80,13 +79,13 @@ typically touches a handful; everything is available when you need it.
   </Card>
 </CardGroup>
 
-## Why teams choose Galactic Core
+## Properties of the platform
 
 <Columns cols={2}>
   <Card title="One coherent contract" icon="code">
-    A single auth model, one consistent error shape (`{ error: { code, message } }`), cursor
-    pagination, and sparse field selection across every endpoint — not a decade of accreted,
-    inconsistent APIs.
+    A single auth model, one error shape (`{ error: { code, message } }`), cursor pagination, and
+    sparse field selection hold across every endpoint, so a convention learned on one is the
+    convention everywhere.
   </Card>
   <Card title="Commerce, not just storage" icon="layer-group">
     Orders create journal entries, reduce stock, redeem gift cards, and update customer metrics
@@ -143,7 +142,7 @@ const client = new Tybrite({
   apiKey: 'tybrite_pk_live_…', // publishable key — safe for client-side reads
 });
 
-const { data: products } = await client.products.listProducts({ limit: 12 });
+const { products } = await client.products.listProducts({ limit: 12 });
 ```
 
 <Note>

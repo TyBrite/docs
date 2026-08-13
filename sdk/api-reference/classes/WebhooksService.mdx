@@ -77,7 +77,7 @@ app.post('/webhooks/tybrite', express.raw({ type: 'application/json' }), (req, r
 ```
 
 <Tip>
-  Always read the raw request body (before JSON parsing) for signature verification. Parsers may reformat the JSON, producing a different byte sequence and causing verification to fail.
+  Signature verification runs against the raw request body, before JSON parsing. A parser may reformat the JSON into a different byte sequence, which no longer matches the signature.
 </Tip>
 
 ---

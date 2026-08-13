@@ -3,21 +3,20 @@ title: "Workflow Examples"
 description: "End-to-end, real-world flows that wire the Galactic Core SDK services together — pick the use case closest to what you're building and copy the sequence."
 ---
 
-The per-service reference pages document each method in isolation. This section shows how the
-services **compose** into the flows you actually ship — a checkout, a returns flow, a search
-experience, a marketplace storefront, a catalog sync. Each page is a self-contained, runnable
-sequence using real data shapes, so you can copy a block, swap in your own ids, and go.
+The per-service reference pages document each method in isolation. These pages compose them into
+whole flows — a checkout, a returns flow, a search experience, a marketplace storefront, a catalog
+sync. Each is a self-contained, runnable sequence built from real data shapes, so a block can be
+copied, given your own ids, and run.
 
-## How these examples work
+## Conventions
 
-Every snippet uses the TypeScript SDK and follows the same conventions as the rest of the docs:
+Every snippet uses the TypeScript SDK. Request and response bodies mirror what the live API
+returns — real field names, real structure. Ids, names, and emails are illustrative (`John Doe`,
+`example.com`); the shapes around them are exact.
 
-- **Real shapes.** Request and response bodies mirror what the live API actually returns — real
-  field names, real structure. Ids/names/emails are illustrative (`John Doe`, `example.com`) but
-  the shape is exact.
-- **Two clients.** Read endpoints (catalog, search, pricing) take a **publishable** key and are
-  safe in the browser. Writes that touch money or another customer's data (orders, payments) take a
-  **secret** key and run on your server. Each step notes which client it uses.
+Two clients appear throughout. Read endpoints (catalog, search, pricing) take a publishable key and
+are safe in the browser; writes that touch money or another customer's data (orders, payments) take
+a secret key and run on your server. Each step names the client it uses.
 
 ```typescript
 import { Tybrite } from '@tybrite-labs/sdk';
@@ -30,12 +29,12 @@ const server = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
 ```
 
 <Info>
-  Not sure which key a given call needs? The
-  [Key Usage by Endpoint](/authentication#key-usage-by-endpoint) table maps every endpoint to
-  `pk` / `sk` / customer-session / HMAC. The walkthroughs below call it out at each step.
+  The [Key Usage by Endpoint](/authentication#key-usage-by-endpoint) table maps every endpoint to
+  `pk` / `sk` / customer-session / HMAC. Each step on the pages below also names the credential it
+  takes.
 </Info>
 
-## Pick your use case
+## The use cases
 
 <CardGroup cols={2}>
   <Card title="Storefront checkout" icon="cart-shopping" href="/workflows/storefront-checkout">

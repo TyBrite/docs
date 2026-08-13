@@ -3,7 +3,9 @@ title: "Authentication"
 description: "Learn how to secure your Tybrite commerce integrations using API keys and HMAC signing."
 ---
 
-Tybrite uses a dual-key architecture to ensure maximum security without sacrificing developer experience. Depending on where your code runs, you will use different keys and authentication patterns.
+Tybrite issues two key types per store, so a credential that ships to a browser and a credential
+that stays on a server are different objects with different powers. Which one a call takes depends
+on where your code runs and whose data it touches.
 
 ## API Key Types
 
@@ -73,9 +75,10 @@ Authorization: Bearer tybrite_sk_live_YOUR_KEY
 
 ## Advanced Security: HMAC Signing
 
-Sensitive operations, such as order creation or payment initialization, require an additional layer of security to prevent request tampering and replay attacks. For these requests, you must provide verified headers.
+Sensitive operations — order creation, payment initialization — carry a request signature in
+addition to the key, so a tampered body or a replayed request is rejected rather than acted on.
 
-### Generating the Signature
+### Generating the signature
 
 The signature is a **SHA-256 HMAC** hash of the payload, where the payload is the current Unix timestamp concatenated with the JSON request body.
 
@@ -117,12 +120,13 @@ receives its own per-merchant `signing_secret` at the code exchange and signs wi
 
 ---
 
-## 🔄 Idempotency Protection
+## Idempotency Protection
 
-To prevent duplicate charges and orders—especially during network retries—all state-changing financial operations require a mandatory `Idempotency-Key` header.
+State-changing financial operations require an `Idempotency-Key` header, so a retry after a network
+failure resolves to the original charge or order rather than a second one.
 
 *   **Mechanism**: The server tracks these keys. If a request is retried with the same key, the server returns the original response with an `idempotent: true` flag.
-*   **Best Practice**: Generate a unique UUID or a hash of the transaction details (e.g., `payment-order_123-ts_456`).
+*   **Choosing a key**: A unique UUID, or a hash of the transaction details (e.g., `payment-order_123-ts_456`).
 
 Endpoints requiring an Idempotency Key:
 *   `POST /v1/payments/initialize`
@@ -135,7 +139,10 @@ Endpoints requiring an Idempotency Key:
 
 While API keys authenticate **your application** to Galactic Core, **customer session tokens** authenticate **end customers** to their own data within your store. They are required *on top of* an API key for endpoints that access or modify a specific customer's records (cart, wishlist, profile, gift cards, messaging).
 
-**Why both?** A leaked publishable key alone gives an attacker no way to read or modify any specific customer's data — they would also need that customer's JWT, which only the [AuthenticationService](/sdk/api-reference/classes/AuthenticationService) can issue, and only after a successful login / OTP verification / magic link redemption.
+The two credentials are independent, so a leaked publishable key on its own reaches no specific
+customer's data: that also requires the customer's JWT, which only the
+[AuthenticationService](/sdk/api-reference/classes/AuthenticationService) issues, and only after a
+successful login, OTP verification, or magic-link redemption.
 
 ### Affected endpoints
 
@@ -186,7 +193,7 @@ const { session: fresh } = await client.authentication.refreshToken({
 
 ## Key Usage by Endpoint
 
-Every endpoint accepts one (or a combination) of the credentials above. Use this table to pick the right key before you call. The legend:
+Every endpoint accepts one of the credentials above, or a combination of them. The legend:
 
 - **`pk` or `sk`** — either a publishable or a secret key works.
 - **`sk` only** — a secret key is required; a publishable key returns **`403 Forbidden`**.

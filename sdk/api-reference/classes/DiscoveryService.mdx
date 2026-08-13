@@ -5,12 +5,12 @@ description: "Reference for the DiscoveryService class in the Tybrite SDK."
 
 The `DiscoveryService` class (accessed via `client.discovery`) returns **windowed product rankings
 built from live shopper signals** — the products getting the most views, the most add-to-carts, or
-the highest view→purchase conversion over a time window. Use them to power a "Popular now" homepage
-shelf, a "Trending in carts" section, or a PDP "hot" badge.
+the highest view→purchase conversion over a time window. They back storefront surfaces such as a
+"Popular now" homepage shelf, a "Trending in carts" section, or a product-page "hot" badge.
 
-All three reads are **publishable-key accessible** (safe to call from a browser/app) and available
-on every plan. Each returns product ids + a `score`; hydrate the product details from
-[Products](/sdk/api-reference/classes/ProductsService).
+All three reads are publishable-key accessible, so they are safe to call from a browser or app, and
+they are available on every plan. Each returns product ids and a `score`; the product details come
+from [Products](/sdk/api-reference/classes/ProductsService).
 
 <Note>
   Discovery is distinct from [Recommendations](/sdk/api-reference/classes/RecommendationsService).

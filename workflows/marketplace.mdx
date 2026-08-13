@@ -3,35 +3,34 @@ title: "Marketplace"
 description: "Operator flows for a multi-merchant marketplace — aggregated discovery across merchants, a unified split checkout, per-merchant commission and fulfillment, a shopper's cross-merchant profile, and sponsored placements — followed end to end as one scenario."
 ---
 
-A **marketplace** is a Galactic Core deployment that aggregates the catalogs of many independent
-merchants into one storefront — think a curated multi-vendor shop where a single shopper basket can
-span several sellers. This page follows **one continuous operator + shopper scenario** and shows
-every shape an operator integration actually hits — not just the happy path: discovering the combined
-catalog (and narrowing it to a single merchant), checking out a cart that crosses **two** merchants in
-one payment, watching that one payment split into **per-merchant child orders** with commission taken
+A marketplace is a Galactic Core deployment that aggregates the catalogs of many independent
+merchants into one storefront — a multi-vendor shop where a single shopper basket can span several
+sellers. One continuous operator and shopper scenario runs through this page: discovering the
+combined catalog and narrowing it to a single merchant, checking out a cart that crosses two
+merchants in one payment, that payment splitting into per-merchant child orders with commission taken
 out, reading the shopper's unified cross-merchant profile, and rendering sponsored placements.
 
-We carry two real merchants through the whole scenario:
+Two real merchants carry through the whole scenario:
 
 - **Galactic Core Store** — `086e8d7f-b84d-41bc-8acd-3f5740ea61dc` (we call it merchant **A**)
 - **Galactic Test Store** — `ef7b07d3-424b-4b03-b1d4-30a2d2073b61` (merchant **B**)
 
-## Operator keys vs. store keys
+## Operator keys and store keys
 
-There are two kinds of API key, and the difference drives everything on this page:
+Two kinds of API key separate everything on this page:
 
-- A **store key** (`tybrite_pk_*` / `tybrite_sk_*`) is scoped to **one merchant**. Catalog reads
-  return only that store's products, and writes act on that store alone. This is what a single
-  merchant's own storefront uses.
-- An **operator key** is issued for a **marketplace deployment** and aggregates across **all active
-  merchants** in that marketplace. Discovery reads return the combined catalog (each row stamped
-  with its source `merchant_store_id`), and the operator can run a unified checkout that fans a
-  single basket out to the right merchants.
+- A store key (`tybrite_pk_*` / `tybrite_sk_*`) is scoped to one merchant. Catalog reads return only
+  that store's products and writes act on that store alone, which is what a single merchant's own
+  storefront uses.
+- An operator key is issued for a marketplace deployment and aggregates across all active merchants
+  in that marketplace. Discovery reads return the combined catalog, each row stamped with its source
+  `merchant_store_id`, and the operator can run a unified checkout that fans a single basket out to
+  the right merchants.
 
-The operator key comes in both flavours too. Use the **publishable** operator key
-(`tybrite_pk_*`) for the read surfaces a storefront calls from the browser — discovery, marketplace
-info, collections, ad slots — and the **secret** operator key (`tybrite_sk_*`) on your server for the
-unified checkout (it starts a payment) and the unified shopper profile.
+The operator key comes in both flavours. The publishable operator key (`tybrite_pk_*`) covers the
+read surfaces a storefront calls from the browser — discovery, marketplace info, collections, ad
+slots. The secret operator key (`tybrite_sk_*`) runs on your server for the unified checkout, which
+starts a payment, and the unified shopper profile.
 
 ```typescript
 import { Tybrite } from '@tybrite-labs/sdk';
@@ -51,12 +50,12 @@ const server = new Tybrite({ apiKey: 'tybrite_sk_live_OPERATOR_KEY' });
   merchant's own store key.
 </Info>
 
-## SDK calls in marketplace mode — a quick map
+## SDK calls in marketplace mode
 
-Most of the **standard GC SDK calls work unchanged** under an operator key — you build a marketplace
-storefront with the same `client.products` / `client.search` / `client.cartWishlist` / `client.returns`
-you already know. The table is what changes, and where a marketplace-only call replaces a standard one.
-Read this before the flows below.
+Most standard GC SDK calls work unchanged under an operator key: a marketplace storefront is built
+from the same `client.products` / `client.search` / `client.cartWishlist` / `client.returns` as a
+single-store one. The table below covers what does change, and where a marketplace-only call replaces
+a standard one.
 
 | SDK call | In marketplace mode | What changes |
 | --- | --- | --- |
@@ -71,32 +70,34 @@ Read this before the flows below.
 | `client.giftCards.*`, `client.cms.*`, `client.customers.getCustomer` | ❌ per-merchant only | These are single-store surfaces — an operator key gets `403`. |
 | **Marketplace-only** (no standard equivalent) | `marketplaceCheckout`, `getMarketplaceCustomer` (unified profile, + `X-Customer-Token`), `getMarketplaceInfo`, `listMarketplaceCollections` / `getMarketplaceCollection`, `getAdSlot` / `logAdEvent` | These exist **only** in marketplace mode under an operator key. |
 
-The rule of thumb: **discovery + cart + recommendations are aggregated automatically; anything tied to one merchant (returns, reviews, promotions, store info) takes that merchant's `storeId`; and checkout / unified profile / collections / ads are marketplace-only.**
+Discovery, cart, and recommendations aggregate automatically; anything tied to one merchant —
+returns, reviews, promotions, store info — takes that merchant's `storeId`; and checkout, the unified
+profile, collections, and ads exist only in marketplace mode.
 
-## What's storefront API vs. operator back-office
+## The storefront API and the operator back-office
 
 <Warning>
-  This page documents the **storefront / shopper** half of a marketplace — the calls a storefront
-  makes to render and transact. The **operator back-office** half — everything that *configures* the
-  marketplace — is **not** in the API. Do not emit API calls for it.
+  A marketplace has two halves, and only one of them is an API. The storefront and shopper half is
+  the calls a storefront makes to render and transact. The operator back-office half — everything
+  that configures the marketplace — has no public endpoint at all.
 
   - **Storefront API (this page):** aggregated discovery, marketplace info, unified split checkout,
     reading the unified shopper profile, reading curated collections, filling ad slots, firing ad
-    impression/click beacons, and per-merchant returns.
-  - **Operator / merchant back-office (NOT the API — done in admin):** curating collections, ad slot
-    / rate-card / booking management, setting commission rules, running payout batches, merchant
-    onboarding & application approval, and a merchant's Stripe Connect payout onboarding. There is
-    no public endpoint for any of these — they live in the operator's and merchants' admin.
+    impression and click beacons, and per-merchant returns.
+  - **Operator and merchant back-office (admin, not the API):** curating collections, ad slot,
+    rate-card and booking management, setting commission rules, running payout batches, merchant
+    onboarding and application approval, and a merchant's Stripe Connect payout onboarding. These
+    live in the operator's and merchants' admin.
 
-  The tell: if it *configures* the marketplace (who can sell, what commission, which ad runs, when a
-  payout pays), it's back-office. If it *renders or transacts the storefront*, it's the API.
+  The dividing line is configuration: who can sell, what commission applies, which ad runs, when a
+  payout pays are back-office; rendering and transacting the storefront is the API.
 </Warning>
 
 ## 1. Aggregated discovery — combined, then narrowed
 
-Discovery endpoints called with an **operator key** return results aggregated across every active
-merchant. Each product row carries a `merchant_store_id` identifying the merchant that sells it — so
-the **same** `listProducts` call returns rows from **multiple** merchants.
+Discovery endpoints called with an operator key return results aggregated across every active
+merchant. Each product row carries a `merchant_store_id` identifying the merchant that sells it, so
+the same `listProducts` call returns rows from multiple merchants.
 
 ```typescript
 const { products } = await storefront.products.listProducts({ limit: 3 });
@@ -125,9 +126,9 @@ const { products } = await storefront.products.listProducts({ limit: 3 });
 }
 ```
 
-Every row names the merchant that sells it (`merchant_store_id` + `merchant_store_name`), so a single
-page of results spans the whole marketplace. To scope discovery to **one** merchant within the
-marketplace, narrow with `storeId` — the same call, now returning only that merchant's rows:
+Every row names the merchant that sells it through `merchant_store_id` and `merchant_store_name`, so
+a single page of results spans the whole marketplace. `storeId` narrows discovery to one merchant
+within it — the same call, returning only that merchant's rows:
 
 ```typescript
 const { products } = await storefront.products.listProducts({
@@ -159,7 +160,7 @@ const { products } = await storefront.products.listProducts({
 }
 ```
 
-Every row now carries `merchant_store_id: ef7b07d3-…` — only merchant B.
+Every row now carries `merchant_store_id: ef7b07d3-…`, merchant B alone.
 
 <Tip>
   `storefront.taxonomy.listCategories()` returns a deduped union of categories across merchants, and
@@ -171,9 +172,9 @@ Every row now carries `merchant_store_id: ef7b07d3-…` — only merchant B.
 
 ### Cross-merchant trending recommendations
 
-`type: 'trending'` recommendations called with the operator key surface a **cross-merchant** rail —
-each item is stamped with the `merchant_store_id` that sells it, so you can link straight through to
-the right merchant's product.
+`type: 'trending'` recommendations called with the operator key return a cross-merchant rail. Each
+item is stamped with the `merchant_store_id` that sells it, which is what links a card through to the
+right merchant's product.
 
 ```typescript
 const { recommendations } = await storefront.recommendations.getRecommendations({
@@ -210,9 +211,9 @@ const { recommendations } = await storefront.recommendations.getRecommendations(
 
 ## 2. Marketplace info
 
-Read the marketplace's own identity and branding to render the storefront shell — name, logo,
-tagline, contact, and whether unified checkout and commission are enabled. Operator key required; a
-single-store key gets `403` (it should call `getStoreInfo` instead).
+The marketplace's own identity and branding — name, logo, tagline, contact, and whether unified
+checkout and commission are enabled — is what the storefront shell renders from. It requires an
+operator key; a single-store key gets `403` and calls `getStoreInfo` instead.
 
 ```typescript
 const info = await storefront.marketplace.getMarketplaceInfo({});
@@ -236,35 +237,34 @@ const info = await storefront.marketplace.getMarketplaceInfo({});
 }
 ```
 
-The `marketplace`, `mode`, `unified_checkout`, and `commission_enabled` flags always come back; the
-branding fields (`name`, `logo_url`, `primary_color`, `tagline`, contact, address) are `null` until
-the operator sets them in their admin — render sensible fallbacks when they're absent.
+The `marketplace`, `mode`, `unified_checkout`, and `commission_enabled` flags always come back. The
+branding fields — `name`, `logo_url`, `primary_color`, `tagline`, contact, address — are `null` until
+the operator sets them in their admin, so a storefront needs fallbacks for their absence.
 
 <Note>
-  Pass `storeId` to get **one merchant's** full store info (same shape as a single-store
-  `getStoreInfo`) — useful for a per-merchant "shop page":
+  `storeId` returns one merchant's full store info, in the same shape as a single-store
+  `getStoreInfo`, which is what a per-merchant shop page renders from:
   `storefront.marketplace.getMarketplaceInfo({ storeId: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61' })`.
-  The merchant must be active in the marketplace, otherwise `404`.
+  A merchant not active in the marketplace returns `404`.
 </Note>
 
 <Note>
-  **Who owns currency vs. pricing in a marketplace.** The storefront **currency is marketplace-wide**
-  — it's the operator's deployment-level default, so the whole aggregated catalog renders in one
-  currency (you don't get a different currency per merchant). **Dynamic pricing rules, however, are
-  per-merchant** — each merchant authors their own pricing rules for their own products, and the
-  operator can't set a merchant's prices. So: currency is the operator's; product prices (and any
-  price rules behind them) are each merchant's. Commission/payout rules are the operator's
-  (configured in their admin), separate from both.
+  Currency and pricing have different owners in a marketplace. The storefront currency is
+  marketplace-wide, being the operator's deployment-level default, so the whole aggregated catalog
+  renders in one currency rather than a different one per merchant. Dynamic pricing rules are
+  per-merchant: each merchant authors their own rules for their own products, and the operator cannot
+  set a merchant's prices. Commission and payout rules are the operator's, configured in their admin,
+  and separate from both.
 </Note>
 
 ## 3. Unified split checkout — a cart that spans two merchants
 
-The headline capability: a single shopper cart that spans **multiple merchants** checks out as one
-order with **one payment**. We carry both merchants from step 1 forward into a single basket — items
-from merchant **A** (Galactic Core Store) and merchant **B** (Galactic Test Store). Each line item
-names the merchant it belongs to (`merchant_store_id`); the marketplace validates the items, reserves
-stock per merchant, resolves commission **per merchant**, and starts **one** payment for the whole
-basket. This is a server-side call — use the **secret** operator client.
+A single shopper cart spanning multiple merchants checks out as one order with one payment. Both
+merchants from step 1 go into a single basket here — items from merchant A (Galactic Core Store) and
+merchant B (Galactic Test Store) — with each line item naming the merchant it belongs to in
+`merchant_store_id`. The marketplace validates the items, reserves stock per merchant, resolves
+commission per merchant, and starts one payment for the whole basket. It is a server-side call on the
+secret operator client.
 
 ```typescript
 const checkout = await server.marketplace.marketplaceCheckout({
@@ -342,14 +342,13 @@ const checkout = await server.marketplace.marketplaceCheckout({
 }
 ```
 
-`merchant_breakdown` has **one entry per merchant** in the basket. There is still exactly **one**
-`client_secret`: the shopper pays `total_amount` once, on the storefront, and the marketplace takes
-care of splitting the money.
+`merchant_breakdown` has one entry per merchant in the basket, against exactly one `client_secret`:
+the shopper pays `total_amount` once on the storefront, and the marketplace splits the money.
 
-### The commission math, concretely
+### The commission math
 
-The operator earns a commission on each merchant's slice (here ~8%, set by the
-`commission_rule_id` the operator configured in their admin). Read it straight off the breakdown:
+The operator earns a commission on each merchant's slice — around 8% here, set by the
+`commission_rule_id` the operator configured in their admin — and the breakdown carries it directly:
 
 | Merchant | `gross_amount` | `commission_amount` | `net_amount` |
 | --- | --- | --- | --- |
@@ -358,23 +357,23 @@ The operator earns a commission on each merchant's slice (here ~8%, set by the
 | **Group total** | **$564.80** | **$45.18** | **$519.62** |
 
 For each merchant, `gross_amount − commission_amount = net_amount` (415.80 − 33.26 = 382.54), and the
-group's `total_amount` is the sum of the gross amounts — what the shopper pays in one payment. The
-operator keeps the summed commission; each merchant is owed their summed net.
+group's `total_amount` is the sum of the gross amounts, which is what the shopper pays in one
+payment. The operator keeps the summed commission and each merchant is owed their summed net.
 
 <Note>
-  Stock is **reserved** at checkout (each merchant slice gets its own `reservation_ids`) so concurrent
-  shoppers can't oversell the last units; if an item can't be held, the call returns
-  `400 insufficient_stock` and **no order or payment is created**. Marketplace-wide operator
-  promotions apply automatically and are not passed. If the payment provider can't be reached the
-  call returns `502 provider_error`.
+  Stock is reserved at checkout, each merchant slice getting its own `reservation_ids`, so concurrent
+  shoppers cannot oversell the last units. An item that cannot be held returns
+  `400 insufficient_stock`, and no order or payment is created. Marketplace-wide operator promotions
+  apply automatically and are not passed. A payment provider that cannot be reached returns
+  `502 provider_error`.
 </Note>
 
 ### Applying a merchant's own discount to its slice
 
-Pass the optional `discounts` array to reduce **only one merchant's** subtotal with that merchant's
-own promotion and/or gift card. The response then carries a non-empty `discount_breakdown`, an
-`operator_funded_discount` total, and per-merchant `discount_amount` — operator-funded promotions are
-attributed back to the operator, so you can see who paid for the discount:
+The optional `discounts` array reduces one merchant's subtotal with that merchant's own promotion,
+gift card, or both. The response then carries a non-empty `discount_breakdown`, an
+`operator_funded_discount` total, and a per-merchant `discount_amount`, with operator-funded
+promotions attributed back to the operator — which is what identifies who paid for a discount:
 
 ```typescript
 const checkout = await server.marketplace.marketplaceCheckout({
@@ -401,42 +400,42 @@ const checkout = await server.marketplace.marketplaceCheckout({
 });
 ```
 
-The `discounts` array is keyed by `merchant_store_id`; each entry's `promotion_id` and/or
-`gift_card_code` apply to **that merchant's** portion only. In the response, `discount_breakdown`
-gains one entry per discounted merchant (`merchant_discount`, `gift_card_amount`, and the
-`operator_funded_discount` share), `discount_total` is the basket-wide reduction, and that merchant's
+The `discounts` array is keyed by `merchant_store_id`, and each entry's `promotion_id` and
+`gift_card_code` apply to that merchant's portion only. In the response, `discount_breakdown` gains
+one entry per discounted merchant, carrying `merchant_discount`, `gift_card_amount`, and the
+`operator_funded_discount` share; `discount_total` is the basket-wide reduction; and that merchant's
 `merchant_breakdown` entry shows its `discount_amount` and reduced `gross_amount`.
 
 <Note>
-  **The server is the price authority — you send identifiers, never amounts.** Just like the
-  single-store checkout, the multi-merchant checkout recomputes every item price from the catalog and
-  resolves discounts itself: a `discounts` entry only *names* a `promotion_id` / `gift_card_code`, and
-  the server independently computes the real discount that promotion or gift card grants (plus the
-  operator-funded share), every `gross_amount` / `discount_amount` / `merchant_gross` / commission, and
-  the one payment total — then charges exactly that. A named discount that doesn't validate (expired,
-  ineligible, wrong merchant) returns `400 discount_invalid` rather than being silently applied. There is
-  no client-supplied `discount_amount` or per-item price in the request, so a manipulated basket can't
-  lower what's charged or inflate a merchant's payout. The resolved breakdown is held server-side and
-  used verbatim to finalize the per-merchant child orders after payment succeeds — nothing sent after
-  checkout can change it.
+  The server is the price authority here, as in the single-store checkout: the request carries
+  identifiers, never amounts. The multi-merchant checkout recomputes every item price from the
+  catalog and resolves discounts itself — a `discounts` entry only names a `promotion_id` or
+  `gift_card_code`, and the server independently computes the discount that promotion or gift card
+  actually grants, the operator-funded share, every `gross_amount` / `discount_amount` /
+  `merchant_gross` / commission, and the single payment total, then charges exactly that. A named
+  discount that does not validate — expired, ineligible, belonging to another merchant — returns
+  `400 discount_invalid` rather than being applied. Because the request carries no client-supplied
+  `discount_amount` or per-item price, a manipulated basket cannot lower what is charged or inflate a
+  merchant's payout. The resolved breakdown is held server-side and used verbatim to finalize the
+  per-merchant child orders once payment succeeds, so nothing sent after checkout can change it.
 </Note>
 
 ## 4. Fulfillment → per-merchant child orders
 
-The shopper completes the single payment with the `client_secret` from step 3. **You do not call a
-fulfill endpoint** — fulfillment is driven internally off the payment-success event. The observable
-outcome is what you build against:
+The shopper completes the single payment with the `client_secret` from step 3. There is no fulfill
+endpoint to call: fulfillment is driven internally off the payment-success event, and the observable
+outcome is what an integration builds against.
 
-- The paid order group splits into **one child order per merchant** — each lands in that merchant's
-  own order list (with its `merchant_net_amount` and `commission_amount`), so each merchant fulfills
-  and ships only their own items.
-- The operator's split ledger records the gross / commission / net per merchant (the same numbers
-  from the `merchant_breakdown`), and each merchant's net is queued for payout to their connected
+- The paid order group splits into one child order per merchant, each landing in that merchant's own
+  order list with its `merchant_net_amount` and `commission_amount`, so each merchant fulfills and
+  ships only their own items.
+- The operator's split ledger records the gross, commission, and net per merchant — the same numbers
+  from the `merchant_breakdown` — and each merchant's net is queued for payout to their connected
   Stripe account.
 - The group flips to `paid`.
 
-The internal fulfillment step produces this shape (shown so you know exactly what landed — the
-storefront never calls it):
+The internal fulfillment step produces the shape below. The storefront never calls it; it is here to
+show what landed:
 
 ```json
 {
@@ -461,25 +460,25 @@ storefront never calls it):
 }
 ```
 
-Each `children` entry maps a merchant to the `online_order_id` created in **that merchant's** order
-list, carrying the same `net_amount` from the checkout breakdown ($382.54 for A, $137.08 for B — the
-two nets that summed to $519.62 above).
+Each `children` entry maps a merchant to the `online_order_id` created in that merchant's order list,
+carrying the same `net_amount` from the checkout breakdown — $382.54 for A and $137.08 for B, the two
+nets that summed to $519.62 above.
 
 <Note>
-  **Payout depends on a connected merchant account.** The `warnings` array reports the real Stripe
-  Connect transfer state per merchant. A merchant who hasn't finished **Stripe Connect payout
-  onboarding** (done in the merchant's admin, not via the API) has **no connected payout account**,
-  so the transfer of their net can't be made yet — their child order is still created and the shopper
-  is still charged, but their funds wait until they connect a payout account. An empty `warnings`
-  array means every merchant's transfer went through.
+  Payout depends on a connected merchant account, and the `warnings` array reports the Stripe Connect
+  transfer state per merchant. A merchant who has not finished Stripe Connect payout onboarding —
+  done in the merchant's admin, not via the API — has no connected payout account, so their net
+  cannot be transferred yet. Their child order is still created and the shopper is still charged;
+  their funds wait until they connect a payout account. An empty `warnings` array means every
+  merchant's transfer went through.
 </Note>
 
 ## 5. Unified shopper profile
 
-Once the shopper from step 3 has bought from more than one merchant, read their **unified profile** —
-identity, the merchants they have a relationship with, and their full cross-merchant order history —
-in one call. Sign the shopper in first, then pass that session token in `xCustomerToken`. This reads
-the shopper's own data, so use the **secret** operator client server-side.
+Once the shopper from step 3 has bought from more than one merchant, one call returns their unified
+profile: identity, the merchants they have a relationship with, and their full cross-merchant order
+history. It takes the session token from the shopper's sign-in as `xCustomerToken`, and because it
+reads the shopper's own data it runs server-side on the secret operator client.
 
 ```typescript
 const profile = await server.marketplace.getMarketplaceCustomer({
@@ -543,31 +542,30 @@ const profile = await server.marketplace.getMarketplaceCustomer({
 }
 ```
 
-The same shopper may have a distinct `customer` record at each merchant — `customer.ids` lists all
-of them. The `stores` array is the shopper's per-merchant relationship (with `preferred_store` and
-spend totals), and `orders` is their order history across every merchant, newest first.
+The same shopper may hold a distinct `customer` record at each merchant, and `customer.ids` lists all
+of them. The `stores` array is the shopper's per-merchant relationship, carrying `preferred_store`
+and spend totals, and `orders` is their order history across every merchant, newest first.
 
 <Note>
-  **Returns are per-merchant.** A return always belongs to the merchant whose order it is — there's
-  no marketplace-wide return. A shopper lodges and tracks a return against the specific merchant
-  order, so the return call **requires that merchant's `storeId`**, and that merchant approves and
-  processes it in their own admin. See [Returning customer](/workflows/returning-customer) for the
-  returns flow.
+  Returns are per-merchant: a return belongs to the merchant whose order it is, and there is no
+  marketplace-wide return. A shopper lodges and tracks a return against the specific merchant order,
+  so the return call requires that merchant's `storeId`, and that merchant approves and processes it
+  in their own admin. [Returning customer](/workflows/returning-customer) covers the returns flow.
 </Note>
 
 ## 6. Sponsored placements and curated sections
 
-The marketplace operator monetizes the storefront with **sponsored ad slots** and merchandises it
-with **curated collections**. Both are operator-key, read-only on the render side. The *bookings,
-rate cards, and curation* behind them are operator back-office (see the boundary callout above) —
-the storefront only **reads** the resolved placements and **fires beacons**.
+The marketplace operator monetizes the storefront with sponsored ad slots and merchandises it with
+curated collections. Both are operator-key and read-only on the render side; the bookings, rate
+cards, and curation behind them are operator back-office, per the boundary above. The storefront
+reads the resolved placements and fires beacons.
 
-### Fill an ad slot
+### Filling an ad slot
 
-Ask for the active placements in a named slot — a hero banner, a category strip, search results.
-A slot can return **sponsored** placements (`sponsored: true`, paid — render with `disclosure_label`)
-and **curated fallback** placements (operator hand-picks, not labelled). Pass `context` to scope to a
-category or search term.
+A named slot — a hero banner, a category strip, search results — returns its active placements. A
+slot can carry sponsored placements, which are paid, marked `sponsored: true`, and rendered with
+their `disclosure_label`, and curated fallback placements, which the operator hand-picks and which
+are not labelled. `context` scopes a slot to a category or search term.
 
 ```typescript
 const slot = await storefront.marketplace.getAdSlot({
@@ -584,8 +582,8 @@ const slot = await storefront.marketplace.getAdSlot({
 }
 ```
 
-An empty `placements` array means there's no active booking (sponsored or curated) for the slot right
-now — fall back to your own organic content. When a placement is live it looks like this:
+An empty `placements` array means the slot has no active booking, sponsored or curated, leaving the
+storefront's own organic content in its place. A live placement looks like this:
 
 ```json
 {
@@ -611,12 +609,12 @@ now — fall back to your own organic content. When a placement is live it looks
 }
 ```
 
-### Log impression and click beacons
+### Impression and click beacons
 
-After rendering, fire a beacon: one `impression` per placement when it becomes visible, and a
-`click` when the shopper clicks it. Pass the placement's `booking_id`. The response is `202 Accepted`
-with `billable` telling you whether the event counted toward billing after de-duplication — purely
-informational; the storefront doesn't act on it.
+Each rendered placement fires one `impression` beacon when it becomes visible and a `click` beacon
+when the shopper clicks it, both carrying the placement's `booking_id`. The response is
+`202 Accepted`, with `billable` reporting whether the event counted toward billing after
+de-duplication — informational, and not something the storefront acts on.
 
 ```typescript
 // When the placement scrolls into view:
@@ -642,15 +640,16 @@ const click = await storefront.marketplace.logAdEvent({
 ```
 
 <Note>
-  `billable` can come back `false` (still `recorded: true`) when the beacon was de-duplicated or
-  filtered as invalid traffic — a repeat impression in the same session, for example. Treat the field
-  as informational; never block rendering on it.
+  `billable` comes back `false`, still with `recorded: true`, when the beacon was de-duplicated or
+  filtered as invalid traffic — a repeat impression in the same session, for example. The field is
+  informational, and rendering does not depend on it.
 </Note>
 
 ### Curated merchandising collections
 
-List the operator's curated sections ("Trending now", "Featured shops"), then resolve one section's
-members. Curation itself is operator back-office; the storefront only reads the result.
+The operator's curated sections ("Trending now", "Featured shops") list first, and one section's
+members resolve from its slug. Curation itself is operator back-office; the storefront reads the
+result.
 
 ```typescript
 const { collections } = await storefront.marketplace.listMarketplaceCollections({});
@@ -662,8 +661,8 @@ const { collections } = await storefront.marketplace.listMarketplaceCollections(
 }
 ```
 
-An empty `collections` array means the operator hasn't curated any sections yet. When sections exist,
-each carries its `slug`, `name`, `placement_kind`, and homepage flags:
+An empty `collections` array means the operator has not curated any sections yet. Where sections
+exist, each carries its `slug`, `name`, `placement_kind`, and homepage flags:
 
 ```json
 {
@@ -688,7 +687,7 @@ each carries its `slug`, `name`, `placement_kind`, and homepage flags:
 }
 ```
 
-Resolve one section's members with its slug:
+One section's members, by slug:
 
 ```typescript
 const section = await storefront.marketplace.getMarketplaceCollection({
@@ -718,14 +717,14 @@ const section = await storefront.marketplace.getMarketplaceCollection({
 ```
 
 <Tip>
-  Filter the section list by kind with `listMarketplaceCollections({ placementKind: 'merchant' })`.
-  An unknown slug on `getMarketplaceCollection` returns `404`.
+  `listMarketplaceCollections({ placementKind: 'merchant' })` filters the section list by kind. An
+  unknown slug on `getMarketplaceCollection` returns `404`.
 </Tip>
 
 ## What's next
 
-- The single-merchant equivalent is the [Storefront checkout](/workflows/storefront-checkout) — same
-  shopper journey, one store.
-- Shoppers can [review products and message merchants](/workflows/reviews-and-messaging); both work
+- [Storefront checkout](/workflows/storefront-checkout) is the single-merchant equivalent — the same
+  shopper journey against one store.
+- Shoppers [review products and message merchants](/workflows/reviews-and-messaging); both work
   cross-merchant with an operator key.
-- Onboard merchant catalogs into the marketplace with [Catalog sync](/workflows/catalog-sync).
+- [Catalog sync](/workflows/catalog-sync) brings merchant catalogs into the marketplace.

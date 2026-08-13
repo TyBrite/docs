@@ -3,28 +3,26 @@ title: "Search & Discovery"
 description: "The discovery surfaces that get shoppers to the cart — text and semantic search (with filters, empty results, and paging), every recommendation rail and its fallback, publishable-key discovery shelves (most-viewed / trending-in-carts / best-converting), behavior capture, and dynamic multi-currency pricing — threaded as one shopper's session."
 ---
 
-Before a shopper can check out, they have to *find* the product. This page walks **one shopper's
-discovery session** from the search box to a priced product card, and at each step it shows the
-**real variant cases** an integrator hits — not just the happy path. A search can match, come back
-empty, be filtered, or be paged; a recommendation rail can be served directly or fall back; a price
-resolves differently in New York, London, and Berlin. Every shape below is captured from a live call
-against the canonical test store.
+One shopper's discovery session, from the search box to a priced product card. A search matches,
+comes back empty, is filtered, or is paged; a recommendation rail is served directly or falls back; a
+price resolves differently in New York, London, and Berlin. Every shape below is captured from a live
+call against the canonical test store.
 
-Every call here is read-only and runs with the **publishable** client in the browser — except
-recommendations, which run server-side with the **secret** client (a publishable key returns `403`).
-(See [Workflow Examples](/workflows/introduction) for the client setup.) We'll follow the shopper
-hunting for a **Samsung Galaxy Watch 6** (`0186665f-f0a1-4c79-976a-919b5b1c2daa`, variant
-`e98631a9-…`, $299) and carry that product forward through every surface.
+The calls are read-only and run with the publishable client in the browser, except recommendations,
+which run server-side with the secret client (a publishable key returns `403`).
+[Workflow Examples](/workflows/introduction) has the client setup. The shopper is hunting for a
+Samsung Galaxy Watch 6 (`0186665f-f0a1-4c79-976a-919b5b1c2daa`, variant `e98631a9-…`, $299), which
+carries forward through every surface.
 
-## 1. Search the catalog
+## 1. Searching the catalog
 
-There are two search surfaces, and they answer different questions. Both return product **ids** and
-relevance scores — not full product objects — so you hydrate the cards from the ids (step 5).
+Two search surfaces answer different questions. Both return product ids and relevance scores rather
+than full product objects, so the cards are hydrated from the ids (step 5).
 
 ### 1a. Text search (keyword) — a match
 
-`searchProducts` matches the literal query against product names and attributes — fast, exact, and
-the right default for a search box where the shopper types a brand or model. Publishable key.
+`searchProducts` matches the literal query against product names and attributes. It is exact and
+fast, which suits a search box where the shopper types a brand or model. Publishable key.
 
 ```typescript
 const results = await storefront.search.searchProducts({ q: 'headphones' });
@@ -40,11 +38,11 @@ const results = await storefront.search.searchProducts({ q: 'headphones' });
 }
 ```
 
-### 1b. Text search — an EMPTY result
+### 1b. Text search — an empty result
 
-The shopper mistypes, or searches for something you don't stock. The call still **succeeds** (`200`)
-— it returns the same envelope with an empty `results` array and `totalResults: 0`. There is no
-error to catch; branch on `results.length` to render an empty state.
+A mistyped query, or one for something the store doesn't stock, still succeeds with `200`: the same
+envelope comes back with an empty `results` array and `totalResults: 0`. There is no error to catch,
+so an empty state branches on `results.length`.
 
 ```typescript
 const miss = await storefront.search.searchProducts({ q: 'zxqwerty' });
@@ -61,10 +59,10 @@ const miss = await storefront.search.searchProducts({ q: 'zxqwerty' });
 
 ### 1c. Semantic search (natural language)
 
-`semanticSearch` understands *intent* using AI embeddings — it matches the meaning of a
-conversational query against product meaning, not literal keyword overlap. Use it when the shopper
-describes what they want ("wireless earbuds for the gym") rather than naming it. Each hit carries a
-similarity `score`; tune the floor with `minScore` (default `0.3`) and cap the count with `limit`.
+`semanticSearch` matches the meaning of a conversational query against product meaning using AI
+embeddings, rather than literal keyword overlap, which fits a shopper who describes what they want
+("wireless earbuds for the gym") instead of naming it. Each hit carries a similarity `score`;
+`minScore` sets the floor (default `0.3`) and `limit` caps the count.
 
 ```typescript
 const semantic = await storefront.search.semanticSearch({
@@ -88,17 +86,17 @@ const semantic = await storefront.search.semanticSearch({
 
 <Note>
   `totalResults` is the size of the candidate set considered, not the number returned — here 50
-  products were ranked and the top 8 (above `minScore`) came back. Raise `minScore` to tighten
-  relevance; lower it to widen the net. Semantic hits have a `score` but **no** `matchReason` (that
-  field is text-search only).
+  products were ranked and the top 8 above `minScore` came back. A higher `minScore` tightens
+  relevance, a lower one widens the net. Semantic hits carry a `score` but no `matchReason`, which is
+  a text-search field.
 </Note>
 
-### 1d. In-catalog search with a category FILTER + paging
+### 1d. In-catalog search with a category filter and paging
 
-The two surfaces above search the *index*. For a results grid you usually want the catalog read
-directly — `listProducts` accepts a `search` term, a `categoryId` filter, and cursor paging in the
-same call, and returns full product rows (not just ids). This is the shape behind a "Headphones →
-Sony" filtered grid.
+The two surfaces above search the index. A results grid usually reads the catalog directly instead:
+`listProducts` takes a `search` term, a `categoryId` filter, and cursor paging in one call, and
+returns full product rows rather than ids. This is the shape behind a "Headphones → Sony" filtered
+grid.
 
 ```typescript
 const page1 = await storefront.products.listProducts({
@@ -108,7 +106,7 @@ const page1 = await storefront.products.listProducts({
 ```
 
 Each product row carries the default variant inline (`variant_id`, `sku`, `price`, `stock`) plus
-`category_name`/`subcategory_name`, so the grid needs no second call. To page, pass the
+`category_name`/`subcategory_name`, so the grid needs no second call. Paging passes
 `pagination.next_cursor` back as `cursor`:
 
 ```typescript
@@ -139,17 +137,17 @@ const page2 = await storefront.products.listProducts({
 ```
 
 <Tip>
-  Both search surfaces return ids + scores only. Hydrate the cards by passing each id to
-  `storefront.products.getProduct({ id })`, or quote prices for the whole result set at once with
-  `storefront.pricing.getProductPrices(...)` (step 4). `fields=` trims the payload to just the
-  columns your grid renders.
+  Both search surfaces return ids and scores only. Cards hydrate by passing each id to
+  `storefront.products.getProduct({ id })`, or by quoting prices for the whole result set at once
+  with `storefront.pricing.getProductPrices(...)` (step 4). `fields=` trims the payload to the
+  columns a grid renders.
 </Tip>
 
-### 1e. Browse by brand — a "featured brands" row → a brand page
+### 1e. Browsing by brand — a featured-brands row into a brand page
 
-Beyond categories, you can let shoppers browse by **brand**. `listBrands` returns the catalog's
-distinct brands with a product count (most products first) — perfect for a "featured brands" strip
-after the hero. Take the top few, render them, and on click pass the brand to `listProducts({ brand })`.
+Brand is a second axis alongside categories. `listBrands` returns the catalog's distinct brands with
+a product count, most products first, which is the shape a featured-brands strip renders from; a
+click passes the brand to `listProducts({ brand })`.
 
 ```typescript
 // 1. The brands strip — take the top 5 for a featured row.
@@ -173,21 +171,21 @@ const { products } = await storefront.products.listProducts({
   merchants; pass `storeId` to scope the strip to one merchant's shop page.
 </Tip>
 
-## 2. Show recommendation rails — every type, and the fallback
+## 2. Recommendation rails — every type, and the fallback
 
-Recommendations power the "you might also like" / "frequently bought together" rails. This is the
-one discovery call that is **secret-key only** — it runs on your server (a publishable key returns
-`403`). One method, `getRecommendations`, serves every rail via the `type` field, and every response
-shares the same `{ type, recommendations[], fromCache, computedAt }` envelope (each item:
-`productId`, `score`, `reason`).
+Recommendations back the "you might also like" and "frequently bought together" rails. This is the
+one discovery call that is secret-key only, running on your server (a publishable key returns `403`).
+One method, `getRecommendations`, serves every rail through the `type` field, and every response
+shares the same `{ type, recommendations[], fromCache, computedAt }` envelope, each item carrying
+`productId`, `score`, and `reason`.
 
-The engine **cascades through fallbacks** so a rail is *never empty*: a cold product with no
-co-purchase or similarity signal still falls back `bundle → also-bought → similar → trending →
-random`. That's why an `also-bought` rail for a brand-new product can come back with `reason` strings
-that say "Similar product…" or "Trending #1…" — you asked for one type and the engine quietly
-served the next-best it had. **Render whatever comes back; don't special-case an empty rail.**
+A rail is never empty, because the engine cascades through fallbacks: a cold product with no
+co-purchase or similarity signal falls back `bundle → also-bought → similar → trending → random`. An
+`also-bought` rail on a product with no purchase history therefore comes back with `reason` strings
+reading "Similar product…" or "Trending #1…" — the requested type had nothing behind it and the
+engine served the next-best signal it had, under the same envelope.
 
-We anchor each rail on the Watch the shopper is viewing (`0186665f-…`).
+Each rail below is anchored on the Watch the shopper is viewing (`0186665f-…`).
 
 ### 2a. Similar products
 
@@ -215,9 +213,9 @@ const similar = await server.recommendations.getRecommendations({
 
 ### 2b. Frequently bought together (`also-bought`)
 
-Ranks products co-purchased with the anchor. With no real co-purchase history yet, the engine falls
-back to the similarity signal — note `fromCache: false` (this rail was computed fresh) and the
-`reason` strings borrowed from the similar rail.
+Ranks products co-purchased with the anchor. Without co-purchase history the engine falls back to the
+similarity signal, so the `reason` strings are the similar rail's and `fromCache` is `false` — this
+rail was computed fresh.
 
 ```typescript
 const alsoBought = await server.recommendations.getRecommendations({
@@ -240,10 +238,10 @@ const alsoBought = await server.recommendations.getRecommendations({
 
 ### 2c. Bundle pairings (`bundle`) — complements, not substitutes
 
-`bundle` surfaces *complementary* products that pair well (a case for the watch), not alternatives to
-it. The `reason` spells out the co-purchase rate — here `0%`, so these are recommended by
-complementarity, and the lower `score`s (≈0.32) reflect that they're a pairing suggestion rather than
-a strong substitute.
+`bundle` surfaces complementary products that pair with the anchor — a case for the watch — rather
+than alternatives to it. The `reason` carries the co-purchase rate, here `0%`, so these are ranked by
+complementarity alone, and the scores near 0.32 are what a pairing suggestion scores rather than a
+close substitute.
 
 ```typescript
 const bundle = await server.recommendations.getRecommendations({
@@ -264,10 +262,10 @@ const bundle = await server.recommendations.getRecommendations({
 }
 ```
 
-### 2d. Trending & New — store-wide rails (no anchor)
+### 2d. Trending and New — store-wide rails (no anchor)
 
-`trending` and `new` need no `productId` — they're homepage rails. `trending` ranks by recent sales
-velocity (the `reason` reports units/day); `new` ranks by recency.
+`trending` and `new` take no `productId`, which makes them homepage rails. `trending` ranks by recent
+sales velocity, reported as units/day in the `reason`; `new` ranks by recency.
 
 ```typescript
 const trending = await server.recommendations.getRecommendations({
@@ -310,9 +308,9 @@ const arrivals = await server.recommendations.getRecommendations({
 
 ### 2e. Personalized (`personalized`) — for a known customer
 
-Pass a `customerId` to re-rank for a signed-in shopper. With no per-shopper signal yet, it falls back
-to `trending` — notice the `reason` strings are the trending ones. As the customer's history builds,
-the same call returns genuinely personalized ranks.
+A `customerId` re-ranks for a signed-in shopper. Without per-shopper signal it falls back to
+`trending`, which is why the `reason` strings here are the trending ones. The same call returns
+personalized ranks once the customer's history builds.
 
 ```typescript
 const forYou = await server.recommendations.getRecommendations({
@@ -338,14 +336,14 @@ const forYou = await server.recommendations.getRecommendations({
   recommendation call returns `403` — keep these on your server.
 </Note>
 
-## 2f. Discovery shelves — "Popular now" & a PDP "hot" badge (publishable key)
+## 2f. Discovery shelves — "Popular now" and a product-page "hot" badge (publishable key)
 
-Recommendations are personalized/ML and secret-key. For simple, **non-personalized** shelves you can
-render straight from the browser, use **Discovery** — windowed rankings built from live shopper
-signals (views, cart-adds, view→purchase). These are publishable-key and available on every plan.
-Each call returns `{ metric, window_hours, products: [{ product_id, score }] }`; hydrate the cards
-with `products.getProduct`. `score` is a raw sortable signal (a count, or a ratio for converting),
-already returned highest-first.
+Where recommendations are personalized and secret-key, Discovery is the non-personalized counterpart
+that renders straight from the browser: windowed rankings built from live shopper signals — views,
+cart-adds, view-to-purchase. It is publishable-key and available on every plan. Each call returns
+`{ metric, window_hours, products: [{ product_id, score }] }`, with cards hydrated through
+`products.getProduct`. `score` is a raw sortable signal — a count, or a ratio for converting —
+already ordered highest-first.
 
 ```typescript
 // A "Popular now" homepage shelf — most-viewed over the last 30 days.
@@ -374,19 +372,18 @@ const isHot = (productId) => hotNow.products.some((p) => p.product_id === produc
 ```
 
 <Note>
-  `storefront` here uses a **publishable** key — Discovery is browser-safe. Allowed `windowHours`
-  differ per metric (`1|24|168|720` for most-viewed, `24|168` for carts, `168|720` for converting);
-  an unlisted value returns `400`. Discovery is the complement to Recommendations: use Discovery for
-  organic "what's hot" shelves, Recommendations for personalized/anchored rails.
+  `storefront` here uses a publishable key, since Discovery is browser-safe. Allowed `windowHours`
+  differ per metric — `1|24|168|720` for most-viewed, `24|168` for carts, `168|720` for converting —
+  and an unlisted value returns `400`. Discovery covers organic "what's hot" shelves; Recommendations
+  covers personalized and anchored rails.
 </Note>
 
-## 3. Capture browsing behavior → the `next` rail
+## 3. Capturing browsing behaviour for the `next` rail
 
-To sharpen the `next`-item rail, tell Galactic Core what the shopper is doing as they browse.
-`recordEvent` logs one event per call against a `variant_id` (or `product_id`), grouped by the same
-`session_id` you use for the anonymous cart. It's publishable-key (safe in the browser),
-fire-and-forget, returns `202` immediately, and **never blocks the page**. There are exactly three
-`event_type` values — log each as the shopper acts.
+The `next`-item rail sharpens on what the shopper does as they browse. `recordEvent` logs one event
+per call against a `variant_id` (or `product_id`), grouped by the same `session_id` the anonymous
+cart uses. It is publishable-key and safe in the browser, and it is fire-and-forget: it returns `202`
+immediately without blocking the page. Three `event_type` values exist, one per shopper action.
 
 ### 3a. `view` — the shopper opens the Watch's page
 
@@ -431,9 +428,9 @@ await storefront.events.recordEvent({
 // → { recorded: true }
 ```
 
-These events feed the session-sequence model. Once a few are logged under one `session_id`, ask the
-`next` rail (secret key) what the shopper is likely to look at next — it answers from what other
-shoppers viewed after the same sequence:
+These events feed the session-sequence model. Once several are logged under one `session_id`, the
+`next` rail (secret key) answers what the shopper is likely to look at next, from what other shoppers
+viewed after the same sequence:
 
 ```typescript
 const next = await server.recommendations.getRecommendations({
@@ -453,17 +450,17 @@ const next = await server.recommendations.getRecommendations({
 }
 ```
 
-## 4. Quote dynamic, location-aware prices
+## 4. Dynamic, location-aware prices
 
-Search and recommendations gave us product ids — now show prices in the shopper's currency.
-`getProductPrices` resolves each product's display price from the shopper's location: pass
-coordinates (`latitude`/`longitude`) or a `placeName`, and Galactic Core matches it to a region and
-converts from the store's base currency. USD is the store default; GBP and EUR are enabled here. We
-price the same Watch from three locations to show every conversion shape.
+Search and recommendations return product ids; prices come next, in the shopper's currency.
+`getProductPrices` resolves each product's display price from the shopper's location — coordinates
+(`latitude`/`longitude`) or a `placeName` — matching it to a region and converting from the store's
+base currency. USD is the store default here, with GBP and EUR enabled. The same Watch priced from
+three locations covers every conversion shape.
 
 ### 4a. New York → USD (store base, rate 1)
 
-No conversion happens — `display_currency` is USD, `exchange_rate` is `1`, and
+No conversion happens: `display_currency` is USD, `exchange_rate` is `1`, and
 `price_breakdown.currency_conversion` is `null`.
 
 ```typescript
@@ -498,8 +495,8 @@ const usd = await storefront.pricing.getProductPrices({
 
 ### 4b. London → GBP (rate 0.79)
 
-Pass `placeName: 'London, UK'` (or London coordinates) and the same product comes back priced in
-GBP. Now `currency_conversion` is populated with the `from`/`to`/`rate`/`converted_amount`.
+With `placeName: 'London, UK'` (or London coordinates) the same product comes back priced in GBP, and
+`currency_conversion` is populated with the `from`/`to`/`rate`/`converted_amount`.
 
 ```typescript
 const gbp = await storefront.pricing.getProductPrices({
@@ -574,8 +571,8 @@ const eur = await storefront.pricing.getProductPrices({
 
 ### 4d. No location → store default (USD)
 
-Omit both coordinates and `placeName` and pricing falls back to the store's default currency (USD
-here) — same as the New York shape, no conversion.
+Without coordinates or a `placeName`, pricing falls back to the store's default currency, USD here —
+the same shape as New York, with no conversion.
 
 ```typescript
 const fallback = await storefront.pricing.getProductPrices({ limit: 3 });
@@ -583,17 +580,16 @@ const fallback = await storefront.pricing.getProductPrices({ limit: 3 });
 ```
 
 <Tip>
-  A single product? Use `storefront.pricing.getProductPrice({ id, placeName: 'Berlin' })` — for a
-  multi-variant product it returns a `price_range` (`{ min, max }`) plus a per-variant
-  `display_price`. Berlin resolves the Nebula Ceramic Mug to EUR at rate `0.92`: its `$14.99`–`$15.55`
-  range becomes `€13.79`–`€14.31`, each variant carrying its own converted `price_breakdown`.
+  For a single product, `storefront.pricing.getProductPrice({ id, placeName: 'Berlin' })` returns a
+  `price_range` (`{ min, max }`) on a multi-variant product plus a per-variant `display_price`.
+  Berlin resolves the Nebula Ceramic Mug to EUR at rate `0.92`, turning its `$14.99`–`$15.55` range
+  into `€13.79`–`€14.31`, each variant carrying its own converted `price_breakdown`.
 </Tip>
 
-## 5. Browse by category
+## 5. Browsing by category
 
-For a navigation menu or a category landing page, list the store's categories with
-`listCategories` (publishable key), then filter the catalog or pricing by `categoryId` — the same
-`categoryId` filter we used on the grid in step 1d.
+A navigation menu or category landing page starts from `listCategories` (publishable key), then
+filters the catalog or pricing by `categoryId` — the same filter the grid used in step 1d.
 
 ```typescript
 const { categories } = await storefront.taxonomy.listCategories();
@@ -609,9 +605,9 @@ const { categories } = await storefront.taxonomy.listCategories();
 }
 ```
 
-Then scope a catalog read to that category — both `listProducts` and `getProductPrices` accept a
-`categoryId`. The Watch lives in **Wearables** (`3310356e-…`), closing the loop on the product we
-followed through search, recommendations, behavior, and pricing:
+Both `listProducts` and `getProductPrices` accept a `categoryId` to scope a catalog read to that
+category. The Watch lives in Wearables (`3310356e-…`), the same product this page followed through
+search, recommendations, behaviour, and pricing:
 
 ```typescript
 const wearables = await storefront.pricing.getProductPrices({
@@ -621,18 +617,18 @@ const wearables = await storefront.pricing.getProductPrices({
 ```
 
 <Note>
-  Categories are a fixed, store-wide set. For deeper navigation, merchants nest **subcategories** to
-  any depth — fetch them as a tree with `storefront.taxonomy.listSubcategories({ tree: true })` or a
-  single level with `{ rootOnly: true }` / `{ parentId }`.
+  Categories are a fixed, store-wide set. Merchants nest subcategories under them to any depth for
+  deeper navigation; `storefront.taxonomy.listSubcategories({ tree: true })` fetches them as a tree,
+  and `{ rootOnly: true }` / `{ parentId }` a single level.
 </Note>
 
 ## What's next
 
-- Send the shopper into the [storefront checkout](/workflows/storefront-checkout) once they've found
-  a product — add to cart, sign in, and pay.
-- Saved it for later instead of buying? [Reviews & Messaging](/workflows/reviews-and-messaging) opens
-  with the **wishlist** flow — move the saved Watch into the cart, then engage post-purchase.
-- A signed-in shopper coming back? See [Returning customer](/workflows/returning-customer) for order
-  history, returns, and store credit.
-- Building a multi-merchant storefront? Search, recommendations, and pricing all accept a marketplace
-  operator key — see [Marketplace](/workflows/marketplace).
+- A shopper who has found a product continues into the
+  [storefront checkout](/workflows/storefront-checkout) — cart, sign-in, and payment.
+- [Reviews & Messaging](/workflows/reviews-and-messaging) opens with the wishlist flow, moving a
+  saved Watch into the cart before the post-purchase surfaces.
+- [Returning customer](/workflows/returning-customer) covers order history, returns, and store credit
+  for a shopper coming back.
+- Search, recommendations, and pricing all accept a marketplace operator key — see
+  [Marketplace](/workflows/marketplace).

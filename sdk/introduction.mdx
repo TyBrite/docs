@@ -64,9 +64,9 @@ const client = new Tybrite({
 });
 ```
 
-**Retries are safe by design.** The SDK never risks creating a duplicate resource:
+Which methods are retried depends on whether repeating the request could create a second resource:
 
-- `GET`, `PUT`, and `DELETE` are safe to repeat and are always retried.
+- `GET`, `PUT`, and `DELETE` produce the same result when repeated, and are always retried.
 - `POST` and `PATCH` are retried on an error **status** only when you send an
   `Idempotency-Key` header. The API deduplicates those operations server-side
   (order creation, order updates, and payment initialization), so a retry returns the
@@ -75,8 +75,8 @@ const client = new Tybrite({
   no work could have happened) — never after the server has responded.
 
 <Tip>
-  For order and payment calls, always pass a unique `Idempotency-Key`. It both guarantees
-  exactly-once processing and unlocks automatic retries for those requests.
+  A unique `Idempotency-Key` on order and payment calls does two things: it guarantees
+  exactly-once processing, and it makes those requests eligible for automatic retry.
 </Tip>
 
 ## Two-Token Security Model
@@ -125,7 +125,7 @@ const products = await client.products.listProducts();
 
 ## Basic Usage
 
-Once initialized, you can access various commerce services through the client instance.
+Commerce services are reached as properties on the initialized client.
 
 ```typescript
 // List products
@@ -200,9 +200,9 @@ if (result.post_processing_warnings?.length) {
 
 ## Cursor-Based Pagination
 
-For high-performance, stable scrolling through large datasets, Tybrite uses cursor-based pagination. This ensures consistent results even if data changes between requests.
+List endpoints paginate by cursor rather than by offset, so a row inserted or removed between requests does not shift the page boundary and cause an item to repeat or be skipped.
 
-When a query supports cursor pagination, it will return a `pagination` object along with the results. You can pass the `next_cursor` property to subsequent requests to fetch the next page:
+A paginated query returns a `pagination` object alongside the results. Its `next_cursor` property fetches the following page:
 
 ```typescript
 // 1. Fetch the first page
@@ -218,16 +218,22 @@ if (page1.pagination.has_more) {
 }
 ```
 
-The following services currently support cursor-based pagination:
+The services whose list methods accept a cursor:
 - [Products](/sdk/api-reference/classes/ProductsService)
 - [Taxonomy](/sdk/api-reference/classes/TaxonomyService)
+- [Pricing](/sdk/api-reference/classes/PricingService)
+- [Orders](/sdk/api-reference/classes/OrdersService)
 - [Promotions](/sdk/api-reference/classes/PromotionsService)
+- [Reviews](/sdk/api-reference/classes/ReviewsService)
 - [CMS](/sdk/api-reference/classes/CmsService)
 - [Messaging](/sdk/api-reference/classes/MessagingService)
+- [Webhooks](/sdk/api-reference/classes/WebhooksService)
+- [Messaging](/sdk/api-reference/classes/MessagingService)
+- [Webhooks](/sdk/api-reference/classes/WebhooksService)
 
 ## Service Overview
 
-The SDK exposes 17 services, each accessible as a property on the `Tybrite` client. The "Customer auth?" column indicates whether the customer session token (`xAuthToken`) is required for at least some methods.
+Each service is accessible as a property on the `Tybrite` client. The most commonly used ones are below; the [API reference](/sdk/api-reference/classes/ProductsService) covers the full set, including returns, disputes, reviews, tax, B2B, and the ingestion and sandbox tooling. The "Customer auth?" column indicates whether the customer session token (`xAuthToken`) is required for at least some methods.
 
 | Service | Access via | Customer auth? | Purpose |
 | :--- | :--- | :--- | :--- |
@@ -261,7 +267,7 @@ The SDK exposes 17 services, each accessible as a property on the `Tybrite` clie
 
 ## Next Steps
 
-Now that you have initialized the client, explore the most commonly used services:
+The most commonly used services:
 
 <CardGroup cols={2}>
   <Card title="Products" icon="box" href="/sdk/api-reference/classes/ProductsService">

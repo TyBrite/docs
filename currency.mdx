@@ -3,14 +3,14 @@ title: "Currency"
 description: "Every priced response already carries its currency. Product and pricing responses include the currency code and symbol inline, so displaying money is just formatting — there's no separate currency call."
 ---
 
-Each store sets its own currency. You almost never fetch it on its own: **every product and pricing
-response already includes the currency it's expressed in**, so displaying money is just a matter of
-formatting the amount with the symbol that came back alongside it.
+Each store sets its own currency, and every product and pricing response includes the currency it is
+expressed in — so displaying money is a matter of formatting the amount with the symbol that came back
+alongside it, without a separate currency call.
 
 ## Where currency lives
 
-Currency travels **with the priced data**, on every catalog and pricing response — this is the
-primary source you should read:
+Currency travels with the priced data, on every catalog and pricing response. This is the primary source
+for rendering a price:
 
 | Field | On | Meaning |
 | :--- | :--- | :--- |
@@ -128,13 +128,13 @@ store's enabled currencies** — the same set `store.currencies` reports:
 }
 ```
 
-On a marketplace deployment this resolves to the operator's single marketplace currency, and a
-checkout that requests a different currency is rejected the same way. In every case the amount and the
-currency the shopper is actually charged are the server's decision — pass the currency that came back
-on the priced response you're checking out, and you'll always be in the accepted set.
+On a marketplace deployment this resolves to the operator's single marketplace currency, and a checkout
+that requests a different currency is rejected the same way. In every case the amount and the currency the
+shopper is charged are the server's decision, and the currency returned on the priced response being
+checked out is always in the accepted set.
 
 <Note>
-  Because currency is validated server-side, you don't need to pre-check it — but reading
-  `store.currencies` (or the `display_currency` on each priced response) lets your UI only ever offer
-  currencies that will be accepted.
+  Server-side validation makes a pre-check unnecessary. Reading `store.currencies` — or the
+  `display_currency` on each priced response — is what lets a UI offer only currencies that will be
+  accepted in the first place.
 </Note>

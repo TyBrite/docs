@@ -3,7 +3,7 @@ title: "CMS (Blog & Lookbooks)"
 description: "Reference for the CmsService class in the Tybrite SDK."
 ---
 
-The `CmsService` class (accessed via `client.cms`) provides access to content-driven features like blog posts and lookbooks, allowing you to build rich discovery experiences and content-led commerce.
+The `CmsService` class (accessed via `client.cms`) reads a store's editorial content — blog posts and shoppable lookbooks — and records views against the shopper's session, so a sale can later be attributed to the content that led to it.
 
 ## Blog Posts
 
@@ -177,7 +177,7 @@ lookbook.images.forEach(image => {
 
 ### `subscribeNewsletter`
 
-Capture a newsletter signup from your storefront. The email address is the identity, so this works for both anonymous visitors and signed-in shoppers (a signed-in storefront simply prefills the email field). When the merchant has connected a marketing tool, new subscribers are automatically synced to their chosen list.
+Capture a newsletter signup from your storefront. The email address is the identity, so this works for both anonymous visitors and signed-in shoppers (a signed-in storefront prefills the email field). When the merchant has connected a marketing tool, subscribers are synced to their chosen list automatically.
 
 ```typescript
 const result = await client.cms.subscribeNewsletter({

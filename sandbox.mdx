@@ -57,15 +57,13 @@ reads: a test key sees only the orders, customers, and carts created in sandbox.
 </Warning>
 
 **A test key sees every provider and integration the merchant has configured, including ones still on
-test credentials.** That is deliberate: sandbox exists to exercise an integration before it is live,
-and hiding a half-configured one would make it impossible to test. So a sandbox checkout can list
-providers labelled `test` or `sandbox`, and that is the mode working as intended.
+test credentials.** A sandbox checkout can therefore list providers labelled `test` or `sandbox`,
+which is what makes an integration testable before it is live.
 
-Live keys are strict in the other direction. A provider or integration holding test credentials is
-not offered to a real customer and is refused if requested directly — see
-[Guardrails](/how-gc-works/guardrails). Building against sandbox therefore shows you the widest set of
-options; going live narrows it to the ones that can actually take money, ship a parcel, or file a
-number.
+Live keys resolve the same configuration differently: a provider or integration holding test
+credentials is not offered to a real customer and is refused if requested directly — see
+[Guardrails](/how-gc-works/guardrails). The provider list a sandbox key returns is consequently a
+superset of the one a live key returns for the same store.
 
 ## Sandbox data is invisible in the merchant's app
 
@@ -75,9 +73,9 @@ numbers or clutter their order list.
 
 ## Automatic cleanup
 
-Sandbox data is **automatically purged after 30 days**, so don't rely on a sandbox record sticking
-around long-term — treat sandbox data as disposable and re-seed it from your tests when you need it.
-You don't have to wait, though — you can [reset on demand](#developer-tools) any time.
+Sandbox data is **automatically purged after 30 days**, so a sandbox record is not a durable store —
+a test suite that needs particular data re-seeds it rather than assuming a previous run's rows are
+still there. The purge can also be triggered [on demand](#developer-tools) rather than waited for.
 
 <Note>
   **API keys are never auto-deleted.** Only the transactional sandbox data (orders, customers, carts,
@@ -86,26 +84,25 @@ You don't have to wait, though — you can [reset on demand](#developer-tools) a
 
 ## Developer tools
 
-The sandbox includes tooling that makes test runs fast and repeatable — so you don't have to wait on
-real time or rebuild state by hand. All of these require a **secret test key** (`tybrite_sk_test_*`),
-only ever affect your sandbox data, and are available via `client.sandbox` in the SDK (full reference:
-[SandboxService](/sdk/api-reference/classes/SandboxService)).
+Three operations control sandbox state directly. All require a **secret test key**
+(`tybrite_sk_test_*`), only ever affect your sandbox data, and are available via `client.sandbox` in
+the SDK (full reference: [SandboxService](/sdk/api-reference/classes/SandboxService)).
 
-### Reset your sandbox instantly
+### Sandbox reset
 
-Wipe all your sandbox test data in one call instead of waiting for the 30-day cleanup — a clean slate
-before each test run.
+Removes all sandbox test data in one call, ahead of the 30-day cleanup — a clean slate before a test
+run.
 
 ```typescript
 await client.sandbox.resetSandbox();           // → 204 No Content
 // or the DELETE alias: await client.sandbox.deleteSandboxData();
 ```
 
-### Fast-forward time
+### Time travel
 
-Advance your sandbox by N days so time-dependent behaviors fire now instead of after a real wait:
-Galactic Core back-dates your sandbox data so abandoned-cart windows elapse, reserved stock is
-released, and analytics roll forward.
+Advances your sandbox by N days, so time-dependent behaviour resolves without a real wait: Galactic
+Core back-dates your sandbox data, elapsing abandoned-cart windows, releasing reserved stock, and
+rolling analytics forward.
 
 ```typescript
 const result = await client.sandbox.advanceSandboxTime({ requestBody: { advance_days: 30 } });
@@ -115,10 +112,10 @@ const result = await client.sandbox.advanceSandboxTime({ requestBody: { advance_
 The response's `not_shifted` explains what is intentionally left alone — to test promotion or
 gift-card expiry, create one in sandbox with a near-future date.
 
-### Replay a webhook
+### Webhook replay
 
-Re-send a recorded sandbox webhook event to your endpoints without recreating the underlying order or
-customer — ideal for iterating on a webhook handler.
+Re-sends a recorded sandbox webhook event to your endpoints without recreating the underlying order
+or customer, so a handler can be iterated on against the same payload.
 
 ```typescript
 // Replay the most recent sandbox event of a type, or pass { event_id } for a specific one.

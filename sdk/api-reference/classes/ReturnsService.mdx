@@ -421,7 +421,7 @@ await client.returns.requestReturnRefund({
 
 ### Spending store credit at checkout
 
-Store credit is only useful if the shopper can spend it. When you place their next order, pass `apply_store_credit: true` to `client.orders.createOrder` and Galactic Core draws down their balance automatically:
+Store credit is spent on a subsequent order: `apply_store_credit: true` on `client.orders.createOrder` draws down the shopper's balance automatically.
 
 ```typescript
 const { data: order } = await client.orders.createOrder({

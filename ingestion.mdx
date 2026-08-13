@@ -15,15 +15,15 @@ Catalog Ingestion lets you bring products *into* Galactic Core from an outside s
 
 ---
 
-## When to use it
+## When it applies
 
-Reach for ingestion when products live somewhere else and you want Galactic Core to mirror them:
+Ingestion is the path for a catalog that lives somewhere else and is mirrored into Galactic Core:
 
 - A merchant runs their inventory in an ERP/PIM and wants it reflected in their Tybrite store.
 - You're migrating a catalog from another platform.
 - A nightly export from a back-office system should keep the storefront in sync.
 
-If a shopper would do it on a storefront, it's not ingestion — this is a **merchant-side write** for keeping a catalog up to date.
+Ingestion is a **merchant-side write** for keeping a catalog up to date, which is why it sits outside the otherwise storefront-facing API and carries stricter authentication than any other write.
 
 ---
 
@@ -289,16 +289,16 @@ await fetch('https://api.tybritelabs.com/v1/ingest/products', {
 | `X-Signature` | Yes | Base64 HMAC-SHA256 of `` `${X-Timestamp}.${raw_body}` ``. |
 
 <Warning>
-  Sign the **raw body** exactly as sent. Re-serializing the JSON (whitespace or key ordering changes) produces a different byte sequence and the signature will fail to verify.
+  The signature covers the **raw body** exactly as sent. Re-serializing the JSON (whitespace or key ordering changes) produces a different byte sequence, and verification fails.
 </Warning>
 
 ---
 
 ## Test without a key
 
-Before you integrate, perfect your feed format against two **public, no-key** endpoints. Both are rate-limited to 60 requests/hour per IP.
+Two **public, no-key** endpoints validate a feed format ahead of any integration work. Both are rate-limited to 60 requests/hour per IP.
 
-**Get a valid sample feed** to model your own (`?format=json|xml|csv`):
+**A valid sample feed** to model your own on (`?format=json|xml|csv`):
 
 ```bash
 curl "https://api.tybritelabs.com/v1/ingest/sample?format=json"
@@ -306,7 +306,7 @@ curl "https://api.tybritelabs.com/v1/ingest/sample?format=json"
 
 The sample includes a single-variant product and a multi-variant product, so you can see exactly how `product_group` expresses variants.
 
-**Validate a feed without writing anything.** You get back the same `summary` and `errors` a real import would return, plus a `normalized_preview` showing how Galactic Core interpreted your rows:
+**A validation run that writes nothing.** It returns the same `summary` and `errors` a real import would, plus a `normalized_preview` showing how Galactic Core interpreted each row:
 
 ```bash
 curl -X POST "https://api.tybritelabs.com/v1/ingest/test" \
@@ -355,12 +355,12 @@ See the [Webhooks guide](/webhooks) for delivery, signing, and idempotency.
 
 ## Publish your own catalog (outbound feed)
 
-Ingestion works both ways. Just as you can pull products *in*, you can expose *your* catalog
-as a public feed so other systems can pull *from* you — another store's scheduled sync, a
-partner, a marketplace, or your own tooling.
+Ingestion works both ways: a store can also expose its own catalog as a public feed for other
+systems to pull *from* — another store's scheduled sync, a partner, a marketplace, or your own
+tooling.
 
-Turn it on in the dashboard under **Settings → Catalog Sync → Publish my catalog**. You get a
-public URL in two formats, **no API key required** to read:
+It is enabled in the dashboard under **Settings → Catalog Sync → Publish my catalog**, which
+produces a public URL in two formats, readable with **no API key**:
 
 ```
 https://api.tybritelabs.com/v1/feeds/{store}/products.json
@@ -396,10 +396,9 @@ https://api.tybritelabs.com/v1/feeds/{store}/products.xml
 }
 ```
 
-Because the feed shape matches what the ingestion endpoints accept, a **store-to-store sync is
-paste-and-go**: point one store's scheduled sync at another store's `products.json` and you're
-done — no field mapping. To keep a feed semi-private, add a token in the dashboard and append
-`?token=…` to the URL.
+The feed shape matches what the ingestion endpoints accept, so a **store-to-store sync needs no
+field mapping**: one store's scheduled sync can point straight at another store's `products.json`.
+A token added in the dashboard and appended as `?token=…` keeps a feed semi-private.
 
 ---
 

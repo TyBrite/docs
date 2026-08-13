@@ -3,7 +3,7 @@ title: "Webhooks"
 description: "Receive real-time event notifications when orders, payments, customers, and other resources change state in your store."
 ---
 
-Webhooks let your systems react to Tybrite events the moment they happen — no polling, no lag. When an order is paid, a payment fails, or a customer signs up, Tybrite sends an HTTP POST to your registered endpoint containing the full event payload.
+Webhooks let your systems react to Tybrite events as they happen, without polling for them. When an order is paid, a payment fails, or a customer signs up, Tybrite sends an HTTP POST to your registered endpoint containing the full event payload.
 
 <Info>
   **Dashboard:** You can manage webhook endpoints directly from **Settings → Webhooks** in your Tybrite dashboard, or programmatically via the API and SDK.
@@ -186,7 +186,7 @@ price is stale the moment one of these fires.
 
 A deleted record has left the API: it no longer appears in any list, cannot be fetched by id, and stops taking effect — a deleted promotion stops discounting, a deleted product cannot be bought. Every deletion carries the record's `id` and `name`, plus `deleted_at` and `restorable_until`.
 
-Deleting is reversible for 90 days, so each of these has a matching `.restored` event. `restorable_until` is there so you can choose: tear your copy down immediately and rebuild it if the restore arrives, or hold it until the window closes.
+Deleting is reversible for 90 days, so each of these has a matching `.restored` event. `restorable_until` marks when that window closes, which supports either handling: removing your copy immediately and rebuilding it if a restore arrives, or holding it until the window has passed.
 
 | Event | Fired when |
 | :--- | :--- |
@@ -202,7 +202,7 @@ Deleting is reversible for 90 days, so each of these has a matching `.restored` 
 
 ### Visibility
 
-A category that is switched off is filtered out of every catalog read, so it disappears from a storefront exactly as a deleted one would. Categories cannot be deleted — they are a fixed set a merchant enables or disables — so these are the only lifecycle events they produce. Subscribe if you render navigation, a category strip, or any layout built from the taxonomy.
+A category that is switched off is filtered out of every catalog read, so it disappears from a storefront exactly as a deleted one would. Categories cannot be deleted — they are a fixed set a merchant enables or disables — so these are the only lifecycle events they produce, and they are what keeps navigation, a category strip, or any layout built from the taxonomy in step.
 
 | Event | Fired when |
 | :--- | :--- |
@@ -226,10 +226,10 @@ A category that is switched off is filtered out of every catalog read, so it dis
 
 <Note>
 The **Content & collections**, **Store lifecycle**, and **Feature availability** events describe a
-store *growing* rather than a single transaction. They are what an automation tool listens to when it
-keeps a storefront in step with the store — adding a promo banner the moment a promotion goes live, a
-reviews block when the first reviews are approved, or a "shop by collection" row when a collection
-becomes homepage-eligible. See the [automated workflows](/workflows/webhooks-automation) guide.
+store *growing* rather than a single transaction, which is what an automation tool listens to when it
+keeps a storefront in step with the store — adding a promo banner as a promotion goes live, a reviews
+block when the first reviews are approved, or a "shop by collection" row when a collection becomes
+homepage-eligible. See the [automated workflows](/workflows/webhooks-automation) guide.
 </Note>
 
 ### Catalog sync & syndication
@@ -288,7 +288,7 @@ X-Tybrite-Signature: t=<unix_timestamp>,v1=<hmac_sha256_hex>
 The signed string is `${timestamp}.${raw_request_body}`. The secret is the `signing_secret` returned when the endpoint was created (per-endpoint, not the store HMAC secret).
 
 <Warning>
-  **Use the raw body.** JSON parsers may reformat whitespace or key ordering, producing a different byte sequence that will fail verification. Capture the raw bytes before parsing.
+  **The signature covers the raw body.** JSON parsers may reformat whitespace or key ordering, producing a different byte sequence that fails verification, so the raw bytes have to be captured before parsing.
 </Warning>
 
 **Serverless function example:**
@@ -366,13 +366,13 @@ export async function POST(request: Request) {
 | **Ordering** | Best-effort. Use `event.created_at` for sequencing logic. |
 | **Payload size** | Capped at 256 KB. |
 
-**Always respond quickly.** Return `2xx` within 30 seconds and do heavy processing asynchronously (queue it). If your handler times out, Tybrite treats the delivery as failed and retries.
+A handler that has not returned `2xx` within 30 seconds is treated as a failed delivery and retried, so heavy processing belongs on a queue rather than inline in the response path.
 
 ---
 
 ## Idempotency
 
-Because delivery is at-least-once, your handler may receive the same event more than once on retries. Guard with a seen-events store:
+Because delivery is at-least-once, a handler may receive the same event more than once on retries. A seen-events store keyed on `event.id` distinguishes a retry from a new event:
 
 ```typescript
 const event = JSON.parse(rawBody);

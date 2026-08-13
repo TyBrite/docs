@@ -3,9 +3,9 @@ title: "Design Principles"
 description: "The decisions that shape Galactic Core's architecture, and the reasoning behind each one."
 ---
 
-A few decisions run through every layer of Galactic Core. They explain why the API looks the way it does,
-why reads are so cheap, and why one tenant's traffic can't affect another's. The rest of this section
-builds on them.
+A few decisions run through every layer of Galactic Core: what the public API is allowed to do, what an
+order sets in motion, where prices are decided, how tenants are separated, and what a read is permitted to
+cost.
 
 ## The public surface is storefront-only
 
@@ -32,9 +32,9 @@ transaction, triggered by a single API call. If part of that post-processing fai
 silently marked complete: the failure is recorded on the order and returned to you, so you always know the
 true state.
 
-This is the line between a commerce engine and a commerce datastore, and it is the reason writes are
-transactional and idempotent. The [Request Lifecycle](/how-gc-works/request-lifecycle) shows exactly what
-runs when an order is created.
+Because one call sets all of that in motion, writes are transactional and idempotent — a retry never
+produces a second order, and no part of the sequence can be half-applied. The
+[Request Lifecycle](/how-gc-works/request-lifecycle) shows exactly what runs when an order is created.
 
 ## The platform owns the money math
 
@@ -43,22 +43,19 @@ The API never trusts a client-sent price; it recalculates and rejects a mismatch
 order be placed from a browser-adjacent backend without turning pricing into an attack surface — the
 authority for what a customer pays lives on the server, not in the request.
 
-## Isolation scales from logical to physical
+## Isolation matched to the tenant
 
-Isolation matches the tenant. On the shared platform — where a single merchant runs — every row is scoped
-to a store and enforced by the database's row-level security, so no store can read or write another's data
-even on a shared table. When a tenant needs more than a logical boundary — a marketplace operator, an
-enterprise client, or a data-residency requirement — it runs on a dedicated deployment: a separate database
-and API layer that no other tenant touches.
-
-Either way the boundary holds for security, and a dedicated deployment adds a reliability boundary on top —
+Isolation comes at two levels, and which applies depends on the tenant rather than on the code. On the
+shared platform — where a single merchant runs — every row is scoped to a store and enforced by the
+database's row-level security. A tenant that needs more than a logical boundary — a marketplace operator,
+an enterprise client, a data-residency requirement — runs on a dedicated deployment, a separate database
+and API layer that no other tenant touches, which adds a reliability boundary on top of the security one:
 its load or incident cannot reach another tenant, because it shares no database or compute.
 [Data Model & Multi-tenancy](/how-gc-works/data-model) covers how both are enforced.
 
-## Reads should cost almost nothing
+## The cost of a read
 
-Because reads are the bulk of commerce traffic, the platform is built so they rarely reach the database.
-They are cacheable and served from the edge; writes are the minority and the only traffic that must reach
-the primary. Nearly everything about the caching pipeline, the read views, and the hot-path budget follows
-from wanting a catalog read to be close to free. [The Caching Pipeline](/how-gc-works/caching) is where
-that plays out.
+Reads are the bulk of commerce traffic, so the platform is built so they rarely reach the database. They
+are cacheable and served from the edge; writes are the minority and the only traffic that must reach the
+primary. The caching pipeline, the purpose-built read views, and the fixed budget an authenticated read is
+held to all follow from that. [The Caching Pipeline](/how-gc-works/caching) is where they play out.

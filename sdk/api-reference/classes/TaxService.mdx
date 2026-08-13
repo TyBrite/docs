@@ -74,9 +74,9 @@ const tax = await client.tax.previewTax({
 | `breakdown` | Per-jurisdiction detail (state, county, city, special district…), each with its `rate` and `tax`. Present when `tax_source` is `automatic`. |
 
 <Tip>
-  Always pass `category_name` per line — categories such as food, clothing, books, and digital goods
-  are taxed differently from general merchandise. Without it, a line is taxed as standard tangible
-  goods.
+  A line without `category_name` is taxed as standard tangible goods. Categories such as food,
+  clothing, books, and digital goods are taxed differently from general merchandise, so the field
+  changes the result wherever a jurisdiction treats them separately.
 </Tip>
 
 ### Using the estimate at checkout
