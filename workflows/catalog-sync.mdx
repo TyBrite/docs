@@ -179,8 +179,8 @@ skipped / failed counts plus an `errors` array for any rejections.
 Three signing headers are required, on the same scheme as orders and payments: an `Idempotency-Key`,
 where retrying with the same key returns the original result rather than re-importing; an
 `X-Timestamp` in unix seconds, within 5 minutes of server time; and an `X-Signature`, the base64
-HMAC-SHA256 of `` `${timestamp}.${body}` `` signed with the store's signing secret from Settings →
-Integration Settings.
+HMAC-SHA256 of `` `${timestamp}.${body}` `` signed with the store's signing secret from Integrations →
+API Keys.
 
 ```typescript
 import { createHmac } from 'crypto';
