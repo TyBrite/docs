@@ -7100,7 +7100,9 @@ paths:
           back to also-bought, then trending, when there is no session signal.
         - **trending**: Currently trending products
         - **new**: Recently added products
-        - **personalized**: Based on a customer's preferences
+        - **personalized**: Based on the signed-in shopper's preferences. Identify the shopper with an
+          `x-auth-token`, `x-external-auth`, or `x-idp-token` credential header; with no valid credential
+          the response falls back to trending.
         - **bundle**: Bundle suggestions. Items that complement the product are surfaced ahead of
           alternatives.
 
@@ -7125,6 +7127,28 @@ paths:
         (`merchant_store_id`).
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Session token of a customer signed in through Galactic Core. Used only when `type` is `personalized`, to identify the shopper the recommendations are for. Personalization is keyed to whoever this credential resolves to — a customer id in the request body is not accepted for this. An absent or invalid credential simply falls back to trending recommendations rather than returning an error.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Bring-your-own-auth signed assertion identifying the shopper. Serves the same purpose as `x-auth-token` for `personalized`; send whichever matches how the shopper signed in.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            An identity token from the store's own configured Auth verifier, identifying the shopper. Serves the same purpose as `x-auth-token` for `personalized`.
       requestBody:
         required: true
         content:
@@ -7151,10 +7175,6 @@ paths:
                 sessionId:
                   type: string
                   description: Used with type `next`. The shopper's current session identifier; the most recent product viewed/added in that session is used as the anchor when `productId` is not supplied.
-                customerId:
-                  type: string
-                  format: uuid
-                  description: Optional for `personalized`. When omitted, the response falls back to trending recommendations.
                 limit:
                   type: integer
                   default: 10
@@ -7179,10 +7199,9 @@ paths:
                   type: trending
                   limit: 10
               personalized:
-                summary: Personalized recommendations
+                summary: Personalized recommendations (identify the shopper with a credential header)
                 value:
                   type: personalized
-                  customerId: 550e8400-e29b-41d4-a716-446655440000
                   limit: 10
       responses:
         '200':

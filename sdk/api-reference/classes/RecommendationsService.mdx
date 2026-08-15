@@ -70,13 +70,15 @@ const { recommendations } = await client.recommendations.getRecommendations({
 ```
 
 ```typescript Personalized
-// Suggestions tailored to a specific customer's preferences and history
+// Suggestions tailored to the signed-in shopper's preferences and history.
+// Identify the shopper with a credential header (x-auth-token, x-external-auth, or x-idp-token) —
+// personalization is keyed to whoever that credential resolves to, not to a customer id in the body.
 const { recommendations } = await client.recommendations.getRecommendations({
   requestBody: {
     type: 'personalized',
-    customerId: 'customer-uuid-here',
     limit: 6
   }
+  // pass the shopper's credential header on the request, e.g. { headers: { 'x-auth-token': token } }
 });
 // recommendations[0] => { productId: '0186665f-f0a1-4c79-976a-919b5b1c2daa',
 //                         score: 1, reason: 'Trending #1 - 2.1 units/day' }
@@ -107,7 +109,7 @@ const { recommendations } = await client.recommendations.getRecommendations({
 | `next` | The products a shopper is most likely to view or add next, based on the path of products they have viewed/added this session. | `sessionId` and/or `productId` |
 | `trending` | Global trending products (Velocity-based). | - |
 | `new` | Recently added products. | - |
-| `personalized` | Suggestions tailored to a specific user history. | `customerId` |
+| `personalized` | Suggestions tailored to the signed-in shopper's history. | a shopper credential header (`x-auth-token` / `x-external-auth` / `x-idp-token`) |
 | `bundle` | Smart bundle suggestions (Semantic + Co-purchase). Items that complement the product are surfaced ahead of alternatives. | `productId` |
 
 **Parameters:**
@@ -118,8 +120,11 @@ const { recommendations } = await client.recommendations.getRecommendations({
 | `requestBody.type` | `string` | The recommendation algorithm to use. |
 | `requestBody.productId` | `string` | Required for `similar`, `also-bought`, and `bundle`. An optional explicit anchor for `next`. |
 | `requestBody.sessionId` | `string` | Used with `next`. The shopper's current browsing-session identifier; the most recent product viewed/added in that session is used as the anchor when `productId` is omitted. |
-| `requestBody.customerId` | `string` | Required for `personalized`. |
 | `requestBody.limit` | `number` | Optional. Maximum number of suggestions to return. |
+
+For `personalized`, identify the shopper with one of the credential headers `x-auth-token`,
+`x-external-auth`, or `x-idp-token` on the request. Personalization is keyed to whoever that credential
+resolves to; with no valid credential the response falls back to trending.
 
 ---
 
@@ -178,7 +183,7 @@ This endpoint is `POST` and **requires a Secret Key**.
 | Code | Meaning |
 | :--- | :--- |
 | `200` | Recommendations returned (possibly via fallback — check `fallbackUsed`). |
-| `400` | Invalid `type` enum or missing required field (`productId` for `similar`/`also-bought`/`bundle`; `customerId` for `personalized`). |
+| `400` | Invalid `type` enum or missing required field (`productId` for `similar`/`also-bought`/`bundle`). |
 | `401` | Invalid or missing API key. |
 | `403` | Publishable key supplied — recommendations require a Secret Key. |
 | `404` | `productId` was provided but the product was not found (applies to `similar`, `bundle`, and `also-bought`). |
