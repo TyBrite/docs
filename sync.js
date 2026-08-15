@@ -3,7 +3,17 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const SOURCE_DIR = __dirname;
-const TARGET_DIR = 'C:/Users/HP PC/OneDrive/Desktop/Git Projects/anvil/anvil-extensions/galactic-sdk';
+
+// Target Anvil's galactic-sdk mirror. Set ANVIL_GALACTIC_SDK_DIR to point at your checkout; otherwise the
+// first of the candidate paths below that exists is used.
+const TARGET_CANDIDATES = [
+    process.env.ANVIL_GALACTIC_SDK_DIR,
+    path.join(require('os').homedir(), 'anvil', 'anvil-extensions', 'galactic-sdk'),
+    'C:/Users/HP PC/OneDrive/Desktop/Git Projects/anvil/anvil-extensions/galactic-sdk',
+].filter(Boolean);
+const TARGET_DIR = TARGET_CANDIDATES.find((p) => { try { return fs.existsSync(p); } catch { return false; } })
+    || TARGET_CANDIDATES[TARGET_CANDIDATES.length - 1];
+console.log(`Sync target: ${TARGET_DIR}`);
 
 const syncItems = [
     { src: 'sdk-source', dest: 'SDK-Source' },
