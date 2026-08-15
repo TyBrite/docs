@@ -306,15 +306,18 @@ const arrivals = await server.recommendations.getRecommendations({
 }
 ```
 
-### 2e. Personalized (`personalized`) — for a known customer
+### 2e. Personalized (`personalized`) — for a signed-in shopper
 
-A `customerId` re-ranks for a signed-in shopper. Without per-shopper signal it falls back to
-`trending`, which is why the `reason` strings here are the trending ones. The same call returns
-personalized ranks once the customer's history builds.
+Identify the shopper with a credential header (`x-auth-token`, `x-external-auth`, or `x-idp-token`);
+the recommendations are keyed to whoever that credential resolves to, not to a customer id in the body.
+Without a valid credential (or per-shopper signal) it falls back to `trending`, which is why the
+`reason` strings here are the trending ones. The same call returns personalized ranks once the
+customer's history builds.
 
 ```typescript
 const forYou = await server.recommendations.getRecommendations({
-  requestBody: { type: 'personalized', customerId: '9489529e-69b0-4e84-bea7-62c499085bd9', limit: 10 },
+  requestBody: { type: 'personalized', limit: 10 },
+  // identify the shopper on the request, e.g. { headers: { 'x-auth-token': token } }
 });
 ```
 
