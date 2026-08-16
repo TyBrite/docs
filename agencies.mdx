@@ -46,14 +46,47 @@ API, the assistant — under your identity:
 | Email | Sent from your address, on your verified sending domain |
 | API keys | `youragency_sk_live_…` instead of `tybrite_sk_live_…` |
 | The assistant | Named by you, if you'd rather it wasn't "Raf" |
+| The look | Your colour palette, spacing and corner treatment, and which sections appear in the menu |
 
 Branding is presentational. It changes what a merchant reads, not how commerce behaves: orders,
 payments, and webhook signatures are issued and verified by Galactic Core exactly as they are for a
 direct store.
 
 <Note>
-  Branding covers identity — name, logo, wording, domain, sender, key prefix. The interface keeps its
-  own visual design; colors are not currently themeable.
+  Branding covers identity — name, logo, wording, domain, sender, key prefix. Colour, density and
+  menu composition are set separately, through [Appearance](#appearance). The interface keeps its own
+  layout and component design either way.
+</Note>
+
+---
+
+## Appearance
+
+Describe how your merchants' admin should look and the result is composed for you: a full colour
+ramp resolved from your brand colour, a spacing and corner treatment, the small set of wording your
+merchants read, and which sections appear in their menu.
+
+**Nothing reaches a merchant until you approve it.** A generated look is saved as a draft and shown
+to you on a working representation of the admin — the sidebar, the cards, a table, the primary
+button — so you review what your merchants will actually see without signing into their account.
+Approving it applies it; every earlier version is kept, and you can return to one or remove theming
+altogether.
+
+Two limits shape what a description can produce:
+
+- **A palette must stay readable.** Button labels and link text are checked for contrast against the
+  surfaces they sit on, and a palette that would leave a merchant unable to read their own orders
+  page is rejected rather than applied.
+- **Hiding a section is presentational.** It tidies the menu; the page stays reachable by URL and
+  permissions are unchanged. Anything that must genuinely be denied is a matter of roles and
+  permissions instead.
+
+Sections can be hidden and reordered but not renamed, so the assistant's guidance about where to
+find things stays correct for everyone.
+
+<Note>
+  Generating a look consumes your platform's own assistant credits. Your merchants are never charged
+  for your branding decisions, and a look that is rejected refunds the credits it cost.
 </Note>
 
 ---
@@ -235,22 +268,44 @@ review described above.
 
 ## Your plans, your prices
 
-Price is data you own. Galactic Core defines what each tier can *do*; you decide what the tiers are
-*called* and what they *cost*:
+Your tiers are yours to define. You decide how many you offer, what each is called, what each grants
+and what each costs. Your account carries a ceiling for every allowance and for the set of
+capabilities you may sell; beneath it you compose freely.
 
 <CardGroup cols={2}>
-  <Card title="You control" icon="circle-check">
-    Plan names, monthly and annual prices, which tiers you offer at all, and the currency you charge
-    in.
+  <Card title="You define" icon="circle-check">
+    How many tiers exist, their names and descriptions, the order they appear in, what each grants —
+    request allowance, storage, assistant usage, automation runs, stores, and which capabilities are
+    switched on — and what each costs, monthly and annually, in the currency you charge in.
   </Card>
-  <Card title="We define" icon="lock">
-    What each tier includes — the features and the limits. You price and package capabilities; you
-    cannot grant one we don't ship, or raise a cap beyond what a tier allows.
+  <Card title="Your ceiling" icon="lock">
+    The most any of your tiers may grant, set per account. A capability outside it is not shown to
+    you as an option, so you cannot advertise something to a merchant that would then fail for them.
+    A value above it resolves to the ceiling rather than erroring.
   </Card>
 </CardGroup>
 
 You enter a monthly and an annual price and the annual saving is worked out from the two, so the
 discount you advertise can never drift from the prices you actually charge.
+
+Changing what a tier grants reaches merchants asymmetrically, and deliberately: an **increase applies
+immediately**, while a **reduction applies at that merchant's next renewal**. A merchant who has paid
+for the period keeps what they bought.
+
+A tier that merchants are currently on cannot be removed. Move them to another tier first.
+
+### What a merchant pays past their allowance
+
+A merchant who exceeds their plan's monthly allowance gets a free buffer, and beyond it pays as they
+go. You set all three figures — the buffer, the block size and the price per block — and they are
+what your merchants see and are charged.
+
+Galactic Core bills you for the same consumption at its own rate. The difference either way is
+yours: setting a rate below what you pay means absorbing it, which is a choice the portal shows you
+rather than prevents.
+
+A merchant on a free trial never accrues an overage charge, whatever you set. Going over pauses new
+usage instead.
 
 ### Charging a share of sales
 
@@ -341,6 +396,19 @@ spread is yours.
 
 You can also cap what any one merchant is able to spend, independently of what their plan would
 otherwise allow.
+
+### Starting merchants with credits
+
+A merchant you onboard on a free trial receives no assistant credits unless you fund them. You can
+turn that on, choose how many credits each new merchant gets, and prepay a balance the grants draw
+from — so a merchant's first session can include the assistant rather than an invitation to buy it.
+
+The balance never gates a merchant. If it runs out, their store is still created and their trial
+starts as normal; they are queued, and receive their credits in the order they joined as soon as you
+top up. The ledger shows every grant against the merchant it went to.
+
+Credits you fund this way are yours, bought at our rate. They are not metered onto your wholesale
+bill a second time when the merchant spends them.
 
 ---
 
