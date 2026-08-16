@@ -70,6 +70,117 @@ Merchants you onboard get the same free trial as any other, **and a store on tri
 nothing** — you begin paying for it when the merchant starts paying you. You can move a merchant
 between tiers at any time.
 
+### Letting merchants sign themselves up
+
+Alongside invitations, merchants can sign up on their own from your marketing site. There are two
+ways, and both produce the same result — a store that belongs to your platform from the first moment.
+
+<CardGroup cols={2}>
+  <Card title="Point at the hosted page" icon="link">
+    Send your signup call-to-action to `/register` **on your own domain**. Nothing to build: the page
+    already carries your name, logo and colours, and the verification email comes from you.
+  </Card>
+  <Card title="Host the form yourself" icon="code">
+    Build the signup form into your own site and call the three steps below. You control the fields,
+    the layout and the wording; we create the store.
+  </Card>
+</CardGroup>
+
+**Which platform a merchant joins is decided by the domain they signed up on, never by anything the
+page sends.** A signup from `studio.youragency.com` belongs to you; the same form served from
+somewhere else does not. That means you cannot accidentally attribute merchants to the wrong
+platform, and nobody else can claim yours. Your subdomain works from the day your platform is created
+— a custom domain changes which address merchants visit, not how they are attributed.
+
+### The three steps
+
+Post to **`https://api.tybritelabs.com/v1/agency/merchant-signup`** from your own domain. Each step is
+a JSON body with an `action`. No API key is needed — the domain you post from is what identifies your
+platform.
+
+<Steps>
+  <Step title="Send the code">
+    ```json
+    { "action": "send", "email": "owner@merchant.com", "password": "their-chosen-password" }
+    ```
+
+    | Field | | Notes |
+    |---|---|---|
+    | `email` | required | Must be a real, deliverable address; disposable domains are refused |
+    | `password` | required | At least 8 characters — this becomes the merchant's password |
+
+    Creates the pending account and emails a six-digit code **under your brand**. The merchant is not
+    a store yet, and nothing is provisioned until they prove they own the address. Returns
+    `{ ok: true, sent: true }`. Sending again replaces the previous code.
+  </Step>
+  <Step title="Verify the code">
+    ```json
+    { "action": "verify", "email": "owner@merchant.com", "code": "123456" }
+    ```
+
+    | Field | | Notes |
+    |---|---|---|
+    | `email` | required | The address the code was sent to |
+    | `code` | required | The six digits from the email |
+
+    Confirms the address. A code expires after fifteen minutes and locks out after six wrong
+    attempts — request a new one in either case.
+  </Step>
+  <Step title="Create the store">
+    ```json
+    {
+      "action": "provision",
+      "email": "owner@merchant.com",
+      "password": "their-chosen-password",
+      "store_name": "Galactic Agency Store",
+      "name": "Store Owner",
+      "store_code": "GAS001",
+      "business_type": "retail",
+      "country": "US",
+      "currency": "USD",
+      "phone": "+1 555 0142",
+      "address": "14 Mill Lane, Portland, OR",
+      "store_email": "hello@galacticagencystore.com"
+    }
+    ```
+
+    | Field | | Notes |
+    |---|---|---|
+    | `email` | required | Must already have completed step two |
+    | `password` | required | The same password used in step one |
+    | `store_name` | required | The merchant's business name |
+    | `name` | optional | The owner's own name; defaults to the email |
+    | `store_code` | optional | Exactly 6 letters or numbers. Supply one and it is used as given — a clash is reported so the merchant keeps the code they chose. Omit it and one is derived from the store name |
+    | `business_type` | optional | `retail` by default |
+    | `country` | optional | Two-letter country code; sets sensible tax and currency defaults |
+    | `currency` | optional | Three-letter currency code; defaults from the country, else USD |
+    | `phone` | optional | The business phone |
+    | `address` | optional | The trading address |
+    | `store_email` | optional | The store's public contact address; defaults to the owner's email |
+
+    Returns the new store and a **session**, so you can drop the merchant straight into the admin
+    already signed in rather than sending them to a sign-in screen:
+
+    ```json Response
+    {
+      "ok": true,
+      "store": { "id": "6666a0aa-…", "store_name": "Galactic Agency Store", "store_code": "GAS001" },
+      "agency_id": "1111…",
+      "session": { "access_token": "eyJ…", "refresh_token": "btcd…", "expires_at": 1786884265 }
+    }
+    ```
+  </Step>
+</Steps>
+
+A store created this way is provisioned exactly like any other — roles, chart of accounts,
+categories, payment and tax settings, and the free trial — and appears in your dashboard immediately.
+
+<Note>
+Step three refuses an address that has not completed step two, so the endpoint cannot be used to
+create stores by posting to it. Send the requests from your own domain: that is what identifies the
+platform the merchant is joining.
+</Note>
+
 ---
 
 ## Merchants who sell wholesale
@@ -251,8 +362,10 @@ there are no `/v1/agency/*` endpoints to call. Your merchants' stores use the sa
 webhooks documented throughout the rest of this site; nothing about the commerce surface changes
 because a store belongs to a platform.
 
-The one developer-facing piece is the billing integration described above, documented with the other
-[Custom Integrations](/extensions#billing-your-own-merchants).
+Two pieces are developer-facing: the merchant signup steps above, for a signup form you host
+yourself, and the billing integration described earlier, documented with the other
+[Custom Integrations](/extensions#billing-your-own-merchants). Both are deliberately separate from the
+storefront API — they are administrative, so they are not called with a storefront key.
 
 <CardGroup cols={2}>
   <Card title="Apply to run your own platform" icon="arrow-up-right" href="https://gc.tybritelabs.com/agencies">
