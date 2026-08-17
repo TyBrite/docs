@@ -412,6 +412,73 @@ bill a second time when the merchant spends them.
 
 ---
 
+## Your own apps
+
+Your market needs something Galactic Core does not ship — a local payment method, a regional courier,
+your own CRM sync. Build it once as a [Custom Integration](/extensions), register it against your
+platform rather than a single store, and every merchant you onboard can use it.
+
+**You own the logic; the merchant owns the credentials.** The handler is yours, written once. The
+merchant supplies their own account details, which are stored per store and encrypted, so one
+merchant's keys are never reachable by another and your handler sees only the invocation it is
+executing.
+
+**Where the merchant finds it** follows what the integration is:
+
+| What it is | Where it appears |
+| --- | --- |
+| An implementation of a [provider interface](/extensions#provider-contracts) (`PaymentProvider`, `ShippingProvider`, `TaxProvider`, …) | With that capability, beside the built-in options — a custom payment adapter is another processor in Payment settings |
+| Anything else, with a surface declared in its manifest | Its own tab under Integrations, its form rendered from the manifest's `config_schema` |
+| Anything else, with no surface declared | Listed under Integrations → Extensions, marked as provided by you |
+
+A merchant installs it, configures it and can switch it off for their store. **They cannot edit or
+delete what you built**, because the definition runs for every merchant you have — the same asymmetry
+that governs a plan you assign.
+
+You can mark an app to install automatically for merchants you onboard from then on. Turning that on
+does not reach back into stores already trading; an existing merchant installs it themselves, or you
+do it for them.
+
+### Hosted or on your own infrastructure
+
+The contract is identical either way — same input, same expected return, same logging, timeout,
+fail-mode and circuit breaker, all documented under
+[execution modes](/extensions#execution-modes-hosted-vs-remote). What differs is where the code runs,
+and one consequence decides it:
+
+- **Hosted** runs in Galactic Core's sandbox. Your merchant's credentials are read from the vault and
+  injected at call time. A hosted handler is invoke-only, so it suits a provider you *query* —
+  initiating a charge and polling its status.
+- **On your own infrastructure**, Galactic Core sends the same input as a signed HTTPS request to your
+  endpoint and expects the same reply. Your own keys stay with you. This is what suits a provider that
+  needs to *receive* an asynchronous callback, since your endpoint has an address and a hosted handler
+  does not.
+
+Hosted execution uses Galactic Core's compute and is billed to you as a line on your wholesale
+invoice. Running it yourself is one outbound signed call and is not billed as execution — the trade
+is availability, which the timeout and circuit breaker absorb.
+
+### Charging for an app
+
+An app is free unless you price it. You can set a monthly fee per merchant who has it installed, a
+fee per execution, or both.
+
+Whatever you charge appears on the bill your merchant already receives from you, itemised per app
+alongside their subscription — one bill, not one per app. They can see the monthly component, how
+many executions ran, and the rate applied.
+
+<Note>
+  Your price to your merchant and Galactic Core's price to you are independent. Charging nothing per
+  execution does not reduce what hosted execution costs you; charging more than it costs is your
+  margin. **A failed execution is never charged to the merchant** — it still used compute if it ran
+  hosted, so it appears on your invoice, not theirs.
+</Note>
+
+A period already billed does not reopen. An execution arriving after a month has been invoiced is not
+added to it retrospectively.
+
+---
+
 ## Isolation
 
 Every merchant store carries the identity of the platform that owns it, and that ownership is the
