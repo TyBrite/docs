@@ -107,6 +107,52 @@ idempotency key, so a retried request can never become a duplicate order. See
 [Authentication](/authentication) for how to sign requests and [Custom Integrations](/extensions)
 for handling payment webhooks in your own code.
 
+## Running your own code safely
+
+Custom integrations let a merchant's own code participate in the platform's flows, which means the platform
+treats that code as untrusted and bounds what it can reach and how long it can run.
+
+<Steps>
+  <Step title="Merchant code never shares an isolate with platform code">
+    A hosted handler runs in its own sandbox with no platform credentials, no database connection, and no
+    access to another store's data. Its provider secrets are held in an encrypted vault and injected for the
+    duration of a single invocation.
+  </Step>
+  <Step title="Outbound requests cannot reach internal addresses">
+    Any URL a function calls — and any endpoint registered for remote execution — is checked before the
+    request is made. Loopback, private, link-local, and cloud-metadata addresses are refused, so a function
+    cannot be used to probe infrastructure from the inside.
+  </Step>
+  <Step title="Nothing runs unbounded">
+    Every invocation has a hard timeout, a cap on outbound calls and response size, and a per-store monthly
+    ceiling. A function that repeatedly fails is disabled automatically, and one that is slow or errors on a
+    checkout path is bypassed rather than allowed to block a sale.
+  </Step>
+  <Step title="What a function returns is not taken on trust">
+    A returned payment status, tax figure, or shipping amount is revalidated against the platform's own
+    authoritative data before it affects an order. A custom provider cannot mark an order paid, discount a
+    total, or alter an amount by asserting it.
+  </Step>
+</Steps>
+
+### Inbound provider callbacks
+
+An extension can be given a URL for providers that report results asynchronously. Because that URL is
+publicly reachable and triggers merchant code, it carries its own controls.
+
+The URL embeds a 32-byte random secret held only as a hash, so it cannot be derived from a database read and
+cannot be guessed. On top of that, each extension declares how a caller proves its identity: a verified
+signature where the provider signs its callbacks, or an allow-list of the provider's source addresses where
+it does not. A request that fails any of these checks — including one that simply omits a required signature
+— is refused, and every refusal is recorded in the extension's run log so a misconfiguration is visible
+rather than silent. Failures are answered identically to an unknown URL, so the endpoint cannot be used to
+discover which extensions exist.
+
+The payload itself is treated strictly as input. The store, environment, and extension are resolved from the
+URL, never from a field in the body, so a callback cannot name a different store, select a different
+extension, or raise an amount. Callbacks are rate-limited per extension and size-bounded, and a lost or
+leaked URL is revoked by generating a replacement, which invalidates the previous one immediately.
+
 ## Environment separation
 
 Test and live data never mix. The key prefix chooses the environment — `tybrite_sk_test_` /
