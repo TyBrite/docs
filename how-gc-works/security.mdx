@@ -188,6 +188,18 @@ are purged on a schedule, and each merchant's data stays walled off in its own t
 backed up continuously with point-in-time recovery — see
 [Scaling & Reliability](/how-gc-works/scaling-reliability#backups-and-recovery).
 
+## Stores on an operated platform
+
+A store can belong to a platform run by an agency rather than directly to Galactic Core. Everything on
+this page still applies to it unchanged — the isolation, the payment integrity, the environment
+separation are properties of the platform, not of who sold the store.
+
+What that arrangement adds is an operator layer with controls of its own: the agency holds its own
+registrations for the outside tools its merchants connect, a merchant's own account credentials remain
+scoped to that merchant's store, and the agency's consequential settings — pricing, billing credentials,
+integration credentials — require a fresh confirmation code rather than a live session. Those controls
+are described for operators in [Running your own platform](/agencies#connected-tools).
+
 ## Shared responsibility
 
 The platform secures the infrastructure and the boundaries; you secure how your integration uses it. The

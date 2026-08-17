@@ -264,6 +264,17 @@ take purchase orders and invoice immediately; the verified badge and directory l
 review described above.
 </Note>
 
+### Merchants buying from each other
+
+A wholesaler on your platform can sell to the retailers on it. A buyer account can be linked to the
+buying merchant's own store, so a retailer you onboarded orders from a wholesaler you onboarded, and
+sees their own quotes, purchase orders and payables from inside their own admin.
+
+This grows with your platform rather than needing anything switched on for it: each additional
+wholesaler is another source your retailers can buy from, and each additional retailer is another
+buyer for your wholesalers. Both sides stay separate businesses with their own catalogues, pricing and
+credit terms — the wholesaler prices per buyer as they would for anyone else.
+
 ---
 
 ## Your plans, your prices
@@ -412,6 +423,48 @@ bill a second time when the merchant spends them.
 
 ---
 
+## Connected tools
+
+Marketing, accounting, catalogue sync and advertising are connected with an app registration held by
+whoever runs the platform. Register your own and every merchant you onboard connects through it: the
+provider's approval screen names your platform, and the connection appears in your provider account
+rather than anyone else's.
+
+Configure these under **Integrations** in your dashboard. Each one shows the redirect URL — and, where
+the provider needs one, the webhook URL — to paste into the app you create at that provider. The URLs
+are derived from your own domain, so there is nothing to compose by hand.
+
+**A tool you have not configured is not offered to your merchants.** It does not fall back to the
+underlying platform's registration, because a merchant completing that flow would see a name you never
+chose, on a screen you cannot change. The same applies while you are still setting one up: an
+integration stays off until you switch it on, so a merchant never meets a half-configured option.
+
+**Your merchants' own logins stay theirs.** You supply the app registration; each merchant authorises
+their own account through it, and the resulting access is stored per store and encrypted. One
+merchant's connection is never reachable from another's.
+
+### Advertising
+
+Google Ads and Meta Ads work the same way with one material difference: both providers approve an
+advertising developer account **directly with you**, and both review that application. Google issues a
+developer token against your own manager account; Meta requires app review and business verification.
+Neither is a setting to switch on, and the wait is theirs rather than ours.
+
+Until you hold your own, advertising is not offered to your merchants. That is deliberate — a
+developer token carries the quota and compliance standing of whoever registered it, and a manager
+account is visible in the merchant's own advertising dashboard whatever the approval screen said. There
+is no arrangement where advertising runs on someone else's registration and still looks like yours.
+
+### Changing a credential
+
+Saving or removing a credential asks for a confirmation code sent to you, the same as a pricing change.
+A credential decides which third party receives your merchants' commerce data, and swapping one
+redirects that flow without anything in a merchant's experience changing — so it is not a write that
+should rest on a live session alone.
+
+Removing a credential deletes it and stops the integration being offered. Merchants who had already
+connected reconnect once you configure it again.
+
 ## Your own apps
 
 Your market needs something Galactic Core does not ship — a local payment method, a regional courier,
@@ -478,6 +531,48 @@ A period already billed does not reopen. An execution arriving after a month has
 added to it retrospectively.
 
 ---
+
+## Growing the platform
+
+Your merchants are ordinary stores that carry your label. They keep their own catalogues, stock,
+storefronts and caches, so a platform with three hundred merchants is three hundred stores' worth of
+load rather than a new class of problem — and one busy merchant does not contend with another for the
+same rows. That is the difference between an operated platform and a marketplace, where many sellers do
+share a single storefront; see [Marketplaces at Scale](/how-gc-works/marketplace-scale) if you run one
+of those as well.
+
+Three things do behave differently once your book is large.
+
+**Your own reporting spans everything you own.** A merchant's screens read their own store. Your client
+list, your usage figures and your monthly bill read every merchant at once, so those are the queries
+that grow with your platform rather than with any one client's trading. They are indexed for that shape
+deliberately, and the monthly close is the one to know about because it touches every merchant's usage
+for the period.
+
+**One merchant can move to dedicated infrastructure and stay yours.** If a single client outgrows shared
+capacity, that store moves to its own database and API layer while remaining on your platform: your
+plan, your billing, your brand, your relationship. Nothing changes for your other merchants, and you do
+not move the whole book to accommodate one client. The mechanics are in
+[Scaling & Reliability](/how-gc-works/scaling-reliability).
+
+**A connected tool you supply is shared by everyone who uses it.** When your merchants connect through
+your own marketing or catalogue account, the provider counts the traffic against that account — so an
+unusually busy period at one merchant can reach the provider's limit for all of them. Where that happens
+the work is retried rather than dropped: hitting a provider's rate limit delays a sync, it does not
+discard it. If you expect sustained volume across many merchants, ask the provider about your account's
+limits before you rely on it.
+
+## Running a marketplace as well
+
+If you want a single storefront where your merchants sell alongside each other — one catalogue, one
+checkout, commission on each sale — that is a marketplace, and it runs on the same platform you are
+already on. Your existing merchants become its sellers; their catalogues, orders and customers stay
+where they are. What it takes is enabling marketplace mode and setting your commission and payout
+terms, not moving any data.
+
+A marketplace and a white-label platform are separate modes, so running both side by side means a
+second deployment rather than one carrying both. Talk to us about which shape fits — the difference is
+whether your merchants sell under their own storefronts or share yours.
 
 ## Isolation
 
