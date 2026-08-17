@@ -45,6 +45,13 @@ graph TD
 Edge compute, cache and replicas carry the load; the primary database sees only writes and genuine cold
 reads.
 
+<Note>
+  **Stores on a platform operated by an agency** scale exactly as described here — they are ordinary
+  stores. What differs is the agency's own reporting, which spans every merchant it owns, and the option
+  to move a single large merchant to its own deployment without moving the rest. See
+  [Growing the platform](/agencies#growing-the-platform).
+</Note>
+
 ## Limits on load
 
 Limits are enforced at the edge, before a request reaches the workers or the database.
