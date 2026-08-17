@@ -175,6 +175,60 @@ app.post('/gc/tax', express.raw({ type: 'application/json' }), (req, res) => {
 
 ---
 
+## Receiving callbacks from a provider
+
+Some providers do not answer immediately. A mobile-money charge, a bank transfer, or an identity check
+finishes later and notifies you by posting to a URL. Every extension has one for this:
+
+```
+POST https://api.tybritelabs.com/v1/extensions/{extension_id}/callback/{callback_token}
+```
+
+Generate it in **Integrations → Extensions** on the extension itself, then give it to your provider as
+their webhook or callback URL. The token appears once when you generate it and is stored only as a hash,
+so a lost URL is replaced by generating a new one rather than looked up — generating again immediately
+invalidates the previous URL, which is also how you revoke one that has leaked.
+
+When a provider posts to it, Galactic Core authenticates the request, then invokes your extension with the
+provider's payload as `input.callback` and `operation` set to `callback`. What happens next depends on your
+execution mode:
+
+- **Remote** — the payload is forwarded to your `endpoint_url` as a **signed** Galactic Core dispatch, with
+  the same headers and verification rules as any other remote call. Your endpoint verifies a request from
+  Galactic Core rather than an unauthenticated one from the provider.
+- **Hosted** — your handler is invoked with the payload directly.
+
+### Choosing how the callback is authenticated
+
+A public URL that runs your code needs to prove who is calling it, and providers differ in what they can
+offer. Three modes, configured per extension:
+
+| Mode | Requires | Use when |
+| :--- | :--- | :--- |
+| `token` | Nothing beyond the URL secret. | The provider signs nothing and publishes no fixed addresses. |
+| `hmac` | The provider's signature header and its signing secret. | The provider signs its callbacks — most card processors. |
+| `ip` | A list of the provider's source ranges in CIDR form. | The provider does not sign but posts from documented addresses. |
+
+With `hmac`, the signature is verified against the raw body before your code runs, and a request arriving
+**without** the header is rejected rather than allowed through — the same rule that governs remote dispatch
+in reverse. Bare digests, `sha256=…`, and `t=…,v1=…` header formats are all accepted.
+
+Every rejected callback is recorded in the extension's run log with the reason, so a provider
+misconfiguration is visible rather than silent.
+
+<Note>
+  **Acknowledgement is immediate.** The endpoint answers as soon as the request is authenticated and
+  recorded, before your handler finishes. Providers re-deliver when a response is slow, so waiting on your
+  code would invite duplicate deliveries. Your handler's return value is applied through the normal
+  provider contract, and money-bearing results are revalidated server-side — a callback asserting that a
+  payment succeeded does not by itself settle an order.
+
+  **Limits:** 120 callbacks per minute per extension, and a request body up to 128 KB. A callback counts as
+  one invocation.
+</Note>
+
+---
+
 ## Provider contracts
 
 Each interface operation receives an `input` (with an `operation` discriminator where it has more than one) and must return the shape below. This is the same whether you run hosted or remote. Money-bearing returns (payment status, rate amounts) are **revalidated server-side** — see [Safety](#safety).
