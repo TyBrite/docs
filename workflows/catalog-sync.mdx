@@ -291,6 +291,10 @@ readable at a stable public URL with no key required, so any system can pull it 
 scheduled sync, a partner integration, a script. Only storefront-safe fields are exposed, never cost
 or margin.
 
+The SDK call below abstracts the host away; the dashboard shows the full URL to copy, and where the
+store belongs to an operated platform that URL carries the platform's own host — see
+[Publish your own catalog](/ingestion#publish-your-own-catalog-outbound-feed).
+
 ```typescript
 const feed = await server.ingestion.getStoreCatalogFeedJson({
   store: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61', // store id or short store code

@@ -465,6 +465,39 @@ should rest on a live session alone.
 Removing a credential deletes it and stops the integration being offered. Merchants who had already
 connected reconnect once you configure it again.
 
+## Your API, on your own domain
+
+Every platform is given an API host of its own — `api.yourplatform.gc.tybritelabs.com` by default, or
+your own `api.yourbrand.com` added through Domains. It is provisioned when your platform is created, so
+there is nothing to enable.
+
+**This matters most for the URLs your merchants hand to somebody else.** A merchant publishing a
+[catalogue feed](/ingestion#publish-your-own-catalog-outbound-feed) pastes that URL into Google
+Merchant Center or a partner's importer; a merchant connecting a payment provider pastes a
+[callback URL](/extensions) into that provider's dashboard. Those outlive any screen, so they carry
+your host rather than ours. Nothing else about them changes — the same token
+guards the same feed, and the request is authenticated identically.
+
+Your host serves the whole API, not only those URLs, which makes it a foundation rather than a cosmetic
+detail:
+
+- **Publish the API specification as your own.** Turn it on under **Integrations → Your API
+  specification** and your platform serves its own OpenAPI document at `/openapi.yaml` on your host,
+  generated from the live API so it never describes something we do not serve. We email you the URL and
+  a ready-made GitHub Actions workflow when you enable it.
+- **Ship your own client library.** Generate one from that specification with the workflow above, or take
+  the existing SDK and set its base URL — it is a single value, not a hardcoded host. **You publish it**,
+  from your own repository with your own npm token: we never hold a credential that could release code
+  under your name.
+- **Document it as your API**, because it behaves identically. It is the same endpoint.
+
+<Note>
+  **What stays as it is.** Request signature headers, key prefixes and the environment header keep their
+  names. Renaming them would break every integration already written against them, and a developer
+  reading a header name is inside the integration rather than choosing a platform. Your merchants' keys,
+  tokens and quotas are unchanged — the host is where the request arrives, not what authorises it.
+</Note>
+
 ## Your own apps
 
 Your market needs something Galactic Core does not ship — a local payment method, a regional courier,
