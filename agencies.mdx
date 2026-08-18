@@ -485,10 +485,20 @@ detail:
   specification** and your platform serves its own OpenAPI document at `/openapi.yaml` on your host,
   generated from the live API so it never describes something we do not serve. We email you the URL and
   a ready-made GitHub Actions workflow when you enable it.
+- **Write what it says.** The document's title, its opening description, the support address and page,
+  the terms page, and the sentence telling developers where to get their API keys are all yours. You set
+  them once under the same section and they are applied to every copy served, so there is no file to
+  download and edit each time the API changes. Every field is optional and starts from a default built
+  from your brand name, so the document reads coherently before you touch any of them.
 - **Ship your own client library.** Generate one from that specification with the workflow above, or take
   the existing SDK and set its base URL — it is a single value, not a hardcoded host. **You publish it**,
   from your own repository with your own npm token: we never hold a credential that could release code
   under your name.
+- **Keep it current on a schedule.** The workflow we email you fetches your specification, regenerates the
+  client from it and publishes the result — weekly, and on demand whenever you trigger it. It runs in your
+  repository, on your runners, with your own npm token in `NPM_TOKEN`; the only thing it takes from us is
+  the specification URL. Change the schedule, or drop the trigger and keep the manual run, if you would
+  rather decide when a release happens.
 - **Document it as your API**, because it behaves identically. It is the same endpoint.
 
 <Note>
