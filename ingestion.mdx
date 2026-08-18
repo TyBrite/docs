@@ -367,7 +367,17 @@ https://api.tybritelabs.com/v1/feeds/{store}/products.json
 https://api.tybritelabs.com/v1/feeds/{store}/products.xml
 ```
 
-`{store}` is your store id or short store code. The feed contains only storefront-safe fields
+`{store}` is your store id or short store code.
+
+<Note>
+  **On a store belonging to an operated platform, the host is that platform's own.** The dashboard shows
+  the URL to copy, and where the store belongs to an agency it reads `https://api.theirplatform.com/v1/feeds/…`
+  rather than the address above — a feed URL is pasted into Google Merchant Center or a partner's system,
+  where it outlives the screen it came from. The path, the formats and the token all behave identically.
+  See [Running your own platform](/agencies#your-api-on-your-own-domain).
+</Note>
+
+The feed contains only storefront-safe fields
 (**never** cost or margins) and includes each product's **rich media gallery** and its
 **published specifications**:
 
