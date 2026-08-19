@@ -42,6 +42,15 @@ const specs = await storefront.products.getProductSpecifications({ id: '9a47e047
 ```
 
 ```typescript
+// The merchant's OWN fields on a product — whatever they chose to record beyond the
+// built-in attributes. Only fields they published are returned, and the set differs per
+// store, so render what comes back rather than reading fixed keys.
+const { custom_fields } = await storefront.products.getProductCustomFields({ id: '02525ff5-0916-4f00-857c-c2c6237e671b' });
+// → [{ field_name: 'care_instructions', field_label: 'Care instructions', field_type: 'text', value: 'Machine wash at 30' }]
+// See /custom-fields for the types and the records that carry them.
+```
+
+```typescript
 // All specs across the catalog (admin-style export / spec search). Each row carries
 // the variant_id it belongs to (specs are variant-keyed).
 const allSpecs = await storefront.products.listProductSpecifications({ limit: 50 });

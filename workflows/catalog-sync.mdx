@@ -284,6 +284,32 @@ const csv = await server.ingestion.ingestProducts({
 // → { status: "success", format: "csv", summary: { rows_total: 1, rows_created: 1, rows_failed: 0 }, errors: [] }
 ```
 
+### Carrying your own columns
+
+A feed is not limited to the fields above. A column that matches the **label** of a
+[custom field](/custom-fields) defined on products for the store is recorded on the product; anything
+else is ignored, so extra columns are safe to leave in.
+
+```typescript
+await server.ingestion.ingestProducts({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    products: [{
+      sku: 'GTS-INGEST-BTL-01',
+      name: 'Trail Bottle 750ml',
+      category: 'Sports Equipment',
+      price: 24.99,
+      Fabric: 'Recycled steel',          // matches a field labelled "Fabric"
+      'Country of origin': 'Portugal',   // matches a field labelled "Country of origin"
+    }],
+  },
+});
+```
+
+The field has to exist first — a feed fills fields, it does not create them. They are defined in admin
+under Settings → Custom Fields, and an update refreshes them along with everything else, so the feed
+stays the source of truth for those values too.
+
 ## 4. Publishing the catalog back out
 
 The inverse direction. Opting in under admin → Catalog Sync → "Publish my catalog" makes the catalog
