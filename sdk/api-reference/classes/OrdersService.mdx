@@ -55,6 +55,10 @@ const order = await client.orders.createOrder({
 
 ## Core Operations
 
+<Note>
+  An order and each of its line items carry a `custom_fields` array — fields the merchant defined themselves, such as a buyer's purchase-order number. `createOrder` accepts values for them at checkout. See [Custom Fields](/custom-fields).
+</Note>
+
 ### `listOrders`
 
 Retrieve a paginated list of your store's orders, newest first. Use this to build order dashboards, fulfillment queues, or customer order history — anywhere you need to browse orders without already knowing an order ID.

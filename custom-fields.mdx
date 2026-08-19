@@ -1,0 +1,104 @@
+---
+title: "Custom Fields"
+description: "Record information Galactic Core does not define — on products, orders, customers and more — and read it back through the API with its type and label intact."
+---
+
+# Custom Fields
+
+A merchant can define fields Galactic Core does not: a buyer's purchase-order number on an order, a fabric composition on a product, a VAT registration on a customer. The field is defined once in their dashboard and then appears on every record of that kind, in their exports, and here in the API.
+
+For a storefront this is the answer to "the merchant needs to show something we did not model". Rather than an escape-hatch text blob, each field arrives with a label to display and a type describing the shape of its value.
+
+## Where custom fields appear
+
+| Record | How to read them | Write |
+|---|---|---|
+| **Product** | [`products.getProductCustomFields`](/sdk/api-reference/classes/ProductsService#getproductcustomfields) | Merchant's dashboard, catalogue import, or [catalogue ingestion](/ingestion) |
+| **Order** | `custom_fields` on [`orders.getOrder`](/sdk/api-reference/classes/OrdersService#getorder) | [`orders.createOrder`](/sdk/api-reference/classes/OrdersService#createorder) — see [Sending values with an order](#sending-values-with-an-order) |
+| **Order line** | `custom_fields` on each entry of the order's `items` | Merchant's dashboard |
+| **Customer** | `custom_fields` on [`customers.getCustomer`](/sdk/api-reference/classes/CustomersService#getcustomer) | Merchant's dashboard |
+| **Return** | `custom_fields` on `returns.getReturn` ([Returns](/sdk/api-reference/classes/ReturnsService)) | Merchant's dashboard |
+
+The order is the only record a storefront writes to. Everywhere else the merchant fills the value in their own admin and you read it back.
+
+A merchant can also define fields on records that have no storefront surface — suppliers, expenses, in-store sales and wholesale buyer accounts. Those stay in their admin and their exports; they are not part of this API.
+
+## Reading a product's fields
+
+```typescript
+const { custom_fields } = await client.products.getProductCustomFields({
+  id: '02525ff5-0916-4f00-857c-c2c6237e671b'
+});
+
+for (const field of custom_fields) {
+  console.log(field.field_label, field.value);
+}
+```
+
+```json Response
+{
+  "custom_fields": [
+    {
+      "field_name": "care_instructions",
+      "field_label": "Care instructions",
+      "field_type": "text",
+      "unit_type": null,
+      "value": "Machine wash at 30"
+    }
+  ]
+}
+```
+
+Published fields also appear on a customer, an order, each order line and a return, as a `custom_fields` array on the record itself.
+
+## Rendering a field you have never seen
+
+The merchant controls both the names and how many exist, so treat the array as data rather than a fixed shape. `field_label` is the string to show; `field_name` is stable across label edits and is what to key off in code.
+
+`field_type` tells you the shape of `value`:
+
+| Type | Value arrives as |
+|---|---|
+| `text`, `textarea` | a string |
+| `number` | a number, not a numeric string |
+| `boolean` | `true` or `false` |
+| `date` | an ISO date string |
+| `select` | one of the merchant's choices, as a string |
+| `multiselect` | an array of strings |
+| `json`, `dimensions`, `weight` | an object |
+
+`value` is `null` when the merchant defined the field but has not filled it on this record, which is different from the field not existing. `unit_type` carries a unit where the merchant set one.
+
+## Sending values with an order
+
+A storefront can capture a field at checkout and send it with the order — the usual route for a buyer's own reference on a wholesale order:
+
+```typescript
+await client.orders.createOrder({
+  requestBody: {
+    /* …the rest of the order… */
+    custom_fields: {
+      buyer_po: 'PO-2026-0819',
+      priority: 'Express'
+    }
+  }
+});
+```
+
+Values are validated against the merchant's definitions: a name that is not defined, a value outside a `select` field's choices, or a number that will not parse is rejected.
+
+<Note>
+  A rejected value does **not** fail the order. Payment has been taken by the time the values are
+  recorded, so the order is created and the reason is returned in `post_processing_warnings`. Read that
+  array if you need to tell the shopper a reference was not saved.
+</Note>
+
+## What you will not see
+
+Only fields the merchant **published** are returned. A custom field can hold a cost, a supplier reference or an internal note, so a field is private unless it is explicitly marked otherwise — and a private field is absent from the response rather than present and empty.
+
+The authoring detail behind a field — its validation rules, its display order, whether it is required, who defined it — stays in the merchant's dashboard. What reaches you is what is needed to render the value.
+
+## Discovering which fields exist
+
+There is no endpoint that lists definitions on their own. Read a record: the array carries every published field for that kind of record, including ones with no value yet, which is enough to build a form or a specification table without knowing the merchant's setup in advance.
