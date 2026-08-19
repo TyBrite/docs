@@ -2479,6 +2479,69 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/products/{id}/custom-fields:
+    get:
+      operationId: getProductCustomFields
+      tags:
+        - Products
+      summary: Get a product's custom fields
+      description: |
+        Returns the merchant's own custom fields for a single product, with their values.
+
+        A merchant can define fields that Galactic Core does not have — a care instruction, a country of
+        origin, a fabric composition — and fill them per product. Each definition carries a type, so a
+        number arrives as a number and a multi-select as an array rather than as text.
+
+        **Only fields the merchant published are returned.** A custom field can hold a cost, a margin note
+        or an internal reference, so a field is private unless the merchant marks it public; private fields
+        are absent from this response rather than empty. A product with no published fields returns an empty
+        array, which is not an error.
+
+        Because the merchant controls both the field names and how many exist, treat the array as data to
+        render rather than a fixed shape: read `field_label` for a heading and `field_type` to decide how to
+        display `value`.
+
+        Read access — works with a publishable or secret key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The product UUID whose custom fields to fetch.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved the product's published custom fields
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  custom_fields:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomFieldValue'
+              example:
+                custom_fields:
+                  - field_name: care_instructions
+                    field_label: Care instructions
+                    field_type: text
+                    unit_type: null
+                    value: Machine wash at 30
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/product-specifications:
     get:
       operationId: listProductSpecifications
@@ -3695,6 +3758,25 @@ paths:
                   type: string
                   description: External payment reference (e.g., Stripe charge ID, M-Pesa receipt)
                   example: ch_1NqFvE2eZvKYlo2C8Z3y4abc
+                custom_fields:
+                  type:
+                    - object
+                    - 'null'
+                  description: |
+                    Values for the merchant's own custom fields on this order, as
+                    `{ field_name: value }`. Use this to carry a reference the merchant asked for at
+                    checkout — a buyer's purchase-order number, a cost centre, a delivery instruction.
+
+                    Each value is validated against the merchant's definition: a name that is not defined,
+                    a value outside a `select` field's options, or a number that will not parse is
+                    **rejected**. A rejected field does **not** fail the order — the order is created and
+                    the reason is returned in `post_processing_warnings`, because the payment has already
+                    been taken by that point. Read `GET /v1/products/{id}/custom-fields` or the order
+                    response's `custom_fields` to discover which fields a merchant has defined.
+                  additionalProperties: true
+                  example:
+                    buyer_po: PO-2026-0819
+                    priority: Express
                 shipping_metadata:
                   type:
                     - object
@@ -20186,6 +20268,48 @@ components:
           description: Array of product variants (only present for multi-variant products in detail endpoints)
           items:
             $ref: '#/components/schemas/ProductVariant'
+    CustomFieldValue:
+      type: object
+      description: |
+        One merchant-defined field and its value on a record. Definitions are authored by the merchant (or by
+        their platform operator), so the set varies per store and per entity.
+      properties:
+        field_name:
+          type: string
+          description: The machine name. Stable across edits to the label, so this is the one to key off in code.
+          example: buyer_po
+        field_label:
+          type: string
+          description: What the merchant calls this field. The string to display.
+          example: Buyer PO number
+        field_type:
+          type: string
+          enum:
+            - text
+            - textarea
+            - number
+            - boolean
+            - select
+            - multiselect
+            - date
+            - json
+            - dimensions
+            - weight
+          description: |
+            The shape of `value`: `multiselect` is an array of strings; `json`, `dimensions` and `weight` are
+            objects; the rest are scalars, and a `number` arrives as a number rather than as text.
+          example: text
+        unit_type:
+          type:
+            - string
+            - 'null'
+          description: The unit a numeric or measurement field is expressed in, when the merchant set one.
+          example: null
+        value:
+          description: |
+            The stored value, in the shape implied by `field_type`. Null when the field is defined but has no
+            value on this record — which is distinct from the field not existing.
+          example: PO-2026-0819
     ProductCollection:
       type: object
       properties:
@@ -20349,6 +20473,13 @@ components:
         id:
           type: string
           format: uuid
+        custom_fields:
+          type: array
+          description: |
+            Per-line fields the merchant defined — a personalisation or engraving carried on this line rather than on the order. Only fields the merchant published appear here; the merchant controls the names and how many
+            exist, so render the array rather than reading fixed keys.
+          items:
+            $ref: '#/components/schemas/CustomFieldValue'
         product_id:
           type: string
           format: uuid
@@ -20521,6 +20652,17 @@ components:
             first, so it reads as a timeline. Internal notes are never included.
           items:
             $ref: '#/components/schemas/OrderStatusNote'
+        custom_fields:
+          type: array
+          description: |
+            The merchant's own fields on this order, with their values — a buyer's purchase-order number, a
+            cost centre, whatever the merchant defined. Only fields the merchant published appear here; one
+            holding an internal note or a cost stays in the admin. Empty when the merchant has defined none.
+
+            The merchant controls the names and how many exist, so render the array rather than reading fixed
+            keys: `field_label` is the heading to show, and `field_type` gives the shape of `value`.
+          items:
+            $ref: '#/components/schemas/CustomFieldValue'
         notes:
           type: string
         tracking_number:
@@ -21081,6 +21223,14 @@ components:
           enum:
             - active
             - inactive
+        custom_fields:
+          type: array
+          description: |
+            The merchant's own fields on this record, with their values. Only fields the merchant published
+            appear here. The merchant controls the names and how many exist, so render the array rather than
+            reading fixed keys.
+          items:
+            $ref: '#/components/schemas/CustomFieldValue'
         tier:
           type: string
           description: |
@@ -22762,6 +22912,13 @@ components:
         id:
           type: string
           format: uuid
+        custom_fields:
+          type: array
+          description: |
+            The merchant's own fields on this return — an RMA number, a carrier reference. Only fields the merchant published appear here; the merchant controls the names and how many
+            exist, so render the array rather than reading fixed keys.
+          items:
+            $ref: '#/components/schemas/CustomFieldValue'
           example: 4a5b6c7d-8e9f-0123-4567-89abcdef0123
         return_number:
           type: string
