@@ -200,6 +200,33 @@ CSV follows standard quoting rules, so commas and newlines inside quoted fields 
 | `threshold` | — | Low-stock threshold. |
 | `barcode` / `barcode_type` | — | Barcode value and symbology. Common spellings are normalized (e.g. `UPC` → `UPC_A`); unknown values fall back to `CODE128`. |
 
+### Your own columns
+
+A column that is not in the table above is matched against the [custom fields](/custom-fields) defined on
+products for your store, by the field's **label** — the name shown in the dashboard, which is what you
+would have called the column. A match records the value on the product; anything else is ignored, so a
+feed carrying extra columns behaves exactly as it did before.
+
+```json
+{
+  "sku": "TEE-CLASSIC-M",
+  "name": "Classic Tee",
+  "category": "Apparel",
+  "price": 24.99,
+  "Fabric": "Organic cotton",
+  "Country of origin": "Portugal"
+}
+```
+
+Here `Fabric` and `Country of origin` land on the product if fields with those labels exist. Values are
+written after the product itself, and on an update they are refreshed along with everything else, so a
+feed stays the source of truth for them.
+
+<Note>
+  The field has to exist before a feed can fill it. Fields are created in the dashboard under
+  **Settings → Custom Fields**, not by a feed — a new column does not define a new field.
+</Note>
+
 ---
 
 ## Response shape

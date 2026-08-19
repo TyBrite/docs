@@ -348,6 +348,10 @@ for (const item of detail.items) {
 
 When a merchant resolves a return by offering **store credit** instead of a refund, the return carries a `credit_offer` (`{ status, amount }`). While `credit_offer.status` is `pending`, the shopper can accept the credit or ask for a refund instead. Accepted store credit lands in the customer's balance and can be spent at checkout.
 
+<Note>
+  A return carries a `custom_fields` array — fields the merchant defined themselves, such as an RMA number. See [Custom Fields](/custom-fields).
+</Note>
+
 ### `getStoreCredit(options)`
 
 The signed-in customer's total redeemable store credit balance.

@@ -344,6 +344,51 @@ const { specification_data } = await client.products.getProductSpecifications({
   the catalog (each tagged with its `variant_id`), use `listProductSpecifications`.
 </Note>
 
+### `getProductCustomFields`
+
+Retrieve the merchant's own custom fields for a product. A merchant can define fields Galactic Core does
+not — a care instruction, a country of origin, a fabric composition — and fill them per product.
+
+Only fields the merchant published are returned. A custom field can hold a cost or an internal reference,
+so a field is private unless it is explicitly marked public, and a private field is absent rather than
+empty. A product with no published fields returns an empty array.
+
+```typescript
+const { custom_fields } = await client.products.getProductCustomFields({
+  id: '02525ff5-0916-4f00-857c-c2c6237e671b'
+});
+
+for (const field of custom_fields) {
+  console.log(field.field_label, field.value); // "Care instructions" "Machine wash at 30"
+}
+```
+
+```json Response
+{
+  "custom_fields": [
+    {
+      "field_name": "care_instructions",
+      "field_label": "Care instructions",
+      "field_type": "text",
+      "unit_type": null,
+      "value": "Machine wash at 30"
+    }
+  ]
+}
+```
+
+The merchant controls both the field names and how many exist, so render the array rather than reading
+fixed keys. See [Custom Fields](/custom-fields) for the full picture — which records carry them, what each
+type looks like, and how to send values with an order. `field_type` tells you the shape of `value`: `multiselect` is an array of strings, `json`,
+`dimensions` and `weight` are objects, and the rest are scalars — a `number` field arrives as a number,
+not as text. `field_label` is what the merchant calls the field and is the string to show; `field_name`
+is stable across label edits and is the one to key off in code.
+
+<Note>
+  `value` is `null` when the merchant defined a field but has not filled it for this product, which is
+  distinct from the field not existing.
+</Note>
+
 ### `listProductSpecifications`
 
 Browse specifications across the catalog rather than fetching one variant's. Useful for building a
