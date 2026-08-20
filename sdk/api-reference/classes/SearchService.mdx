@@ -160,6 +160,50 @@ const result = await personalized.search.semanticSearch({
 //   re-ranked to blend query relevance with this shopper's preference signal.
 ```
 
+## Merchandising
+
+A merchant can place results deliberately for a query or a family of queries, from their own admin.
+There is nothing to request or configure on the client — the order you receive already reflects it, and
+a store with no rules behaves exactly as it did before.
+
+| Action | Effect |
+| :--- | :--- |
+| **Pin** | The product is placed at the top of the results for that query. |
+| **Bury** | The product drops to the bottom, without being removed. |
+| **Boost** | The product lifts past its near neighbours, but does not jump the queue. |
+
+A rule matches a query either exactly or by substring, can be limited to a date range, and carries a
+priority that decides the winner where two rules overlap. Each rule can name up to twenty products.
+
+**Rules reorder; they never conjure.** They are applied after ranking and only to products the query
+already matched, so a rule cannot introduce an unrelated product, and a pinned product that has been
+deleted, taken offline, or is otherwise not sellable simply does not appear. Nothing a merchant hides
+becomes visible through a pin.
+
+One consequence is worth building for: a pinned product is fetched and merged in even if it ranked
+below the page you asked for, because "float it to the top" would otherwise do nothing for exactly the
+products a merchant most wants pinned. The `limit` you asked for is still honoured.
+
+Pinned and boosted results carry a `matchReason` of **`Featured by the store`**. That is the signal to
+build against if you want to distinguish a deliberate placement from an earned one:
+
+```typescript
+const { results } = await client.search.searchProducts({ q: 'headphones' });
+
+results.forEach((r) => {
+  const featured = r.matchReason === 'Featured by the store';
+  console.log(`${r.name}${featured ? '  (featured)' : ''}`);
+});
+```
+
+<Note>
+  Merchandising rules are authored in the merchant's admin, not through this API — placing your own
+  products in someone's search results is not something an integration should be able to do. The API
+  reflects the merchant's decisions; it does not set them.
+</Note>
+
+---
+
 ## Comparison: Text vs. Semantic
 
 | Feature | `searchProducts` (Text) | `semanticSearch` (AI) |
