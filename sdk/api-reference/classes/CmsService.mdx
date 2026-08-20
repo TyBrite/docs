@@ -131,6 +131,13 @@ product collection that backs the lookbook, or `null` if it is standalone. The g
 `images[]`, where each image has a `url` and a `hotspots[]` array tagging the products featured at
 specific points in the photo (your "Shop the Look" markers).
 
+A hotspot gives `x` and `y` as percentages of the image's width and height from the top-left, so the
+marker lands correctly at any display size, plus an optional `label` and the resolved `product`. The
+product carries **`variant_id`** — pass that to `client.cartWishlist.addToCart`, which is keyed by
+variant rather than product, so a marker can be added to a basket without a second call. Send a shopper
+who wants a different size or colour to the product page instead. A hotspot whose product is no longer
+available is omitted from the response, so an image can return fewer hotspots than were authored.
+
 ```typescript
 const lookbook = await client.cms.getLookbook({
   slug: 'workspace-essentials',
@@ -139,7 +146,10 @@ const lookbook = await client.cms.getLookbook({
 
 // Render each gallery image and its shoppable hotspots
 lookbook.images.forEach(image => {
-  console.log(`Image: ${image.url} — ${image.hotspots.length} hotspot(s)`);
+  image.hotspots.forEach(({ x, y, label, product }) => {
+    // x and y are percentages, so position the marker directly.
+    console.log(`${label ?? product.name} at ${x}%/${y}% — add ${product.variant_id} to cart`);
+  });
 });
 ```
 
@@ -153,7 +163,27 @@ lookbook.images.forEach(image => {
   "collection_id": null,
   "published_at": "2026-06-19T11:00:52.880415+00:00",
   "images": [
-    { "url": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80", "hotspots": [] },
+    {
+      "url": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80",
+      "hotspots": [
+        {
+          "x": 24.13,
+          "y": 15.6,
+          "label": "Sony WH-1000XM4",
+          "product": {
+            "product_id": "a089d1da-baa6-4ed7-8e71-64872e3a68a3",
+            "variant_id": "69bd79e5-8cd1-41e2-ab8f-6c0397022928",
+            "name": "Sony WH-1000XM4",
+            "variant_name": "Variant 1",
+            "sku": "SNY-WH1000XM4",
+            "price": 369.99,
+            "sale_price": null,
+            "image": "https://cdn.tybritelabs.com/products/sony-wh1000xm4.jpg",
+            "stock": 12
+          }
+        }
+      ]
+    },
     { "url": "https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=1200&q=80", "hotspots": [] }
   ]
 }
