@@ -19385,6 +19385,29 @@ components:
                 - string
                 - 'null'
               description: URL of the store's logo, or null if not set.
+            logo_variants:
+              type: object
+              description: 'The same brand in the forms a storefront needs, keyed by the placement each mark is drawn for. A full-colour lockup is unreadable at favicon size and a dark-ink wordmark disappears on a dark header, so rendering one file everywhere means recolouring or shrinking it. Every variant is optional: this is an empty object when the merchant has supplied none, so it can be indexed without a guard, and `logo_url` remains the primary mark either way. Fall back to `logo_url` for any placement that is absent.'
+              additionalProperties:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    description: URL of this mark.
+                  usage_note:
+                    type:
+                      - string
+                      - 'null'
+                    description: The merchant's own guidance for this mark — clear space, backgrounds to avoid — or null if they gave none.
+                required:
+                  - url
+              example:
+                dark_bg:
+                  url: https://cdn.example.com/stores/acme/logo-light-ink.png
+                  usage_note: Keep clear space equal to the height of the mark.
+                icon:
+                  url: https://cdn.example.com/stores/acme/icon.png
+                  usage_note: null
             description:
               type:
                 - string
