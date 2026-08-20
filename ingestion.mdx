@@ -25,6 +25,17 @@ Ingestion is the path for a catalog that lives somewhere else and is mirrored in
 
 Ingestion is a **merchant-side write** for keeping a catalog up to date, which is why it sits outside the otherwise storefront-facing API and carries stricter authentication than any other write.
 
+### Selling on a marketplace
+
+Nothing changes. A merchant whose store is part of a marketplace pushes their catalog exactly as any
+other merchant does, with their own store's secret key, and their products appear on the marketplace
+storefront alongside everyone else's once the store is approved.
+
+The marketplace listing is a **read** over the same catalog — approved stores, aggregated — so there is
+no separate marketplace feed, no marketplace ingestion endpoint, and nothing extra to configure. An
+operator key is refused with `403` — ingestion is store-scoped, because a catalog belongs to the
+merchant who owns it rather than to the marketplace that lists it.
+
 ---
 
 ## Quick start
@@ -446,7 +457,7 @@ A token added in the dashboard and appended as `?token=…` keeps a feed semi-pr
 | `200` | Batch processed — may be a full or partial success. Inspect `summary` and `errors`. |
 | `400` | Unparseable body, unknown format, or no rows. |
 | `401` | Missing/invalid secret key, or a missing/invalid request signature. |
-| `403` | A publishable key was used — ingestion requires a secret key. |
+| `403` | A publishable key was used — ingestion requires a secret key. An operator key is refused here too: ingestion is store-scoped. |
 | `409` | `Idempotency-Key` reused with a different request body. |
 | `422` | Every row failed validation; nothing was written. |
 | `429` | Rate limit exceeded. |
