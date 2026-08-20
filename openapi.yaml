@@ -21947,12 +21947,116 @@ components:
           format: date-time
         products:
           type: array
+          description: Products embedded in the post body, in the order the author placed them. `block_id` ties an embed to the content block it belongs beside, and `display_type` is how the author chose to show it. Each entry arrives with the product already resolved, and an embed whose product is no longer available is omitted, so a post can return fewer products than were authored.
           items:
             type: object
+            properties:
+              embed_id:
+                type: string
+                format: uuid
+                description: Identifies this placement, not the product.
+              block_id:
+                type:
+                  - string
+                  - 'null'
+                description: The content block this embed sits with, when the author anchored it to one.
+              display_type:
+                type:
+                  - string
+                  - 'null'
+                description: How the author chose to present it, for example a card or an inline mention.
+              position:
+                type:
+                  - integer
+                  - 'null'
+              product_id:
+                type: string
+                format: uuid
+              variant_id:
+                type:
+                  - string
+                  - 'null'
+                description: The product's default variant — pass this to `POST /v1/cart/items`, which is keyed by variant rather than product, so an embedded product can be added to a basket without a second call. Its price, image and stock are the ones given here.
+              name:
+                type: string
+              variant_name:
+                type:
+                  - string
+                  - 'null'
+              sku:
+                type:
+                  - string
+                  - 'null'
+              price:
+                type: number
+              sale_price:
+                type:
+                  - number
+                  - 'null'
+              images:
+                type: array
+                items:
+                  type: string
+                  format: uri
+              stock:
+                type:
+                  - integer
+                  - 'null'
+              category:
+                type:
+                  - string
+                  - 'null'
+              subcategory:
+                type:
+                  - string
+                  - 'null'
+            required:
+              - embed_id
+              - product_id
+              - name
+              - price
         lookbooks:
           type: array
+          description: Lookbooks embedded in the post, each with the lookbook it points to already resolved.
           items:
             type: object
+            properties:
+              embed_id:
+                type: string
+                format: uuid
+              position:
+                type:
+                  - integer
+                  - 'null'
+              display_style:
+                type:
+                  - string
+                  - 'null'
+              lookbook:
+                type:
+                  - object
+                  - 'null'
+                description: The embedded lookbook, or null if it is no longer published.
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  title:
+                    type: string
+                  slug:
+                    type: string
+                    description: Fetch the full gallery and its hotspots with `getLookbook`.
+                  description:
+                    type:
+                      - string
+                      - 'null'
+                  featured_image:
+                    type:
+                      - string
+                      - 'null'
+                    format: uri
+            required:
+              - embed_id
     Lookbook:
       type: object
       properties:

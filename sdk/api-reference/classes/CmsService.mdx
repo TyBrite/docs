@@ -39,6 +39,12 @@ Retrieve the full content of a specific published blog post by its slug, includi
 products for shoppable posts (each entry in the `products` array carries the product's `name`,
 `sku`, `price`, `images`, and `display_type`). Returns `404` if no published post matches the slug.
 
+An embedded product also carries **`variant_id`** — pass that to `client.cartWishlist.addToCart`,
+which is keyed by variant rather than product, so a shoppable post can add to a basket without a
+second call. `embed_id` identifies the placement rather than the product, and `block_id` ties an embed
+to the content block it sits beside. An embed whose product is no longer available is omitted, so a
+post can return fewer products than were authored.
+
 ```typescript
 const post = await client.cms.getPost({
   slug: 'best-tech-gifts-2026',
@@ -72,7 +78,9 @@ post.products?.forEach(p => console.log(`Featured: ${p.name} ($${p.price})`));
       "display_type": "card",
       "position": 1,
       "product_id": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8",
+      "variant_id": "69bd79e5-8cd1-41e2-ab8f-6c0397022928",
       "name": "Sony WH-1000XM4",
+      "variant_name": "Default",
       "sku": "SNY-WH1000-7d42",
       "price": 349.99,
       "sale_price": null,
