@@ -437,6 +437,35 @@ creating, which does not fit inside a checkout budget.
   which surfaces as flakiness rather than as a misconfiguration.
 </Warning>
 
+### Code review
+
+Stored handler source is scanned on a schedule, and on demand from the Extensions page. The scan reads
+the code as text — it does not run it — and separates what it finds into two kinds.
+
+**Corrected automatically.** A fault with a single correct answer is repaired in place, because the
+exposure grows for as long as it stands. A provider key written directly into source is replaced with a
+placeholder, and a request addressed to an unencrypted `http://` endpoint is moved to `https://`. Each
+change keeps a before-and-after you can read and undo, and the stored before-image has the credential
+stripped out of it, so the record of the fix does not preserve the thing it removed. A redacted key
+means the handler will now fail to authenticate rather than continue running on an exposed
+credential — connect it under Integrations and read it by name.
+
+**Reported for you to decide.** Anything where a reasonable author could disagree is left alone and
+raised as a suggestion, since a rewrite changes what the extension does. The most common one is reading
+a connected credential as `ctx.secrets['name']` rather than `await ctx.secrets.get('name')`: the first
+form returns nothing, so the request goes out unauthenticated and the provider's refusal looks like an
+account problem rather than a bug.
+
+Scanning and automatic correction are separate settings. Turning correction off keeps the scan and
+reports everything instead, including the faults that would otherwise be repaired. Where a store is
+managed by an agency, the agency decides whether its merchants are scanned.
+
+<Note>
+  The scan reasons about text, so it recognises the patterns above rather than understanding your
+  logic. It is a floor under the obvious mistakes, not a substitute for reviewing what an extension
+  does with the data it touches.
+</Note>
+
 ---
 
 ## Examples
