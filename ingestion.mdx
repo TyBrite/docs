@@ -25,6 +25,14 @@ Ingestion is the path for a catalog that lives somewhere else and is mirrored in
 
 Ingestion is a **merchant-side write** for keeping a catalog up to date, which is why it sits outside the otherwise storefront-facing API and carries stricter authentication than any other write.
 
+### Batch size
+
+A request carries at most **12 products**. A larger batch is rejected with `400` and nothing is
+written, rather than applying part of the batch and leaving the rest to fail item by item.
+
+For a large catalog, send a sequence of batches, or configure a [scheduled sync](#scheduled-sync),
+which fetches and imports a whole catalog on a timer and has no such limit.
+
 ### Selling on a marketplace
 
 Nothing changes. A merchant whose store is part of a marketplace pushes their catalog exactly as any
