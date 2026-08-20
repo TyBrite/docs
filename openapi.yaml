@@ -8057,6 +8057,19 @@ paths:
         rank first: the fallback only runs when there were none, so a query that already worked is
         unaffected.
 
+
+        **Merchandising.** A merchant can place results deliberately from their admin, for a query or a
+        family of queries: **pin** a product to the top, **bury** one to the bottom, or **boost** one so
+        it lifts past near neighbours without jumping the queue. Rules can run between dates, and a
+        higher-priority rule wins where two overlap.
+
+        Rules apply **after** ranking and only reorder — they never introduce a product the query did not
+        match, and a pinned product that is deleted, offline or otherwise not sellable does not appear.
+        Pinned and boosted results carry a `matchReason` of `Featured by the store`, so a storefront can
+        label a deliberate placement rather than presenting it as an earned one. Nothing needs to be
+        requested or configured on the client: the ordering already reflects the rules, and a store with
+        none behaves exactly as before.
+
         **Marketplace:** when called with a marketplace operator key, searches products across all
         merchants in the marketplace; pass `?store_id=<merchant>` to narrow results to a single
         merchant.
@@ -8128,6 +8141,19 @@ paths:
         **Auth:** works with both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
         Despite using `POST` (to carry the structured request body), this is a **read-only** operation,
         so publishable keys are allowed for client-side storefront search.
+
+
+        **Merchandising.** A merchant can place results deliberately from their admin, for a query or a
+        family of queries: **pin** a product to the top, **bury** one to the bottom, or **boost** one so
+        it lifts past near neighbours without jumping the queue. Rules can run between dates, and a
+        higher-priority rule wins where two overlap.
+
+        Rules apply **after** ranking and only reorder — they never introduce a product the query did not
+        match, and a pinned product that is deleted, offline or otherwise not sellable does not appear.
+        Pinned and boosted results carry a `matchReason` of `Featured by the store`, so a storefront can
+        label a deliberate placement rather than presenting it as an earned one. Nothing needs to be
+        requested or configured on the client: the ordering already reflects the rules, and a store with
+        none behaves exactly as before.
 
         **When to use:** prefer this over the text `GET /v1/search` (`searchProducts`) when the query
         is conversational or descriptive. Two tuning options:
@@ -10779,10 +10805,38 @@ paths:
                 seo_title: Best Tech Gifts for 2026 | Galactic Test Store
                 seo_description: Editor-picked gadgets worth gifting in 2026.
                 products:
-                  - product_id: 7d425c0a-50e7-4e39-af79-6f7945f9dfa8
+                  - embed_id: 278c7e72-58b5-44c8-bf73-d8608daea80a
+                    block_id: null
+                    display_type: card
+                    position: 1
+                    product_id: 7d425c0a-50e7-4e39-af79-6f7945f9dfa8
+                    variant_id: 69bd79e5-8cd1-41e2-ab8f-6c0397022928
                     name: Sony WH-1000XM4
-                  - product_id: 0186665f-f0a1-4c79-976a-919b5b1c2daa
+                    variant_name: Default
+                    sku: SNY-WH1000-7d42
+                    price: 349.99
+                    sale_price: null
+                    images:
+                      - https://cdn.example.com/products/sony-wh1000xm4.jpg
+                    stock: 79
+                    category: Audio & Headphones
+                    subcategory: Active Noise Cancelling
+                  - embed_id: 9f3a1c04-2b77-4a1e-93d5-6c2f0b8e4a11
+                    block_id: null
+                    display_type: card
+                    position: 2
+                    product_id: 0186665f-f0a1-4c79-976a-919b5b1c2daa
+                    variant_id: feae17dd-c3ce-4e6e-864b-c0b6e7625fb2
                     name: Samsung Galaxy Watch 6
+                    variant_name: Default
+                    sku: SAM-GW6-0186
+                    price: 320
+                    sale_price: null
+                    images:
+                      - https://cdn.example.com/products/galaxy-watch-6.jpg
+                    stock: 24
+                    category: Wearables
+                    subcategory: Smart Watches
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -21199,6 +21253,7 @@ components:
           example: 0.93
         matchReason:
           type: string
+          description: Why this product matched, in words a storefront can show. `Text match`, `Similar name` and `Similar brand` describe how the query was matched (the last two mean a spelling fallback was used). **`Featured by the store` means the merchant placed this result deliberately** rather than it earning its rank — worth labelling if you distinguish sponsored or featured placements.
           example: Semantic match
     SearchResponse:
       type: object
