@@ -465,6 +465,25 @@ should rest on a live session alone.
 Removing a credential deletes it and stops the integration being offered. Merchants who had already
 connected reconnect once you configure it again.
 
+## Fields for every merchant
+
+Galactic Core models the commerce every merchant has in common. What it cannot model is the thing your
+particular industry records on every order — a case reference for a legal platform, a practitioner for a
+clinic platform, a delivery window for a courier-heavy one.
+
+You define those once and every store you run receives them, including stores onboarded later. A merchant
+fills the field in as they would any other, on the record it belongs to, and it travels with their exports
+and their API — see [Custom Fields](/custom-fields) for how they reach a storefront.
+
+**Why it belongs to you rather than to each merchant.** A merchant can add their own fields too, and most
+do. But if every merchant invents their own name for the same idea, nothing can be reported across them —
+"Case ref", "case_number" and "Matter" are three fields, not one. A field you define is the same field in
+every store, which is what makes an estate-wide view possible at all. That is also why a merchant can fill
+one of your fields but cannot rename, retype or delete it; they remain free to add their own alongside.
+
+Set them up under **Integrations → Fields for every client**. Removing one removes it, and everything
+recorded in it, from every store — so it is a deliberate act rather than a tidy-up.
+
 ## Your API, on your own domain
 
 Every platform is given an API host of its own — `api.yourplatform.gc.tybritelabs.com` by default, or

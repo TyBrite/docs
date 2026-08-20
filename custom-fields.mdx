@@ -21,6 +21,10 @@ For a storefront this is the answer to "the merchant needs to show something we 
 
 The order is the only record a storefront writes to. Everywhere else the merchant fills the value in their own admin and you read it back.
 
+A field may also be defined by the merchant's **platform operator** rather than the merchant — an agency
+running many stores can require the same field across all of them, so it means the same thing in each. It
+reads identically here; `owner_scope` is a merchant-facing detail and is not exposed.
+
 A merchant can also define fields on records that have no storefront surface — suppliers, expenses, in-store sales and wholesale buyer accounts. Those stay in their admin and their exports; they are not part of this API.
 
 ## Reading a product's fields
