@@ -20,6 +20,19 @@ export type StoreInfoResponse = {
          */
         logo_url?: string | null;
         /**
+         * The same brand in the forms a storefront needs, keyed by the placement each mark is drawn for. A full-colour lockup is unreadable at favicon size and a dark-ink wordmark disappears on a dark header, so rendering one file everywhere means recolouring or shrinking it. Every variant is optional: this is an empty object when the merchant has supplied none, so it can be indexed without a guard, and `logo_url` remains the primary mark either way. Fall back to `logo_url` for any placement that is absent.
+         */
+        logo_variants?: Record<string, {
+            /**
+             * URL of this mark.
+             */
+            url: string;
+            /**
+             * The merchant's own guidance for this mark — clear space, backgrounds to avoid — or null if they gave none.
+             */
+            usage_note?: string | null;
+        }>;
+        /**
          * Short description of the store, or null if not set.
          */
         description?: string | null;
