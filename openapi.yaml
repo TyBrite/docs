@@ -15291,7 +15291,7 @@ paths:
             type: string
           description: |
             Customer session token from `POST /v1/auth/login` or
-            `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token` or `x-external-auth`.
+            `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
         - name: x-external-auth
           in: header
           required: false
@@ -15299,7 +15299,16 @@ paths:
             type: string
           description: |
             Bring-your-own-auth assertion identifying the customer. Provide exactly one of
-            `x-auth-token` or `x-external-auth`.
+            `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it and returns the identity.
+
+            Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
       responses:
         '200':
           description: Eligibility resolved

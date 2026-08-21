@@ -60,6 +60,7 @@ export class ReturnsService {
         orderId,
         xAuthToken,
         xExternalAuth,
+        xIdpToken,
     }: {
         /**
          * The online order to check. Must belong to the authenticated customer.
@@ -67,16 +68,23 @@ export class ReturnsService {
         orderId: string,
         /**
          * Customer session token from `POST /v1/auth/login` or
-         * `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token` or `x-external-auth`.
+         * `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
          *
          */
         xAuthToken?: string,
         /**
          * Bring-your-own-auth assertion identifying the customer. Provide exactly one of
-         * `x-auth-token` or `x-external-auth`.
+         * `x-auth-token`, `x-external-auth`, or `x-idp-token`.
          *
          */
         xExternalAuth?: string,
+        /**
+         * A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it and returns the identity.
+         *
+         * Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+         *
+         */
+        xIdpToken?: string,
     }): CancelablePromise<{
         data: {
             /**
@@ -107,6 +115,7 @@ export class ReturnsService {
             headers: {
                 'x-auth-token': xAuthToken,
                 'x-external-auth': xExternalAuth,
+                'x-idp-token': xIdpToken,
             },
             query: {
                 'order_id': orderId,
