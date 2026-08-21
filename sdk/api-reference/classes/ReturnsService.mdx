@@ -138,7 +138,8 @@ accept returns at all; it is `null` while eligible. When the merchant has stated
 `window_days` and `closes_at` are both `null` and `eligible` is `true` — say returns are accepted
 without naming a deadline rather than assuming a common default, since none exists.
 
-Requires a customer session: the order must belong to the signed-in shopper, so this cannot be used
+Requires a customer session — `x-auth-token`, `x-external-auth`, or `x-idp-token`, exactly one of
+the three, as everywhere else in this service. The order must belong to the signed-in shopper, so this cannot be used
 to probe whether an arbitrary order id exists on the store.
 
 
