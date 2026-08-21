@@ -15250,6 +15250,119 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/returns/eligibility:
+    get:
+      operationId: checkReturnEligibility
+      tags:
+        - Returns
+      summary: Check whether an order can still be returned
+      description: |
+        Answers the order-level question — *can this order still be returned, and until when?* —
+        before a shopper is shown a return form.
+
+        This is the companion to `features.returns_window_days` on `getStoreInfo`, and the two are
+        deliberately different. That field is the store's **policy** ("30 days"), a store-level fact you
+        render on a product page. This is the **verdict for one order**, which depends on when that
+        particular parcel was delivered and therefore cannot be cached alongside the policy.
+
+        Use it so a storefront never offers a return the API will refuse. The same window is enforced
+        when the return is lodged, so this reads the rule ahead of time rather than duplicating it: a
+        request made after the window is rejected with the date it closed.
+
+        **When `window_days` is `null`** the merchant has stated no period, `eligible` is `true`, and
+        `closes_at` is `null` — say returns are accepted without naming a deadline.
+
+        **Customer session required** — the order must belong to the signed-in shopper, so this can
+        never be used to probe whether an arbitrary order id exists on the store.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: order_id
+          in: query
+          required: true
+          description: The online order to check. Must belong to the authenticated customer.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Customer session token from `POST /v1/auth/login` or
+            `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token` or `x-external-auth`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: |
+            Bring-your-own-auth assertion identifying the customer. Provide exactly one of
+            `x-auth-token` or `x-external-auth`.
+      responses:
+        '200':
+          description: Eligibility resolved
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      eligible:
+                        type: boolean
+                        description: Whether a return can be started for this order right now.
+                      reason:
+                        type:
+                          - string
+                          - 'null'
+                        description: Why not, when `eligible` is false. `window_closed` (the period has passed) or `returns_disabled` (the store does not accept returns). Null when eligible.
+                        enum:
+                          - window_closed
+                          - returns_disabled
+                          - null
+                      window_days:
+                        type:
+                          - integer
+                          - 'null'
+                        description: The store's return window, or null when it has stated none.
+                      closes_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                        description: When the window closes for THIS order, measured from delivery where the store records it and from the order date otherwise. Null when there is no window.
+                      days_remaining:
+                        type:
+                          - integer
+                          - 'null'
+                        description: Whole days left, 0 once closed and null when there is no window.
+                    required:
+                      - eligible
+              example:
+                data:
+                  eligible: true
+                  reason: null
+                  window_days: 30
+                  closes_at: '2026-09-18T10:24:00.000Z'
+                  days_remaining: 12
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: No such order for this customer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/returns/store-credit:
     get:
       operationId: getStoreCredit
@@ -19902,6 +20015,12 @@ components:
             returns:
               type: boolean
               description: The store accepts customer-lodged returns (Settings → General → Returns).
+            returns_window_days:
+              type:
+                - integer
+                - 'null'
+              description: 'How many days after delivery a shopper may start a return, counted from the delivery date where the store records one and from the order date otherwise (an in-store sale counts from the day of sale). **`null` means the merchant has stated no period** — say that returns are accepted without naming a window rather than assuming a common default, since no such default exists. Only meaningful while `returns` is true. The window is enforced when a return is lodged, not merely advertised: a request after it is rejected with the date the window closed, so a storefront can show this figure knowing the API agrees with it.'
+              example: 30
             messaging:
               type: boolean
               description: The store has at least one customer conversation thread (data-presence; every plan).

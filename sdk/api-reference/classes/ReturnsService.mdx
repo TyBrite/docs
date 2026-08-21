@@ -93,6 +93,55 @@ const { data: reasons } = await client.returns.listReturnReasons();
 
 ---
 
+## `checkReturnEligibility`
+
+Answers whether one order can still be returned, and until when — call it before showing a shopper a
+return form, so you never offer a return the API will refuse.
+
+This is the companion to `features.returns_window_days` on `getStoreInfo`, and the two are
+deliberately different. That field is the store's **policy** ("30 days"), a store-level fact you
+render on a product page or at checkout. This is the **verdict for one order**, which depends on when
+that particular parcel was delivered and so cannot be cached alongside the policy.
+
+The window is measured from delivery where the store records it, and from the order date otherwise
+(an in-store sale counts from the day of sale). The same rule is enforced when the return is lodged,
+so this reads it ahead of time rather than duplicating it — a request made after the window is
+rejected with the date it closed.
+
+```typescript
+const { data } = await client.returns.checkReturnEligibility({ orderId, xAuthToken: token });
+
+if (data.eligible) {
+  // window_days is null when the merchant has stated no period
+  showReturnForm(data.days_remaining != null
+    ? `${data.days_remaining} days left to return this order`
+    : 'Returns accepted');
+} else if (data.reason === 'window_closed') {
+  showMessage(`The return window closed on ${new Date(data.closes_at!).toLocaleDateString()}.`);
+}
+```
+
+```json Response
+{
+  "data": {
+    "eligible": true,
+    "reason": null,
+    "window_days": 30,
+    "closes_at": "2026-09-15T09:42:17.761Z",
+    "days_remaining": 25
+  }
+}
+```
+
+`reason` is `window_closed` when the period has passed and `returns_disabled` when the store does not
+accept returns at all; it is `null` while eligible. When the merchant has stated no period,
+`window_days` and `closes_at` are both `null` and `eligible` is `true` — say returns are accepted
+without naming a deadline rather than assuming a common default, since none exists.
+
+Requires a customer session: the order must belong to the signed-in shopper, so this cannot be used
+to probe whether an arbitrary order id exists on the store.
+
+
 ## `createReturn`
 
 Lodges a return against one of the authenticated customer's own online orders. The return is created with `status: "pending"` for the merchant to review.

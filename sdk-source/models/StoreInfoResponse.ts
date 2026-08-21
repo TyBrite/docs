@@ -339,6 +339,10 @@ export type StoreInfoResponse = {
          */
         returns?: boolean;
         /**
+         * How many days after delivery a shopper may start a return, counted from the delivery date where the store records one and from the order date otherwise (an in-store sale counts from the day of sale). **`null` means the merchant has stated no period** — say that returns are accepted without naming a window rather than assuming a common default, since no such default exists. Only meaningful while `returns` is true. The window is enforced when a return is lodged, not merely advertised: a request after it is rejected with the date the window closed, so a storefront can show this figure knowing the API agrees with it.
+         */
+        returns_window_days?: number | null;
+        /**
          * The store has at least one customer conversation thread (data-presence; every plan).
          */
         messaging?: boolean;
