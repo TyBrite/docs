@@ -165,10 +165,16 @@ traffic:
     windows with everyone else's, and it remains one database, so marketplace-wide reporting is a
     single query.
   </Card>
-  <Card title="Order writes are queued" icon="layer-group">
-    Order creation is queued rather than applied inline, so a surge from one seller becomes latency for
-    that seller rather than errors for the marketplace. Queue depth is visible to the operator as it
-    happens.
+  <Card title="Order writes are queued under load" icon="layer-group">
+    On a marketplace deployment, order creation is deferred once a store's pending-order depth crosses a
+    threshold: a surge from one seller becomes latency for that seller rather than errors for the
+    marketplace. Below the threshold, and on deployments where deferral is off, orders are created
+    synchronously. When a create is deferred it returns `202 Accepted` with the `Idempotency-Key` the
+    order will be created under, instead of the synchronous `201` — a client fetches the order by
+    replaying the create with that key. Deferral is automatic once enabled, and enabled by default for
+    marketplace deployments; other deployments opt in, because returning `202` changes what a storefront
+    must handle and only an integration that polls by idempotency key should receive it. Queue depth is
+    visible to the operator as it happens.
   </Card>
   <Card title="A seller can be moved to their own stack" icon="server">
     A seller who outgrows a shared database can be separated onto dedicated infrastructure while the
