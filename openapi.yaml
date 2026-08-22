@@ -4095,6 +4095,47 @@ paths:
                       unit_price: 1000
                       subtotal: 2000
                   created_at: '2026-02-19T10:30:00Z'
+        '202':
+          description: |
+            Accepted for processing under load — the order was **not** created synchronously; it will be
+            created a moment later and is guaranteed to use the `Idempotency-Key` you sent. The response
+            body does **not** contain the order.
+
+            This happens only on deployments where deferred order writes are enabled (marketplace
+            deployments enable it by default; others opt in), and only when the deployment is under a
+            sustained order surge. Below that load, and on deployments without it enabled, order creation
+            is synchronous and returns `201`. Deferral protects everyone from an order spike by turning it
+            into a brief delay for the order that caused it, rather than errors for all.
+
+            **How to handle it:** treat `202` as success-in-progress, not failure. Retrieve the order by
+            replaying `POST /v1/orders` with the same `Idempotency-Key` (it returns `200` with the order
+            once created), or poll `GET /v1/orders/{id}` if you obtain the id another way. A client that
+            only understands `201` and does not poll should not enable this feature.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - idempotency_key
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - accepted
+                    description: Always `accepted` — the order is queued, not yet created.
+                  message:
+                    type: string
+                    description: Human-readable explanation.
+                  idempotency_key:
+                    type: string
+                    description: |
+                      The key this order will be created under. Replay the create with this key to fetch
+                      the order once it exists.
+              example:
+                status: accepted
+                message: Order accepted and queued for processing under current load; it will be created shortly. Poll by Idempotency-Key.
+                idempotency_key: order-20260823-a1b2c3
         '400':
           description: Invalid request (missing required fields, invalid data)
           content:
