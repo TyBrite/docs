@@ -62,7 +62,7 @@ const products = [
     sku: 'MUG-CERAMIC-WHITE',
     name: 'Ceramic Mug',
     description: 'A 350ml glazed ceramic mug.',
-    category: 'Kitchenware',
+    category: 'Kitchen & Dining',
     price: 12.0,
     stock: 120,
     image: 'https://cdn.yourstore.com/mug-white.jpg',
@@ -75,7 +75,7 @@ const products = [
     product_group: 'TEE-CLASSIC',
     name: 'Classic T-Shirt',
     variant_name: 'Small',
-    category: 'Apparel',
+    category: 'Men\'s Clothing',
     price: 24.0,
     stock: 40,
   },
@@ -84,7 +84,7 @@ const products = [
     product_group: 'TEE-CLASSIC',
     name: 'Classic T-Shirt',
     variant_name: 'Medium',
-    category: 'Apparel',
+    category: 'Men\'s Clothing',
     price: 24.0,
     stock: 55,
   },
@@ -93,7 +93,7 @@ const products = [
     product_group: 'TEE-CLASSIC',
     name: 'Classic T-Shirt',
     variant_name: 'Large',
-    category: 'Apparel',
+    category: 'Men\'s Clothing',
     price: 24.0,
     stock: 30,
   },
@@ -151,7 +151,7 @@ Declare the format with the `Content-Type` header or the `?format=` query parame
     {
       "sku": "MUG-CERAMIC-WHITE",
       "name": "Ceramic Mug",
-      "category": "Kitchenware",
+      "category": "Kitchen & Dining",
       "price": 12.0,
       "stock": 120
     },
@@ -160,7 +160,7 @@ Declare the format with the `Content-Type` header or the `?format=` query parame
       "product_group": "TEE-CLASSIC",
       "name": "Classic T-Shirt",
       "variant_name": "Small",
-      "category": "Apparel",
+      "category": "Men's Clothing",
       "price": 24.0,
       "stock": 40
     }
@@ -173,7 +173,7 @@ Declare the format with the `Content-Type` header or the `?format=` query parame
   <product>
     <sku>MUG-CERAMIC-WHITE</sku>
     <name>Ceramic Mug</name>
-    <category>Kitchenware</category>
+    <category>Kitchen &amp; Dining</category>
     <price>12.00</price>
     <stock>120</stock>
   </product>
@@ -182,7 +182,7 @@ Declare the format with the `Content-Type` header or the `?format=` query parame
     <product_group>TEE-CLASSIC</product_group>
     <name>Classic T-Shirt</name>
     <variant_name>Small</variant_name>
-    <category>Apparel</category>
+    <category>Men's Clothing</category>
     <price>24.00</price>
     <stock>40</stock>
   </product>
@@ -191,9 +191,9 @@ Declare the format with the `Content-Type` header or the `?format=` query parame
 
 ```csv CSV
 sku,product_group,name,variant_name,category,price,stock
-MUG-CERAMIC-WHITE,,Ceramic Mug,,Kitchenware,12.00,120
-TEE-CLASSIC-S,TEE-CLASSIC,Classic T-Shirt,Small,Apparel,24.00,40
-TEE-CLASSIC-M,TEE-CLASSIC,Classic T-Shirt,Medium,Apparel,24.00,55
+MUG-CERAMIC-WHITE,,Ceramic Mug,,Kitchen & Dining,12.00,120
+TEE-CLASSIC-S,TEE-CLASSIC,Classic T-Shirt,Small,Men's Clothing,24.00,40
+TEE-CLASSIC-M,TEE-CLASSIC,Classic T-Shirt,Medium,Men's Clothing,24.00,55
 ```
 
 </CodeGroup>
@@ -210,7 +210,7 @@ CSV follows standard quoting rules, so commas and newlines inside quoted fields 
 | `product_group` | — | Groups rows into one multi-variant product. Omit for a standalone product. |
 | `variant_name` | — | Label for this variant (e.g. a size or colour). Defaults to `"Default"`. |
 | `description` | — | Product description. |
-| `category` | Yes | The product's category, by name (or id). It must **already exist** in your catalog — categories are not created from a feed. An inactive matching category is reactivated automatically. A row whose category does not exist is rejected. |
+| `category` | Yes | The product's category, by name (or id). Matching is case-insensitive but otherwise exact, against the [platform category list](/resources/taxonomy). Categories are not created from a feed; a row whose category does not resolve is rejected. An inactive matching category is reactivated automatically. |
 | `subcategory` | — | Subcategory under the category. Unlike categories, **subcategories are created automatically** if new. Nest with ` > `, e.g. `Audio > Headphones > Wireless`. |
 | `brand` | — | Brand name. |
 | `image` | — | Public image URL. A broken URL is a warning, not a failure. |
@@ -230,7 +230,7 @@ feed carrying extra columns behaves exactly as it did before.
 {
   "sku": "TEE-CLASSIC-M",
   "name": "Classic Tee",
-  "category": "Apparel",
+  "category": "Men's Clothing",
   "price": 24.99,
   "Fabric": "Organic cotton",
   "Country of origin": "Portugal"
