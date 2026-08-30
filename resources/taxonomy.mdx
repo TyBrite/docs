@@ -1,0 +1,288 @@
+---
+title: "Product Taxonomy"
+description: "The 76 platform categories every Galactic Core store is created with, how they differ from merchant-owned subcategories, and the starter specification templates that come with them."
+---
+
+Every product in Galactic Core sits under exactly one **category** and, optionally, a
+**subcategory**. The two levels look alike and behave very differently: categories are a fixed
+platform set that every store receives identically, while subcategories belong entirely to the
+merchant.
+
+That difference matters most at import time. A feed naming a category that is not on the list below
+has its row rejected, so the names on this page are the ones to copy into a catalog feed verbatim.
+
+## Categories are platform-wide
+
+The same 76 categories are seeded into every store the moment it is created, with the same names and
+the same meanings. A merchant does not create, rename or delete them — the one control they have is
+enabling and disabling, and every category starts enabled so a merchant switches off what they do
+not sell.
+
+Two consequences follow from that:
+
+Because the set is identical everywhere, a category slug identifies the same thing in every store.
+`electronics` means electronics on every storefront, which is what makes it safe to hard-code in a
+route or share across storefronts. The API exposes categories **read-only** — there are no create,
+update or delete endpoints on `/v1/categories` — and a catalog feed never creates one.
+
+Because the set is fixed, it is also complete. A category that does not fit any specific heading
+belongs under `General`, which exists for exactly that purpose and is the fallback an importer
+reaches for.
+
+## The 76 categories
+
+Copy these names exactly. The groupings below are for reading; they are not part of the data.
+
+<Tabs>
+<Tab title="Technology">
+
+| Category |
+|---|
+| `Electronics` |
+| `Smartphones` |
+| `Tablets` |
+| `Laptops` |
+| `Desktop Computers` |
+| `Computer Components` |
+| `Networking` |
+| `Audio & Headphones` |
+| `Gaming` |
+| `Smart Home` |
+| `Cameras & Photography` |
+| `Drones & RC` |
+| `Wearables` |
+| `Accessories & Cables` |
+| `Software & Digital` |
+
+</Tab>
+<Tab title="Fashion">
+
+| Category |
+|---|
+| `Men's Clothing` |
+| `Women's Clothing` |
+| `Children's Clothing` |
+| `Shoes & Footwear` |
+| `Bags & Accessories` |
+| `Watches & Eyewear` |
+| `Activewear & Sportswear` |
+| `Jewelry & Watches` |
+| `Luggage & Travel` |
+
+</Tab>
+<Tab title="Home">
+
+| Category |
+|---|
+| `Furniture` |
+| `Home Decor` |
+| `Mirrors` |
+| `Lighting` |
+| `Kitchen & Dining` |
+| `Bedding & Bath` |
+| `Storage & Organization` |
+| `Garden & Outdoor` |
+| `Appliances` |
+| `Cleaning & Household` |
+
+</Tab>
+<Tab title="Health & Beauty">
+
+| Category |
+|---|
+| `Skincare` |
+| `Cosmetics & Fragrances` |
+| `Hair Care` |
+| `Personal Care` |
+| `Health & Wellness` |
+| `Pharmacy & Medical` |
+| `Sexual Wellness` |
+
+</Tab>
+<Tab title="Food">
+
+| Category |
+|---|
+| `Food & Groceries` |
+| `Beverages` |
+| `Alcohol & Spirits` |
+| `Snacks & Confectionery` |
+| `Fresh Produce` |
+| `Bakery` |
+
+</Tab>
+<Tab title="Media & Leisure">
+
+| Category |
+|---|
+| `Books` |
+| `Movies & Music` |
+| `Stationery` |
+| `Art & Collectibles` |
+| `Sports Equipment` |
+| `Toys & Games` |
+| `Hobbies & Crafts` |
+| `Outdoor & Camping` |
+| `Musical Instruments` |
+
+</Tab>
+<Tab title="Automotive & Industrial">
+
+| Category |
+|---|
+| `Automotive Parts` |
+| `Car Accessories` |
+| `Motorcycle & Powersports` |
+| `Tools & Hardware` |
+| `Building Materials` |
+| `Industrial & Scientific` |
+| `Agriculture & Farming` |
+| `Safety & Security` |
+
+</Tab>
+<Tab title="Baby, Kids & Pets">
+
+| Category |
+|---|
+| `Baby & Maternity` |
+| `School Supplies` |
+| `Pet Supplies` |
+
+</Tab>
+<Tab title="Office">
+
+| Category |
+|---|
+| `Office Equipment` |
+| `Office Furniture` |
+| `Office Supplies` |
+
+</Tab>
+<Tab title="Other">
+
+| Category |
+|---|
+| `General` |
+| `Party & Event Supplies` |
+| `Seasonal & Holiday` |
+| `Gifts & Presents` |
+| `Handmade & Artisan` |
+| `Services` |
+
+</Tab>
+</Tabs>
+
+## Subcategories are the merchant's own
+
+Below the category line, everything belongs to the merchant. Subcategories are created, renamed and
+deleted freely, and they nest to any depth — `Apparel → Shoes → Men → Sneakers` is a valid chain, as
+is a single flat level.
+
+A subcategory tree lives under one category, and the database holds that shape rather than trusting
+the caller: a subcategory's parent must belong to the same store and the same category, and a cycle
+is refused. Deleting a parent **promotes its children to the top level** instead of deleting the
+subtree, so a mis-click removes one node rather than a branch.
+
+Deletion is reversible for 90 days. A deleted subcategory can be restored from the merchant's admin
+within that window.
+
+Reading the tree is a single request. `listSubcategories` returns a flat list by default and the
+whole nested forest with `tree: true`; `root_only` returns just the top level, and `parent_id`
+returns one node's direct children. A single subcategory can be fetched with its `children`, or with
+its `ancestors` — a breadcrumb that begins with the owning category, each entry tagged with which
+level it came from.
+
+**Reference:** [TaxonomyService](/sdk/api-reference/classes/TaxonomyService)
+
+## How a feed is matched
+
+The importer resolves a category by name, lowercased and trimmed. That is the whole comparison —
+there is no fuzzy or approximate matching, so `Electronics`, `electronics` and ` Electronics ` all
+resolve, while `Electronic` and `Consumer Electronics` do not.
+
+A name that does not resolve rejects that row with a message naming the value it could not place:
+
+```
+category "Kitchenware" does not exist — create it in your catalog first
+```
+
+A category that exists but is switched off is **re-enabled automatically** rather than rejected —
+importing into a disabled category is taken as intent to sell from it again.
+
+Subcategories behave the opposite way, and deliberately so: an unrecognised subcategory is
+**created**, and a `>`-delimited path builds the whole chain, so `Audio > Headphones > Wireless`
+creates all three levels under the resolved category on first import.
+
+<Note>
+A category can also be given as its `id` rather than its name, which skips name matching entirely.
+Feeds generated from another Galactic Core store can use ids; feeds assembled by hand are almost
+always better off with names.
+</Note>
+
+Where a feed's own category names do not match this list, the import screen's assisted review can
+propose a correction — a misspelling is corrected outright, and a plausible but unlisted name is
+matched to the closest category and **flagged for confirmation** rather than applied silently. It
+resolves to a name from this list either way, which is why copying the names is the shorter path.
+
+**Reference:** [Catalog ingestion](/ingestion) · [Catalog sync](/workflows/catalog-sync)
+
+## Starter specification templates
+
+Specifications are the structured attributes of a product — screen size, fabric, wattage, capacity —
+as opposed to its description. Every store is created with one specification template per category,
+so a merchant filling in a smartphone starts from fields that suit a smartphone.
+
+The templates are drawn from fifteen families, each covering the categories that share a shape:
+
+| Family | Covers |
+|---|---|
+| Electronics Spec | Consumer electronics, computing, audio, cameras, wearables |
+| Apparel Spec | Clothing, footwear, bags, activewear |
+| Jewelry & Artisan Spec | Jewelry, watches, handmade goods |
+| Home & Living Spec | Furniture, decor, lighting, kitchen, bedding |
+| Appliance Spec | Major and small appliances |
+| Beauty & Personal Care Spec | Skincare, cosmetics, hair and personal care |
+| Health & Baby Spec | Health, wellness, pharmacy, baby and maternity |
+| Food & Beverage Spec | Groceries, drinks, fresh produce, bakery |
+| Books, Media & Stationery Spec | Books, film, music, stationery |
+| Sports & Outdoor Spec | Sports equipment, camping, outdoor |
+| Toys, Crafts & Gifts Spec | Toys, games, hobbies, gifts, seasonal |
+| Automotive Spec | Vehicle parts and accessories |
+| Tools & Industrial Spec | Tools, hardware, building, industrial, agricultural |
+| Pet Supplies Spec | Pet products |
+| General Product Spec | Everything else, and the fallback for any category not listed above |
+
+Each template is named for its family and its category — `Electronics Spec — Smartphones` — and
+carries that family's fields. Fields whose units are ambiguous carry their own guidance: a
+`dimensions` field asks for width × height × depth including the unit, and a `weight` field asks for
+the unit explicitly, so two merchants filling the same field produce comparable values.
+
+A field takes one of sixteen types: `text`, `number`, `select`, `multiselect`, `boolean`, `date`,
+`textarea`, `color`, `url`, `email`, `phone`, `dimensions`, `weight`, `currency`, `percentage` and
+`json`.
+
+The templates are a starting point, not a constraint. A merchant edits the supplied fields, adds
+their own, and creates entirely new templates; nothing about the seeded set limits what a store can
+describe.
+
+<Warning>
+Specifications attach to a **variant**, not to a product. A product with three sizes has three
+places specifications can be recorded, which is what allows a per-size weight or dimension to differ.
+Where an attribute is genuinely the same across every variant, record it on each, or keep it in the
+product description.
+</Warning>
+
+## Starter subcategories
+
+A new store has all 76 categories and **no subcategories** — the merchant builds their own, and a
+storefront that needs none works fine without any.
+
+For merchants who would rather start from something, a starter set of more than 900 suggested
+subcategories covers every category, some with a further level of nesting beneath them. They are
+loaded on request, one category at a time, and the merchant chooses which of the suggestions to
+take rather than accepting the whole set. Anything already present is skipped, so loading twice
+adds nothing the second time.
+
+`General` is deliberately given only a handful of suggestions. It is the fallback where uncertain
+imports land, and a fallback that arrives pre-filled with structure invites products to settle there
+instead of somewhere more useful.
