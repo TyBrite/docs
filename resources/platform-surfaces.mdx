@@ -1,0 +1,91 @@
+---
+title: "Platform Surfaces"
+description: "The addresses that make up Galactic Core beyond the API — the developer portal, the status page, and the products the platform connects to."
+---
+
+Most of Galactic Core is reached through the API at `api.tybritelabs.com`. A few things live at
+their own addresses because they answer a different question, and this page is the map.
+
+## Developer portal
+
+**[developers.tybritelabs.com](https://developers.tybritelabs.com)**
+
+Where a third party registers an application to integrate with Galactic Core. It is for developers
+building *on top of* the platform — a tool, an app, an integration that merchants connect to their
+own stores. A merchant's own API keys are not here; those live in their store's own settings.
+
+Registration is self-serve. **Approval of an application is not** — every application is reviewed
+before it becomes a live client, and a newly registered account has no portal access until that
+review completes. An account that registers and is then told it needs access granted is behaving
+correctly, not failing.
+
+Once an application is approved it receives a `client_id` and a `client_secret`. **The secret is
+shown once**, at the moment it is issued, and is not retrievable afterwards — it can only be rotated
+for a new one. The portal is also where an application declares which scopes it requests, its
+redirect URIs, and a webhook URL if it wants one.
+
+Approved applications use the Connect flow to reach a merchant's store, with the merchant approving
+the requested scopes on a consent screen.
+
+**Reference:** [GC Connect](/gc-connect)
+
+## Status
+
+**[status.tybritelabs.com](https://status.tybritelabs.com)**
+
+Every public API service, checked **every minute**, with 90 days of uptime history behind each one.
+The page carries a current-state summary, a per-service grid grouped by what each service does, an
+incident log, and email notification for anyone who wants to be told rather than to check.
+
+It runs on infrastructure separate from the platform it reports on, so an outage in Galactic Core
+does not take its own status page down with it.
+
+Services with no public route are deliberately absent. They have no endpoint a developer could call,
+and listing them would raise questions about the health of something that was never reachable in the
+first place.
+
+## Payments
+
+**[payments.tybritelabs.com](https://payments.tybritelabs.com)**
+
+The hosted page where Tybrite Labs bills its own customers — subscriptions, credits and invoices
+across Galactic Core, Anvil and TLDP. It resolves its branding from what is being paid for, so
+someone paying for Anvil sees Anvil rather than a platform name they have no relationship with.
+
+**This is not a storefront checkout.** A shopper buying from a merchant pays through that merchant's
+own payment account, against that merchant's own order — they never see this page, and it plays no
+part in the storefront flow you build against.
+
+Card details are entered into the payment processor's own secure field. No card number, expiry or
+security code enters the page, its logs or its database.
+
+## The products alongside Galactic Core
+
+Galactic Core is one of three products that combine into a stack. Each is independent — none
+requires the others, and they are documented separately.
+
+<Columns cols={2}>
+  <Card title="Anvil" href="/anvil">
+    Describe a storefront in plain language and get a working one, wired to Galactic Core's
+    commerce APIs from the start.
+  </Card>
+  <Card title="TLDP" href="https://tldp.tybritelabs.com/docs">
+    Tybrite Logistics Developer Platform — one integration across many couriers, covering rates,
+    fulfilment, live tracking, proof of delivery and returns. Documented separately.
+  </Card>
+</Columns>
+
+TLDP is integrated with Galactic Core rather than bolted alongside it: a paid order becomes a
+delivery, and the tracking number is written back to the storefront without either side being
+taught about the other.
+
+## Where to go for what
+
+| Address | What it answers |
+|---|---|
+| `api.tybritelabs.com` | Every API request |
+| `docs.tybritelabs.com` | This documentation |
+| `developers.tybritelabs.com` | Registering an application to integrate with the platform |
+| `status.tybritelabs.com` | Whether the API is healthy right now, and what happened previously |
+| `gc.tybritelabs.com` | The Galactic Core dashboard a merchant signs into |
+| `tldp.tybritelabs.com/docs` | TLDP's own documentation |
