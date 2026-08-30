@@ -164,6 +164,40 @@ ceiling is always present and enforced server-side.
 Automated work carries its own bounds: a maximum number of steps per run, a timeout per call, a cap on
 how many standing rules a store can hold. None of these are configurable from the client.
 
+## The business schema the assistant reads through
+
+The assistant never queries your store directly. It reads through a **business schema** — a fixed,
+named layer of business concepts that sits between it and your data. A product's margin, the items
+running short against their recent sales, what a promotion currently offers, how traffic converts:
+each is a defined concept with the store already fixed inside it. The concept decides what comes
+back. The assistant chooses which one to ask for, never how it is answered.
+
+Three properties follow, and together they are the point of the arrangement.
+
+**A concept cannot be widened.** There is no phrasing that returns another store's figures, because
+the store is not something the assistant supplies — it is bound from the session before any concept
+is read. A confused or manipulated model can pick the wrong concept and get an unhelpful answer; it
+cannot reach data belonging to someone else.
+
+**Cost stays behind the arithmetic.** Margin arrives as a computed figure, never as the underlying
+cost of a product. The assistant can tell you a discount would sell below cost and refuse to prepare
+it, without the cost itself ever entering the conversation — which also means it cannot repeat one
+back to you, or to anyone reading a shared transcript.
+
+**The schema is stable while the storage beneath it is not.** Concepts are the contract; how they are
+stored and computed can change underneath without the assistant being taught anything new, and
+without widening what it can see. That is what keeps the boundary fixed as the platform evolves.
+
+Answering is read-only throughout. The ability to *change* anything is a separate, narrower surface:
+reversible catalogue work — creating a subcategory, retagging, arranging a collection — is written
+directly and recorded in your activity log, while anything touching money is prepared as a draft and
+waits, as above. Every write there carries the store it belongs to and re-checks the merchant's
+existing permission at the moment it runs. The assistant supplies the intent; Galactic Core's own
+code decides whether it is allowed.
+
+This is why the same answer arrives whether it is asked in the app or reached through the API. The
+boundary is the business schema, not the interface in front of it.
+
 ## What an integration sees
 
 A correct integration rarely meets these. When it does, the response is an explicit error naming the
