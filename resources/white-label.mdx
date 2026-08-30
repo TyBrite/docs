@@ -1,0 +1,100 @@
+---
+title: "White-Label"
+description: "How an operator runs Galactic Core, Anvil and TLDP as their own branded product — what can carry your brand, what deliberately cannot, and where the boundary sits."
+---
+
+Galactic Core, Anvil and TLDP can each be run under someone else's brand. An agency sells commerce
+software as their own product; a logistics operator sells a courier network as theirs. Their
+customers see their name, pay them, and have no relationship with the platform underneath.
+
+The three are **independent systems that combine into a stack, not a bundle**. Each is white-labelled
+on its own terms and none requires the others. Combining them is a commercial convenience rather than
+an architectural requirement.
+
+## What an operator's customer sees
+
+An agency's merchant signs into an admin carrying the agency's name and logo, at the agency's own
+domain. The colours, spacing and shape of the interface are the agency's. The assistant, if it is
+switched on, answers under a name the agency chose. Emails arrive from the agency's sending address.
+
+Even the API keys carry the agency's name — a merchant copies a key beginning with the agency's own
+vendor token rather than the platform's. Key format is otherwise unchanged, so an integration written
+against one operator's keys works against another's.
+
+<Note>
+Signature and environment headers on webhook deliveries are structural, not branding, and they do not
+change. A developer writing a webhook handler will see the platform's header names there.
+</Note>
+
+## Pricing is the operator's own
+
+An operator defines their own tiers — as many or as few as they want, named and priced how they
+like. A three-tier ladder is a convention rather than a constraint.
+
+What a tier may *grant* is bounded. Every operator account carries a ceiling, and entitlement is
+clamped against it **each time it is read** rather than when a tier is saved. A tier claiming a
+capability the operator's own account does not include resolves to what the account includes, so an
+operator can never grant more than they hold — including by editing the underlying data directly.
+
+Annual pricing is expressed as a price, not a discount. The saving a customer sees is derived from
+the monthly and annual figures whenever it is displayed, so the two can never disagree.
+
+## Money does not net
+
+Two separate flows, and they never meet:
+
+```
+merchant  →  operator    the operator's own processor, the operator's own price
+operator  →  Tybrite     consumption, at cost
+```
+
+Your customer pays you, on your payment account, at whatever you charge. You pay for what your
+customers consumed. **The margin between the two is yours in full** — the platform takes no share of
+your retail price and never bills from it.
+
+Neither Anvil nor TLDP holds anyone else's money. Anvil has no processor and no card surface at all.
+TLDP never custodies funds: a courier is paid directly by the merchant, on their own rail, and TLDP
+invoices only its own commission.
+
+## Domains
+
+An operator brings their own domain — `studio.youragency.com` — and a certificate is issued for it
+automatically. Their customers never see a platform address.
+
+## Connected applications
+
+An operator issues their own "Login with «Operator»" applications. Their clients are isolated to
+their own merchants, and the consent screen a merchant approves carries the operator's branding
+rather than the platform's.
+
+**Reference:** [GC Connect](/gc-connect)
+
+## Where the brand boundary stops
+
+Presentation carries the operator's brand. The security and money boundary does not, and that is
+deliberate — a signature is a claim about who produced a payload, and it means nothing if anyone can
+mint one under their own name.
+
+So the parts of the platform that establish trust stay constant: signature and environment headers,
+the integrity of orders and payments, and the platform's own billing relationship with the operator.
+An operator's invoice from the platform comes from the platform, because that is a relationship
+between those two parties and not something to disguise.
+
+An operator also composes their tiers from the platform's capabilities rather than inventing new
+ones. A capability has to exist before it can be sold, and a name for something the platform does not
+do is a promise nothing can keep.
+
+## Across the three products
+
+| | Runs standalone | White-labelled |
+|---|---|---|
+| **Galactic Core** | Yes | Brand, theme, domains, keys, email, tiers, pricing, connected apps |
+| **Anvil** | No — built on Galactic Core by design | Independently, on its own terms |
+| **TLDP** | Yes — a logistics operator needs no commerce product | Operator brand, domains, tiers, commission |
+
+Anvil's dependency on Galactic Core is a product decision rather than an accident: it generates
+storefronts wired to commerce APIs, and an Anvil without them would be generating against nothing.
+TLDP has no such tie — a logistics operator can run it without adopting a commerce platform, and an
+agency running Galactic Core may either contract such an operator or run TLDP themselves.
+
+**Reference:** [Agencies](/agencies) · [Anvil](/anvil) · [Platform surfaces](/resources/platform-surfaces)
