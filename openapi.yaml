@@ -7409,6 +7409,7 @@ paths:
               example:
                 metric: most-viewed
                 window_hours: 720
+                backfilled: false
                 products:
                   - product_id: 0186665f-f0a1-4c79-976a-919b5b1c2daa
                     score: 15
@@ -7470,6 +7471,7 @@ paths:
               example:
                 metric: most-added-to-cart
                 window_hours: 168
+                backfilled: false
                 products:
                   - product_id: 0186665f-f0a1-4c79-976a-919b5b1c2daa
                     score: 6
@@ -7534,6 +7536,7 @@ paths:
               example:
                 metric: best-converting
                 window_hours: 720
+                backfilled: false
                 products:
                   - product_id: 0186665f-f0a1-4c79-976a-919b5b1c2daa
                     score: 1.7333
@@ -20026,16 +20029,15 @@ components:
             **What `true` / `false` mean.** A flag is `true` only when the capability is BOTH available to the store AND has data/config to surface. `false` is deliberately broad — it can mean any of: the store's plan doesn't include the feature, the plan includes it but it isn't set up/has no data yet, or both. A `false` flag therefore does NOT tell you *why* it's off; treat it simply as "don't render this yet."
 
             **Two kinds of flag:**
-            - **Plan-gated** — `ai_recommendations`, `semantic_search`, `multi_currency`,
-              `dynamic_pricing`, `cms`, `lookbooks`, `returns`. `true` requires the store's plan to
-              include the feature AND it to be configured. By plan: Starter includes none of these;
-              Growth adds content pages/lookbooks (`cms`, `lookbooks`) and `returns`; Premium and
-              Enterprise add smart search & recommendations (`ai_recommendations`, `semantic_search`),
-              `dynamic_pricing`, and `multi_currency`.
+            - **Plan-gated** — `ai_recommendations`, `semantic_search`, `dynamic_pricing`, `cms`,
+              `lookbooks`, `returns`. `true` requires the store's plan to include the feature AND it to
+              be configured. By plan: Starter includes none of these; Growth adds content
+              pages/lookbooks (`cms`, `lookbooks`) and `returns`; Premium and Enterprise add smart
+              search & recommendations (`ai_recommendations`, `semantic_search`) and `dynamic_pricing`.
 
-            - **Data-presence (every plan)** — `gift_cards`, `promotions`, `messaging`,
-              `specifications`, `collections`. Not plan-gated at all; `true` simply means the store
-              currently has at least one of that item (e.g. `gift_cards: true` = the store has issued
+            - **Data-presence (every plan)** — `multi_currency`, `gift_cards`, `promotions`,
+              `messaging`, `specifications`, `collections`. Not plan-gated at all; `true` simply means
+              the store currently has at least one of that item (e.g. `gift_cards: true` = the store has issued
               one or more gift cards). `false` means none exist yet, not that the feature is forbidden.
           properties:
             ai_recommendations:
@@ -20046,7 +20048,7 @@ components:
               description: Smart search is available (plan-dependent and configured).
             multi_currency:
               type: boolean
-              description: Selling in multiple currencies is available (plan-dependent and configured).
+              description: The store sells in more than one currency (it has a second active currency configured).
             dynamic_pricing:
               type: boolean
               description: Automatic pricing rules are available (plan-dependent and configured).
@@ -21389,6 +21391,20 @@ components:
           type: integer
           description: The time window the ranking covers, in hours.
           example: 720
+        backfilled:
+          type: boolean
+          description: |
+            Whether any entry in `products` is padding rather than a measured signal.
+
+            A store with little or no activity in the window would otherwise return an empty or
+            one-item shelf, so the list is topped up from featured and recently-added products. Those
+            entries are real, purchasable products and are safe to display — but they were not ranked
+            by the requested metric, and their `score` is a ranking weight rather than a view count or
+            conversion ratio.
+
+            `true` is common on a new store or a short window; it is not an error. Label the shelf
+            generically ("Popular picks") or hide it, rather than presenting padding as the metric.
+          example: false
         products:
           type: array
           items:
@@ -21409,6 +21425,10 @@ components:
                     e.g. `1.7333` means more units sold than views recorded, `0.375` = ~3 buys per 8 views).
                   Counts scale with your store's traffic; the ratio is a small decimal that can exceed 1.
                   Use `score` only to sort/rank (results are already returned highest-first).
+
+                  When `backfilled` is `true` the score is NOT the signal described above — it is a
+                  small ranking weight for a padded entry. Read `backfilled` before presenting a score
+                  as a measurement.
                 example: 15
     SearchResult:
       type: object
