@@ -12,11 +12,12 @@ identifier such as `electronics`, `audio-headphones` or `computer-peripherals`. 
 **stable across renames**: editing a category's display name leaves its slug untouched, so a
 category-page URL built from a slug keeps resolving and keeps its search ranking.
 
-Categories are a fixed, platform-wide set, so a given category slug identifies the same category
-in every store — `electronics` means the same thing everywhere, which makes it safe to hard-code
-in routes or share across storefronts. Subcategory slugs are unique within their store, category
-and parent; where two names in that scope would reduce to the same slug, a numeric suffix
-distinguishes them.
+A store's categories are settled when the store is created and are not authored afterwards, so a
+category slug keeps meaning the same thing for the life of that store — which makes it safe to
+hard-code in a storefront route. Across stores, read `listCategories` for the store you are
+integrating with rather than assuming a shared list. Subcategory slugs are unique within their
+store, category and parent; where two names in that scope would reduce to the same slug, a numeric
+suffix distinguishes them.
 
 Slugs address a resource; `id` remains the value the filter and lookup parameters take.
 
