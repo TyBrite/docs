@@ -84,6 +84,18 @@ Small edits stay in plain language: describe what should be different, see it on
 it live. Requests that need real code, pricing or checkout changes are refused and pointed at a full
 build rather than half-applied.
 
+### What a test is decided on
+
+When two versions of a storefront run against each other, the version that wins is decided on orders
+that were actually paid. Galactic Core reports each settled order against the version the shopper saw
+— its real total, in the store's own currency — so a submitted order that never completed payment does
+not count towards a result, and the figures a decision rests on are the same ones the merchant sees in
+their own reports.
+
+The split between the two products is the same one that runs through the rest of this page: Anvil
+owns the experiment — how a visitor is assigned, when there is enough evidence to call it, and
+promoting the winner — while Galactic Core owns the commerce record and supplies it.
+
 The mechanism behind this is ordinary platform machinery rather than anything private to Anvil. A
 storefront subscribes to the same lifecycle events any tool can subscribe to — a collection published,
 a payment provider connected, a capability becoming available on the store's plan — and each one is

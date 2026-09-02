@@ -39,6 +39,66 @@ A markdown pricing rule is bounded differently, by scope: it covers only the pro
 identified rather than the whole catalogue, and only one such draft is outstanding at a time so a
 weekly rule cannot stack duplicates while a merchant is deciding.
 
+## What the model decides, and what code decides
+
+The assistant is used for judgement, and only for judgement. It writes copy, drafts a rule, and
+chooses which of a store's products a change should cover. Everything that bounds it is ordinary
+code: how many gift cards a run may prepare, how much a budget may move, whether a schedule is due,
+how much credit an action costs, whether a store has spent past its cap.
+
+The division is not stylistic. A limit expressed in a prompt is a request; a limit expressed as a
+constraint is a rule. The second kind can be tested, holds under a request written to talk past it,
+and behaves the same whichever model is answering. So a store's ceilings live in the database and are
+re-checked at the moment of use, rather than being described to the assistant and trusted.
+
+The same reasoning applies to counting. Whether a standing rule has produced anything over its last
+several runs is a question about records, so it is answered by reading them — not by asking a model
+to summarise. Reserving inference for the parts that genuinely need judgement is also what keeps an
+automatic process cheap enough to run on a schedule.
+
+## Autonomy changes who maintains a rule, not what a rule may do
+
+A store can hand the assistant a standing job: rather than being asked for each rule, it keeps the
+set of standing rules current — adding ones worth running, retuning ones whose thresholds have
+drifted, and retiring ones that have stopped producing anything.
+
+**This widens nothing about money.** Every constraint above still holds, unchanged: a discount, a
+gift card and a pricing rule are still prepared as drafts and still wait for a person with the
+approval permission. What becomes automatic is the upkeep.
+
+Three further limits apply to the upkeep itself:
+
+- **A rule a person paused stays paused.** Pausing is an instruction, not an untidy state to be
+  corrected, and it is never reversed automatically. The same holds for a rule stopped by the failure
+  breaker: that is a fault for a person to look at.
+- **A rule that has ever acted is never retired.** Retirement is reserved for rules that have
+  produced nothing across a sustained run of evaluations, counted from the record rather than
+  asserted, and it pauses rather than deletes — so a wrong call costs one click.
+- **Every adjustment is recorded with its evidence**, in the same log as the actions themselves and
+  distinguishable from them, so "what changed in my shop" and "what changed about my rules" stay
+  separate questions.
+
+Autonomy is also funded explicitly rather than silently: it stops when a store's credits run out, and
+says so, instead of quietly doing less.
+
+## Advertising spends nothing a merchant has not bounded
+
+Where a store lets Galactic Core manage its advertising unattended, every automated write passes one
+checkpoint before it reaches the ad platform, and that checkpoint answers with one of three outcomes:
+proceed, ask, or refuse.
+
+A write is refused outright when it would carry the month past the spend limit the merchant set —
+there is nothing to approve, because approving would breach a limit they already expressed. A write
+at or above their per-change approval figure is held for a person, recorded as the exact change it
+would make so that approving replays it rather than reconstructing it. Everything else proceeds.
+
+Two details matter more than they look. **A store that has set no limit is treated as the most
+cautious case, not the least** — every spending change is held for approval, because a merchant who
+has configured nothing has expressed no appetite for unattended spend rather than an unlimited one.
+And **a change that spends nothing is never measured against a spending limit**: pausing a campaign
+is the safe direction, and a cap that blocked it would keep a losing campaign running precisely
+because the store was near its limit.
+
 ## Cost coverage before any pricing action
 
 Any automated action that affects price first checks that the store's cost data is complete enough to
