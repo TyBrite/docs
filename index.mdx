@@ -124,6 +124,48 @@ calls a handful of them.
   </Card>
 </CardGroup>
 
+## Agentic and autonomous commerce
+
+**Agentic commerce** is software that acts on a store's behalf rather than waiting to be operated. It
+reads the store's real numbers — what is selling, what has stopped, what shoppers are searching for,
+what a page is missing — and takes the action a person would otherwise take by hand.
+
+**Autonomous commerce** is what happens when that no longer needs asking for. A merchant sets the
+direction once, and the work continues: rules that keep themselves current, a storefront that keeps up
+with the catalogue behind it, product pages that stay findable as the catalogue grows.
+
+The distinction matters because it sets the boundary. Agentic is the capability; autonomous is the
+authority to keep exercising it. Galactic Core ships both, and separates them deliberately — the
+second is opt-in, and it never widens what the first is allowed to do with money.
+
+<Columns cols={2}>
+  <Card title="Agentic commerce" icon="robot" href="/agentic-commerce">
+    The assistant reads a store through a fixed layer of business concepts and acts on what it finds:
+    organising a catalogue outright, preparing a discount or a gift card for approval, and turning an
+    instruction given once into a standing rule that re-decides on every run.
+  </Card>
+  <Card title="Autonomous storefronts" icon="wand-magic-sparkles" href="/anvil">
+    Anvil builds a storefront from a description and then maintains it — following the store as it
+    gains categories, reviews or currencies, repairing its own faults, and settling design questions
+    by running both versions and keeping the one that earns more.
+  </Card>
+</Columns>
+
+Two things make this safe enough to leave running, and both are worth knowing before you build on it.
+
+**Anything that costs money stops for a person.** A discount, a gift card, a price change and an
+advertising spend are prepared and then wait, under a permission a merchant grants deliberately.
+Autonomy changes who *maintains* the rules, never who approves the spending.
+
+**The bounds are code, not instructions.** How much a rule may prepare, how far a budget may move,
+what a store has already committed this month — all of it is enforced in the database and re-checked
+at the moment of use, rather than described to a model and trusted. The full set is in
+[Guardrails](/how-gc-works/guardrails).
+
+For a merchant, the result is a store that keeps improving without anyone remembering to improve it.
+For a developer, these are ordinary platform capabilities — the same events, permissions and API any
+integration uses.
+
 ## Properties of the platform
 
 <Columns cols={2}>

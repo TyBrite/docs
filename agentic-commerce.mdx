@@ -148,6 +148,87 @@ behind the decision, so a change always has an explanation attached rather than 
 
 A workflow that fails repeatedly switches itself off and says so, rather than retrying indefinitely.
 
+## Autonomous workflows
+
+A workflow still begins as a request. Autonomous mode removes that step: the assistant watches how the
+store is performing and keeps the set of standing rules current on its own — setting up rules worth
+running, retuning ones whose thresholds have drifted from the business, and retiring ones that have
+stopped producing anything.
+
+It is opt-in per store, at **Settings → Workflows**, and it changes who maintains the rules rather
+than what a rule may do. **The approval boundary is unchanged.** Discounts, gift cards, pricing rules
+and search rules are still prepared as drafts and still wait for a person, under the same permission
+and on the same pages. What becomes automatic is the upkeep, not the spending.
+
+Three constraints hold it in place, and each is enforced in Galactic Core's own code rather than left
+to the assistant's judgement — they sit alongside the wider set of platform
+[guardrails](/how-gc-works/guardrails):
+
+- **A rule a person paused stays paused.** Pausing is an instruction, not an untidy state to be
+  corrected, so it is never restarted automatically.
+- **A rule that has ever acted is never retired.** Retirement is reserved for rules that have produced
+  nothing across a sustained run of evaluations, counted from the run log rather than asserted.
+- **Nothing happens without a record.** Every adjustment writes a run entry carrying the figures it
+  was based on, beside the entries for the actions themselves — and the two are distinguishable, so
+  "what changed in my shop" and "what changed about my rules" remain separate questions.
+
+Running in the background consumes AI credits, which is why the same setting establishes how they are
+replenished: an amount, the balance that triggers it, and a ceiling for the month. A payment that does
+not go through is reported by email, and a second failure stops the attempts rather than re-presenting
+the card. Without replenishment the assistant simply stops maintaining the rules; the rules themselves
+carry on running as they were.
+
+Where a store has a marketing goal recorded, the assistant reads it — what the merchant said they are
+optimising for, and until when — so its decisions follow that objective. Where there is none, which is
+the ordinary case, nothing changes.
+
+### Product pages
+
+One workflow arrives with every store rather than being asked for. Once a month it looks for products
+whose search title and description are empty and writes them, so those pages can be found by search
+engines. It works from the product itself and from the terms shoppers on that store have searched for,
+it only ever fills a gap rather than replacing wording a merchant wrote, and it starts with the pages
+that have nothing at all. A catalogue larger than a month's budget is covered over several months,
+emptiest pages first.
+
+### Seasons
+
+A store's seasons depend on where its customers actually are, so they are read from real storefront
+traffic rather than assumed. A store selling into the United States meets Thanksgiving and Black
+Friday; one selling into Britain meets Boxing Day instead; a store selling into both meets all three.
+Where there is too little traffic to say, nothing is proposed rather than something guessed.
+
+Each season carries the lead time an offer needs, so a rule is set up when there is still time to
+approve and stock it — not on the day. Seasons that suit particular catalogues are proposed only to
+the stores that sell those things. Dates that move from year to year, like Thanksgiving, are resolved
+to the exact day.
+
+What arrives is a standing rule rather than a finished promotion: it recurs each year, and what it
+prepares still waits for approval like any other offer.
+
+### Advertising and merchandising
+
+The two sides read each other. A clearance rule leaves out products that advertising is driving sales
+to — otherwise the same merchant pays for the click and then discounts the sale it produced — and
+records how many it held back. In the other direction, the advertising side sees which promotions are
+live or scheduled, which markdown rules are active, and that changes are waiting on the merchant's
+approval.
+
+### Rules that arrive with a store
+
+A store set up by an agency can start with standing rules already running, chosen by that agency for
+the merchants it serves. They are ordinary workflows from the moment the store exists: the merchant
+pauses, retunes or removes them like any other, and what they change stays changed. Defining that set
+is described under [agencies](/agencies).
+
+### Limits
+
+The number of standing rules a store may have, how long the run record is kept, and how many
+consecutive failures switch a rule off are all set per store, under **Settings → Workflows → Settings**.
+Each starts from a default appropriate to the plan and can be adjusted: a catalogue spanning dozens of
+categories and a focused one have different needs, and the ceiling follows the plan for any store that
+has not chosen its own.
+
 ## Where the decision sits
 
 The assistant never issues a gift card, activates a promotion, or turns on a pricing rule on its own.
