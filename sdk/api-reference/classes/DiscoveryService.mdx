@@ -18,6 +18,28 @@ from [Products](/sdk/api-reference/classes/ProductsService).
   Discovery is a simple, non-personalized signal ranking anyone can render on a storefront.
 </Note>
 
+## When there is not enough activity yet
+
+A store with little traffic in the window would return an empty or one-item shelf, so the list is
+topped up from featured and recently-added products and the response carries `backfilled: true`.
+
+Those entries are real, purchasable products and are safe to display. What changes is what `score`
+means: for a padded entry it is a ranking weight, not a view count or a conversion ratio. A new
+store, or a short window on a quiet one, will see `backfilled: true` routinely — it is the normal
+state early on, not an error.
+
+```typescript
+const popular = await client.discovery.getMostViewedProducts({ windowHours: 24, limit: 8 });
+
+if (popular.backfilled) {
+  // Not enough views in the window to rank by. The products are still worth showing —
+  // label the shelf generically rather than calling it "Most viewed".
+  renderShelf('Popular picks', popular.products);
+} else {
+  renderShelf('Most viewed this week', popular.products);
+}
+```
+
 ## Methods
 
 ### `getMostViewedProducts`
@@ -32,6 +54,7 @@ const popular = await client.discovery.getMostViewedProducts({
 // returns {
 //     metric: 'most-viewed',
 //     window_hours: 720,
+//     backfilled: false,
 //     products: [
 //       { product_id: '0186665f-f0a1-4c79-976a-919b5b1c2daa', score: 15 },
 //       { product_id: '068aa59d-1adf-4685-adf5-9793b1ffb9c9', score: 10 },
@@ -40,7 +63,7 @@ const popular = await client.discovery.getMostViewedProducts({
 //   }
 ```
 
-`score` is the view count in the window. A product's presence in `getMostViewedProducts({ windowHours: 1 })` is a natural "hot right now" signal for a PDP badge.
+`score` is the view count in the window (unless `backfilled` is `true` — see above). A product's presence in `getMostViewedProducts({ windowHours: 1 })` is a natural "hot right now" signal for a PDP badge.
 
 ### `getMostAddedToCartProducts`
 
