@@ -10518,6 +10518,16 @@ paths:
                   description: The cart lines to calculate the discount against. Also accepted under the name `items`, which behaves identically; send whichever matches your storefront's own cart shape, and `cart` when both are present.
                   items:
                     $ref: '#/components/schemas/PromotionCartItem'
+                country:
+                  type: string
+                  minLength: 2
+                  maxLength: 2
+                  description: 'The shopper''s country as an ISO 3166-1 alpha-2 code, used to decide whether a market-targeted promotion applies. Optional: when omitted the country is taken from the request''s own network origin, so a storefront served through Galactic Core needs to send nothing. Pass it explicitly when your storefront resolves the destination itself, or to preview another market.'
+                  example: US
+                region:
+                  type: string
+                  description: The shopper's region or state, for a promotion narrowed within a market. Optional, and taken from the request's origin when omitted.
+                  example: California
                 items:
                   type: array
                   description: Alias of `cart`. Send one or the other, not both.
@@ -10609,6 +10619,16 @@ paths:
                   description: The cart lines to evaluate promotions against. Also accepted under the name `items`, which behaves identically; send whichever matches your storefront's own cart shape, and `cart` when both are present.
                   items:
                     $ref: '#/components/schemas/PromotionCartItem'
+                country:
+                  type: string
+                  minLength: 2
+                  maxLength: 2
+                  description: 'The shopper''s country as an ISO 3166-1 alpha-2 code, used to decide whether a market-targeted promotion applies. Optional: when omitted the country is taken from the request''s own network origin, so a storefront served through Galactic Core needs to send nothing. Pass it explicitly when your storefront resolves the destination itself, or to preview another market.'
+                  example: US
+                region:
+                  type: string
+                  description: The shopper's region or state, for a promotion narrowed within a market. Optional, and taken from the request's origin when omitted.
+                  example: California
                 items:
                   type: array
                   description: Alias of `cart`. Send one or the other, not both.
@@ -22022,6 +22042,23 @@ components:
             object.
           items:
             $ref: '#/components/schemas/ResolvedPromotionProduct'
+        target_countries:
+          type: array
+          items:
+            type: string
+            minLength: 2
+            maxLength: 2
+          description: ISO 3166-1 alpha-2 codes this promotion applies in. An EMPTY array means it applies everywhere, which is the default. When codes are present the promotion is only applied to shoppers in those markets, and is refused when the shopper's location cannot be determined — applying a market-limited offer to an unknown visitor would give it to everyone.
+          example:
+            - US
+            - CA
+        target_regions:
+          type: array
+          items:
+            type: string
+          description: Region or state names this promotion applies in, matched case-insensitively. Empty means everywhere. Use alongside `target_countries` to narrow within a market.
+          example:
+            - California
         has_time_restrictions:
           type: boolean
           description: Whether the promotion only applies during specific times/days.

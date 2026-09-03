@@ -243,6 +243,31 @@ This is the right call for **every** type, including percentage and `fixed` — 
 
 ---
 
+### Promotions limited to a market
+
+A promotion carries `target_countries` and `target_regions`. When both are empty the promotion applies to every shopper, which is what a promotion with no targeting set carries. When either holds values, the shopper's location must match for the promotion to be eligible.
+
+`calculatePromotionDiscount` and `calculateBestPromotion` accept the shopper's `country` (ISO 3166-1 alpha-2) and `region` alongside the cart:
+
+```typescript
+const result = await client.promotions.calculatePromotionDiscount({
+  id: 'promotion_uuid',
+  requestBody: {
+    cart: [{ product_id: 'prod_a', quantity: 2, price: 25.00 }],
+    country: 'GB',
+    region: 'Scotland',
+  },
+});
+```
+
+Both fields are optional. When you omit them, Galactic Core reads the shopper's country from the network edge, so a browser calling directly is located without you sending anything — send them explicitly when your storefront renders on a server, or when you are previewing a market other than the caller's own.
+
+A promotion the shopper's location excludes returns `eligible: false` with a `reason` naming the restriction, and `calculateBestPromotion` passes over it entirely rather than returning a deal that would be refused at checkout. The same evaluation runs when the order is placed, so a targeted promotion cannot be applied by sending a different country than the one the order ships from.
+
+Targeting composes with every other condition: a promotion may be limited to a market *and* carry a minimum purchase, a date window, and time-of-day restrictions, and all of them must pass.
+
+---
+
 ### Auto-applying the best promotion
 
 `calculateBestPromotion` evaluates **all** of the store's active promotions against a cart and returns the single one that saves the customer the most — ideal for auto-applying a deal at checkout without making the shopper hunt for a code:
@@ -327,6 +352,8 @@ A marketplace key may read and calculate a single merchant's promotions this way
 | `bundle_products` / `bogo_required_products` / `bogo_free_products` / `free_products` | `array` | Product sets (ids) for `bundle` / `bogo` promotions. |
 | `*_resolved` (e.g. `bundle_products_resolved`) | `array` | Only present when fetched with `expand: 'products'`. Same entries as the matching id array, each with an embedded `product` (`{ product_id, name, price, image, category }`) or `null`. |
 | `has_time_restrictions` | `boolean` | Whether the promotion only applies on certain days/times (`start_time`, `end_time`, `time_zone`, `apply_to_days`). |
+| `target_countries` | `array` | ISO 3166-1 alpha-2 codes the promotion is limited to. An empty array means it applies everywhere. |
+| `target_regions` | `array` | Region or state names the promotion is limited to, matched case-insensitively. An empty array means every region. |
 
 ### `PromotionCalculation` (returned by `calculatePromotionDiscount`)
 | Field | Type | Description |

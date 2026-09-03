@@ -142,7 +142,7 @@ Tybrite calculates prices in a specific waterfall priority:
 
 1.  **Direct Overrides**: Manual price overrides set on specific product variants.
 2.  **Customer Segments**: Price rules targeting groups like "Wholesalers" (Champions, Loyal, etc.).
-3.  **Regional Rules**: Region-specific discounts or markups (e.g., a UK promotional discount, an EU regional rule).
+3.  **Regional Rules**: Region-specific discounts or markups (e.g., a UK promotional discount, an EU regional rule). These match on the shopper's country and region, which Galactic Core reads from the network edge when you don't pass a location — a browser calling directly is located without you sending anything. Send `placeName` or coordinates to override that, which is what a server-rendered storefront and a market preview both need.
 4.  **Volume Tiers**: Price reductions triggered by the `quantity` parameter.
 5.  **Order Value Rules**: Discounts that depend on what the shopper is spending overall, such as "5% off orders over $100", triggered by the `orderTotal` parameter.
 
