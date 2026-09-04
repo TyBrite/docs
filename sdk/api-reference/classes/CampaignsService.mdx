@@ -1,0 +1,141 @@
+---
+title: "Campaigns"
+description: "Reference for the CampaignsService class in the Tybrite SDK."
+---
+
+The `CampaignsService` class (accessed via `client.campaigns`) reads the campaigns a store is currently running. A campaign is a discount with a budget behind it: it stops discounting once that budget is spent, which is what separates it from a promotion — a promotion runs until its end date.
+
+Both methods return only campaigns that are running at the moment of the call, tested the same way the checkout tests them: active, and inside the date window. A campaign that is scheduled, paused, ended or still a draft is not returned, so an offer shown from this service is one the checkout will honour.
+
+<Note>
+  The budget is not exposed, and neither is anything measured against it — spend, remaining budget, revenue, cost of goods, conversions, reach or engagement. Those are the merchant's commercial position. A storefront needs to know an offer exists and what it takes off, not how much of it is left.
+</Note>
+
+## Methods
+
+### `listCampaigns`
+
+Retrieve the campaigns running right now. Use this to build an offers strip or a campaign landing page.
+
+```typescript
+const { campaigns } = await client.campaigns.listCampaigns({ limit: 20 });
+
+const online = campaigns.filter(
+  (c) => c.applies_to === 'online' || c.applies_to === 'all'
+);
+console.log(`Running online: ${online.length}`);
+```
+
+```json Response
+{
+  "campaigns": [
+    {
+      "id": "3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04",
+      "name": "Autumn Drop",
+      "type": "seasonal",
+      "discount_type": "percentage",
+      "discount_value": 15,
+      "start_date": "2026-09-01",
+      "end_date": "2026-09-30",
+      "status": "active",
+      "applies_to": "online",
+      "has_time_restrictions": false,
+      "start_time": null,
+      "end_time": null,
+      "time_zone": "UTC",
+      "apply_to_days": null,
+      "image": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop.png",
+      "image_mobile": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop-mobile.png"
+    },
+    {
+      "id": "7b2bfca8-c601-4866-9b29-fbd59f37f9f4",
+      "name": "Weekend Late Night",
+      "type": "flash",
+      "discount_type": "fixed_amount",
+      "discount_value": 20,
+      "start_date": "2026-09-01",
+      "end_date": "2026-10-31",
+      "status": "active",
+      "applies_to": "all",
+      "has_time_restrictions": true,
+      "start_time": "18:00:00",
+      "end_time": "23:00:00",
+      "time_zone": "Europe/London",
+      "apply_to_days": ["friday", "saturday"],
+      "image": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/7b2bfca8-c601-4866-9b29-fbd59f37f9f4/late-night.png",
+      "image_mobile": null
+    }
+  ]
+}
+```
+
+### `getCampaign`
+
+Retrieve a single campaign by id. A campaign that exists but is not currently running returns a 404, the same as one that does not exist.
+
+```typescript
+const campaign = await client.campaigns.getCampaign({
+  id: '3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04'
+});
+
+console.log(`${campaign.name}: ${campaign.discount_value}% off`);
+```
+
+```json Response
+{
+  "id": "3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04",
+  "name": "Autumn Drop",
+  "type": "seasonal",
+  "discount_type": "percentage",
+  "discount_value": 15,
+  "start_date": "2026-09-01",
+  "end_date": "2026-09-30",
+  "status": "active",
+  "applies_to": "online",
+  "has_time_restrictions": false,
+  "start_time": null,
+  "end_time": null,
+  "time_zone": "UTC",
+  "apply_to_days": null,
+  "image": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop.png",
+  "image_mobile": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop-mobile.png"
+}
+```
+
+## Banners
+
+`image` is the desktop banner and `image_mobile` the phone crop. Render `image_mobile` on small screens and fall back to `image` everywhere else — a desktop banner scaled down to a phone loses its subject, which is why the two are separate fields rather than one.
+
+Either can be null. A campaign with no banner at all is normal: the merchant may be running it as a plain discount, and a storefront should render the name and the offer without one.
+
+## Where a campaign applies
+
+`applies_to` says which sales channel an offer is valid on:
+
+| Value | Valid on |
+|---|---|
+| `all` | a storefront and an in-person till |
+| `online` | a storefront only |
+| `pos` | an in-person till only |
+
+A storefront should show a campaign whose `applies_to` is `online` or `all`, and ignore one marked `pos`. Passing a `pos` campaign to an online order has no effect: the discount is evaluated server-side against the channel the order came from, and a campaign scoped to the other channel grants nothing.
+
+## Time restrictions
+
+When `has_time_restrictions` is true, the campaign only applies inside `start_time`–`end_time`, on the days in `apply_to_days`, evaluated in `time_zone` — not in the shopper's zone and not in UTC. A campaign listed as running is inside its date window, but a shopper arriving outside the daily hours will see the discount evaluate to zero at checkout, so render the window alongside the offer when one is set.
+
+## Applying a campaign to an order
+
+Pass the campaign id when you create the order:
+
+```typescript
+const order = await client.orders.createOrder({
+  requestBody: {
+    customer_email: 'shopper@example.com',
+    items: [{ product_id: productId, quantity: 1 }],
+    campaign_ids: ['3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04']
+  }
+});
+```
+
+The discount is computed server-side from the campaign's own rules and what is left of its budget, so the amount a storefront displays is never what settles the order. A campaign whose budget is spent adds nothing, and one whose remaining budget is smaller than the discount it would normally grant contributes only what is left.

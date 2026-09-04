@@ -576,6 +576,8 @@ tags:
     description: Dynamic pricing engine
   - name: Promotions
     description: Marketing promotions and discounts
+  - name: Campaigns
+    description: Campaigns — a discount with a budget behind it
   - name: Gift Cards
     description: Gift card management
   - name: Messaging
@@ -3853,6 +3855,20 @@ paths:
                         format: float
                         description: Discount amount attributed to this promotion
                         example: 150
+                campaign_ids:
+                  type:
+                    - array
+                    - 'null'
+                  description: |
+                    Campaigns to apply to this order, by id. The discount each one grants is computed
+                    server-side against the campaign's own rules and its remaining budget, so a
+                    campaign that has spent its budget adds nothing. Once the order is paid, what
+                    each campaign granted is drawn from its budget.
+                  items:
+                    type: string
+                    format: uuid
+                  example:
+                    - 3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04
                 apply_store_credit:
                   type: boolean
                   description: |
@@ -5829,7 +5845,7 @@ paths:
                     variant_attributes:
                       color: Black
                     product_sku: SONY-WH1000XM4-BLK
-                    thumbnail_url: https://media.tybritelabs.com/sony-wh1000xm4.jpg
+                    thumbnail_url: https://cdn.tybritelabs.com/sony-wh1000xm4.jpg
                     media: []
                     quantity: 1
                     unit_price: 349.99
@@ -6091,10 +6107,10 @@ paths:
                     variant_name: Default
                     variant_attributes: {}
                     product_sku: SAM-WATCH-6-44-0186
-                    thumbnail_url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                    thumbnail_url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                     media:
                       - id: dd630f03-fff1-455e-a927-46ddf36fde72
-                        url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                        url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                         type: image
                         alt_text: Samsung Galaxy Watch 6
                         position: 0
@@ -6250,10 +6266,10 @@ paths:
                     variant_name: Default
                     variant_attributes: {}
                     product_sku: SAM-WATCH-6-44-0186
-                    thumbnail_url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                    thumbnail_url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                     media:
                       - id: dd630f03-fff1-455e-a927-46ddf36fde72
-                        url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                        url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                         type: image
                         alt_text: Samsung Galaxy Watch 6
                         position: 0
@@ -6480,10 +6496,10 @@ paths:
                     variant_name: Default
                     variant_attributes: {}
                     product_sku: DEL-XPS-13-068a
-                    thumbnail_url: https://media.tybritelabs.com/dell-xps-13.jpg
+                    thumbnail_url: https://cdn.tybritelabs.com/dell-xps-13.jpg
                     media:
                       - id: 0987a93b-0fe3-4155-8168-27c7c551611e
-                        url: https://media.tybritelabs.com/dell-xps-13.jpg
+                        url: https://cdn.tybritelabs.com/dell-xps-13.jpg
                         type: image
                         alt_text: Dell XPS 13
                         position: 0
@@ -6589,10 +6605,10 @@ paths:
                     variant_attributes: {}
                     product_sku: SAM-WATCH-6-44-0186
                     product_price: 299
-                    thumbnail_url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                    thumbnail_url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                     media:
                       - id: dd630f03-fff1-455e-a927-46ddf36fde72
-                        url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                        url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                         type: image
                         alt_text: Samsung Galaxy Watch 6
                         position: 0
@@ -6703,10 +6719,10 @@ paths:
                     variant_attributes: {}
                     product_sku: SAM-WATCH-6-44-0186
                     product_price: 299
-                    thumbnail_url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                    thumbnail_url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                     media:
                       - id: dd630f03-fff1-455e-a927-46ddf36fde72
-                        url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                        url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                         type: image
                         alt_text: Samsung Galaxy Watch 6
                         position: 0
@@ -6936,10 +6952,10 @@ paths:
                     variant_name: Default
                     variant_attributes: {}
                     product_sku: SAM-WATCH-6-44-0186
-                    thumbnail_url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                    thumbnail_url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                     media:
                       - id: dd630f03-fff1-455e-a927-46ddf36fde72
-                        url: https://media.tybritelabs.com/samsung-galaxy-watch-6.jpg
+                        url: https://cdn.tybritelabs.com/samsung-galaxy-watch-6.jpg
                         type: image
                         alt_text: Samsung Galaxy Watch 6
                         position: 0
@@ -10658,6 +10674,131 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/campaigns:
+    get:
+      operationId: listCampaigns
+      tags:
+        - Campaigns
+      summary: List running campaigns
+      description: |
+        Returns the campaigns that are running right now, by the same test the checkout applies: the
+        campaign is active and today falls inside its date window. A campaign that is scheduled,
+        paused, ended or still a draft is not returned, so an offer advertised here is one the
+        checkout will honour.
+
+        A campaign is a discount with a budget behind it. It stops discounting once that budget is
+        spent, which is the difference between a campaign and a promotion — a promotion runs until
+        its end date. The budget itself is never exposed.
+
+        Use `applies_to` to tell where an offer is valid: `online` for a storefront, `pos` for a
+        till, `all` for both. Pass the campaign id to the order you create and the discount is
+        applied and validated server-side.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+          description: Maximum number of campaigns to return.
+      responses:
+        '200':
+          description: The campaigns currently running.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Campaign'
+              example:
+                campaigns:
+                  - id: 3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04
+                    name: Autumn Drop
+                    type: seasonal
+                    discount_type: percentage
+                    discount_value: 15
+                    start_date: '2026-09-01'
+                    end_date: '2026-09-30'
+                    status: active
+                    applies_to: online
+                    has_time_restrictions: false
+                    start_time: null
+                    end_time: null
+                    time_zone: UTC
+                    apply_to_days: null
+                    image: https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop.png
+                    image_mobile: null
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/campaigns/{id}:
+    get:
+      operationId: getCampaign
+      tags:
+        - Campaigns
+      summary: Get a running campaign
+      description: |
+        Returns one campaign, if it is running right now. A campaign that exists but is not currently
+        running returns 404, the same as one that does not exist.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The campaign id.
+      responses:
+        '200':
+          description: The campaign.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              example:
+                id: 3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04
+                name: Autumn Drop
+                type: seasonal
+                discount_type: percentage
+                discount_value: 15
+                start_date: '2026-09-01'
+                end_date: '2026-09-30'
+                status: active
+                applies_to: online
+                has_time_restrictions: false
+                start_time: null
+                end_time: null
+                time_zone: UTC
+                apply_to_days: null
+                image: https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop.png
+                image_mobile: null
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -15806,7 +15947,7 @@ paths:
                           format: uri
                         description: Optional photo or video URLs evidencing the return.
                         example:
-                          - https://media.tybritelabs.com/return-photo-1.jpg
+                          - https://cdn.tybritelabs.com/return-photo-1.jpg
             example:
               order_id: 770a0622-0401-63f6-c938-557766551111
               reason_code: damaged
@@ -15816,7 +15957,7 @@ paths:
                   quantity: 1
                   condition: damaged
                   media:
-                    - https://media.tybritelabs.com/return-photo-1.jpg
+                    - https://cdn.tybritelabs.com/return-photo-1.jpg
       responses:
         '201':
           description: Return lodged
@@ -22174,6 +22315,86 @@ components:
         discount:
           type: number
           description: The discount amount for the winning promotion. `0` when none applies.
+    Campaign:
+      type: object
+      description: |
+        A discount with a budget behind it. It stops discounting once the budget is spent, which is
+        what separates a campaign from a promotion — a promotion runs until its end date. The budget
+        and everything measured against it are the merchant's own figures and are not exposed.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          description: The kind of campaign, as the merchant categorised it.
+          example: seasonal
+        discount_type:
+          type: string
+          description: Whether `discount_value` is a percentage of the cart or a fixed amount off it.
+          enum:
+            - percentage
+            - fixed_amount
+        discount_value:
+          type: number
+          description: The percentage, or the fixed amount, depending on `discount_type`.
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        status:
+          type: string
+          description: Lifecycle status. Only a running campaign is returned, so this is always `active`.
+          example: active
+        applies_to:
+          type: string
+          description: Where the campaign is valid — a storefront, a till, or both.
+          enum:
+            - all
+            - online
+            - pos
+        has_time_restrictions:
+          type: boolean
+          description: Whether the campaign only applies at certain hours or on certain days.
+        start_time:
+          type:
+            - string
+            - 'null'
+          description: Start of the daily window, in `time_zone`. Null when there is no time restriction.
+        end_time:
+          type:
+            - string
+            - 'null'
+          description: End of the daily window, in `time_zone`. Null when there is no time restriction.
+        time_zone:
+          type:
+            - string
+            - 'null'
+          description: The zone the daily window is evaluated in.
+          example: UTC
+        apply_to_days:
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+          description: Days of the week the campaign applies on. Null when it applies every day.
+        image:
+          type:
+            - string
+            - 'null'
+          description: Banner artwork for the campaign. Null when the merchant has not set one.
+        image_mobile:
+          type:
+            - string
+            - 'null'
+          description: |
+            Phone-sized banner. Null when only the desktop banner is set — fall back to `image` there,
+            rather than cropping it.
     Post:
       type: object
       properties:
