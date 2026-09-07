@@ -45,7 +45,13 @@ A sandbox record is invisible to a live key, and vice versa — to the other env
 simply does not exist (a cross-environment lookup returns `404`, never a hint that the record lives
 elsewhere).
 
-**Catalog and reference data is shared.** Products, categories, and promotions are read-as-is in both
+**Discount instruments are isolated too.** Promotions, gift cards, and campaigns each belong to one
+environment: a test key resolves only sandbox instruments, and a live key only real ones. Because
+these are normally created by the merchant in their admin — which always writes production — you
+create your own with the [seed endpoints](#seed-discount-instruments) rather than borrowing the
+merchant's.
+
+**Catalog data is shared.** Products, categories, and collections are read-as-is in both
 environments — a test key reads the merchant's *real* catalog, so you can build and test a realistic
 storefront against actual products. It just gets no production *transactional* data tied to those
 reads: a test key sees only the orders, customers, and carts created in sandbox.
@@ -84,7 +90,7 @@ still there. The purge can also be triggered [on demand](#developer-tools) rathe
 
 ## Developer tools
 
-Three operations control sandbox state directly. All require a **secret test key**
+These operations control sandbox state directly. All require a **secret test key**
 (`tybrite_sk_test_*`), only ever affect your sandbox data, and are available via `client.sandbox` in
 the SDK (full reference: [SandboxService](/sdk/api-reference/classes/SandboxService)).
 
@@ -109,8 +115,8 @@ const result = await client.sandbox.advanceSandboxTime({ requestBody: { advance_
 // → { advanced_days: 30, shifted: { shopping_carts, stock_reservations, storefront_events }, not_shifted: {…} }
 ```
 
-The response's `not_shifted` explains what is intentionally left alone — to test promotion or
-gift-card expiry, create one in sandbox with a near-future date.
+The response's `not_shifted` explains what is intentionally left alone. To test promotion or
+gift-card expiry, seed one with a near-future end date using the endpoints below.
 
 ### Webhook replay
 
@@ -121,6 +127,42 @@ or customer, so a handler can be iterated on against the same payload.
 // Replay the most recent sandbox event of a type, or pass { event_id } for a specific one.
 await client.sandbox.replaySandboxWebhook({ requestBody: { type: 'order.created' } });
 ```
+
+### Seed discount instruments
+
+A sandbox order with nothing to discount only exercises half a checkout. Promotions, gift cards, and
+campaigns are created by the merchant in their admin, which always writes production data — so these
+three endpoints are how each comes to exist in your sandbox.
+
+Every field is optional. The defaults produce a ready-to-use instrument, so an empty body is enough
+to get a working discount.
+
+```typescript
+// A 15% cart promotion, active today, running 30 days.
+const { promotion } = await client.sandbox.seedSandboxPromotion({
+  requestBody: { value: 15 }
+});
+
+// A gift card with a known code, so a test can redeem a specific one.
+const { gift_card } = await client.sandbox.seedSandboxGiftCard({
+  requestBody: { code: 'SBX-DEMO-100', value: 100 }
+});
+
+// A campaign: a budget with a discount attached, scoped to online orders.
+const { campaign } = await client.sandbox.seedSandboxCampaign({
+  requestBody: { budget: 500, discount_value: 20, applies_to: 'online' }
+});
+```
+
+A campaign stops discounting once its budget is spent, so seeding one with a small budget is how you
+exercise budget exhaustion without spending a real one.
+
+<Note>
+  Seeded instruments are sandbox rows like any other: they never appear in the merchant's admin, they
+  are cleared by a [reset](#sandbox-reset), and they are removed by the automatic 30-day cleanup. A
+  test run that needs a particular instrument seeds it rather than assuming a previous run's is still
+  there.
+</Note>
 
 ## How to use it
 
