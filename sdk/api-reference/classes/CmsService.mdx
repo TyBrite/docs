@@ -55,6 +55,10 @@ posts.forEach(post => {
 The listing response includes light metadata like `excerpt`, `featured_image`, `slug`, and
 `product_count` (how many products a shoppable post links to). For the full `content`, use `getPost`.
 
+`?fields=` on the listing accepts the summary fields above. The article body (`content`) and its
+embedded `products` and `lookbooks` are fetched per post and belong to `getPost`; asking for one of
+them here returns `400` naming the field rather than omitting it silently.
+
 Each post carries two timestamps. `created_at` is when it was first written; `updated_at` is when it
 was last edited, by anyone and in any way — a merchant revising the text, or an automated change such
 as a regenerated cover image. An article page that shows a revision date reads as current when the
@@ -176,6 +180,9 @@ const { lookbooks, pagination } = await client.cms.listLookbooks({ limit: 12 });
 
 Lookbooks carry `created_at` and `updated_at` on both the listing and the detail response, with the
 same meaning they have on a post: when it was created, and when it was last changed.
+
+The gallery (`images`, with its shoppable hotspots) and `collection_id` are fetched per lookbook and
+belong to `getLookbook`; asking for one of them on the listing returns `400`.
 
 ---
 

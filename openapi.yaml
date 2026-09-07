@@ -3425,8 +3425,10 @@ paths:
           in: query
           required: false
           description: |
-            Comma-separated list of fields to include per order. Same allowed fields
-            as `GET /v1/orders/{id}` (excluding `items`, which is not returned in list view).
+            Comma-separated list of fields to include per order. The same allowed fields as
+            `GET /v1/orders/{id}`, minus the ones fetched per order rather than read from the order
+            row: `items`, `status_notes` and `custom_fields` are returned by the detail endpoint, and
+            requesting one of them here is a `400`.
           schema:
             type: string
           example: order_number,order_status,total_amount,created_at
@@ -10849,11 +10851,14 @@ paths:
             Comma-separated list of fields to include in the response.
 
             **Allowed Fields:**
-            - `id`, `title`, `slug`, `excerpt`, `content`, `featured_image`
+            - `id`, `title`, `slug`, `excerpt`, `featured_image`
             - `category_id`, `category_name`, `category_slug`, `category_icon`
             - `author_name`, `author_avatar`, `status`, `published_at`
             - `view_count`, `product_count`, `seo_title`, `seo_description`
-            - `created_at`, `updated_at`, `products`, `lookbooks`
+            - `created_at`, `updated_at`
+
+            The article body (`content`) and its embedded `products` and `lookbooks` are returned by
+            `GET /v1/posts/{slug}`, not here — requesting one of them on the listing is a `400`.
           example: title,slug,excerpt,published_at
       responses:
         '200':
@@ -11083,7 +11088,10 @@ paths:
 
             **Allowed Fields:**
             - `id`, `title`, `slug`, `description`, `featured_image`
-            - `collection_id`, `published_at`, `created_at`, `images`
+            - `status`, `published_at`, `created_at`, `updated_at`
+
+            The gallery (`images`, with its shoppable hotspots) and `collection_id` are returned by
+            `GET /v1/lookbooks/{slug}`, not here — requesting one on the listing is a `400`.
           example: title,slug,featured_image
       responses:
         '200':
