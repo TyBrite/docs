@@ -1,6 +1,6 @@
 ---
 title: "Sandbox"
-description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, webhook replay, and seeding discount instruments and B2B buyer accounts in the sandbox environment."
+description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, webhook replay, and seeding discount instruments, pricing rules and B2B buyer accounts in the sandbox environment."
 ---
 
 The `SandboxService` class (accessed via `client.sandbox`) is developer tooling for the
@@ -219,12 +219,49 @@ const { buyer_account } = await client.sandbox.seedSandboxB2BBuyerAccount({
   and seeding a buyer account does not change that.
 </Note>
 
+### `seedSandboxPricingRule`
+
+Create a dynamic-pricing rule in your sandbox, so `/v1/prices/*` returns a rule-adjusted price you
+can build against. Rules are environment-scoped: a test key resolves only the rules you seed, and a
+live key only the merchant's real ones.
+
+Seeding also refreshes your sandbox pricing cache, so the rule takes effect on your next request
+rather than when the cache expires.
+
+```typescript
+const { pricing_rule } = await client.sandbox.seedSandboxPricingRule({
+  requestBody: { name: 'Sandbox half price', rule_type: 'percentage', discount_value: 50 }
+});
+```
+
+```json Response
+{
+  "pricing_rule": {
+    "id": "61156d88-c51f-48ec-a44b-61d10d8b2992",
+    "name": "Sandbox half price",
+    "rule_type": "percentage",
+    "discount_value": 50,
+    "applies_to": "all",
+    "target_ids": [],
+    "priority": 0,
+    "start_date": "2026-09-07T00:00:00+00:00",
+    "end_date": "2026-10-07T00:00:00+00:00",
+    "is_active": true,
+    "environment": "sandbox"
+  }
+}
+```
+
+`rule_type` accepts `percentage`, `fixed_amount`, `fixed_price` and `markup`. To scope a rule, set
+`applies_to` to `category`, `product` or `collection` and pass the matching ids in `target_ids` — a
+scoped rule with no targets matches nothing and is refused.
+
 ## Response Codes
 
 | Code | Meaning |
 | :--- | :--- |
 | `204` | Reset succeeded (no body). |
-| `201` | A sandbox promotion, gift card, campaign, or B2B buyer account was created. |
+| `201` | A sandbox promotion, gift card, campaign, B2B buyer account, or pricing rule was created. |
 | `200` | Time-travel / replay succeeded (summary returned). |
 | `400` | Invalid request — `advance_days` out of 1–3650, neither `event_id` nor `type`, an unknown promotion `type` or campaign `discount_type`, a non-positive value, or a `start_date` in the past. |
 | `401` | Missing or invalid API key. |
