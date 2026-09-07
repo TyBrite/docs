@@ -157,6 +157,21 @@ const { campaign } = await client.sandbox.seedSandboxCampaign({
 A campaign stops discounting once its budget is spent, so seeding one with a small budget is how you
 exercise budget exhaustion without spending a real one.
 
+### Seed a dynamic-pricing rule
+
+Dynamic pricing is the other thing that changes what a shopper is charged, and it is environment-
+scoped for the same reason: a test key resolves only the rules you seed, never the merchant's real
+pricing strategy.
+
+```typescript
+const { pricing_rule } = await client.sandbox.seedSandboxPricingRule({
+  requestBody: { rule_type: 'percentage', discount_value: 50 }
+});
+```
+
+`/v1/prices/*` then returns the rule-adjusted price for your test key, and the unchanged price for a
+live one. Seeding refreshes your sandbox pricing cache, so the rule applies on the next request.
+
 ### Reach the B2B endpoints
 
 The `/v1/b2b/*` endpoints resolve a **B2B buyer account** for the calling customer before doing
