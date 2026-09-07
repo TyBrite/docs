@@ -19659,6 +19659,284 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/sandbox/seed/promotion:
+    post:
+      operationId: seedSandboxPromotion
+      tags:
+        - Sandbox
+      summary: Create a sandbox promotion
+      description: |
+        Creates a promotion in your **sandbox** so you can apply a discount to a sandbox order.
+
+        Promotions are environment-scoped: a test key resolves only sandbox promotions and a live key
+        only real ones. Because promotions are otherwise created by the merchant in their admin — which
+        always writes production — this endpoint is how a promotion comes to exist in your sandbox at
+        all.
+
+        Every field is optional; the defaults produce an active percentage promotion that starts today
+        and runs for 30 days. The environment is always set to `sandbox` by Galactic Core and is never
+        read from the request body.
+
+        **Requires a secret test key** (`tybrite_sk_test_*`). Publishable keys and live keys are
+        rejected.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Display name. Defaults to a generated `Sandbox promotion …` name.
+                type:
+                  type: string
+                  enum:
+                    - percentage
+                    - fixed
+                    - bogo
+                    - bundle
+                  default: percentage
+                  description: |
+                    `percentage` and `fixed` discount the whole cart. `bogo` and `bundle` carry product
+                    lists and are configured by the merchant.
+                value:
+                  type: number
+                  default: 10
+                  description: Percentage points for `percentage`, else a cash amount.
+                min_purchase:
+                  type: number
+                  default: 0
+                  description: Cart subtotal required before the promotion applies.
+                start_date:
+                  type: string
+                  format: date
+                  description: Defaults to today. Cannot be in the past.
+                end_date:
+                  type: string
+                  format: date
+                  description: Defaults to 30 days from today.
+                status:
+                  type: string
+                  default: active
+            example:
+              name: Launch week
+              type: percentage
+              value: 15
+              min_purchase: 50
+      responses:
+        '201':
+          description: Sandbox promotion created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  promotion:
+                    $ref: '#/components/schemas/SandboxPromotion'
+              example:
+                promotion:
+                  id: 583bcfa6-a86a-4bc4-87e0-1a70e6294bda
+                  name: Launch week
+                  type: percentage
+                  value: '15'
+                  min_purchase: 50
+                  start_date: '2026-09-07'
+                  end_date: '2026-10-07'
+                  status: active
+                  environment: sandbox
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/sandbox/seed/gift-card:
+    post:
+      operationId: seedSandboxGiftCard
+      tags:
+        - Sandbox
+      summary: Create a sandbox gift card
+      description: |
+        Creates a gift card in your **sandbox**, so a sandbox order can be paid for with one and gift
+        card redemption can be exercised end to end.
+
+        Gift cards are environment-scoped: the same code is valid for a test key and unknown to a live
+        key. Every field is optional; the defaults issue an active 50.00 digital card expiring in a
+        year, with a generated `SBX-…` code.
+
+        The environment is always set to `sandbox` by Galactic Core and is never read from the request
+        body. **Requires a secret test key** (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: Redemption code. Defaults to a generated `SBX-…` code.
+                value:
+                  type: number
+                  default: 50
+                  description: Face value; the opening balance matches it. Must be greater than zero.
+                type:
+                  type: string
+                  default: digital
+                expiry_date:
+                  type: string
+                  format: date
+                  description: Defaults to one year from today.
+            example:
+              code: SBX-DEMO-100
+              value: 100
+      responses:
+        '201':
+          description: Sandbox gift card created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gift_card:
+                    $ref: '#/components/schemas/SandboxGiftCard'
+              example:
+                gift_card:
+                  id: 026da417-6ae7-4152-a029-696309e74b05
+                  code: SBX-DEMO-100
+                  value: 100
+                  balance: 100
+                  status: active
+                  type: digital
+                  expiry_date: '2027-09-07'
+                  environment: sandbox
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/sandbox/seed/campaign:
+    post:
+      operationId: seedSandboxCampaign
+      tags:
+        - Sandbox
+      summary: Create a sandbox campaign
+      description: |
+        Creates a marketing campaign in your **sandbox**. A campaign is a budget with a discount
+        attached: it discounts an order like a promotion, but stops once its budget is spent, so this
+        is how budget exhaustion is exercised without spending a real one.
+
+        Use `applies_to` to scope where the campaign applies — `online` for storefront orders, `pos`
+        for in-store, or `all` for both. A campaign scoped to one channel does not discount the other.
+
+        Every field is optional; the defaults create an active campaign with a 1000.00 budget and a 10%
+        discount, starting today and running for 30 days. The environment is always set to `sandbox` by
+        Galactic Core and is never read from the request body.
+
+        **Requires a secret test key** (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Defaults to a generated `Sandbox campaign …` name.
+                type:
+                  type: string
+                  default: seasonal
+                budget:
+                  type: number
+                  default: 1000
+                  description: Total spend the campaign may draw down. Must be greater than zero.
+                discount_type:
+                  type: string
+                  enum:
+                    - percentage
+                    - fixed_amount
+                  default: percentage
+                discount_value:
+                  type: number
+                  default: 10
+                  description: Must be greater than zero.
+                applies_to:
+                  type: string
+                  enum:
+                    - all
+                    - online
+                    - pos
+                  default: all
+                  description: Which sales channel the campaign discounts.
+                start_date:
+                  type: string
+                  format: date
+                  description: Defaults to today. Cannot be in the past.
+                end_date:
+                  type: string
+                  format: date
+                  description: Defaults to 30 days from today.
+                status:
+                  type: string
+                  default: active
+            example:
+              name: Autumn push
+              budget: 500
+              discount_type: percentage
+              discount_value: 20
+              applies_to: online
+      responses:
+        '201':
+          description: Sandbox campaign created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaign:
+                    $ref: '#/components/schemas/SandboxCampaign'
+              example:
+                campaign:
+                  id: d5814e95-e68b-4a98-95bf-cb945f413052
+                  name: Autumn push
+                  type: seasonal
+                  budget: 500
+                  budget_spent: 0
+                  budget_remaining: 500
+                  discount_type: percentage
+                  discount_value: 20
+                  applies_to: online
+                  start_date: '2026-09-07'
+                  end_date: '2026-10-07'
+                  status: active
+                  environment: sandbox
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
 components:
   securitySchemes:
     BearerAuth:
@@ -24798,6 +25076,121 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CollectionItem'
+    SandboxPromotion:
+      type: object
+      description: A promotion created in the sandbox. Only ever resolved by a test key.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - percentage
+            - fixed
+            - bogo
+            - bundle
+        value:
+          type: string
+          description: Percentage points for `percentage`, else a cash amount.
+        min_purchase:
+          type: number
+        start_date:
+          type:
+            - string
+            - 'null'
+          format: date
+        end_date:
+          type:
+            - string
+            - 'null'
+          format: date
+        status:
+          type: string
+        environment:
+          type: string
+          enum:
+            - sandbox
+    SandboxGiftCard:
+      type: object
+      description: A gift card created in the sandbox. The code is unknown to a live key.
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        value:
+          type: number
+        balance:
+          type: number
+          description: Remaining balance. Equals `value` on a freshly created card.
+        status:
+          type: string
+        type:
+          type: string
+        expiry_date:
+          type:
+            - string
+            - 'null'
+          format: date
+        environment:
+          type: string
+          enum:
+            - sandbox
+    SandboxCampaign:
+      type: object
+      description: |
+        A campaign created in the sandbox — a budget with a discount attached. It discounts an order
+        like a promotion but stops once `budget_spent` reaches `budget`.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        budget:
+          type: number
+        budget_spent:
+          type: number
+          description: Drawn down as sandbox orders apply the campaign.
+        budget_remaining:
+          type: number
+          description: Derived from `budget` and `budget_spent`.
+        discount_type:
+          type: string
+          enum:
+            - percentage
+            - fixed_amount
+        discount_value:
+          type: number
+        applies_to:
+          type: string
+          enum:
+            - all
+            - online
+            - pos
+          description: Which sales channel the campaign discounts.
+        start_date:
+          type:
+            - string
+            - 'null'
+          format: date
+        end_date:
+          type:
+            - string
+            - 'null'
+          format: date
+        status:
+          type: string
+        environment:
+          type: string
+          enum:
+            - sandbox
   responses:
     BadRequestError:
       description: Invalid request - malformed data or missing required fields

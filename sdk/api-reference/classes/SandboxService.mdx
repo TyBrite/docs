@@ -1,12 +1,17 @@
 ---
 title: "Sandbox"
-description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, and webhook replay for the sandbox environment."
+description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, webhook replay, and seeding discount instruments in the sandbox environment."
 ---
 
 The `SandboxService` class (accessed via `client.sandbox`) is developer tooling for the
 **sandbox (test) environment**: reset test data in one call, fast-forward time so time-dependent
-behavior fires immediately, and replay a webhook without recreating the underlying record. Each
-removes a manual setup step from a test run, so the run can start from a known state.
+behavior fires immediately, replay a webhook without recreating the underlying record, and create
+the discount instruments a checkout needs. Each removes a manual setup step from a test run, so the
+run can start from a known state.
+
+Promotions, gift cards, and campaigns are normally created by the merchant in their admin, which
+always writes production data. The seed methods are how those instruments come to exist in your
+sandbox, so a sandbox order can carry a discount.
 
 <Note>
   Every Sandbox method requires a **secret test key** (`tybrite_sk_test_*`). Publishable keys and
@@ -53,8 +58,8 @@ const result = await client.sandbox.advanceSandboxTime({
 
 <Note>
   Subscription trials/renewals are real account state and are not time-shifted; promotions and gift
-  cards aren't shifted either — to test their expiry, create one in sandbox with a near-future date.
-  The `not_shifted` object explains each.
+  cards aren't shifted either. To test their expiry, seed one with a near-future `end_date` or
+  `expiry_date` using the methods below. The `not_shifted` object explains each.
 </Note>
 
 ### `replaySandboxWebhook`
@@ -81,13 +86,111 @@ await client.sandbox.replaySandboxWebhook({
 
 </CodeGroup>
 
+### `seedSandboxPromotion`
+
+Create a promotion in your sandbox so a sandbox order can carry a cart discount. Every field is
+optional — the defaults produce an active percentage promotion starting today and running for 30
+days. The environment is set by Galactic Core and is never read from your request body.
+
+```typescript
+const { promotion } = await client.sandbox.seedSandboxPromotion({
+  requestBody: { name: 'Launch week', type: 'percentage', value: 15, min_purchase: 50 }
+});
+```
+
+```json Response
+{
+  "promotion": {
+    "id": "583bcfa6-a86a-4bc4-87e0-1a70e6294bda",
+    "name": "Launch week",
+    "type": "percentage",
+    "value": "15",
+    "min_purchase": 50,
+    "start_date": "2026-09-07",
+    "end_date": "2026-10-07",
+    "status": "active",
+    "environment": "sandbox"
+  }
+}
+```
+
+`type` accepts `percentage`, `fixed`, `bogo`, or `bundle`. `percentage` and `fixed` discount the
+whole cart; `bogo` and `bundle` carry product lists configured by the merchant.
+
+### `seedSandboxGiftCard`
+
+Create a gift card in your sandbox, so redemption can be exercised end to end. The defaults issue an
+active 50.00 digital card expiring in a year with a generated `SBX-…` code. The same code is valid
+for your test key and unknown to a live key.
+
+```typescript
+const { gift_card } = await client.sandbox.seedSandboxGiftCard({
+  requestBody: { code: 'SBX-DEMO-100', value: 100 }
+});
+```
+
+```json Response
+{
+  "gift_card": {
+    "id": "026da417-6ae7-4152-a029-696309e74b05",
+    "code": "SBX-DEMO-100",
+    "value": 100,
+    "balance": 100,
+    "status": "active",
+    "type": "digital",
+    "expiry_date": "2027-09-07",
+    "environment": "sandbox"
+  }
+}
+```
+
+### `seedSandboxCampaign`
+
+Create a marketing campaign in your sandbox. A campaign is a budget with a discount attached: it
+discounts an order like a promotion, but stops once its budget is spent — so this is how budget
+exhaustion is exercised without spending a real one.
+
+`applies_to` scopes where it applies: `online` for storefront orders, `pos` for in-store, or `all`
+for both. A campaign scoped to one channel does not discount the other.
+
+```typescript
+const { campaign } = await client.sandbox.seedSandboxCampaign({
+  requestBody: { name: 'Autumn push', budget: 500, discount_value: 20, applies_to: 'online' }
+});
+```
+
+```json Response
+{
+  "campaign": {
+    "id": "d5814e95-e68b-4a98-95bf-cb945f413052",
+    "name": "Autumn push",
+    "type": "seasonal",
+    "budget": 500,
+    "budget_spent": 0,
+    "budget_remaining": 500,
+    "discount_type": "percentage",
+    "discount_value": 20,
+    "applies_to": "online",
+    "start_date": "2026-09-07",
+    "end_date": "2026-10-07",
+    "status": "active",
+    "environment": "sandbox"
+  }
+}
+```
+
+As sandbox orders apply the campaign, `budget_spent` rises and `budget_remaining` falls. Once the
+budget is exhausted the campaign stops discounting, which is the behavior a live campaign has when
+its budget runs out.
+
 ## Response Codes
 
 | Code | Meaning |
 | :--- | :--- |
 | `204` | Reset succeeded (no body). |
+| `201` | A sandbox promotion, gift card, or campaign was created. |
 | `200` | Time-travel / replay succeeded (summary returned). |
-| `400` | Invalid request (e.g. `advance_days` out of 1–3650, or neither `event_id` nor `type`). |
+| `400` | Invalid request — `advance_days` out of 1–3650, neither `event_id` nor `type`, an unknown promotion `type` or campaign `discount_type`, a non-positive value, or a `start_date` in the past. |
 | `401` | Missing or invalid API key. |
 | `403` | Not a secret **test** key — Sandbox tools require `tybrite_sk_test_*`. |
 | `404` | No matching sandbox webhook event to replay. |
