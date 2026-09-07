@@ -157,6 +157,23 @@ const { campaign } = await client.sandbox.seedSandboxCampaign({
 A campaign stops discounting once its budget is spent, so seeding one with a small budget is how you
 exercise budget exhaustion without spending a real one.
 
+### Reach the B2B endpoints
+
+The `/v1/b2b/*` endpoints resolve a **B2B buyer account** for the calling customer before doing
+anything else, and refuse the request when there isn't one. Buyer accounts are created by the
+merchant in their admin, so a test key has none — which makes the whole B2B surface unreachable
+until you seed one.
+
+```typescript
+const { buyer_account } = await client.sandbox.seedSandboxB2BBuyerAccount({
+  requestBody: { customer_id: customer.id, payment_terms: 'net30', credit_limit: 5000 }
+});
+```
+
+Pass a customer you created with a test key; a production customer is refused. The store must also
+have B2B enabled — if it does not, the B2B endpoints keep returning `404` whether or not a buyer
+account exists.
+
 <Note>
   Seeded instruments are sandbox rows like any other: they never appear in the merchant's admin, they
   are cleared by a [reset](#sandbox-reset), and they are removed by the automatic 30-day cleanup. A
