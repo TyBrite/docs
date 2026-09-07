@@ -63,6 +63,10 @@ const order = await client.orders.createOrder({
 
 Retrieve a paginated list of your store's orders, newest first. Use this to build order dashboards, fulfillment queues, or customer order history — anywhere you need to browse orders without already knowing an order ID.
 
+The listing returns the order rows themselves. Line items, status notes and custom fields are fetched
+per order and belong to `getOrder`; asking for one of them in `?fields=` here returns `400` naming
+the field rather than omitting it silently.
+
 The list returns order summaries **without line items** (to keep responses fast). When you need the full order including its items, call [`getOrder`](#getorder) with the order's `id`.
 
 <Warning>
