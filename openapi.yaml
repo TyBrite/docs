@@ -19937,6 +19937,112 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/sandbox/seed/b2b-buyer-account:
+    post:
+      operationId: seedSandboxB2bBuyerAccount
+      tags:
+        - Sandbox
+      summary: Create a sandbox B2B buyer account
+      description: |
+        Creates a B2B buyer account in your **sandbox**, which is what makes the `/v1/b2b/*` endpoints
+        reachable with a test key.
+
+        Every B2B endpoint resolves a buyer account for the calling customer before it does anything
+        else, and returns `403` when there isn't one. Buyer accounts are otherwise created by the
+        merchant in their admin, which always writes production — so without this, a test key is
+        refused across the whole B2B surface.
+
+        Pass the `customer_id` of a customer you created with a test key. A production customer is
+        refused, so a sandbox buyer account can never attach to one of the merchant's real customers.
+
+        A store still has to have B2B enabled: if it does not, every B2B endpoint keeps returning
+        `404`, and seeding a buyer account does not change that.
+
+        **Requires a secret test key** (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - customer_id
+              properties:
+                customer_id:
+                  type: string
+                  format: uuid
+                  description: A sandbox customer of your store. Must already exist.
+                payment_terms:
+                  type: string
+                  enum:
+                    - prepaid
+                    - net15
+                    - net30
+                    - net60
+                  default: prepaid
+                credit_limit:
+                  type: number
+                  default: 10000
+                  description: Credit the buyer may draw on. Zero or greater.
+                tax_exempt:
+                  type: boolean
+                  default: false
+                checkout_policy:
+                  type: string
+                  enum:
+                    - pay_now
+                    - terms
+                    - upfront_then_terms
+                  description: How this buyer checks out. Left unset by default.
+            example:
+              customer_id: 92a2fe11-2a7f-46e4-acf0-541b5e77828a
+              payment_terms: net30
+              credit_limit: 5000
+      responses:
+        '201':
+          description: Sandbox B2B buyer account created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buyer_account:
+                    $ref: '#/components/schemas/SandboxB2bBuyerAccount'
+              example:
+                buyer_account:
+                  id: e23b79a8-1c9c-4594-b587-50bb0518e55a
+                  customer_id: 92a2fe11-2a7f-46e4-acf0-541b5e77828a
+                  payment_terms: net30
+                  credit_limit: 5000
+                  credit_used: 0
+                  tax_exempt: false
+                  on_hold: false
+                  checkout_policy: null
+                  environment: sandbox
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: No sandbox customer with that id in this store.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: This sandbox customer already has a B2B buyer account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
 components:
   securitySchemes:
     BearerAuth:
@@ -25187,6 +25293,48 @@ components:
           format: date
         status:
           type: string
+        environment:
+          type: string
+          enum:
+            - sandbox
+    SandboxB2bBuyerAccount:
+      type: object
+      description: |
+        A B2B buyer account created in the sandbox. Its presence is what makes the `/v1/b2b/*` endpoints
+        reachable for that customer with a test key.
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        payment_terms:
+          type: string
+          enum:
+            - prepaid
+            - net15
+            - net30
+            - net60
+        credit_limit:
+          type: number
+        credit_used:
+          type: number
+          description: Rises as the buyer places orders on terms.
+        tax_exempt:
+          type: boolean
+        on_hold:
+          type: boolean
+          description: A buyer on hold cannot place new orders.
+        checkout_policy:
+          type:
+            - string
+            - 'null'
+          enum:
+            - pay_now
+            - terms
+            - upfront_then_terms
+            - null
         environment:
           type: string
           enum:

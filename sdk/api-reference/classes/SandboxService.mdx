@@ -1,6 +1,6 @@
 ---
 title: "Sandbox"
-description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, webhook replay, and seeding discount instruments in the sandbox environment."
+description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, webhook replay, and seeding discount instruments and B2B buyer accounts in the sandbox environment."
 ---
 
 The `SandboxService` class (accessed via `client.sandbox`) is developer tooling for the
@@ -183,16 +183,53 @@ As sandbox orders apply the campaign, `budget_spent` rises and `budget_remaining
 budget is exhausted the campaign stops discounting, which is the behavior a live campaign has when
 its budget runs out.
 
+### `seedSandboxB2BBuyerAccount`
+
+Create a B2B buyer account in your sandbox. This is what makes the `/v1/b2b/*` endpoints reachable
+with a test key: every B2B endpoint resolves a buyer account for the calling customer before doing
+anything else, and returns `403` when there isn't one.
+
+Pass the `customer_id` of a customer you created with a test key. A production customer is refused,
+so a sandbox buyer account can never attach to one of the merchant's real customers.
+
+```typescript
+const { buyer_account } = await client.sandbox.seedSandboxB2BBuyerAccount({
+  requestBody: { customer_id: customer.id, payment_terms: 'net30', credit_limit: 5000 }
+});
+```
+
+```json Response
+{
+  "buyer_account": {
+    "id": "e23b79a8-1c9c-4594-b587-50bb0518e55a",
+    "customer_id": "92a2fe11-2a7f-46e4-acf0-541b5e77828a",
+    "payment_terms": "net30",
+    "credit_limit": 5000,
+    "credit_used": 0,
+    "tax_exempt": false,
+    "on_hold": false,
+    "checkout_policy": null,
+    "environment": "sandbox"
+  }
+}
+```
+
+<Note>
+  The store still has to have B2B enabled. If it does not, every B2B endpoint keeps returning `404`,
+  and seeding a buyer account does not change that.
+</Note>
+
 ## Response Codes
 
 | Code | Meaning |
 | :--- | :--- |
 | `204` | Reset succeeded (no body). |
-| `201` | A sandbox promotion, gift card, or campaign was created. |
+| `201` | A sandbox promotion, gift card, campaign, or B2B buyer account was created. |
 | `200` | Time-travel / replay succeeded (summary returned). |
 | `400` | Invalid request — `advance_days` out of 1–3650, neither `event_id` nor `type`, an unknown promotion `type` or campaign `discount_type`, a non-positive value, or a `start_date` in the past. |
 | `401` | Missing or invalid API key. |
 | `403` | Not a secret **test** key — Sandbox tools require `tybrite_sk_test_*`. |
-| `404` | No matching sandbox webhook event to replay. |
+| `404` | No matching sandbox webhook event to replay, or no sandbox customer with that id. |
+| `409` | That sandbox customer already has a B2B buyer account. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |
