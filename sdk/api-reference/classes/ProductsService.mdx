@@ -255,6 +255,60 @@ document.title = product.seo_title ?? product.name;
 These fields are also included in a store's public catalog feed, so a catalog mirrored from
 one store into another preserves its SEO metadata.
 
+### Channel and logistics fields
+
+Alongside the merchandising fields, a product carries the identifiers and measurements that
+sales channels and shipping calculations need.
+
+*   `condition` — the condition the item is sold in: `new`, `refurbished`, or `used`. Defaults
+    to `new`.
+*   `gtin` — the manufacturer's Global Trade Item Number (UPC, EAN, or ISBN). Sales channels
+    match a listing against this to identify the product. It is distinct from the barcode a
+    merchant scans in store, which may be an internal label and is never returned by this API.
+*   `mpn` — the manufacturer part number, which identifies items that carry no `gtin`.
+*   `weight_grams` — the shipped weight of the item, in grams.
+*   `dimensions_cm` — the packed dimensions in centimetres, as free text in the merchant's own
+    format. Parse it defensively rather than assuming a fixed shape.
+*   `google_product_category` and `meta_product_category` — the product's category in the Google
+    Shopping and Meta commerce taxonomies. Each is set separately, because the two taxonomies do
+    not share category names, and both are independent of `category_name`, which is the store's
+    own taxonomy.
+
+Every one of these is optional except `condition`, so treat a `null` as "the merchant has not
+supplied it" rather than as an error.
+
+```typescript
+const product = await client.products.getProduct({ id: '02525ff5-0916-4f00-857c-c2c6237e671b' });
+
+if (product.gtin) {
+  // A listing with a GTIN can be matched to the manufacturer's catalog entry.
+}
+```
+
+```json Response
+{
+  "product_id": "02525ff5-0916-4f00-857c-c2c6237e671b",
+  "name": "Sony WH-1000XM4",
+  "sku": "SNY-WH1000",
+  "price": 369.99,
+  "selling_price": 349.99,
+  "stock": 40,
+  "condition": "new",
+  "gtin": "0885909950805",
+  "mpn": "WH1000XM4/B",
+  "weight_grams": 254,
+  "dimensions_cm": "20x15x5",
+  "google_product_category": "Electronics > Audio > Headphones",
+  "meta_product_category": "electronics > audio"
+}
+```
+
+`condition`, `gtin`, `mpn`, `weight_grams` and `dimensions_cm` describe an individual item, so
+they belong to the variant — two sizes of one shirt carry different codes and weights.
+`google_product_category`, `meta_product_category` and `tags` classify the listing as a whole and
+belong to the product. All of them are returned on `listProducts` and on detail, including for a
+product with several variants, and any of them can be named in `fields`.
+
 ---
 
 ## 📸 Media Gallery System

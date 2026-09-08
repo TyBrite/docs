@@ -47,7 +47,27 @@ Push or sync a batch of products into your store.
 | `cost_price` | — | Unit cost. |
 | `stock` | — | On-hand quantity. |
 | `threshold` | — | Low-stock threshold. |
-| `barcode` / `barcode_type` | — | Barcode value and symbology. |
+| `barcode` / `barcode_type` | — | The value scanned in-store and its symbology. A row carrying only `gtin`, `ean` or `upc` populates the barcode from it. |
+
+Field names are matched leniently on case, spaces, underscores and hyphens, and several accept
+alternative spellings: `title` for `name`, `qty` or `quantity` for `stock`, `cost` for `cost_price`,
+`handle` or `parent` for `product_group`, and `image_url` or `image_link` for `image`.
+
+A row also carries catalog identifiers, shipping dimensions, channel taxonomy and storefront
+metadata: `gtin`, `mpn`, `condition`, `weight_grams`, `dimensions_cm`, `google_product_category`,
+`meta_product_category`, `tags`, `seo_title`, `seo_description`, `seo_keywords`, `is_online_enabled`,
+`online_price` and `online_sale_price`. See
+[Catalog identity and channel fields](/ingestion#catalog-identity-and-channel-fields).
+
+A column matching none of the fields above is matched against the store's
+[custom fields](/custom-fields) by label, and recorded on the product where one matches; a column
+matching none is ignored. `cost_price` is what margin is calculated from, so a product imported
+without it books no cost against its sales.
+
+A feed registered for scheduled sync decides per field whether the feed or the merchant owns it on a
+re-sync, so a merchant's edit can stand rather than being rewritten. That is a property of the
+registered source: a push applies the values in the batch as sent. See
+[Which side owns a field](/ingestion#which-side-owns-a-field).
 
 **Signed example** — one standalone product and one multi-variant product (its rows share a `product_group`):
 

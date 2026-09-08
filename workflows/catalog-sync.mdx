@@ -284,6 +284,14 @@ const csv = await server.ingestion.ingestProducts({
 // → { status: "success", format: "csv", summary: { rows_total: 1, rows_created: 1, rows_failed: 0 }, errors: [] }
 ```
 
+A row reaches beyond these core fields. The same batch carries the catalog identifiers a sales
+channel matches a listing against — `gtin`, `mpn`, `condition` — along with `weight_grams` and
+`dimensions_cm`, the `google_product_category` and `meta_product_category` taxonomy strings, `tags`,
+the `seo_title` / `seo_description` / `seo_keywords` metadata, and `is_online_enabled` with
+`online_price` and `online_sale_price`. Column names are read leniently, so `weight_kg` converts to
+grams and a comma-delimited `tags` string becomes a list. See
+[Catalog identity and channel fields](/ingestion#catalog-identity-and-channel-fields).
+
 ### Carrying your own columns
 
 A feed is not limited to the fields above. A column that matches the **label** of a
@@ -306,9 +314,28 @@ await server.ingestion.ingestProducts({
 });
 ```
 
-The field has to exist first — a feed fills fields, it does not create them. They are defined in admin
-under Settings → Custom Fields, and an update refreshes them along with everything else, so the feed
-stays the source of truth for those values too.
+On a push the field is defined first, in admin under Settings → Custom Fields, and a column matching
+none of them is ignored, so extra columns cost nothing. A scheduled sync can define the field from
+the column itself, taking its label from the header and its type from the value — an auto-defined
+field stays merchant-facing until published, so it reaches no storefront on the strength of a feed
+alone. See [Your own columns](/ingestion#your-own-columns).
+
+### Fields the sync leaves alone
+
+A scheduled sync runs against a catalog the merchant also edits, so each source records which side
+owns each field. Ownership is a property of the registered source and governs scheduled sync alone; a
+push applies the values in the batch as sent. The feed owns what moves in the source system —
+`price`, `cost_price`, `stock`, `threshold`, and the `barcode` / `gtin` / `mpn` identifiers — and
+rewrites those on every run. The
+merchant owns the listing: `name`, `description`, `category`, `subcategory`, `brand`, `image`, the
+SEO and channel fields, and their own columns. A merchant-owned field is refreshed only while it
+still matches what the feed last wrote, so an edit made in admin stands rather than being reverted on
+the next run.
+
+That is worth knowing when a feed appears to stop updating a product: a name or category that no
+longer tracks the source has usually been edited on the store's side, and the sync is leaving it
+alone by design. Either side can be reassigned per source and per field.
+[Which side owns a field](/ingestion#which-side-owns-a-field) covers the full split.
 
 ## 4. Publishing the catalog back out
 

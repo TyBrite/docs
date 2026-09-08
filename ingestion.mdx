@@ -218,12 +218,49 @@ CSV follows standard quoting rules, so commas and newlines inside quoted fields 
 | `threshold` | — | Low-stock threshold. |
 | `barcode` / `barcode_type` | — | Barcode value and symbology. Common spellings are normalized (e.g. `UPC` → `UPC_A`); unknown values fall back to `CODE128`. |
 
+Field names are matched leniently on case, spaces, underscores and hyphens, so `Product Name`,
+`product_name` and `productname` all reach `name`. Several fields accept alternative spellings a
+source system is likely to emit: `title` for `name`, `qty` or `quantity` for `stock`, `cost` for
+`cost_price`, `handle` or `parent` for `product_group`, and `image_url` or `image_link` for `image`.
+
+### Cost price and margin reporting
+
+`cost_price` is what margin is calculated from. A product imported without one books no cost against
+its sales, so its margin reads as the full selling price and every report that rolls margin up reads
+as complete while resting on that gap. Where the source system holds a unit cost, carrying it in the
+feed is worth the column; where it does not, the merchant can fill it in afterwards and the figures
+correct themselves from that point.
+
+### Catalog identity and channel fields
+
+A row also carries the identifiers a sales channel matches a listing against and the attributes it
+lists alongside them. These are read on both the push API and a [scheduled sync](#scheduled-sync).
+
+| Field | Description |
+| :--- | :--- |
+| `gtin` | The manufacturer's global trade item number. Accepted as `gtin`, `ean`, `upc`, `ean13`, `upc_a` or `global_trade_item_number`. |
+| `mpn` | Manufacturer part number. Accepted as `mpn`, `manufacturer_part_number`, `part_number` or `part_no`. |
+| `condition` | One of `new`, `refurbished` or `used`. Common wordings map onto those three — "refurb" and "renewed" read as `refurbished`, "pre-owned" and "open box" as `used` — and anything unrecognized is taken as `new`. |
+| `weight_grams` | Shipping weight in grams, as a whole number. A column named `weight_kg` or `weight_lb` is converted; a column named plainly `weight` is read as grams. |
+| `dimensions_cm` | Free text, e.g. `20x15x5`. Accepted as `dimensions`, `size`, `dims` or `lxwxh`. |
+| `google_product_category` / `meta_product_category` | The channel taxonomy strings, passed through as given. |
+| `tags` | A list of tags. Either a real array or a single string delimited by commas, semicolons or pipes. |
+| `seo_title` / `seo_description` / `seo_keywords` | Storefront metadata. `seo_keywords` is a list on the same terms as `tags`. |
+| `is_online_enabled` | Whether the product is published to the storefront. Reads `true`/`false`, `yes`/`no` and `1`/`0`; an empty value means "not stated" and leaves the current setting alone. A product created by an import starts unpublished whatever this says, and the column applies from the import after that. |
+| `online_price` / `online_sale_price` | Storefront price and sale price, where they differ from the in-store `price`. |
+
+<Note>
+  **`gtin` and `barcode` are separate fields.** `barcode` is whatever the merchant scans in-store,
+  which may be an internal label with no meaning outside the store; `gtin` is the manufacturer's
+  number a sales channel matches the listing against. A feed carrying only one of them populates
+  both, since in practice that single value serves both purposes.
+</Note>
+
 ### Your own columns
 
-A column that is not in the table above is matched against the [custom fields](/custom-fields) defined on
-products for your store, by the field's **label** — the name shown in the dashboard, which is what you
-would have called the column. A match records the value on the product; anything else is ignored, so a
-feed carrying extra columns behaves exactly as it did before.
+A column that is not one of the fields above is matched against the [custom fields](/custom-fields)
+defined on products for your store, by the field's **label** — the name shown in the dashboard, which
+is what you would have called the column.
 
 ```json
 {
@@ -236,13 +273,25 @@ feed carrying extra columns behaves exactly as it did before.
 }
 ```
 
-Here `Fabric` and `Country of origin` land on the product if fields with those labels exist. Values are
-written after the product itself, and on an update they are refreshed along with everything else, so a
-feed stays the source of truth for them.
+Here `Fabric` and `Country of origin` land on the product under fields with those labels. A column
+matching no defined field is ignored, so extra columns in a source export are safe to leave in.
+
+On a [scheduled sync](#scheduled-sync), a column matching no field can define one instead of being
+ignored. The definition takes its label from the column header, so `warranty_months` reads back as
+"Warranty Months", and its type from the value carried — a date, a number, a true/false, or text where
+none of those fit. A source that keeps a column the store does not model yet therefore carries it
+across without the merchant having to anticipate it.
+
+An auto-defined field is **merchant-facing until published**. It is visible in the dashboard and in
+the store's own exports, and it reaches no storefront and appears in no API response until the
+merchant publishes it — a feed may model a field, but what a shopper sees stays the merchant's
+decision. A single run defines at most 25 fields, so a malformed file, a shifted header row or a wide
+export cannot fill the field list, and each one records that a feed created it.
 
 <Note>
-  The field has to exist before a feed can fill it. Fields are created in the dashboard under
-  **Settings → Custom Fields**, not by a feed — a new column does not define a new field.
+  Defining a field from a column is a per-source setting on scheduled sync, on by default. With it
+  off, and on the push API, a column is recorded only where a field with that label already exists.
+  Fields are defined in the dashboard under **Settings → Custom Fields**.
 </Note>
 
 ---
@@ -382,6 +431,42 @@ console.log(check.errors);              // rows that would be rejected
 ## Scheduled sync
 
 Instead of pushing, you can have Galactic Core **pull** a feed for you. Register a feed URL in your dashboard, choose a cadence, and Galactic Core fetches and syncs the catalog on that schedule — matching by SKU exactly like the push API.
+
+### Which side owns a field
+
+A catalog that syncs on a timer is edited from two directions: the feed carries what moves in the
+source system, and the merchant curates the listing in their dashboard. Each feed source records who
+owns each field, which decides what a re-sync does with it.
+
+Ownership belongs to the registered source, so it applies to scheduled sync alone. A push carries no
+source, and the values in the batch are applied as sent.
+
+A **feed-owned** field is rewritten from the feed on every run. A **merchant-owned** field is written
+only while its value still matches what the feed last wrote for it; once the merchant changes it, the
+feed stops touching that field on that product and leaves the edit standing. Other fields on the same
+product, and the same field on every other product, are unaffected.
+
+The defaults put each field with the side that is usually authoritative for it:
+
+| Owner by default | Fields |
+| :--- | :--- |
+| **Feed** | `price`, `cost_price`, `stock`, `threshold`, `barcode`, `barcode_type`, `gtin`, `mpn`, `condition`, `weight_grams`, `dimensions_cm`, `online_price`, `online_sale_price` |
+| **Merchant** | `name`, `description`, `category`, `subcategory`, `brand`, `image`, `variant_name`, `seo_title`, `seo_description`, `seo_keywords`, `tags`, `google_product_category`, `meta_product_category`, `is_online_enabled`, and your own columns |
+
+Price, cost, stock and the identifiers move in the source system, so the feed keeps them and a
+scheduled sync goes on correcting them. Names, descriptions, taxonomy, imagery and channel metadata
+are where a merchant's own judgement lives, so an edit there survives the next run rather than being
+reverted by it.
+
+The assignment is per source and per field: a merchant who wants the feed to keep restoring product
+names, or to stop overwriting price, moves that field to the other side in their dashboard.
+
+<Note>
+  The first run after a source starts recording ownership has no earlier feed value to compare
+  against, so it writes every field it carries and records them as its baseline. Merchant ownership
+  takes effect from the run after that, which is the first one able to tell an edit from a value
+  nobody has touched.
+</Note>
 
 After each scheduled run, a `feed.sync.completed` [webhook](/webhooks) fires with the run's summary, so your systems can react to the result without polling. Subscribe to it the same way as any other event:
 
