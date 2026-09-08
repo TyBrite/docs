@@ -238,13 +238,28 @@ Each interface operation receives an `input` (with an `operation` discriminator 
 | `EmailProvider` | `{ operation: 'send', to, subject, body, trigger_key, record_id }` | Any value — succeeding means the send worked. |
 | `SmsProvider` | `{ operation: 'send', to, body, trigger_key, record_id }` | Any value — succeeding means the send worked. |
 | `MarketingProvider` | `{ operation: 'trackEvent', event_type, record_id }` | Any value — succeeding means it was recorded (retried on failure). |
-| `SalesChannelProvider` | `{ operation: 'authenticate' \| 'push' \| 'pullStatus' \| 'mapProduct', channel_id, ... }` | `authenticate → { accessToken? }`, `push → { results: [{ sku, ok, error? }] }`, `pullStatus → { statuses: [{ sku, state, reasons }] }` |
+| `SalesChannelProvider` | `{ operation: 'authenticate' \| 'push' \| 'pullStatus', channel_id }`; `push` also carries `items: [{ sku, payload }]`, where each `payload` is the full product — see below. | `authenticate → { accessToken? }`, `push → { results: [{ sku, ok, error? }] }`, `pullStatus → { statuses: [{ sku, state, reasons }] }` |
 | `ShippingProvider` | `{ address_to, address_from?, parcel }` | `{ rates: [{ rate_id, provider, service, amount, currency, estimated_days? }] }` — appended to the rate list, revalidated at checkout. |
 | `PaymentProvider` | `{ operation: 'initialize', provider, amount, currency, email, phone, order_id, reference, ... }` / `{ operation: 'verify', provider, reference }` | `initialize → { redirect_url?, status? }`; `verify → { status: 'paid' \| 'failed' \| ..., reference? }` — amount and status revalidated by the platform. |
 | `TaxProvider` | `{ operation: 'resolve', currency, ship_to, lines: [...], mode: 'quote' \| 'commit' }` | `{ tax_amount: number, breakdown? }` — otherwise the platform falls back to your manual/native tax path. |
 | `AuthProvider` | `{ operation: 'verifyToken', token, store_id, environment }` — the raw identity-provider token a shopper presented | `{ ok: true, external_id, email? }` if the token is valid, else `{ ok: false, error? }`. `external_id` resolves to the customer; a non-`ok` result or an unreachable endpoint leaves the request signed-out. |
 | `order.validate` | `{ operation: 'validate', total_amount, subtotal, currency, customer_id, item_count, shipping_address, ... }` | `{ allow: boolean, reason?, annotations? }` — `allow: false` rejects the order with `422`. |
 | `SubscriptionBillingProvider` | `{ operation: 'createSubscription', store_id, plan, period, amount_cents, currency, subscriber_email, return_url, cancel_url }` / `{ operation: 'getSubscription' \| 'cancelSubscription', subscription_id }` | `createSubscription → { subscription_id, status, redirect_url?, provider }`; `getSubscription → { subscription_id, status, next_billing_at?, provider }`; `cancelSubscription → { subscription_id, status, provider }` |
+
+<Note>
+  **What a sales channel receives.** Your channel extension does its own mapping, so `push` hands you
+  the product as the platform holds it rather than a pre-shaped payload: identity (`sku`,
+  `product_id`, `variant_id`, `name`, `description`, `brand`), commerce (`price`, `sale_price`,
+  `stock`, `link`), media (`image`, `media[]`), taxonomy (`category`, `subcategory`), the attributes
+  a channel matches a listing against (`gtin`, `condition`), per-variant detail (`variant_name`,
+  `variant_attributes`), published `specifications`, and `custom_fields` — the merchant's own defined
+  fields. Cost and margin are never included.
+
+  `custom_fields` carries the fields a merchant shows on their storefront, plus any they have chosen
+  to send to your channel specifically. Treat it as optional: a store that defines none sends none,
+  and the names are the merchant's own, so read the keys you recognise rather than assuming a fixed
+  set.
+</Note>
 
 <Note>
   **How this relates to the storefront API.** Connecting a custom provider does **not** change the
