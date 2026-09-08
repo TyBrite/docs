@@ -240,11 +240,23 @@ Each interface operation receives an `input` (with an `operation` discriminator 
 | `MarketingProvider` | `{ operation: 'trackEvent', event_type, record_id }` | Any value — succeeding means it was recorded (retried on failure). |
 | `SalesChannelProvider` | `{ operation: 'authenticate' \| 'push' \| 'pullStatus', channel_id }`; `push` also carries `items: [{ sku, payload }]`, where each `payload` is the full product — see below. | `authenticate → { accessToken? }`, `push → { results: [{ sku, ok, error? }] }`, `pullStatus → { statuses: [{ sku, state, reasons }] }` |
 | `ShippingProvider` | `{ address_to, address_from?, parcel }` | `{ rates: [{ rate_id, provider, service, amount, currency, estimated_days? }] }` — appended to the rate list, revalidated at checkout. |
-| `PaymentProvider` | `{ operation: 'initialize', provider, amount, currency, email, phone, order_id, reference, ... }` / `{ operation: 'verify', provider, reference }` | `initialize → { redirect_url?, status? }`; `verify → { status: 'paid' \| 'failed' \| ..., reference? }` — amount and status revalidated by the platform. |
-| `TaxProvider` | `{ operation: 'resolve', currency, ship_to, lines: [...], mode: 'quote' \| 'commit' }` | `{ tax_amount: number, breakdown? }` — otherwise the platform falls back to your manual/native tax path. |
+| `PaymentProvider` | `{ operation: 'initialize', provider, amount, currency, email, phone, country, order_id, reference, metadata, success_url, cancel_url, callback_url }` / `{ operation: 'verify', provider, reference }` — `currency` is resolved and validated server-side, and you must charge in the one you are given. | `initialize → { redirect_url?, status? }`; `verify → { status: 'paid' \| 'failed' \| ..., reference? }` — amount and status revalidated by the platform. Either operation may instead return `{ unsupported_provider: true }` — see below. |
+| `TaxProvider` | `{ operation: 'resolve', currency, ship_to: { line1, line2, city, region, country, postal_code }, lines: [{ number, quantity, amount, item_code, category_name, description }], mode: 'quote' \| 'commit' }` — each line's `amount` is its total (unit price × quantity), `item_code` identifies the variant or product, and `mode` is `commit` only when the order is being paid as it is created. | `{ tax_amount: number, breakdown? }` — otherwise the platform falls back to your manual/native tax path. |
 | `AuthProvider` | `{ operation: 'verifyToken', token, store_id, environment }` — the raw identity-provider token a shopper presented | `{ ok: true, external_id, email? }` if the token is valid, else `{ ok: false, error? }`. `external_id` resolves to the customer; a non-`ok` result or an unreachable endpoint leaves the request signed-out. |
-| `order.validate` | `{ operation: 'validate', total_amount, subtotal, currency, customer_id, item_count, shipping_address, ... }` | `{ allow: boolean, reason?, annotations? }` — `allow: false` rejects the order with `422`. |
-| `SubscriptionBillingProvider` | `{ operation: 'createSubscription', store_id, plan, period, amount_cents, currency, subscriber_email, return_url, cancel_url }` / `{ operation: 'getSubscription' \| 'cancelSubscription', subscription_id }` | `createSubscription → { subscription_id, status, redirect_url?, provider }`; `getSubscription → { subscription_id, status, next_billing_at?, provider }`; `cancelSubscription → { subscription_id, status, provider }` |
+| `order.validate` | `{ operation: 'validate', customer_id, customer_email, customer_name, subtotal, tax_amount, shipping_amount, discount_amount, total_amount, currency, payment_method, item_count, shipping_address, billing_address }` — the order as the platform resolved it, not as the client sent it | `{ allow: boolean, reason?, annotations? }` — `allow: false` rejects the order with `422`. |
+| `SubscriptionBillingProvider` | `{ operation: 'createSubscription', plan, period, amount_cents, currency, subscriber_email, return_url, cancel_url, kind, reference }` / `{ operation: 'getSubscription' \| 'cancelSubscription', subscription_id }` — `amount_cents` is resolved from the operator's price catalogue, never sent by the client. | `createSubscription → { subscription_id, status, redirect_url, provider, provider_reference? }` — `redirect_url` is required; without one the subscription is treated as not created. `getSubscription → { subscription_id, status, next_billing_at?, provider }`; `cancelSubscription → { subscription_id, status, provider }`. Returning `{ error }` from any operation reports a billing failure. |
+
+<Note>
+  **Declining a payment provider name you don't serve.** Your payment extension is dispatched for
+  **any** provider name outside the built-in set, not only the ones you handle — a store can name a
+  gateway you have never heard of. When you are asked about a name you do not serve, return
+  `{ unsupported_provider: true }`: the shopper gets `400 Unsupported provider`, which is accurate,
+  instead of an error that reads as your provider failing.
+
+  Return it **only** when you genuinely do not serve that name. It also marks you as not owning the
+  payment, so returning it for a name you do serve makes the platform stop asking you to confirm
+  whether that payment succeeded.
+</Note>
 
 <Note>
   **What a sales channel receives.** Your channel extension does its own mapping, so `push` hands you
