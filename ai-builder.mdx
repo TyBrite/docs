@@ -31,8 +31,18 @@ them.
 You can also reach it through the in-app assistant, which asks what it needs before building rather
 than taking the whole integration as one description. That route suits a request you have not fully
 worked out — the assistant can ask which provider you use, what should happen when the integration
-fails, and refine the result after you have seen it. Either way the output is the same: an extension
-that is not installed and does not run until you save it.
+fails, and refine the result after you have seen it.
+
+**The assistant can also check its own work.** It runs what it wrote once, reads the result — status,
+duration, the error, and the log lines the code produced — and, when the run fails, rewrites and runs
+it again rather than handing back something that has never executed. What it wrote is stored switched
+off throughout, so it runs only when you test it or after you enable it.
+
+<Warning>
+  A test runs in your store's real runtime with your connected credentials, so an integration that
+  reaches an external service genuinely reaches it — a message really is sent, a record really is
+  created. The assistant says so when a test has an outside effect.
+</Warning>
 
 ### Looking up current documentation
 

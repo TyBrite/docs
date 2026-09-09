@@ -575,8 +575,13 @@ you name — so it builds against the API as it is now rather than as the model 
 The **in-app assistant** reaches the same builder conversationally. It suits a request you have not
 fully specified: it can ask which provider you use and what should happen when the integration fails,
 and refine after you have seen the result. It also proposes what is worth automating in the first
-place, reading what your store already has connected. Neither route installs anything — an extension
-exists only once you have read it and saved it.
+place, reading what your store already has connected.
+
+It can additionally **run what it wrote and read the outcome** — the status, the error, and the log
+lines the code produced — and repair it from that rather than handing you something that has never
+executed. A test runs against your real runtime with your connected credentials, so an integration
+that calls an outside service genuinely calls it. Whatever it writes stays switched off until you
+enable it, so nothing runs on a real event in the meantime.
 
 ## Choosing your approach
 
