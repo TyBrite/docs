@@ -28,6 +28,20 @@ their own portal, for the billing rails they offer their merchants.
 Each build consumes AI credits from your plan's allowance, and a build you discard has already spent
 them.
 
+You can also reach it through the in-app assistant, which asks what it needs before building rather
+than taking the whole integration as one description. That route suits a request you have not fully
+worked out — the assistant can ask which provider you use, what should happen when the integration
+fails, and refine the result after you have seen it. Either way the output is the same: an extension
+that is not installed and does not run until you save it.
+
+### Looking up current documentation
+
+A build can consult the live documentation of the provider you name before writing anything. This is
+**on by default**, because an integration written from a stale memory of an API is wrong in a way
+that is hard to see by reading it — the code looks reasonable and fails on the first call. It costs
+a little more and takes longer, and you can turn it off for an integration against an API that has
+not changed.
+
 ## What it produces
 
 A build returns one extension plus the context you need to judge it:
@@ -134,8 +148,12 @@ recognise is one the index has yet to pick up.
 Galactic Core has a second builder, aimed at a different job. The **ad campaign builder** takes a
 plain-language brief — what to advertise, and what the campaign is for — and produces a complete
 campaign: structure, keywords, audiences, budgets, and ad copy, drawn from the store's own catalogue
-and margins. Its output is advertising a merchant reviews and publishes, rather than an integration
-you review and deploy. It is documented with [Advertising](/advertising).
+and margins. It shares this builder's live-documentation lookup, checking the ad platform's current
+guidance before it writes. Its output is advertising a merchant reviews and publishes, rather than an
+integration you review and deploy. It is documented with [Advertising](/advertising).
+
+Both are also reachable through the in-app assistant, which additionally sets up experiments
+comparing versions of a campaign and reports which is winning.
 
 ## Next
 
