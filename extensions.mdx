@@ -564,6 +564,20 @@ app.post('/gc/payments', express.raw({ type: 'application/json' }), async (req, 
 
 ---
 
+## Writing one without starting from a blank page
+
+Two routes reach the same result, and both produce code you review before anything is installed.
+
+The **[AI Extension Builder](/ai-builder)** takes a description of the integration and writes it,
+grounded in the deployed API surface and, by default, the current documentation of whatever provider
+you name — so it builds against the API as it is now rather than as the model last remembered it.
+
+The **in-app assistant** reaches the same builder conversationally. It suits a request you have not
+fully specified: it can ask which provider you use and what should happen when the integration fails,
+and refine after you have seen the result. It also proposes what is worth automating in the first
+place, reading what your store already has connected. Neither route installs anything — an extension
+exists only once you have read it and saved it.
+
 ## Choosing your approach
 
 | You want to… | Use |
