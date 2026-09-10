@@ -154,6 +154,8 @@ await client.webhooks.createWebhookEndpoint({
 | Feature availability | `feature.status_changed` (a capability crossed between `available` / `awaiting_data` / `not_in_plan` — carries `feature`, `status`, `previous_status`) |
 | Catalog Sync | `feed.sync.completed` (a scheduled inbound feed-pull finished — carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished — carries pushed/rejected counts) |
 | Wholesale (B2B) | `b2b.rfq.created`, `b2b.quote.sent` / `.accepted` / `.rejected`, `b2b.po.issued` / `.confirmed` / `.fulfilled`, `b2b.invoice.issued` / `.paid` / `.overdue` (stores with wholesale enabled) |
+| Wholesale credit &amp; approvals | `b2b.credit.threshold_reached`, `b2b.credit.exhausted`, `b2b.buyer.on_hold`, `b2b.buyer.released`, `b2b.approval.requested` / `.approved` / `.rejected` — each fires on the crossing, not the level |
+| Wholesale replenishment | `b2b.replenishment.needed` — fires in the buying store about its own stock, carrying the supplier that line was last bought from |
 
 The store-lifecycle, content, and feature-availability events describe a store *growing* rather than a
 transaction — the signal an automation tool uses to keep a storefront in step with the store (a promo

@@ -245,6 +245,18 @@ For stores with wholesale enabled, the B2B lifecycle also emits events: `b2b.rfq
 `b2b.quote.sent` / `.accepted` / `.rejected`, `b2b.po.issued` / `.confirmed` / `.fulfilled`, and
 `b2b.invoice.issued` / `.paid` / `.overdue`.
 
+Credit and approvals emit alongside them. `b2b.credit.threshold_reached` and
+`b2b.credit.exhausted` fire when a buyer crosses a share of their credit limit, and
+`b2b.buyer.on_hold` / `b2b.buyer.released` when they are stopped or let go again. Each fires on the
+crossing rather than the level, so a buyer who stays above a threshold produces one event rather
+than one per order. `b2b.approval.requested` / `.approved` / `.rejected` follow an order the buying
+organisation routes for internal sign-off before it reaches the supplier.
+
+`b2b.replenishment.needed` fires when stock falls to its reorder point. It is the one wholesale
+event that fires in the buying store about its own stock rather than in the supplier's, and it
+carries the supplier that line was last bought from, so an automation can raise the reorder rather
+than only report the need.
+
 ---
 
 ## Event payload shape

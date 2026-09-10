@@ -447,6 +447,13 @@ An endpoint subscribes to any of these, or to `["*"]` for everything:
 - **Wholesale (B2B)** — `b2b.rfq.created`, `b2b.quote.sent` / `.accepted` / `.rejected`,
   `b2b.po.issued` / `.confirmed` / `.fulfilled`, `b2b.invoice.issued` / `.paid` / `.overdue` (for
   stores with wholesale enabled)
+- **Wholesale credit and approvals** — `b2b.credit.threshold_reached`, `b2b.credit.exhausted`,
+  `b2b.buyer.on_hold`, `b2b.buyer.released`, and `b2b.approval.requested` / `.approved` /
+  `.rejected`. Each fires on the crossing rather than the level, so a buyer who stays above a
+  threshold produces one event rather than one per order
+- **Wholesale replenishment** — `b2b.replenishment.needed`, when stock falls to its reorder point.
+  It fires in the buying store about its own stock rather than in the supplier's, and carries the
+  supplier that line was last bought from, so an automation can raise the reorder
 
 ## Keeping a storefront in step with the store
 
