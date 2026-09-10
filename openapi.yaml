@@ -1660,6 +1660,29 @@ paths:
           schema:
             type: boolean
           example: true
+        - name: b2b
+          in: query
+          required: false
+          description: |
+            When `true` and the request is made on behalf of a signed-in wholesale buyer (identify
+            them with any of `x-auth-token`, `x-external-auth`, or `x-idp-token`), each product is
+            priced against that buyer's own agreement rather than at the shelf price, and the page is
+            narrowed to the range they are allowed to order from.
+
+            Each priced item carries `price`, `currency`, `moq` (the minimum quantity that may be
+            ordered), `pack_size`, and `price_source` — which of the buyer's arrangements set the
+            price: `assigned` (a list assigned to them), `group` (their customer tier), `default`
+            (the store's standard wholesale list), or `retail_fallback` (nothing wholesale was agreed
+            for that line, so the shelf price applies).
+
+            A request without a buyer credential, or from a customer who is not a wholesale buyer on
+            this store, returns the ordinary retail page — this never fails the request.
+
+            Responses on this path are not cached, because they are specific to one buyer. Ordinary
+            retail reads are unaffected.
+          schema:
+            type: boolean
+          example: true
       responses:
         '200':
           description: |
@@ -8164,6 +8187,21 @@ paths:
             maximum: 100
             minimum: 1
           description: Maximum number of results to return
+        - name: b2b
+          in: query
+          required: false
+          description: |
+            Marks the request as coming from a wholesale buyer (identify them with any of
+            `x-auth-token`, `x-external-auth`, or `x-idp-token`).
+
+            A search result is a reference to a product — an id, a score and a match reason — and
+            carries no price, so this does **not** price results. What it does is keep the response out
+            of the caches, because a buyer's results can be narrowed to the range they may order from
+            and a narrowed set must not be served to anyone else. Fetch the priced page from
+            `GET /v1/products?b2b=true`, which prices against that buyer's own agreement.
+          schema:
+            type: boolean
+          example: true
       responses:
         '200':
           description: Success
@@ -17669,6 +17707,9 @@ paths:
         ignored. An item with no wholesale price for this buyer, or a quantity below its minimum
         order quantity, is rejected with a clear reason.
 
+        The currency comes from the price list the buyer is on and cannot be chosen per order, so a
+        buyer on a list priced in one currency is always billed in it.
+
         How the order settles depends on the supplier's policy for this buyer:
         - **On terms** — the order is confirmed and a terms invoice is issued (subject to the buyer's
           credit limit). The response carries the invoice and its due date.
@@ -17766,9 +17807,6 @@ paths:
                       description: ISO country code, e.g. US or GB.
                     postal_code:
                       type: string
-                currency:
-                  type: string
-                  description: The order currency, e.g. USD.
       responses:
         '201':
           description: |

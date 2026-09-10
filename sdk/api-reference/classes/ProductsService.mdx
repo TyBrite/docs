@@ -105,6 +105,50 @@ const { products } = await personalized.products.listProducts({
 //   [ { name: "Sony WH-1000XM4", price: 349.99, thumbnail_url: "https://cdn.example.com/..." }, ... ]
 ```
 
+#### Wholesale pricing for a signed-in buyer
+
+Pass `b2b: true` together with a wholesale buyer's session token and each product is priced against
+that buyer's own agreement rather than at the shelf price, with the page narrowed to the range they
+are allowed to order from. A request without a buyer credential — or from a customer who is not a
+wholesale buyer on this store — returns the ordinary retail page, so it never fails the request.
+
+Each priced row carries `moq`, the smallest quantity that may be ordered, and `price_source`, which
+says which arrangement set the price: `assigned` for a list assigned to that buyer, `group` for
+their customer tier, `default` for the store's standard wholesale list, and `retail_fallback` when
+nothing wholesale was agreed for that line.
+
+```typescript
+const buyer = new Tybrite({
+  apiKey: 'tybrite_pk_live_...',
+  headers: { 'x-auth-token': buyerSessionToken },
+});
+
+const { products } = await buyer.products.listProducts({
+  b2b: true,
+  limit: 20,
+  fields: 'name,price,currency,moq,pack_size,price_source'
+});
+```
+
+```json Response
+{
+  "products": [
+    {
+      "name": "Aurora Pro Desk Lamp",
+      "price": 111.11,
+      "currency": "USD",
+      "moq": 5,
+      "pack_size": 1,
+      "price_source": "assigned"
+    }
+  ],
+  "pagination": { "limit": 20, "next_cursor": null, "has_more": false }
+}
+```
+
+A wholesale response is specific to one buyer, so it is not cached. Ordinary retail reads keep their
+caching unchanged.
+
 **Filter by brand.** Pass `brand` (case-insensitive exact match) to build a brand landing page —
 pair it with `listBrands` below to render a "shop by brand" row, then list the chosen brand's products:
 

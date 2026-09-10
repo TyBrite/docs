@@ -56,6 +56,21 @@ const result = await client.search.searchProducts({ q: 'snoboard' });
 }
 ```
 
+**Searching as a wholesale buyer.** Pass `b2b: true` with a buyer's session token. A search result is
+a reference to a product — an id, a score and a match reason — and carries no price, so this does not
+price anything. What it does is keep the response out of the caches, because a buyer's results can be
+narrowed to the range they may order from and a narrowed set must not be served to anyone else. Fetch
+the priced page from `listProducts({ b2b: true })`.
+
+```typescript
+const buyer = new Tybrite({
+  apiKey: 'tybrite_pk_live_...',
+  headers: { 'x-auth-token': buyerSessionToken },
+});
+
+const { results } = await buyer.search.searchProducts({ q: 'desk lamp', b2b: true });
+```
+
 ---
 
 ### `autocompleteSearch`
