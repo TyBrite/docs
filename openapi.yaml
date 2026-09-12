@@ -3958,6 +3958,14 @@ paths:
                     utm_campaign:
                       type: string
                       example: spring-sale
+                    utm_term:
+                      type: string
+                      description: The paid keyword the shopper searched, so the merchant can see which terms earn orders.
+                      example: running shoes
+                    utm_content:
+                      type: string
+                      description: The creative or placement the shopper clicked, for comparing one ad variant against another.
+                      example: hero-video-a
                     referrer:
                       type: string
                       example: https://www.google.com/
@@ -3983,13 +3991,13 @@ paths:
                   type:
                     - string
                     - 'null'
-                  description: Google ad click id, when the shopper arrived from a Google ad. On a paid order this lets the merchant's Google advertising get credit for the sale. Forward the true captured value; omit if not present.
+                  description: Google ad click id, when the shopper arrived from a Google ad. On a paid order this lets the merchant's Google advertising get credit for the sale, and is kept on the order so the merchant's own reports can attribute revenue and profit to the ad that earned it rather than relying on the ad platform's account. Forward the true captured value; omit if not present.
                   example: Cj0KCQiA...gclid
                 fbclid:
                   type:
                     - string
                     - 'null'
-                  description: Meta (Facebook & Instagram) ad click id, when the shopper arrived from a Meta ad. On a paid order this lets the merchant's Meta advertising get credit for the sale. The conversion is sent server-side (Conversions API) and de-duplicated against the storefront's Meta Pixel by the order id, so it counts even when the browser blocks the Pixel. Forward the true captured value; omit if not present.
+                  description: Meta (Facebook & Instagram) ad click id, when the shopper arrived from a Meta ad. On a paid order this lets the merchant's Meta advertising get credit for the sale. The conversion is sent server-side (Conversions API) and de-duplicated against the storefront's Meta Pixel by the order id, so it counts even when the browser blocks the Pixel. It is kept on the order so the merchant's own reports can attribute revenue and profit to the ad that earned it. Forward the true captured value; omit if not present.
                   example: IwAR1abc...fbclid
                 ad_consent:
                   type:
