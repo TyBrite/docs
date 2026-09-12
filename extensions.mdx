@@ -108,7 +108,7 @@ The `ctx` surface is deliberately tiny — it's the entire capability set:
 | Member | What it does |
 | :--- | :--- |
 | `ctx.secrets.get(alias)` | Resolve one of this extension's provider secrets by alias. Resolved server-side; never logged. |
-| `ctx.fetch(url, init)` | Make an outbound HTTP request. Filtered to public destinations; response size-capped. |
+| `ctx.fetch(url, init)` | Make an outbound HTTPS request. Filtered to public destinations — a request to a private, internal, or unresolvable host is refused, not relayed — and the response is size-capped. Up to five calls per run. |
 | `ctx.log(...args)` | Write a structured log line into the run log (your debugger). |
 | `ctx.store_id` / `ctx.environment` | The authenticated store and its environment (`production` / `sandbox`). Read-only. |
 

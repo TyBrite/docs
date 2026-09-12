@@ -120,8 +120,10 @@ treats that code as untrusted and bounds what it can reach and how long it can r
   </Step>
   <Step title="Outbound requests cannot reach internal addresses">
     Any URL a function calls — and any endpoint registered for remote execution — is checked before the
-    request is made. Loopback, private, link-local, and cloud-metadata addresses are refused, so a function
-    cannot be used to probe infrastructure from the inside.
+    request is made, whichever way the function makes the call. Loopback, private, link-local, and
+    cloud-metadata addresses are refused, including a public-looking hostname that resolves to one of them,
+    so a function cannot be used to probe infrastructure from the inside. A destination that cannot be
+    resolved at all is refused rather than attempted.
   </Step>
   <Step title="Nothing runs unbounded">
     Every invocation has a hard timeout, a cap on outbound calls and response size, and a per-store monthly
