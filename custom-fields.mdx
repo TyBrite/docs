@@ -91,6 +91,13 @@ await client.orders.createOrder({
 
 Values are validated against the merchant's definitions: a name that is not defined, a value outside a `select` field's choices, or a number that will not parse is rejected.
 
+The merchant can also put rules on a field, and those are applied to what you send. A number can carry a
+smallest and largest allowed value; text can carry a length range and a pattern; a date can be required
+to fall in the future, to be a minimum number of days ahead, or to sit within a maximum number of years.
+A value that breaks one of these is rejected the same way an unparseable one is, and the reason names the
+field. Send what the shopper actually entered rather than a placeholder — a date filled in to get past a
+form is the kind of value these rules exist to catch.
+
 <Note>
   A rejected value does **not** fail the order. Payment has been taken by the time the values are
   recorded, so the order is created and the reason is returned in `post_processing_warnings`. Read that
