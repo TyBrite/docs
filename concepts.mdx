@@ -56,11 +56,12 @@ constrained to your store's rows by row-level security tied to the authenticated
 one store to read or write another's data even on a shared table. This holds for every endpoint, not
 just the ones that take a store parameter.
 
-For partners running a **marketplace deployment**, the boundary goes a step further: each operator's
-marketplace runs on its **own dedicated backend** — a separate database and API stack, not a shared
-one — so an entire marketplace (and all its merchants) is isolated at the infrastructure level from
-every other deployment. Within a deployment, individual stores are isolated from each other by the
-row-level security described above.
+For partners running a **marketplace**, the boundary can go a step further: a marketplace can run on
+its **own dedicated backend** — a separate database and API stack, not a shared one — so an entire
+marketplace and all its merchants are isolated at the infrastructure level from every other
+deployment. That is a capacity and blast-radius choice rather than what makes something a
+marketplace; a marketplace that shares a deployment is separated from everything else on it by the
+row-level boundary described above, which is the same boundary that separates any two stores.
 
 ## Conventions that hold everywhere
 
