@@ -93,9 +93,9 @@ const offerSwitcher = features?.multi_currency === true;
 
 ## Marketplace
 
-On a marketplace deployment the storefront currency is **marketplace-wide** — it's the operator's
-single default, so the whole aggregated catalog renders in one currency (you do **not** get a
-different currency per merchant). Every product still carries `display_currency`/`currency_symbol`
+On a marketplace the storefront currency is **marketplace-wide** — it's the operator's single
+default, so the whole aggregated catalog renders in one currency (you do **not** get a different
+currency per merchant). Every product still carries `display_currency`/`currency_symbol`
 inline, so you format the same way; they just resolve to the marketplace's currency across all
 merchants. `client.marketplace.getMarketplaceInfo` reports the marketplace's `default_currency`, and
 `getMarketplaceInfo({ storeId })` returns a single merchant's store info. (Each merchant still sets
