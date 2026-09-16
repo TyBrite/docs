@@ -35,20 +35,24 @@ the operator's own traffic. Other sellers transact against that database through
 latency.
 
 <Note>
-  **A platform operated by an agency is a different shape.** Its merchants keep their own storefronts,
-  catalogues and stock, so they do not contend with each other the way sellers on one marketplace
-  storefront do — nothing on this page applies to them. See
-  [Growing the platform](/agencies#growing-the-platform).
+  **A platform operated by an agency spans both shapes.** Its merchants sell under their own
+  storefronts, catalogues and stock, and in that mode they do not contend with each other the way
+  sellers on one marketplace storefront do — for them, this page describes a problem they do not
+  have. See [Growing the platform](/agencies#growing-the-platform). Where an agency also runs a
+  marketplace, the merchants taking part in it are sellers on one storefront like any others, and
+  everything below applies to that storefront.
 </Note>
 
 ## Two levels of isolation
 
 <Columns cols={2}>
   <Card title="Between operators" icon="server">
-    Each marketplace runs on its own stack — its own database, cache, compute and object storage.
-    Nothing is shared with another operator, so one marketplace's peak is invisible to every other
-    marketplace. Hardware is provisioned for the operator's expected traffic rather than drawn from a
-    shared tier.
+    A marketplace can run on its own stack — its own database, cache, compute and object storage —
+    and at the volumes this page describes it does. Nothing is then shared with another operator, so
+    one marketplace's peak is invisible to every other marketplace, and hardware is provisioned for
+    the operator's expected traffic rather than drawn from a shared tier. A marketplace sharing a
+    deployment with others is isolated from them by the same store boundary that separates any two
+    stores; what it does not get is a capacity ceiling of its own.
   </Card>
   <Card title="Between sellers" icon="users">
     Sellers inside a marketplace share a database, so isolation is enforced by the platform: stock
