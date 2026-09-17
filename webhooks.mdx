@@ -110,6 +110,17 @@ All events follow the same envelope shape — only `type` and `data.object` vary
 | `order.refunded` | A refund is recorded on the order |
 | `order.updated` | Any `PATCH /v1/orders/:id` that doesn't trigger a more specific event |
 
+### In-store sales
+
+The order events above describe the **online** store. A sale rung up at the counter is a separate
+record with its own events, so anything that must see all of a merchant's revenue — accounting,
+fiscal reporting, loyalty — subscribes to both families.
+
+| Event | Fired when |
+| :--- | :--- |
+| `sale.completed` | A sale is completed at the point of sale. Carries the line items with their SKU, name, quantity and unit price, plus `channel: "pos"`. The counterpart of `order.paid` — a counter sale is tendered as it is created, so there is no pending state and no separate `sale.created` |
+| `sale.refunded` | A return moves money back on a completed sale. Carries `return_status` and `total_returned_amount` |
+
 ### Payments
 
 | Event | Fired when |
@@ -231,6 +242,15 @@ keeps a storefront in step with the store — adding a promo banner as a promoti
 block when the first reviews are approved, or a "shop by collection" row when a collection becomes
 homepage-eligible. See the [automated workflows](/workflows/webhooks-automation) guide.
 </Note>
+
+### Your connection
+
+Only reaches applications connected through [Login with GC](/gc-connect), and describes the
+connection itself rather than the merchant's store.
+
+| Event | Fired when |
+| :--- | :--- |
+| `connection.revoked` | The key pair you hold for this store was revoked, rotated, deactivated or expired. Carries `pair_id`, a `reason` (`revoked_by_merchant` / `rotated` / `deactivated` / `expired` / `revoked`) and `revoked_at`. Match on `pair_id` and revoke that connection — see [Lifecycle & revocation](/gc-connect#lifecycle--revocation) |
 
 ### Catalog sync & syndication
 
