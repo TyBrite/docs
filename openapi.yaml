@@ -17903,6 +17903,15 @@ paths:
                     **Order lifecycle:** `order.created`, `order.paid`, `order.fulfilled`,
                     `order.shipped`, `order.cancelled`, `order.refunded`, `order.updated`
 
+                    **In-store sales:** `sale.completed`, `sale.refunded` — a sale rung up at the
+                    point of sale rather than online. Subscribe to these alongside the order events
+                    to receive every sale a store makes, whichever channel it came through.
+
+                    **Your connection:** `connection.revoked` — the key pair your application holds
+                    for this store was revoked, rotated, deactivated or expired. Only reaches
+                    applications connected through Login with GC, and carries `pair_id` so you revoke
+                    the affected connection rather than every one you hold for the store.
+
                     **Payment lifecycle:** `payment.succeeded`, `payment.failed`, `payment.refunded`
 
                     **Customer lifecycle:** `customer.created`, `customer.updated`, `customer.deleted`
@@ -18370,6 +18379,9 @@ paths:
                     - product.deleted
                     - product.restored
                     - promotion.deleted
+                    - sale.completed
+                    - sale.refunded
+                    - connection.revoked
       responses:
         '200':
           description: Test delivery attempted

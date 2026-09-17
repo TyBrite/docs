@@ -262,10 +262,17 @@ The merchant sees which environment you're requesting on the consent screen, so 
 
 ## Lifecycle & revocation
 
-Connected keys are **permanent** — they don't expire on a timer. A connection ends in one of two ways:
+Connected keys are **permanent** — they don't expire on a timer. A connection ends in one of three ways:
 
 - **The merchant disconnects you** from their store's **Integrations → API Keys → Connected Apps** panel. Galactic Core deactivates the key pair automatically — you don't need to do anything.
 - **You revoke the connection** with `connectRevoke` (passing the `pair_id` you saved at exchange time) — for example, when a merchant cancels their subscription on your platform.
+- **The merchant reconnects the same store.** Each authorization mints a **new** key pair, and Galactic Core deactivates every earlier pair for that store and application once the new one is safely stored. The merchant sees one connection; you hold two records unless you replace the old one.
+
+<Warning>
+**Store one connection per store, and replace it on reconnect.** A merchant who reconnects — after changing scopes, or because something looked wrong — leaves you holding a `pair_id` that Galactic Core no longer accepts. If you insert a second record instead of superseding the first, both look valid to you and only the newer one works, so roughly half your calls for that merchant answer `401` with no obvious cause.
+
+Key the record on the store, not on the authorization.
+</Warning>
 
 ```typescript
 await client.gcConnect.connectRevoke({
@@ -277,6 +284,37 @@ await client.gcConnect.connectRevoke({
   },
 });
 ```
+
+### Hearing about it
+
+Whichever way a connection ends, Galactic Core sends **`connection.revoked`** to the webhook URL you registered, signed with that endpoint's signing secret like every other event. Endpoints provisioned at consent time are subscribed to it automatically.
+
+```json
+{
+  "id": "evt_1789674770902_sv24g7f",
+  "type": "connection.revoked",
+  "store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+  "livemode": true,
+  "data": {
+    "object": {
+      "pair_id": "edf9dfb2-d0cd-4e8b-8550-8ee69c157dd8",
+      "reason": "rotated",
+      "revoked_at": "2026-09-17T19:52:50.715Z",
+      "client_id": "your-client-id"
+    }
+  }
+}
+```
+
+`reason` is one of `revoked_by_merchant`, `rotated`, `deactivated`, `expired` or `revoked`. `rotated` means the merchant reconnected and this pair was replaced, which reads differently to a merchant than an access they deliberately withdrew.
+
+**Match on `pair_id`, not on the store.** A merchant may hold more than one connection to your application for the same store, and revoking them all because one ended forces a reconnect nobody asked for.
+
+The event does not carry the keys themselves: Galactic Core stores only a hash of each one, so the plaintext exists solely at exchange time.
+
+<Note>
+Treat the event as the fast path, not the only one. A delivery can fail, and Galactic Core disables an endpoint after 20 consecutive failures — so an application that has been unreachable for a while stops receiving events entirely. Keep treating a `401` on a stored key as authoritative, and mark the connection dead when you see one.
+</Note>
 
 To see every store currently connected to your application — the data behind a merchant's Connected Apps panel — call `listConnectSessions` with a secret key:
 
