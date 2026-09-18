@@ -143,7 +143,7 @@ await client.webhooks.createWebhookEndpoint({
 | Payments | `payment.succeeded`, `payment.failed`, `payment.refunded` |
 | Customers | `customer.created`, `customer.updated`, `customer.deleted` |
 | Inventory | `product.created`, `product.updated`, `product.stock_low`, `product.out_of_stock` |
-| Cart | `cart.created`, `cart.updated`, `cart.abandoned` |
+| Cart & shopping intent | `cart.created`, `cart.updated`, `cart.abandoned`, `checkout.abandoned`, `wishlist.added` |
 | Gift Cards | `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired` |
 | Promotions | `promotion.applied`, `promotion.created`, `promotion.activated`, `promotion.deactivated` |
 | Pricing | `pricing_rule.created`, `pricing_rule.activated`, `pricing_rule.updated`, `pricing_rule.deactivated` |
@@ -325,7 +325,7 @@ console.log(result.status_code); // 200
 }
 ```
 
-Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `gift_card.issued`, `promotion.applied`, `promotion.activated`, `pricing_rule.activated`, `collection.created`, `post.published`, `review.approved`, `store.updated`, `payment_provider.connected`, `feature.status_changed`, `feed.sync.completed`, `channel.sync.completed`.
+Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `checkout.abandoned`, `wishlist.added`, `gift_card.issued`, `promotion.applied`, `promotion.activated`, `pricing_rule.activated`, `collection.created`, `post.published`, `review.approved`, `store.updated`, `payment_provider.connected`, `feature.status_changed`, `feed.sync.completed`, `channel.sync.completed`.
 
 ---
 

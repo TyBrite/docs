@@ -63,6 +63,27 @@ is the moment it goes live. Rejecting dismisses the draft — you can always ask
   else about what they can do. The check is enforced on the server, not just hidden in the interface.
 </Note>
 
+## What it aims at
+
+A suggestion is only as good as what it is pointed at, so the assistant reads what shoppers wanted and
+did not buy — not only what sold.
+
+- **Carts** — which products sit in baskets that have gone quiet, and what they are worth. A cart whose
+  owner has since bought that product is not counted; they did not abandon anything.
+- **Abandoned checkouts** — who reached the last step and stopped. The strongest signal in the group,
+  because the shopper had already decided.
+- **Wishlists** — what has been saved for later, the longest-lived signal of the three.
+- **Search outcomes** — what shoppers searched for, which product they clicked, and whether that led to
+  a basket, a checkout or a purchase.
+
+The last one matters because it names *where* a search failed, and the three answers need different
+fixes: clicked but never added to a basket points at the product page or the price; added but never
+reached checkout points at delivery cost or stock; reached checkout but never paid points at payment.
+
+A promotion aimed at what shoppers are actually trying to buy beats one aimed at what merely sells
+slowly. And a product that is wanted but **out of stock** is a restocking decision — the assistant will
+not propose a discount on something nobody can buy.
+
 ## Margin protection
 
 Every value the assistant proposes is in your store's currency, and every money action protects your margin.
