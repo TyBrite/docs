@@ -11103,6 +11103,194 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/posts/trending:
+    get:
+      operationId: getTrendingPosts
+      tags:
+        - CMS
+      summary: Most-read blog posts
+      description: |-
+        The posts being read most, ranked by reads per day over a recent window. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
+
+        The window widens — 7, then 21, 45 and 90 days — until enough posts qualify, and the one that was used is returned as `window_days`. A blog that publishes occasionally has quiet weeks, and a shelf that is empty half the time is worse than one that describes a longer period honestly. Render the period beside the list rather than claiming "this week" for all of them.
+
+        `reads_per_day` is normalised by the window, so the figure stays comparable as the window widens. It ranks the list; it is not a view counter and is not intended to be shown as one.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 6
+          description: How many posts to return.
+      responses:
+        '200':
+          description: Ranked posts, and the window they were ranked over.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  posts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        title:
+                          type: string
+                        slug:
+                          type: string
+                        excerpt:
+                          type:
+                            - string
+                            - 'null'
+                        featured_image:
+                          type:
+                            - string
+                            - 'null'
+                        published_at:
+                          type:
+                            - string
+                            - 'null'
+                          format: date-time
+                        reads_per_day:
+                          type: number
+                  window_days:
+                    type: integer
+                    description: The window these rankings cover, in days.
+              example:
+                posts:
+                  - id: 154000f5-0dce-4c1e-aacc-873ccb8aab00
+                    title: Best Tech Gifts 2026
+                    slug: best-tech-gifts-2026
+                    excerpt: The devices worth giving this year.
+                    featured_image: https://cdn.tybritelabs.com/posts/gifts-2026.jpg
+                    published_at: '2026-06-20T09:00:00Z'
+                    reads_per_day: 3.4286
+                window_days: 7
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/posts/{slug}/related:
+    get:
+      operationId: getRelatedPosts
+      tags:
+        - CMS
+      summary: Posts related to this one
+      description: |-
+        Posts related to the given one, ranked server-side so a storefront does not compute similarity in the browser. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published post matches the slug.
+
+        Ranking combines what the writing is about with the topics two posts share and how recent each one is, and nudges a post from a different category up between otherwise equal results.
+
+        **`score` is diagnostic — render `reason` instead.** The list is ordered by a rank that includes the category nudge, so the scores are not always decreasing: a post scoring 0.458 can legitimately sit above one scoring 0.511. Shown to a reader that looks like a sorting fault, whereas `reason` ("Closely related subject") is something they can act on.
+
+        The list is topped up to at least three entries when few posts qualify, since a shelf of one reads as a fault rather than a short list. Topped-up entries score strictly below the weakest genuine match and carry the reason "More from this blog".
+
+        `degraded` is true when the post has no stored vector yet — newly published, most often — and the ranking used topics and recency alone. The list is still returned.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          example: best-tech-gifts-2026
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 4
+          description: How many related posts to return.
+      responses:
+        '200':
+          description: Related posts, most relevant first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  anchor:
+                    type: object
+                    description: The post these are related to.
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      slug:
+                        type: string
+                      title:
+                        type: string
+                  related:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        title:
+                          type: string
+                        slug:
+                          type: string
+                        excerpt:
+                          type:
+                            - string
+                            - 'null'
+                        featured_image:
+                          type:
+                            - string
+                            - 'null'
+                        published_at:
+                          type:
+                            - string
+                            - 'null'
+                          format: date-time
+                        score:
+                          type: number
+                          description: Diagnostic relevance. Not ordered monotonically — render `reason`.
+                        reason:
+                          type: string
+                          description: Why this post is here, in words fit to show a reader.
+                  degraded:
+                    type: boolean
+                    description: True when the post had no stored vector and ranking used topics and recency alone.
+              example:
+                anchor:
+                  id: b47080fe-d5cd-4378-b27e-b0e849320d5b
+                  slug: top-3-premium-tech-picks-for-2026
+                  title: Top 3 Premium Tech Picks for 2026
+                related:
+                  - id: 13676ee0-10b8-49a0-aa3f-9afcaa02a3eb
+                    title: Building the Perfect Professional Tech Ecosystem
+                    slug: building-the-perfect-professional-tech-ecosystem
+                    excerpt: Discover how the right combination of devices can transform your productivity.
+                    featured_image: https://cdn.tybritelabs.com/posts/ecosystem.jpg
+                    published_at: '2026-01-11T12:58:50Z'
+                    score: 0.4839
+                    reason: Closely related subject
+                degraded: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/lookbooks:
     get:
       operationId: listLookbooks

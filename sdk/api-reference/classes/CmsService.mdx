@@ -130,6 +130,92 @@ post.products?.forEach(p => console.log(`Featured: ${p.name} ($${p.price})`));
 }
 ```
 
+### `getRelatedPosts`
+
+Posts related to a given one, ranked on the server. The ranking combines what the writing is about
+with the topics two posts share and how recently each was published, and nudges a post from a
+different category up between otherwise equal results. Returns `404` if no published post matches
+the slug.
+
+**Render `reason`, not `score`.** The list is ordered by a rank that includes the category nudge, so
+the scores are not always decreasing — a post scoring `0.458` can sit above one scoring `0.511`. To
+a reader that looks like a sorting fault, while `reason` ("Closely related subject") is something
+they can act on.
+
+The list is topped up to at least three entries when few posts qualify, since a shelf of one reads
+as a fault rather than a short list. Topped-up entries score strictly below the weakest genuine match
+and carry the reason "More from this blog". `degraded` is `true` when the post has no stored
+relevance data yet — most often because it was just published — and the ranking used topics and
+recency alone; the list is still returned.
+
+```typescript
+const related = await client.cms.getRelatedPosts({
+  slug: 'best-tech-gifts-2026',
+  limit: 4, // Optional, default 4
+});
+
+related.related.forEach(p => console.log(`${p.title} — ${p.reason}`));
+```
+
+```json Response
+{
+  "anchor": {
+    "id": "b47080fe-d5cd-4378-b27e-b0e849320d5b",
+    "slug": "top-3-premium-tech-picks-for-2026",
+    "title": "Top 3 Premium Tech Picks for 2026"
+  },
+  "related": [
+    {
+      "id": "13676ee0-10b8-49a0-aa3f-9afcaa02a3eb",
+      "title": "Building the Perfect Professional Tech Ecosystem",
+      "slug": "building-the-perfect-professional-tech-ecosystem",
+      "excerpt": "Discover how the right combination of devices can transform your productivity.",
+      "featured_image": "https://cdn.tybritelabs.com/posts/ecosystem.jpg",
+      "published_at": "2026-01-11T12:58:50Z",
+      "score": 0.4839,
+      "reason": "Closely related subject"
+    }
+  ],
+  "degraded": false
+}
+```
+
+### `getTrendingPosts`
+
+The posts being read most, ranked by reads per day over a recent window.
+
+The window widens — 7 days, then 21, 45 and 90 — until enough posts qualify, and the one that was
+used comes back as `window_days`. A blog that publishes occasionally has quiet weeks, and a list
+that is empty half the time is less useful than one describing a longer period honestly. Show the
+period beside the list rather than calling everything "this week".
+
+`reads_per_day` is normalised by the window, so the figure stays comparable as the window widens. It
+orders the list; it is not a view counter and reads oddly if shown as one.
+
+```typescript
+const trending = await client.cms.getTrendingPosts({ limit: 6 });
+
+console.log(`Most read over the last ${trending.window_days} days`);
+trending.posts.forEach(p => console.log(p.title));
+```
+
+```json Response
+{
+  "posts": [
+    {
+      "id": "154000f5-0dce-4c1e-aacc-873ccb8aab00",
+      "title": "Best Tech Gifts 2026",
+      "slug": "best-tech-gifts-2026",
+      "excerpt": "The devices worth giving this year.",
+      "featured_image": "https://cdn.tybritelabs.com/posts/gifts-2026.jpg",
+      "published_at": "2026-06-20T09:00:00Z",
+      "reads_per_day": 3.4286
+    }
+  ],
+  "window_days": 7
+}
+```
+
 ## Attributing content views
 
 `getPost` and `getLookbook` both accept a visitor and a session identifier, and record the view
