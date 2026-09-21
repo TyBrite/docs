@@ -122,10 +122,60 @@ const freshData = await client.system.getStoreInfo({ cache: false });
 | `shipping` | Delivery zones and fee thresholds. |
 | `cms` | Number of published posts and lookbooks. |
 | `features` | Platform capability flags (AI, Currency, etc.). |
+| `custom_fields` | Extra fields the merchant has added to their own records, grouped by what they describe. |
 
 <Note>
   The `store` section (ID, Name, Timezone, Currencies) is **always included** regardless of the filtered sections.
 </Note>
+
+#### Custom fields
+
+A merchant can add fields of their own to their records — `fabric` on a product, `buyer_po` on an
+order — and the `custom_fields` section is where you find out which ones exist before you meet a
+value for one.
+
+Reading a product does not tell you that `fabric` is the merchant's own field rather than something
+the platform ships, and a field no record has filled in yet is invisible entirely. This section is
+the shape of the merchant's records, so you can label and format a value correctly the first time
+one appears, and offer the field in a filter or a form without waiting to discover it.
+
+Fields are grouped by the kind of record they describe, because a field is not a store-wide fact:
+
+```json Response
+{
+  "custom_fields": {
+    "entities": [
+      {
+        "entity": "products",
+        "fields": [
+          { "name": "fabric", "label": "Fabric", "type": "text" },
+          { "name": "country_of_origin", "label": "Country of origin", "type": "text" }
+        ]
+      },
+      {
+        "entity": "online_orders",
+        "fields": [
+          { "name": "priority", "label": "Priority", "type": "select", "options": ["Standard", "Express"] }
+        ]
+      }
+    ],
+    "total_fields": 3
+  }
+}
+```
+
+`entity` names the record the fields belong to — `products`, `product_variants`, `customers`,
+`online_orders`, `returns`, `expenses` and others. `type` is one of `text`, `textarea`, `number`,
+`boolean`, `select`, `multiselect`, `date`, `json`, `dimensions` or `weight`. `options` appears on a
+choice field and lists the permitted values; `unit` appears on a measured field and names the unit
+it is expressed in.
+
+A merchant may keep a field private, and private is the default — a custom field often holds a cost,
+a margin or an internal note. A private field does not appear here at all, not even its name, so
+everything in this section is safe to show a shopper.
+
+These are definitions. A field's **value** belongs to a record and comes back with that record, in
+its own `custom_fields` array.
 
 #### Category and subcategory counts
 
