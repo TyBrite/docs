@@ -241,6 +241,19 @@ if (product.has_variants) {
 }
 ```
 
+Where a colour is set, `variant_attributes.color` is its name and `variant_attributes.color_hex` the
+matching `#RRGGBB` value, so a colour swatch renders from the response itself rather than from a
+lookup table of colour names. Both are optional: a variant may carry a name with no hex, and one that
+carries neither has no colour set.
+
+```typescript
+product.variants.map(v => ({
+  sku: v.sku,
+  label: v.variant_attributes?.color,        // 'Grey' — what a shopper reads
+  swatch: v.variant_attributes?.color_hex,   // '#9CA3AF' — what a swatch is drawn with
+}));
+```
+
 A multi-variant detail response (here shown for the "Nebula Ceramic Mug", a 3-variant
 product) — root metadata plus aggregate `price_range` / `total_stock` and a clean `variants[]`
 array, each with its own SKU, attributes, and isolated `media`:

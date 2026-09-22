@@ -1938,7 +1938,9 @@ paths:
             - `variants.sku` - Variant SKU
             - `variants.selling_price` - Customer-facing price
             - `variants.stock` - Stock quantity
-            - `variants.variant_attributes` - Variant attributes (color, size, etc.)
+            - `variants.variant_attributes` - Variant attributes (color, size, etc.). Where a colour is
+              set, `color` is its name and `color_hex` the matching `#RRGGBB` value, so a storefront can
+              render a swatch rather than infer one from the name. Either may be absent.
             - `variants.variant_name` - Variant display name
             - `variants.is_default` - Default variant flag
             - `variants.*` - All variant fields (same as just `variants`)
@@ -1997,7 +1999,7 @@ paths:
             - Clean variants array with only variant-specific fields:
               - variant_id, sku, price, sale_price, selling_price
               - stock (last_restocked available via fields=variants.last_restocked)
-              - variant_attributes (color, size, etc.)
+              - variant_attributes (color + color_hex, size, etc.)
               - variant_name, is_default
               
             **Field Filtering:**
@@ -2067,6 +2069,7 @@ paths:
                         stock: 79
                         variant_attributes:
                           color: Grey
+                          color_hex: '#9CA3AF'
                         variant_name: Variant 1
                         is_default: true
                       - variant_id: 8c0a90ea-df49-4705-a740-21f199a43d6b
@@ -2077,6 +2080,7 @@ paths:
                         stock: 138
                         variant_attributes:
                           color: Black
+                          color_hex: '#000000'
                         variant_name: Variant 3
                         is_default: false
                       - variant_id: 8109e807-6fef-47e5-8907-46f72d99b1cd
@@ -2087,6 +2091,7 @@ paths:
                         stock: 125
                         variant_attributes:
                           color: Blue
+                          color_hex: '#2563EB'
                         variant_name: Variant 2
                         is_default: false
                 multi_variant_product_filtered:
@@ -2111,6 +2116,7 @@ paths:
                         stock: 79
                         variant_attributes:
                           color: Grey
+                          color_hex: '#9CA3AF'
                         variant_name: Variant 1
                         is_default: true
                       - variant_id: 8c0a90ea-df49-4705-a740-21f199a43d6b
@@ -2119,6 +2125,7 @@ paths:
                         stock: 138
                         variant_attributes:
                           color: Black
+                          color_hex: '#000000'
                         variant_name: Variant 3
                         is_default: false
                       - variant_id: 8109e807-6fef-47e5-8907-46f72d99b1cd
@@ -2127,6 +2134,7 @@ paths:
                         stock: 125
                         variant_attributes:
                           color: Blue
+                          color_hex: '#2563EB'
                         variant_name: Variant 2
                         is_default: false
         '400':
@@ -2353,6 +2361,7 @@ paths:
                         stock: 79
                         variant_attributes:
                           color: Grey
+                          color_hex: '#9CA3AF'
                         variant_name: Variant 1
                         is_default: true
                       - variant_id: 8c0a90ea-df49-4705-a740-21f199a43d6b
@@ -2363,6 +2372,7 @@ paths:
                         stock: 138
                         variant_attributes:
                           color: Black
+                          color_hex: '#000000'
                         variant_name: Variant 3
                         is_default: false
                       - variant_id: 8109e807-6fef-47e5-8907-46f72d99b1cd
@@ -2373,6 +2383,7 @@ paths:
                         stock: 125
                         variant_attributes:
                           color: Blue
+                          color_hex: '#2563EB'
                         variant_name: Variant 2
                         is_default: false
         '400':
