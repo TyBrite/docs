@@ -65,6 +65,7 @@ The call returns `{ recorded: true }` with a `202 Accepted`.
 | `requestBody.product_id` | `string` | The product the shopper interacted with. Either `variant_id` or `product_id` is required. |
 | `requestBody.session_id` | `string` | The shopper's browsing-session identifier — the same one you use for an anonymous cart. Events sharing a `session_id` form one session path. May also be sent as the `x-session-id` header. |
 | `requestBody.customer_id` | `string` | The signed-in shopper, when known. |
+| `requestBody.channel` | `string` | Where the shopper was: `marketplace` from a marketplace storefront, `storefront` (or omitted) for a shop's own site. A marketplace storefront sets this so the event counts toward that marketplace rather than toward the shop that fulfils the order. The value names the channel only — which marketplace is resolved from the store the key belongs to. May also be sent as the `x-tybrite-channel` header; the body wins if both are sent. |
 
 <Note>
   Use the **same `session_id`** for every event in a browsing session (generate one per session

@@ -7621,6 +7621,16 @@ paths:
         the page.
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-tybrite-channel
+          in: header
+          required: false
+          description: Where the shopper was, when it is easier to set a header than to add a body field — `marketplace` from a marketplace storefront, `storefront` (or omitted) for a seller's own site. Equivalent to the `channel` body field; the body wins if both are sent. The marketplace itself is resolved server-side from the store, so this says which channel and cannot name one.
+          schema:
+            type: string
+            enum:
+              - storefront
+              - marketplace
       requestBody:
         required: true
         content:
@@ -7651,6 +7661,12 @@ paths:
                   type: string
                   format: uuid
                   description: The signed-in shopper, when known.
+                channel:
+                  type: string
+                  enum:
+                    - storefront
+                    - marketplace
+                  description: Where the shopper was when this happened. Send `marketplace` from a marketplace storefront so the event is attributed to that marketplace rather than to the seller's own shop; omit it, or send `storefront`, for a seller's own site. The marketplace itself is resolved server-side from the store, so this only says which channel — it cannot name one. May also be sent as the `x-tybrite-channel` header.
             examples:
               view:
                 summary: A product view
@@ -7929,6 +7945,16 @@ paths:
         best-effort and returns immediately; it never blocks the page.
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-tybrite-channel
+          in: header
+          required: false
+          description: Where the shopper was, when it is easier to set a header than to add a body field — `marketplace` from a marketplace storefront, `storefront` (or omitted) for a seller's own site. Equivalent to the `channel` body field; the body wins if both are sent. The marketplace itself is resolved server-side from the store, so this says which channel and cannot name one.
+          schema:
+            type: string
+            enum:
+              - storefront
+              - marketplace
       requestBody:
         required: true
         content:
@@ -8047,6 +8073,12 @@ paths:
                   type: string
                   format: uuid
                   description: For `content_click` — the product the shopper clicked through to from inside the content. Required (with `content_id`) on a `content_click`.
+                channel:
+                  type: string
+                  enum:
+                    - storefront
+                    - marketplace
+                  description: Where the session took place. Send `marketplace` from a marketplace storefront so the session is attributed to that marketplace rather than to the seller's own shop; omit it, or send `storefront`, for a seller's own site. The marketplace itself is resolved server-side from the store, so this only says which channel — it cannot name one. May also be sent as the `x-tybrite-channel` header.
             examples:
               sessionStart:
                 summary: The first event of a new session (from a Google organic visit)

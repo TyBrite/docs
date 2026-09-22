@@ -122,6 +122,7 @@ beacon: it never returns data to read, and a failed write is never surfaced to t
 | `requestBody.referrer` | `string` | The document referrer, when present. |
 | `requestBody.utm_source` `utm_medium` `utm_campaign` `utm_term` `utm_content` | `string` | UTM campaign parameters from the landing URL, when present. These drive revenue-by-source reporting. |
 | `requestBody.customer_id` | `string` | The signed-in shopper, when known. |
+| `requestBody.channel` | `string` | Where the session took place: `marketplace` from a marketplace storefront, `storefront` (or omitted) for a shop's own site. A marketplace storefront sets this so the session counts toward that marketplace rather than toward the shop that fulfils the order. The value names the channel only — which marketplace is resolved from the store the key belongs to. May also be sent as the `x-tybrite-channel` header; the body wins if both are sent. |
 
 <Note>
   Persist `visitor_id` across sessions (e.g. in localStorage) and keep one
