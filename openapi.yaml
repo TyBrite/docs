@@ -1596,6 +1596,7 @@ paths:
             - **Nested:** `attributes.*`, `shipping_info.*`, `variant_attributes.*`
             - **Timestamps:** `created_at`, `updated_at`
             - **Flags:** `has_variants`, `is_default`
+            - **Reviews:** `average_rating`, `review_count` (list only)
               
             **Bandwidth Savings:**
             - Full product: ~2-5KB per product
@@ -1626,7 +1627,7 @@ paths:
           required: false
           description: |
             By default the product **list** returns a lean payload optimized for catalog grids —
-            identity, price, thumbnail, taxonomy and flags — and omits heavy fields that a list view
+            identity, price, thumbnail, taxonomy, flags and the review rating — and omits heavy fields that a list view
             rarely needs: the long-form `description`, the SEO block (`seo_title`/`seo_description`/`seo_keywords`),
             raw `attributes`/`shipping_info`, and the full `media` arrays. Those are always available on the
             single-product detail endpoints (`GET /v1/products/{id}`, `GET /v1/products/by-slug/{slug}`),
@@ -1748,6 +1749,8 @@ paths:
                         display_currency: USD
                         currency_symbol: $
                         is_active: true
+                        average_rating: 5
+                        review_count: 1
                         created_at: '2026-06-20T10:12:03.673701+00:00'
                         updated_at: '2026-06-20T10:12:03.673701+00:00'
                     pagination:
@@ -1774,6 +1777,8 @@ paths:
                         display_currency: USD
                         currency_symbol: $
                         is_active: true
+                        average_rating: null
+                        review_count: 0
                     pagination:
                       limit: 50
                       next_cursor: eyJuIjoiU29ueSBXSC0xMDAwWE00IiwicCI6IjdkNDI1YzBhLTUwZTctNGUzOS1hZjc5LTZmNzk0NWY5ZGZhOCJ9
@@ -5425,9 +5430,11 @@ paths:
         **Provider-Specific Verification:**
 
         **Stripe:**
-        - Queries Stripe Checkout Session API
-        - Returns payment status: `pending`, `paid`, `failed`, `cancelled`
-        - Includes payment intent details
+        - Pass the `reference` returned by initialize, or its `session_id`; a PaymentIntent
+          id (`pi_...`) or charge id (`ch_...`) from a Stripe event is also accepted
+        - Returns `success` once the Checkout Session is paid, otherwise Stripe's own
+          `payment_status` (for example `unpaid`)
+        - Includes the Checkout Session id, the order it was opened for, and the PaymentIntent
 
         **PayPal:**
         - Pass the PayPal order id as the `reference`
@@ -5478,10 +5485,10 @@ paths:
             examples:
               stripe:
                 summary: Verify Stripe payment
-                description: For Stripe, pass the Checkout Session id (the `session_id` returned by initialize, e.g. `cs_test_...`) as the reference — not the `PAY-...` reference.
+                description: For Stripe, the reference returned by initialize and its `session_id` identify the same payment; either may be passed.
                 value:
                   provider: stripe
-                  reference: cs_test_a1GBZkvLEkbsaotrzgHrtKzWKekeLe1bGzXw2xp6lKzMRZkjNiVMprvqS6
+                  reference: PAY-12345678-ABC123
               paypal:
                 summary: Verify (capture) PayPal payment
                 value:
@@ -5516,8 +5523,19 @@ paths:
                         example: stripe
                       reference:
                         type: string
-                        description: Stripe Checkout Session ID
+                        description: The reference passed in the request, returned as given
+                        example: PAY-12345678-ABC123
+                      session_id:
+                        type: string
+                        description: The Stripe Checkout Session the reference resolved to
                         example: cs_test_a1b2c3...
+                      order_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                        description: The order the payment was initialized for, or null when it was initialized without one
+                        example: 880e8400-e29b-41d4-a716-446655440003
                       status:
                         type: string
                         description: |
@@ -5813,6 +5831,13 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: 'Marketplace keys only, and then required: the merchant whose items this cart holds. A marketplace cart is held by `x-session-id` (a `customer_id` is not accepted), is recorded as the marketplace''s, and is never visible to the merchant''s own storefront.'
+          schema:
+            type: string
+            format: uuid
         - name: x-auth-token
           in: header
           required: false
@@ -5934,6 +5959,13 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: 'Marketplace keys only, and then required: the merchant whose items this cart holds. A marketplace cart is held by `x-session-id` (a `customer_id` is not accepted), is recorded as the marketplace''s, and is never visible to the merchant''s own storefront.'
+          schema:
+            type: string
+            format: uuid
         - name: x-auth-token
           in: header
           required: false
@@ -6060,6 +6092,13 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: 'Marketplace keys only, and then required: the merchant whose items this cart holds. A marketplace cart is held by `x-session-id` (a `customer_id` is not accepted), is recorded as the marketplace''s, and is never visible to the merchant''s own storefront.'
+          schema:
+            type: string
+            format: uuid
         - name: x-auth-token
           in: header
           required: false
@@ -6219,6 +6258,13 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: 'Marketplace keys only, and then required: the merchant whose items this cart holds. A marketplace cart is held by `x-session-id` (a `customer_id` is not accepted), is recorded as the marketplace''s, and is never visible to the merchant''s own storefront.'
+          schema:
+            type: string
+            format: uuid
         - name: x-auth-token
           in: header
           required: false
@@ -6361,6 +6407,13 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: 'Marketplace keys only, and then required: the merchant whose items this cart holds. A marketplace cart is held by `x-session-id` (a `customer_id` is not accepted), is recorded as the marketplace''s, and is never visible to the merchant''s own storefront.'
+          schema:
+            type: string
+            format: uuid
         - name: x-auth-token
           in: header
           required: false
@@ -7093,22 +7146,46 @@ paths:
         payment is created. Holds expire automatically if payment is never completed,
         returning the stock to availability.
 
+        **The shopper.** Send the shopper's credential to tie the purchase to them: a
+        Galactic Core shopper session in `x-auth-token` (also accepted as
+        `x-customer-token`), or an assertion signed by the marketplace's own backend in
+        `x-external-auth`. With neither, the checkout is a guest checkout. The purchase is
+        recorded against that credential, which is what later lets the shopper see it in
+        `GET /v1/customers/me`, return it, and dispute it. A guest purchase becomes
+        visible to an account once that account has verified its email address with a
+        one-time code.
+
+        **Wallet.** A signed-in shopper can spend their marketplace wallet balance: send
+        `wallet_amount` to spend up to that much, or `use_wallet: true` to spend as much
+        as the checkout allows. The balance is held while payment is pending and returned
+        if the payment fails or is abandoned. The charge never falls below the payment
+        provider's minimum for the currency, so a wallet cannot pay for a whole basket.
+        The response reports `wallet_applied`, and `total_amount` is the amount charged
+        after it. Each merchant is still paid their full net: the marketplace operator
+        funds the wallet.
+
         Requires the marketplace operator key.
       security:
         - BearerAuth: []
       parameters:
-        - name: x-customer-token
-          in: header
-          required: false
-          schema:
-            type: string
-          description: Session token of a shopper signed in through Galactic Core, tying the checkout to their account rather than treating it as a guest checkout. Optional. Also accepted as `x-auth-token`.
         - name: x-auth-token
           in: header
           required: false
           schema:
             type: string
-          description: Alias of `x-customer-token`.
+          description: Session token of a shopper signed in through Galactic Core, tying the checkout to their account rather than treating it as a guest checkout. Optional; send at most one shopper credential.
+        - name: x-customer-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Alias of `x-auth-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: 'A shopper assertion signed by the marketplace''s own backend with the marketplace''s signing secret, for marketplaces that run their own sign-in. The claim carries `external_id`, `iat` and `exp` (at most 300 seconds apart), and optionally `email` with `email_verified: true`. Optional; send at most one shopper credential.'
       requestBody:
         required: true
         content:
@@ -7160,6 +7237,13 @@ paths:
                 billing_address:
                   type: object
                   additionalProperties: true
+                wallet_amount:
+                  type: number
+                  exclusiveMinimum: 0
+                  description: Spend up to this much of the signed-in shopper's marketplace wallet on this checkout. Capped by the balance and by the payment provider's minimum charge.
+                use_wallet:
+                  type: boolean
+                  description: Spend as much of the signed-in shopper's wallet as the checkout allows.
                 discounts:
                   type: array
                   description: Optional per-merchant discounts. Each entry applies a merchant's own promotion and/or gift card to that merchant's portion of the basket, reducing only that merchant's subtotal. Marketplace-wide promotions run by the operator apply automatically and are not passed here.
@@ -7230,6 +7314,7 @@ paths:
                 currency: USD
                 subtotal: 245
                 total_amount: 230
+                wallet_applied: 0
                 discount_total: 15
                 operator_funded_discount: 5
                 discount_breakdown:
@@ -7247,10 +7332,25 @@ paths:
                     commission_rule_id: 7e6d5c4b-1234-5678-9abc-def012345678
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: The marketplace has not finished connecting its payment account, so it cannot take payment yet (`provider_not_live`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_not_live
+                  message: This marketplace has not finished connecting its payment account.
         '500':
           $ref: '#/components/responses/ServerError'
         '502':
@@ -9297,26 +9397,44 @@ paths:
         - Marketplace
       summary: Get the signed-in shopper's unified marketplace profile
       description: |
-        Return a marketplace shopper's unified profile, aggregated across every
-        merchant in the marketplace they have shopped with. The response combines
-        their identity, the merchants they have a relationship with, and their full
-        cross-merchant order history.
+        Return a marketplace shopper's profile and their order history across every
+        merchant in this marketplace.
 
-        Requires the marketplace operator key plus the shopper's session token,
-        supplied in the `X-Customer-Token` header. Sign the shopper in first, then
-        pass the token from that response here.
+        A purchase belongs to the shopper when it was placed with their credential. A
+        purchase made as a guest belongs to them once they have verified the email address
+        it was bought with, by verifying a one-time code or following a sign-in link;
+        registering an account with that address is not enough. `customer.email_verified`
+        reports which applies. A marketplace shopper holds no customer record with any
+        merchant, so `customer.ids` is empty.
+
+        Requires the marketplace operator key plus exactly one shopper credential:
+        `x-auth-token` (a Galactic Core shopper session, also accepted as
+        `X-Customer-Token`) or `x-external-auth` (an assertion signed with the
+        marketplace's signing secret).
       security:
         - BearerAuth: []
       parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          description: The signed-in shopper's session token, obtained when the shopper logs in.
+          schema:
+            type: string
         - name: X-Customer-Token
           in: header
-          required: true
-          description: The signed-in shopper's session token, obtained when the shopper logs in.
+          required: false
+          description: Alias of `x-auth-token`.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: 'A shopper assertion signed by the marketplace''s own backend with the marketplace''s signing secret: `external_id`, `iat` and `exp` (at most 300 seconds apart), and optionally `email` with `email_verified: true`.'
           schema:
             type: string
       responses:
         '200':
-          description: The shopper's unified marketplace profile.
+          description: The shopper's marketplace profile.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -9326,32 +9444,22 @@ paths:
                 $ref: '#/components/schemas/UnifiedCustomerProfile'
               example:
                 customer:
-                  ids:
-                    - 9dd91fcc-4ca9-4d5d-a477-cd661baa4c49
-                    - 0bd714c2-89ab-46fb-b6a5-ad0dd9ffae74
+                  ids: []
                   email: john.doe@example.com
+                  email_verified: true
                   name: John Doe
-                  phone: ''
+                  phone: null
                   address: null
                   status: active
                   join_date: '2026-06-21'
                 stores:
-                  - merchant_store_id: 086e8d7f-b84d-41bc-8acd-3f5740ea61dc
-                    merchant_store_name: Galactic Core Store
-                    affiliation_date: '2026-06-21T10:22:34.714838+00:00'
-                    first_purchase_date: null
-                    last_purchase_date: null
-                    total_purchases: 0
-                    total_spent: 0
-                    status: active
-                    preferred_store: false
                   - merchant_store_id: ef7b07d3-424b-4b03-b1d4-30a2d2073b61
                     merchant_store_name: Galactic Test Store
                     affiliation_date: '2026-06-21T10:22:35.523993+00:00'
-                    first_purchase_date: null
-                    last_purchase_date: null
-                    total_purchases: 0
-                    total_spent: 0
+                    first_purchase_date: '2026-06-21T10:22:35.523993+00:00'
+                    last_purchase_date: '2026-06-21T10:22:35.523993+00:00'
+                    total_purchases: 1
+                    total_spent: 24.99
                     status: active
                     preferred_store: false
                 orders:
@@ -9370,21 +9478,126 @@ paths:
                     estimated_delivery: null
                     created_at: '2026-06-21T10:22:35.556122+00:00'
                     updated_at: '2026-06-21T10:22:35.556122+00:00'
-                  - id: dcadfcfe-3022-4586-adc4-62def105d4e8
-                    order_number: MKT-2026-000039-086e8d7f
-                    merchant_store_id: 086e8d7f-b84d-41bc-8acd-3f5740ea61dc
-                    merchant_store_name: Galactic Core Store
-                    order_status: pending
-                    payment_status: paid
-                    total_amount: 4.5
-                    subtotal: 4.5
-                    tax_amount: 0
-                    shipping_amount: 0
-                    discount_amount: 0
-                    tracking_number: null
-                    estimated_delivery: null
-                    created_at: '2026-06-21T10:22:34.752356+00:00'
-                    updated_at: '2026-06-21T10:22:34.752356+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/customers/me/wallet:
+    get:
+      operationId: getMarketplaceWallet
+      tags:
+        - Marketplace
+      summary: Get the signed-in shopper's marketplace wallet
+      description: |
+        Return the shopper's marketplace wallet: the balance the marketplace has credited
+        them (for example when a dispute is decided as credit rather than a refund) and the
+        credits that make it up. The balance is spendable at this marketplace's checkout
+        with `wallet_amount` or `use_wallet`. It is held by the marketplace, not by any
+        merchant, and is separate in sandbox and production.
+
+        Requires the marketplace operator key plus exactly one shopper credential, as for
+        `GET /v1/customers/me`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          description: The signed-in shopper's session token.
+          schema:
+            type: string
+        - name: X-Customer-Token
+          in: header
+          required: false
+          description: Alias of `x-auth-token`.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: A shopper assertion signed with the marketplace's signing secret.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The shopper's wallet.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      balance:
+                        type: number
+                        description: Spendable balance, in `currency`.
+                      currency:
+                        type:
+                          - string
+                          - 'null'
+                        description: The marketplace's settlement currency.
+                      credits:
+                        type: array
+                        description: The most recent credits, newest first (up to 50).
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            amount:
+                              type: number
+                              description: The amount credited.
+                            balance:
+                              type: number
+                              description: What remains of this credit.
+                            currency:
+                              type:
+                                - string
+                                - 'null'
+                            status:
+                              type: string
+                              enum:
+                                - active
+                                - depleted
+                                - expired
+                                - void
+                            source:
+                              type: string
+                              description: Why the credit was issued, for example `dispute`.
+                            expires_at:
+                              type:
+                                - string
+                                - 'null'
+                              format: date-time
+                            created_at:
+                              type: string
+                              format: date-time
+              example:
+                data:
+                  balance: 3
+                  currency: USD
+                  credits:
+                    - id: 5dfd0467-4dc6-4447-8c01-cbb712418be4
+                      amount: 3
+                      balance: 3
+                      currency: USD
+                      status: active
+                      source: dispute
+                      expires_at: null
+                      created_at: '2026-09-23T12:52:10.114Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -15874,6 +16087,9 @@ paths:
         return, and can be applied at checkout (see `apply_store_credit` on
         `POST /v1/orders`).
 
+        A marketplace shopper holds no store credit with a merchant; on a marketplace key
+        this answers `400` and the balance is read from `GET /v1/customers/me/wallet`.
+
         **Authentication:** API key in the `Authorization: Bearer` header **and** a
         customer session — either `x-auth-token` or `x-external-auth`.
       security:
@@ -15944,6 +16160,8 @@ paths:
                 data:
                   balance: 0
                   currency: null
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -16094,6 +16312,14 @@ paths:
         Lodges a return request against one of the authenticated customer's own
         online orders. The return is created with `status: "pending"` for the
         merchant to review.
+
+        **On a marketplace** (a marketplace key with `store_id`), the order is one the
+        shopper bought through the marketplace: it must belong to a purchase placed with
+        the shopper's credential, or — for a guest purchase — made with an email address
+        the shopper has verified. The shopper has no customer record with the merchant,
+        and the return is refund-only: `return_type: "store_credit"` answers `400`. A
+        marketplace credit is issued to the shopper's marketplace wallet through a
+        dispute (see `GET /v1/customers/me/wallet`).
 
         **Authentication:** API key in the `Authorization: Bearer` header **and** a
         customer session — either `x-auth-token` or `x-external-auth`.
@@ -16434,7 +16660,9 @@ paths:
         and the return is finalized.
 
         Only valid while the return has a pending store-credit offer
-        (`credit_offer.status` is `pending`); otherwise returns `409`.
+        (`credit_offer.status` is `pending`); otherwise returns `409`. A marketplace
+        return never carries a store-credit offer, so on a marketplace key this always
+        answers `409`.
 
         **Authentication:** API key in the `Authorization: Bearer` header **and** a
         customer session — either `x-auth-token` or `x-external-auth`.
@@ -16801,6 +17029,14 @@ paths:
         operator can communicate.
 
         A shopper may have only one open dispute per order at a time.
+
+        **On a marketplace** (a marketplace key with `store_id`), the order must belong to
+        a purchase the shopper placed with their credential, or a guest purchase made with
+        an email address they have verified. The shopper has no customer record with the
+        merchant; the dispute records the shopper's own credential, and only that
+        credential can read, message or cancel it. When the operator decides a dispute as
+        credit, the amount is added to the shopper's marketplace wallet
+        (`GET /v1/customers/me/wallet`).
 
         **Authentication:** API key in the `Authorization: Bearer` header **and** a
         customer session — either `x-auth-token` or `x-external-auth`.
@@ -17844,11 +18080,12 @@ paths:
       operationId: payInvoice
       tags:
         - B2B
-      summary: Pay an invoice
+      summary: Pay an invoice (not available to buyers)
       description: |
-        Records a payment against an invoice. Payments settle the outstanding balance
-        and never exceed it. Requires an Idempotency-Key header (the payment is keyed on
-        it, so a retry with the same key is safe).
+        A terms invoice is settled by the supplier when payment is received; a buyer credential
+        cannot record an invoice settlement, so this operation always returns `403 not_supported`
+        for an invoice the buyer owns (and `404` for one they do not). To pay online, place a
+        prepaid order with `POST /v1/b2b/orders` and pay it through the payments API.
       security:
         - BearerAuth: []
       parameters:
@@ -17873,59 +18110,25 @@ paths:
             Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-          description: A unique key so a retried create is not duplicated.
         - name: id
           in: path
           required: true
           schema:
             type: string
             format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - amount
-              properties:
-                amount:
-                  type: number
-                  description: Payment amount (must not exceed the balance).
-                payment_method:
-                  type: string
-                  example: bank
       responses:
-        '201':
-          description: Payment recorded
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '403':
+          description: A buyer cannot record an invoice settlement.
           content:
             application/json:
               example:
-                data:
-                  payment_id: c4d5e6f7-1234-4a2b-9c8d-7e6f5a4b3c2d
-                  amount_paid: 200
-                  invoice_status: paid
+                error:
+                  code: not_supported
+                  message: A net-terms invoice is settled by the supplier when payment is received. To pay online, place a prepaid order; a buyer cannot record an invoice settlement.
               schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      payment_id:
-                        type: string
-                        format: uuid
-                      amount_paid:
-                        type: number
-                      invoice_status:
-                        type: string
-                        example: paid
-        '400':
-          $ref: '#/components/responses/BadRequestError'
+                $ref: '#/components/schemas/Error'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -21324,6 +21527,16 @@ components:
           type: string
           description: Product name
           example: Sony WH-1000XM4
+        average_rating:
+          type:
+            - number
+            - 'null'
+          description: Mean rating of the product's approved reviews, from 1 to 5, to one decimal place. `null` when the product has no approved reviews. Present on product listings so a grid can show a rating under each card without a review request per product.
+          example: 4.6
+        review_count:
+          type: integer
+          description: Number of approved reviews for the product. `0` when there are none.
+          example: 121
         description:
           type: string
           description: Product description
@@ -22414,7 +22627,12 @@ components:
           example: 245
         total_amount:
           type: number
+          description: The amount charged — the basket after every discount, less `wallet_applied`.
           example: 245
+        wallet_applied:
+          type: number
+          description: How much of the shopper's marketplace wallet this checkout spends. Held while payment is pending and returned if the payment fails. Funded by the marketplace operator, so each merchant's net is unchanged.
+          example: 0
         discount_total:
           type: number
           description: Total discount applied across the whole basket — the sum of every merchant's own promotion and gift card discounts plus any marketplace-wide promotion run by the operator.
@@ -22571,6 +22789,9 @@ components:
           format: email
         email_confirmed:
           type: boolean
+        email_verified:
+          type: boolean
+          description: Whether the account has proven control of its email address by verifying a one-time code or a sign-in link. Returned on marketplace keys. A marketplace links purchases made as a guest with this address to the account only when this is true.
         created_at:
           type: string
           format: date-time
@@ -22734,6 +22955,9 @@ components:
                 - string
                 - 'null'
               format: date
+            email_verified:
+              type: boolean
+              description: Whether the shopper has verified their email address. Purchases made as a guest with that address are included only when it is true.
         stores:
           type: array
           description: The merchants this shopper has a relationship with.

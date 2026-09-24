@@ -35,6 +35,7 @@ Retrieve a paginated list of products. This method returns **flat structures** (
 *   **🖼️ Thumbnails**: Use `thumbnail_url` for fast rendering in lists without iterating arrays.
 *   **🛒 Quick Add**: Includes default variant data (`price`, `stock`, `sku`) at root level.
 *   **🔍 Intelligence**: Use the `has_variants` flag to determine if the UI should show "View Options".
+*   **⭐ Ratings**: Each item carries `average_rating` (the mean of the product's approved reviews, to one decimal place, or `null` when it has none) and `review_count` (`0` when none), so a grid can show a rating under each card without a review request per product.
 *   **⏩ Pagination**: Uses cursor-based navigation for stable, high-performance scrolling.
 
 <Note>
@@ -43,15 +44,16 @@ Retrieve a paginated list of products. This method returns **flat structures** (
 `shipping_info`, and the full `media` arrays — so grids stay fast. Get those on the detail calls
 (`getProduct` / `getProductBySlug`), request them explicitly with `fields` (e.g.
 `fields: 'name,price,description,seo_title'`), or pass `full: true` to return the complete object
-for every row. `thumbnail_url`, `price`, `stock`, `has_variants` and the taxonomy fields are always
-present.
+for every row. `thumbnail_url`, `price`, `stock`, `has_variants`, the taxonomy fields and the
+review rating (`average_rating`, `review_count`) are always present. The rating is on the list only;
+the detail calls do not carry it, and `listReviews` returns the full summary for one product.
 </Note>
 
 ```typescript
 const { products, pagination } = await client.products.listProducts({
   search: 'Sony',
   limit: 20,
-  fields: 'name,price,stock,has_variants,product_slug,thumbnail_url'
+  fields: 'name,price,stock,has_variants,product_slug,thumbnail_url,average_rating,review_count'
 });
 
 // For subsequent pages, pass the cursor from the previous response:
@@ -72,7 +74,9 @@ if (pagination.next_cursor) {
       "stock": 79,
       "has_variants": true,
       "product_slug": "sony-wh-1000xm4-a089d-7d425c0a",
-      "thumbnail_url": "https://cdn.example.com/.../primary-1774785176485.jpg"
+      "thumbnail_url": "https://cdn.example.com/.../primary-1774785176485.jpg",
+      "average_rating": null,
+      "review_count": 0
     }
   ],
   "pagination": {
@@ -413,6 +417,7 @@ fields=name,variants.sku,variants.media,variants.variant_attributes
 *   **Pricing:** `price`, `selling_price`, `sale_price`, `price_range`
 *   **Inventory:** `stock`, `total_stock`, `last_restocked` (`last_restocked` is not returned by default — request it explicitly)
 *   **Variants:** `variants.sku`, `variants.selling_price`, `variants.media`, `variants.variant_attributes`
+*   **Reviews (list only):** `average_rating`, `review_count`
 
 ---
 

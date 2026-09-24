@@ -151,6 +151,10 @@ Lodges a return against one of the authenticated customer's own online orders. T
   Pass the customer's session token in `xAuthToken` (or a bring-your-own-auth assertion in `xExternalAuth`). The `order_id` must belong to that customer, and each `order_item_id` must be a line on that order.
 </Note>
 
+<Note>
+  **On a marketplace** (a marketplace key with `storeId`), the order must be one the shopper bought through the marketplace: a purchase placed with their credential, or a guest purchase made with an email address they have verified. The shopper holds no customer record with the merchant, and the return is refund-only — `return_type: 'store_credit'` answers `400`. Marketplace credit is issued to the shopper's marketplace wallet through a dispute (`client.marketplace.getMarketplaceWallet`).
+</Note>
+
 ```typescript
 const { data: lodged } = await client.returns.createReturn({
   xAuthToken: customerSessionToken,
@@ -404,7 +408,7 @@ When a merchant resolves a return by offering **store credit** instead of a refu
 
 ### `getStoreCredit(options)`
 
-The signed-in customer's total redeemable store credit balance.
+The signed-in customer's total redeemable store credit balance. A marketplace shopper holds no store credit with a merchant, so on a marketplace key this answers `400`; their balance is the marketplace wallet (`client.marketplace.getMarketplaceWallet`).
 
 ```typescript
 const { data } = await client.returns.getStoreCredit({
@@ -440,7 +444,7 @@ After accepting a $299 store-credit offer, the same call returns the populated b
 
 ### `acceptReturnCredit(options)`
 
-Accept a pending store-credit offer on one of the customer's returns. The credit is issued to their balance and the return is finalized. Returns `409` if there is no pending offer.
+Accept a pending store-credit offer on one of the customer's returns. The credit is issued to their balance and the return is finalized. Returns `409` if there is no pending offer — always the case on a marketplace key, since a marketplace return never carries a store-credit offer.
 
 ```typescript
 const { data } = await client.returns.acceptReturnCredit({

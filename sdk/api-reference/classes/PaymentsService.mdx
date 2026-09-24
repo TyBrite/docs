@@ -239,35 +239,42 @@ Retrieve the absolute source of truth for a transaction. This is a read operatio
   **Secret Key required.** `verifyPayment` will reject publishable keys with `403`. Verification responses include charge details (amounts, customer email, payment intents) and must not be exposed to untrusted clients.
 </Warning>
 
+For Stripe, the `reference` returned by `initializePayment` and its `session_id` identify the same payment, and either may be passed; a PaymentIntent id (`pi_...`) or charge id (`ch_...`) taken from a Stripe event is accepted too. The response names the Checkout Session in `session_id` and the order the payment was initialized for in `order_id`, and returns `reference` exactly as it was passed.
+
 ```typescript
+// Stripe: the reference from initializePayment, or its session_id
 const result = await client.payments.verifyPayment({
   requestBody: {
-    provider: 'mpesa',
-    reference: 'PAYMENT_REFERENCE_UUID'
+    provider: 'stripe',
+    reference: 'PAY-61713784-F4TAOI'
   }
 });
+// result.status === 'success' once the Checkout Session is paid;
+// result.order_id is the order the payment was opened for.
+```
+
+```json Response
+{
+  "provider": "stripe",
+  "reference": "PAY-61713784-F4TAOI",
+  "session_id": "cs_test_a1wkhnXDJL6XPIzS3rjHUeF0PxUb7yu6Nxw8WJsXpjIgzNG6lSe8x3uue0",
+  "order_id": "880e8400-e29b-41d4-a716-446655440003",
+  "status": "success",
+  "amount": 5000,
+  "currency": "usd",
+  "customer_email": "john.doe@example.com",
+  "payment_intent": "pi_3Q...",
+  "metadata": {
+    "order_id": "880e8400-e29b-41d4-a716-446655440003"
+  }
+}
 ```
 
 #### Response shape (per-provider `oneOf`)
 
-The response shape depends on the `provider` field — one of four variants is returned:
+The response shape depends on the `provider` field. The Stripe shape is shown above; the other providers return:
 
 <CodeGroup>
-
-```json Stripe
-{
-  "provider": "stripe",
-  "reference": "cs_test_a1b2c3...",
-  "status": "success",
-  "amount": 5000,
-  "currency": "USD",
-  "customer_email": "john.doe@tybritelabs.com",
-  "payment_intent": "pi_3Q...",
-  "metadata": {
-    "order_id": "ord_01HX..."
-  }
-}
-```
 
 ```json Paystack
 {
@@ -311,7 +318,7 @@ The response shape depends on the `provider` field — one of four variants is r
 
 **Status semantics by provider:**
 
-- **Stripe** — `success` when the session/intent is paid, otherwise the raw Stripe `payment_status` (`unpaid`, `no_payment_required`, etc.).
+- **Stripe** — `success` when the Checkout Session is paid, otherwise Stripe's own `payment_status` (`unpaid`, `no_payment_required`, etc.). `amount` is in major currency units; `order_id` is `null` when the payment was initialized without an order.
 - **Paystack** — Mirrors Paystack's `status` field (`success`, `failed`, `abandoned`).
 - **M-Pesa** — Enum: `pending | success | cancelled | failed`. Result code `1032` (user cancelled on phone) maps to `cancelled`.
 - **PayPal** — `verify` captures the buyer-approved order and returns `success` once the capture completes. The `reference` you pass is the PayPal order id returned at initialization.

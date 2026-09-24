@@ -62,14 +62,14 @@ a standard one.
 | --- | --- | --- |
 | `client.products.*`, `client.taxonomy.*`, `client.search.*` | ✅ same call | Returns the **aggregated** catalog across all merchants (each row carries `merchant_store_id`). Pass `storeId` to narrow to one merchant's shop page. |
 | `client.recommendations.getRecommendations` | ✅ same call | Cross-merchant rail; each item stamped with its `merchant_store_id`. |
-| `client.cartWishlist.*` | ✅ same call | Per-shopper cart/wishlist as usual (items carry `merchant_store_id`). |
+| `client.cartWishlist.*` (cart) | ⚠️ `storeId` required | A session cart at one merchant: pass that merchant's `storeId` and the shopper's `xSessionId` (a `customer_id` answers `400`). The cart is the marketplace's and never appears on the merchant's own storefront. Wishlists and `mergeCart` answer `403`. |
 | `client.reviews.listReviews` | ⚠️ `storeId` required | An operator key must pass the merchant `storeId` (the product's owner). |
-| `client.returns.*` (createReturn / listReturns / getReturn / getStoreCredit / acceptReturnCredit / requestReturnRefund) | ⚠️ `storeId` required | A return belongs to **one merchant** — pass that merchant's `storeId` + the shopper's `xAuthToken`. There is **no** cross-merchant returns aggregate. |
+| `client.returns.*` (createReturn / listReturns / getReturn / requestReturnRefund) | ⚠️ `storeId` required, refund-only | A return belongs to **one merchant** — pass that merchant's `storeId` + the shopper's credential. A marketplace return is refund-only: store-credit returns and `getStoreCredit` answer `400`, and marketplace credit lives in the shopper's wallet. There is **no** cross-merchant returns aggregate. |
 | `client.promotions.*` | ⚠️ `storeId` required, read/calc only | An operator key can **read/calculate** one promotion (`getPromotion` / `calculatePromotionDiscount` / `calculateBestPromotion`) with the merchant `storeId`, but **cannot list** promotions. |
 | `client.system.getStoreInfo` | ❌ use marketplace instead | Returns `403` for an operator key. Use `client.marketplace.getMarketplaceInfo()` (marketplace identity) or `getMarketplaceInfo({ storeId })` (one merchant's store info — same shape). |
 | Single-merchant `client.orders.createOrder` | ❌ use marketplace checkout | A marketplace basket spans merchants → use `client.marketplace.marketplaceCheckout(...)` (one payment, auto-split). Don't call `createOrder` per merchant. |
 | `client.giftCards.*`, `client.cms.*`, `client.customers.getCustomer` | ❌ per-merchant only | These are single-store surfaces — an operator key gets `403`. |
-| **Marketplace-only** (no standard equivalent) | `marketplaceCheckout`, `getMarketplaceCustomer` (unified profile, + `X-Customer-Token`), `getMarketplaceInfo`, `listMarketplaceCollections` / `getMarketplaceCollection`, `getAdSlot` / `logAdEvent` | These exist **only** in marketplace mode under an operator key. |
+| **Marketplace-only** (no standard equivalent) | `marketplaceCheckout`, `getMarketplaceCustomer` (unified profile) and `getMarketplaceWallet` (both + a shopper credential), `getMarketplaceInfo`, `listMarketplaceCollections` / `getMarketplaceCollection`, `getAdSlot` / `logAdEvent` | These exist **only** in marketplace mode under an operator key. |
 
 Discovery, cart, and recommendations aggregate automatically; anything tied to one merchant —
 returns, reviews, promotions, store info — takes that merchant's `storeId`; and checkout, the unified
@@ -476,76 +476,82 @@ nets that summed to $519.62 above.
 
 ## 5. Unified shopper profile
 
-Once the shopper from step 3 has bought from more than one merchant, one call returns their unified
-profile: identity, the merchants they have a relationship with, and their full cross-merchant order
-history. It takes the session token from the shopper's sign-in as `xCustomerToken`, and because it
-reads the shopper's own data it runs server-side on the secret operator client.
+Once the shopper from step 3 has bought through the marketplace, one call returns their profile:
+identity, the merchants they have bought from, and their order history across every merchant. It
+takes the shopper's credential — the session token from their sign-in as `xAuthToken`, or an
+assertion signed by the marketplace's own backend as `xExternalAuth` — and because it reads the
+shopper's own data it runs server-side on the secret operator client.
 
 ```typescript
 const profile = await server.marketplace.getMarketplaceCustomer({
-  xCustomerToken: shopperSessionToken, // from the shopper's login response
+  xAuthToken: shopperSessionToken, // from the shopper's login response
 });
 ```
 
 ```json Response
 {
   "customer": {
-    "ids": [
-      "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
-      "7c2a1b94-3e6d-4f81-9a02-d5b8e1c0f234"
-    ],
+    "ids": [],
     "email": "john.doe@example.com",
+    "email_verified": true,
     "name": "John Doe",
-    "phone": "+12125550142",
+    "phone": null,
     "address": null,
     "status": "active",
-    "join_date": "2026-05-02T00:00:00+00:00"
+    "join_date": "2026-06-21"
   },
   "stores": [
     {
-      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
-      "merchant_store_name": "Galactic Core Store",
-      "affiliation_date": "2026-05-02T14:11:09.220+00:00",
-      "first_purchase_date": "2026-05-09T18:42:00.000+00:00",
-      "last_purchase_date": "2026-06-18T10:15:30.000+00:00",
-      "total_purchases": 3,
-      "total_spent": 612.47,
-      "status": "active",
-      "preferred_store": true
-    },
-    {
       "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
       "merchant_store_name": "Galactic Test Store",
-      "affiliation_date": "2026-05-21T09:03:55.110+00:00",
-      "first_purchase_date": "2026-05-21T09:30:00.000+00:00",
-      "last_purchase_date": "2026-05-21T09:30:00.000+00:00",
+      "affiliation_date": "2026-06-21T10:22:35.523993+00:00",
+      "first_purchase_date": "2026-06-21T10:22:35.523993+00:00",
+      "last_purchase_date": "2026-06-21T10:22:35.523993+00:00",
       "total_purchases": 1,
-      "total_spent": 89.00,
+      "total_spent": 24.99,
       "status": "active",
       "preferred_store": false
     }
   ],
   "orders": [
     {
-      "id": "e7d28e96-e9e0-45ce-be28-51812f63eb4b",
-      "order_number": "ORD-1781955473455",
-      "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
-      "merchant_store_name": "Galactic Core Store",
+      "id": "102209e8-ebf5-4cfd-9228-23a559b6b769",
+      "order_number": "MKT-2026-000039-ef7b07d3",
+      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "merchant_store_name": "Galactic Test Store",
       "order_status": "pending",
       "payment_status": "paid",
-      "total_amount": 603.99,
-      "subtotal": 579.00,
+      "total_amount": 24.99,
+      "subtotal": 24.99,
       "tax_amount": 0,
-      "shipping_amount": 24.99,
-      "discount_amount": 0
+      "shipping_amount": 0,
+      "discount_amount": 0,
+      "tracking_number": null,
+      "estimated_delivery": null,
+      "created_at": "2026-06-21T10:22:35.556122+00:00",
+      "updated_at": "2026-06-21T10:22:35.556122+00:00"
     }
   ]
 }
 ```
 
-The same shopper may hold a distinct `customer` record at each merchant, and `customer.ids` lists all
-of them. The `stores` array is the shopper's per-merchant relationship, carrying `preferred_store`
-and spend totals, and `orders` is their order history across every merchant, newest first.
+A marketplace shopper holds no customer record with any merchant, so `customer.ids` is empty. A
+purchase belongs to the shopper when it was placed with their credential; a purchase made as a guest
+belongs to them once they have verified the email address it was bought with, by a one-time code or
+a sign-in link, and `customer.email_verified` reports whether they have. The `stores` array has one
+entry per merchant the shopper bought from, with spend totals over paid orders, and `orders` is their
+order history across every merchant, newest first.
+
+The shopper's marketplace wallet — credit the marketplace issued them, for example when a dispute is
+decided as credit — is read with `getMarketplaceWallet` and spent at checkout with `wallet_amount` or
+`use_wallet: true`.
+
+```typescript
+const wallet = await server.marketplace.getMarketplaceWallet({
+  xAuthToken: shopperSessionToken,
+});
+// wallet.data.balance, wallet.data.currency, wallet.data.credits
+```
 
 <Note>
   Returns are per-merchant: a return belongs to the merchant whose order it is, and there is no

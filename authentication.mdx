@@ -275,7 +275,7 @@ Every endpoint accepts one of the credentials above, or a combination of them. T
 | Endpoints | Key |
 | --- | --- |
 | Unified split checkout (`/v1/cart/checkout`) | Operator |
-| Unified shopper profile (`client.marketplace.getMarketplaceCustomer`) | Operator **+ `X-Customer-Token`** |
+| Unified shopper profile and wallet (`client.marketplace.getMarketplaceCustomer`, `getMarketplaceWallet`) | Operator **+ one shopper credential** (`x-auth-token` / `X-Customer-Token`, or `x-external-auth`) |
 | Marketplace info (`client.marketplace.getMarketplaceInfo`) | Operator |
 | Any discovery endpoint with an operator key | Operator (aggregates across merchants; narrow with `storeId`) |
 

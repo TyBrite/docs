@@ -16,14 +16,14 @@ A wholesale order moves through a fixed sequence, and each step maps to one or t
 - **Request for quote (RFQ).** The buyer asks a supplier to price a set of items and quantities — `createRfq`. The supplier prices it into a quote.
 - **Quote.** A priced offer the buyer can accept or reject — `getQuote`, `acceptQuote`, `rejectQuote`. A quote may carry a validity date, after which it expires.
 - **Purchase order (PO).** Accepting a quote creates a purchase order — the buyer's commitment. It carries the buyer's payment terms (prepaid, or net 15 / 30 / 60 days). Track it with `getPurchaseOrder` / `listPurchaseOrders`.
-- **Invoice.** When the supplier confirms the purchase order, a terms invoice is issued. The buyer sees it with `getInvoice` / `listInvoices` and settles it with `payInvoice` — in full or in parts. An invoice past its due date is marked overdue.
+- **Invoice.** When the supplier confirms the purchase order, a terms invoice is issued. The buyer sees it with `getInvoice` / `listInvoices`, and the supplier records payment against it when payment is received — in full or in parts. An invoice past its due date is marked overdue.
 
 For routine reorders, an approved buyer does not need the full request-for-quote round trip. `createDirectOrder` places an order in one call at the buyer's own agreed prices — the self-serve equivalent of the flow above. The request-for-quote path remains for negotiated or bespoke orders.
 
 <Note>
   Every method requires the API key **plus the buyer's session** — either an `xAuthToken` (a session token from `client.authentication.login`) **or** an `xExternalAuth` assertion if you run your own identity provider. Provide one of the two on every call.
 
-  All create calls (`createRfq`, `createDirectOrder`, `payInvoice`) require an **`idempotencyKey`** — a unique value per action, so a retried request is never applied twice.
+  The create calls (`createRfq`, `createDirectOrder`) require an **`idempotencyKey`** — a unique value per action, so a retried request is never applied twice.
 </Note>
 
 ---
@@ -50,14 +50,9 @@ const rfq = await client.b2B.createRfq({
 const quote = await client.b2B.getQuote({ id: quoteId, xAuthToken: session });
 const po = await client.b2B.acceptQuote({ id: quoteId, xAuthToken: session });
 
-// 3. Once the supplier confirms the PO, an invoice is issued. Pay it (in full or in part).
+// 3. Once the supplier confirms the PO, a terms invoice is issued. Track its balance and status.
 const invoices = await client.b2B.listInvoices({ xAuthToken: session });
-await client.b2B.payInvoice({
-  id: invoices.data[0].id,
-  xAuthToken: session,
-  idempotencyKey: crypto.randomUUID(),
-  requestBody: { amount: 200, payment_method: "bank" },
-});
+// invoices.data[0].status: 'issued' | 'partially_paid' | 'paid' | 'overdue' | 'void'
 ```
 
 ---
@@ -74,7 +69,7 @@ Tax is resolved on the server too. When you include a structured shipping addres
 
 How the order settles depends on the supplier's policy for this buyer:
 
-- **On terms** — the order is confirmed and a terms invoice is issued (subject to the buyer's credit limit). The response's `settlement` is `"terms"`, with `invoice_id`, `invoice_number`, and `due_date`. Settle it later with `payInvoice`.
+- **On terms** — the order is confirmed and a terms invoice is issued (subject to the buyer's credit limit). The response's `settlement` is `"terms"`, with `invoice_id`, `invoice_number`, and `due_date`. The supplier records payment against the invoice when it is received.
 - **Pay now** — the order is created awaiting payment. The response's `settlement` is `"pay_now"`, with an `order_id` and `amount`. Complete the payment through the payment flow (`client.payments.initializePayment` then `verifyPayment`) using that `order_id`, exactly as for a normal online order.
 
 - `requestBody.items` — an array of `{ variant_id, quantity }` (required, non-empty). Do not send prices.
@@ -202,11 +197,15 @@ Returns one of your invoices by `id`.
 
 ### `payInvoice(options)`
 
-Records a payment against an invoice. Payments settle the outstanding balance and never exceed it — a partial payment is fine; the invoice stays `partially_paid` until fully settled.
+A terms invoice is settled by the supplier when payment is received, so a buyer credential cannot record an invoice settlement. For an invoice the buyer owns, this method always rejects with `403 not_supported`; for an invoice they do not own, `404`. Online payment is taken on a prepaid order: when the supplier's policy for the buyer is prepaid, `createDirectOrder` returns `settlement: "pay_now"` with an `order_id`, which is paid through `client.payments.initializePayment`.
 
 - `id` — the invoice id.
-- `requestBody.amount` — the amount to pay (must not exceed the balance).
-- `requestBody.payment_method` — e.g. `"bank"` or `"cash"`.
-- `idempotencyKey` — required (the payment is keyed on it, so a retry with the same key is safe).
 
-Returns `{ data: { payment_id, amount_paid, invoice_status } }`.
+```json Response
+{
+  "error": {
+    "code": "not_supported",
+    "message": "A net-terms invoice is settled by the supplier when payment is received. To pay online, place a prepaid order; a buyer cannot record an invoice settlement."
+  }
+}
+```

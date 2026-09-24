@@ -21,6 +21,20 @@ Cart and wishlist endpoints accept **publishable keys**, so a leaked publishable
   All wishlist endpoints (and `mergeCart`) always require a customer identity (`xAuthToken` or `xExternalAuth`) because they are inherently customer-scoped. Only cart reads/writes that omit `customer_id` and rely solely on `xSessionId` may proceed unauthenticated.
 </Note>
 
+## Carts on a marketplace
+
+With a marketplace key, the cart methods (`getCart`, `clearCart`, `addToCart`, `updateCartItem`, `removeCartItem`) hold a shopper's session cart at one merchant, named by `storeId` — which is required there and must be an active merchant in the marketplace (`400` when it is missing, `404` when it is not active). A marketplace cart is held by `xSessionId`; a `customer_id` answers `400`. The cart is recorded as the marketplace's and is never visible to the merchant's own storefront. `mergeCart` and the wishlist methods answer `403` on a marketplace key. The whole basket is checked out with `client.marketplace.marketplaceCheckout`.
+
+```typescript
+const market = new Tybrite({ apiKey: 'tybrite_pk_live_marketplace_...' });
+
+await market.cartWishlist.addToCart({
+  storeId: 'merchant-a-uuid',     // the merchant whose item this is
+  xSessionId: guestSessionId,
+  requestBody: { variant_id: 'variant-uuid', quantity: 1 },
+});
+```
+
 ## Cart Management
 
 ### `getCart`

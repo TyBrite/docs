@@ -16,7 +16,8 @@ A few concepts make everything else click.
 - **Marketplace vs. merchant.** A *marketplace* aggregates many *merchants* (each is an independent store with its own catalog, pricing, and inventory). The marketplace operator sets commission and branding; merchants keep full control of their own products.
 - **The operator key.** A marketplace storefront authenticates with a single **marketplace operator key** (a publishable key, `tybrite_pk_...`, minted by the operator). You use this one key for everything the storefront does: browsing the aggregated catalog, rendering a single merchant's shop page, signing shoppers in, previewing carts, and checking out. You do **not** juggle per-merchant keys.
 - **Aggregated reads.** When you call the normal catalog endpoints (`products`, `taxonomy`, `search`) with the operator key, they automatically return results across **every active merchant**, and each product/result is stamped with the `merchant_store_id` it came from. Pass `storeId` to narrow any of them to one merchant.
-- **One shopper, every merchant.** A shopper signs up once and can buy from any merchant. Their identity is marketplace-wide; per-merchant relationships are created automatically the first time they buy from a merchant. `getMarketplaceCustomer` returns the unified picture.
+- **One shopper, every merchant.** A shopper signs up once and can buy from any merchant. Their identity belongs to the marketplace, and they hold no customer record with any merchant. A purchase is tied to the credential it was placed with — a Galactic Core shopper session (`x-auth-token`) or an assertion signed by the marketplace's own backend (`x-external-auth`) — and `getMarketplaceCustomer` returns every purchase tied to that credential across the marketplace.
+- **The marketplace wallet.** Credit the marketplace issues to a shopper — for example when a dispute is decided as credit rather than a refund — is held by the marketplace, not by a merchant. `getMarketplaceWallet` returns the balance, and checkout can spend it.
 - **Unified split checkout.** A single cart may contain items from several merchants. One `marketplaceCheckout` call creates one payment for the whole basket; after the shopper pays, each merchant is paid their share (gross minus commission) automatically. You never move money yourself.
 
 <Note>
@@ -35,7 +36,7 @@ A marketplace storefront usually wires up in this order:
 4. **Sign the shopper in** — `client.authentication.register` / `login` (operator key) → you get a shopper session token.
 5. **Build a cart client-side** — collect line items, each tagged with its `merchant_store_id`.
 6. **Check out** — `marketplaceCheckout()` → returns a `client_secret`; complete the payment with Stripe.js on the storefront.
-7. **Order confirmation / account** — the order finalizes automatically on payment success; `getMarketplaceCustomer()` shows the shopper's cross-merchant history.
+7. **Order confirmation / account** — the order finalizes automatically on payment success; `getMarketplaceCustomer()` shows the shopper's cross-merchant history and `getMarketplaceWallet()` their marketplace credit.
 
 ---
 
@@ -117,14 +118,21 @@ The response gives you a `client_secret` to complete the payment on the storefro
 
 You can also apply discounts. Pass an optional `discounts` array to apply a **merchant's own promotion or gift card** to that merchant's portion of the basket — each entry names a `merchant_store_id` and an optional `promotion_id` and/or `gift_card_code`, and the discount reduces only that merchant's subtotal. **Marketplace-wide promotions run by the operator apply automatically** — you don't pass them. The response then reports `discount_total`, the `operator_funded_discount` (the share the operator funded), a per-merchant `discount_breakdown`, and `discount_amount` + `merchant_gross` on each `merchant_breakdown` entry.
 
+**The shopper.** Pass the shopper's credential to tie the purchase to them: `xAuthToken` (a Galactic Core shopper session, also accepted as `xCustomerToken`) or `xExternalAuth` (an assertion signed by the marketplace's own backend with the marketplace's signing secret). Send at most one. With neither, the checkout is a guest checkout. The credential a purchase was placed with is what later lets the shopper see it in `getMarketplaceCustomer`, return it and dispute it. A guest purchase is added to an account once that account has verified the email address it was bought with, by a one-time code or a sign-in link.
+
+**The wallet.** A signed-in shopper can spend their marketplace wallet: `wallet_amount` spends up to that amount, and `use_wallet: true` spends as much as the checkout allows. The balance is held while payment is pending and returned if the payment fails or is abandoned. The charge never falls below the payment provider's minimum for the currency, so a wallet does not pay for a whole basket on its own. The response reports `wallet_applied`, and `total_amount` is the amount charged after it. Each merchant is still paid their full net, because the marketplace operator funds the wallet. Sending either wallet field without a shopper credential answers `401`.
+
 ```typescript
+const shopperSession = session.access_token; // from client.authentication.login(...)
+
 const order = await client.marketplace.marketplaceCheckout({
+  xAuthToken: shopperSession,   // omit for a guest checkout
   requestBody: {
     items: [
       { product_id: 'p1', variant_id: 'v1', merchant_store_id: 'merchant-a-uuid', quantity: 1 },
       { product_id: 'p2', variant_id: 'v2', merchant_store_id: 'merchant-b-uuid', quantity: 2 },
     ],
-    customer_email: 'john.doe@tybritelabs.com',
+    customer_email: 'john.doe@example.com',
     customer_name: 'John Doe',
     currency: 'USD',
     shipping_address: { line1: '1 Market St', city: 'San Francisco', country: 'US' },
@@ -133,8 +141,13 @@ const order = await client.marketplace.marketplaceCheckout({
     discounts: [
       { merchant_store_id: 'merchant-a-uuid', promotion_id: 'promo-uuid', gift_card_code: 'GC-XXXX-YYYY' },
     ],
+    // Optional: spend the signed-in shopper's marketplace wallet.
+    use_wallet: true,
   },
 });
+
+// The wallet spend, and what the shopper is charged after it:
+console.log(`wallet ${order.wallet_applied}, charged ${order.total_amount}`);
 
 // Show the shopper what each merchant receives (already computed for you):
 order.merchant_breakdown.forEach(m =>
@@ -174,89 +187,204 @@ const { error } = await stripe.confirmPayment({
 | `shipping_address` | `object?` | Optional address object. |
 | `billing_address` | `object?` | Optional address object. |
 | `discounts` | `array?` | Optional per-merchant discounts. Each entry: `{ merchant_store_id, promotion_id?, gift_card_code? }`. Applies a merchant's own promotion/gift card to that merchant's portion of the basket. Marketplace-wide operator promotions apply automatically and are **not** passed here. |
+| `wallet_amount` | `number?` | Optional. Spend up to this much of the signed-in shopper's marketplace wallet. Must be positive; capped by the balance and by the payment provider's minimum charge. |
+| `use_wallet` | `boolean?` | Optional. Spend as much of the signed-in shopper's wallet as the checkout allows. |
+
+**Shopper credential (optional, at most one)**
+
+| Parameter | Header | Notes |
+| :--- | :--- | :--- |
+| `xAuthToken` | `x-auth-token` | A Galactic Core shopper session token. |
+| `xCustomerToken` | `x-customer-token` | Alias of `xAuthToken`. |
+| `xExternalAuth` | `x-external-auth` | An assertion signed by the marketplace's own backend with the marketplace's signing secret: `external_id`, `iat` and `exp` (at most 300 seconds apart), and optionally `email` with `email_verified: true`. |
 
 **Response (`201`)**
 
-```typescript
+```json Response
 {
-  order_group_id: string,       // the unified order's id
-  group_number: string,         // human-friendly reference, e.g. "MKT-2026-000123"
-  payment_intent_id: string,    // the payment intent (pi_...)
-  client_secret: string,        // pass to Stripe.js to collect payment
-  currency: string,
-  subtotal: number,
-  total_amount: number,
-  discount_total?: number,             // total discount across the basket
-  operator_funded_discount?: number,   // the share funded by the marketplace operator
-  discount_breakdown?: Array<{
-    merchant_store_id: string,
-    merchant_discount: number,         // funded by this merchant's own promotion
-    gift_card_amount: number,          // redeemed from a gift card against this merchant
-    operator_funded_discount: number,  // operator-funded portion for this merchant
-  }>,
-  merchant_breakdown: Array<{
-    merchant_store_id: string,
-    merchant_gross: number,            // before discount
-    discount_amount: number,           // discount applied to this merchant's portion
-    gross_amount: number,              // after discount, before commission
-    commission_amount: number,
-    net_amount: number,
-    commission_rule_id: string | null,
-  }>,
+  "order_group_id": "44444444-4444-4444-4444-444444444444",
+  "group_number": "MKT-100042",
+  "payment_intent_id": "pi_3Pxxxxxxxxxxxx",
+  "client_secret": "pi_3Pxxxxxxxxxxxx_secret_yyyyyyyy",
+  "currency": "USD",
+  "subtotal": 245,
+  "total_amount": 230,
+  "wallet_applied": 0,
+  "discount_total": 15,
+  "operator_funded_discount": 5,
+  "discount_breakdown": [
+    {
+      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "merchant_discount": 10,
+      "gift_card_amount": 0,
+      "operator_funded_discount": 5
+    }
+  ],
+  "merchant_breakdown": [
+    {
+      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "merchant_gross": 245,
+      "discount_amount": 15,
+      "gross_amount": 230,
+      "commission_amount": 23,
+      "net_amount": 207,
+      "commission_rule_id": "7e6d5c4b-1234-5678-9abc-def012345678"
+    }
+  ]
 }
 ```
+
+`total_amount` is the amount charged: the basket after every discount, less `wallet_applied`. `merchant_gross` is a merchant's portion before discount, `gross_amount` after it, and `net_amount` what the merchant receives after commission.
 
 **Responses**
 
 | Code | Meaning |
 | :--- | :--- |
 | `201` | Unified order created; awaiting payment. |
-| `400` | Invalid items/body (e.g. bad `variant_id`/`merchant_store_id`, missing email). |
+| `400` | Invalid items/body (e.g. bad `variant_id`/`merchant_store_id`, missing email, a non-positive `wallet_amount`), or more than one shopper credential. |
+| `401` | A shopper credential is invalid or expired, or a wallet field was sent without one. |
 | `403` | Not a marketplace operator key, or unified checkout is disabled for this marketplace. |
 | `404` | An item isn't available on the marketplace (inactive merchant/product). |
+| `409` | `provider_not_live` — the marketplace has not finished connecting its payment account, so it cannot take payment yet. |
 | `500` / `502` | Server error or the payment provider could not be reached. |
 
 ---
 
 ### `getMarketplaceCustomer`
 
-Return a shopper's **unified marketplace profile** — their identity, the merchants they've shopped with, and their cross-merchant order history — in one response. Use it for the shopper's account page.
+Return a shopper's **marketplace profile** — their identity, the merchants they have bought from, and their order history across every merchant in this marketplace — in one response. Use it for the shopper's account page.
 
-This requires the shopper's session token (from sign-in) in the `X-Customer-Token` header, in addition to the operator key.
+A purchase belongs to the shopper when it was placed with their credential. A purchase made as a guest belongs to them once they have verified the email address it was bought with, by a one-time code or a sign-in link; registering an account with that address is not enough. `customer.email_verified` reports which applies. A marketplace shopper holds no customer record with any merchant, so `customer.ids` is empty.
+
+The call takes the operator key plus exactly one shopper credential: `xAuthToken` (a Galactic Core shopper session, also accepted as `xCustomerToken`) or `xExternalAuth` (an assertion signed with the marketplace's signing secret).
 
 ```typescript
 // 1. Sign the shopper in (operator key) to get a session token:
 const { session } = await client.authentication.login({
-  requestBody: { email: 'john.doe@tybritelabs.com', password: '...' },
+  requestBody: { email: 'john.doe@example.com', password: '...' },
 });
 
-// 2. Fetch their unified profile:
+// 2. Fetch their marketplace profile:
 const profile = await client.marketplace.getMarketplaceCustomer({
-  xCustomerToken: session.access_token,
+  xAuthToken: session.access_token,
 });
 
-console.log(profile.customer.email);
-console.log(`${profile.stores.length} merchant relationships`);
+console.log(profile.customer.email, profile.customer.email_verified);
+console.log(`${profile.stores.length} merchants bought from`);
 console.log(`${profile.orders.length} orders across all merchants`);
 ```
 
 **Response (`200`)**
 
-```typescript
+```json Response
 {
-  customer: { ids: string[], email, name, phone, ... },  // unified identity
-  stores:   Array<{ store_id, ...affiliation }>,          // per-merchant relationships
-  orders:   Array<{ ... }>,                               // cross-merchant order history
+  "customer": {
+    "ids": [],
+    "email": "john.doe@example.com",
+    "email_verified": true,
+    "name": "John Doe",
+    "phone": null,
+    "address": null,
+    "status": "active",
+    "join_date": "2026-06-21"
+  },
+  "stores": [
+    {
+      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "merchant_store_name": "Galactic Test Store",
+      "affiliation_date": "2026-06-21T10:22:35.523993+00:00",
+      "first_purchase_date": "2026-06-21T10:22:35.523993+00:00",
+      "last_purchase_date": "2026-06-21T10:22:35.523993+00:00",
+      "total_purchases": 1,
+      "total_spent": 24.99,
+      "status": "active",
+      "preferred_store": false
+    }
+  ],
+  "orders": [
+    {
+      "id": "102209e8-ebf5-4cfd-9228-23a559b6b769",
+      "order_number": "MKT-2026-000039-ef7b07d3",
+      "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+      "merchant_store_name": "Galactic Test Store",
+      "order_status": "pending",
+      "payment_status": "paid",
+      "total_amount": 24.99,
+      "subtotal": 24.99,
+      "tax_amount": 0,
+      "shipping_amount": 0,
+      "discount_amount": 0,
+      "tracking_number": null,
+      "estimated_delivery": null,
+      "created_at": "2026-06-21T10:22:35.556122+00:00",
+      "updated_at": "2026-06-21T10:22:35.556122+00:00"
+    }
+  ]
 }
 ```
+
+`stores` has one entry per merchant the shopper bought from here, derived from their orders; `total_purchases` and `total_spent` count paid orders only.
 
 **Responses**
 
 | Code | Meaning |
 | :--- | :--- |
-| `200` | The unified profile. |
-| `401` | Missing/invalid operator key or customer token. |
+| `200` | The marketplace profile. |
+| `400` | More than one shopper credential, or a malformed `x-external-auth` assertion. |
+| `401` | Missing/invalid operator key, or a missing, invalid or expired shopper credential. |
 | `403` | Not a marketplace operator key. |
+| `404` | No purchase in this marketplace belongs to the shopper yet. |
+
+---
+
+### `getMarketplaceWallet`
+
+Return the shopper's **marketplace wallet**: the balance the marketplace has credited them — for example when a dispute is decided as credit rather than a refund — and the credits that make it up, newest first (up to 50). The balance is held by the marketplace, not by any merchant, is kept separately in sandbox and production, and is spent at checkout with `wallet_amount` or `use_wallet` on `marketplaceCheckout`.
+
+The call takes the operator key plus exactly one shopper credential, as for `getMarketplaceCustomer`.
+
+```typescript
+const wallet = await client.marketplace.getMarketplaceWallet({
+  xAuthToken: session.access_token,
+});
+
+console.log(`${wallet.data.balance} ${wallet.data.currency} available`);
+```
+
+**Response (`200`)**
+
+```json Response
+{
+  "data": {
+    "balance": 3,
+    "currency": "USD",
+    "credits": [
+      {
+        "id": "5dfd0467-4dc6-4447-8c01-cbb712418be4",
+        "amount": 3,
+        "balance": 3,
+        "currency": "USD",
+        "status": "active",
+        "source": "dispute",
+        "expires_at": null,
+        "created_at": "2026-09-23T12:52:10.114Z"
+      }
+    ]
+  }
+}
+```
+
+`balance` is the spendable total in `currency` (the marketplace's settlement currency). On each credit, `amount` is what was credited and `balance` what remains of it; `status` is one of `active`, `depleted`, `expired` or `void`, and `source` says why it was issued.
+
+**Responses**
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | The wallet. A shopper with no credit gets a `0` balance and an empty `credits` array. |
+| `400` | More than one shopper credential, or a malformed `x-external-auth` assertion. |
+| `401` | Missing/invalid operator key, or a missing, invalid or expired shopper credential. |
+| `403` | Not a marketplace operator key. |
+| `404` | The marketplace is not available. |
 
 ---
 
@@ -307,7 +435,15 @@ const reviews = await market.reviews.listReviews({
 
 ### Returns on the marketplace
 
-A return always belongs to **one merchant** — the merchant whose order is being returned. So with the operator key, every `client.returns` shopper action takes a required `storeId` (the merchant from the order) alongside the shopper's session. A shopper's returns are therefore **per-merchant**: to show "all my returns" across the marketplace, fetch each merchant the shopper ordered from and merge the lists in your storefront.
+A return always belongs to **one merchant** — the merchant whose order is being returned. So with the operator key, every `client.returns` shopper action takes a required `storeId` (the merchant from the order) alongside the shopper's credential. A shopper's returns are therefore **per-merchant**: to show "all my returns" across the marketplace, fetch each merchant the shopper ordered from and merge the lists in your storefront.
+
+The order must be one the shopper bought through the marketplace: a purchase placed with their credential, or a guest purchase made with an email address they have verified. The shopper holds no customer record with the merchant, and a marketplace return is **refund-only**:
+
+- `createReturn` with `return_type: 'store_credit'` answers `400`.
+- `getStoreCredit` answers `400`; the shopper's marketplace credit is read with `getMarketplaceWallet`.
+- `acceptReturnCredit` answers `409`, because a marketplace return never carries a store-credit offer.
+
+Credit on a marketplace is issued through a dispute instead: when the operator decides a dispute as credit, the amount is added to the shopper's marketplace wallet.
 
 ```typescript
 const storeId = 'merchant-a-uuid';   // the merchant whose order this is
@@ -318,15 +454,17 @@ const { data: lodged } = await market.returns.createReturn({
   requestBody: { order_id, reason_code: 'damaged', items },
 });
 
-// the shopper's returns + store-credit at that merchant
-const { data: mine }    = await market.returns.listReturns({ storeId, xAuthToken: shopperSession });
-const { data: balance } = await market.returns.getStoreCredit({ storeId, xAuthToken: shopperSession });
+// the shopper's returns at that merchant
+const { data: mine } = await market.returns.listReturns({ storeId, xAuthToken: shopperSession });
+
+// marketplace credit lives in the wallet, not at the merchant
+const wallet = await market.marketplace.getMarketplaceWallet({ xAuthToken: shopperSession });
 ```
 
-The same `storeId` applies to `getReturn`, `acceptReturnCredit`, and `requestReturnRefund`. The `storeId` must be an active merchant. See the [Returns](/sdk/api-reference/classes/ReturnsService) reference for the full method set and the store-credit flow.
+The same `storeId` applies to `getReturn` and `requestReturnRefund`. The `storeId` must be an active merchant in this marketplace. See the [Returns](/sdk/api-reference/classes/ReturnsService) reference for the full method set.
 
 <Note>
-  This is a shopper acting on their **own** returns at one merchant. There is no cross-merchant "all returns" feed or store-credit-owed summary in the API — operator oversight of returns is a back-office concern, handled in the operator's admin, not through the SDK.
+  This is a shopper acting on their **own** returns at one merchant. There is no cross-merchant "all returns" feed in the API — operator oversight of returns is a back-office concern, handled in the operator's admin, not through the SDK.
 </Note>
 
 ---
@@ -588,7 +726,7 @@ These are deliberately **not** SDK methods, because they're administrative, not 
 - **Running or viewing operator payout reports** — the operator does this from the Super Admin app.
 - **Setting commission rules / marketplace branding** — configured by the operator in the Super Admin app; you only *read* the resulting branding via `getMarketplaceInfo`.
 
-So the public marketplace surface is exactly: `getMarketplaceInfo`, `marketplaceCheckout`, `getMarketplaceCustomer`, `listMarketplaceCollections`, `getMarketplaceCollection`, `getAdSlot`, `logAdEvent`, plus the operator-key behavior of the catalog/search/auth/reviews/recommendations reads.
+So the public marketplace surface is exactly: `getMarketplaceInfo`, `marketplaceCheckout`, `getMarketplaceCustomer`, `getMarketplaceWallet`, `listMarketplaceCollections`, `getMarketplaceCollection`, `getAdSlot`, `logAdEvent`, plus the operator-key behavior of the catalog/search/auth/reviews/recommendations reads.
 
 ---
 
@@ -645,6 +783,7 @@ try {
   if (err instanceof ApiError) {
     if (err.status === 404) {/* an item is no longer available — refresh the cart */}
     if (err.status === 403) {/* not an operator key, or unified checkout disabled */}
+    if (err.status === 409) {/* provider_not_live — the marketplace cannot take payment yet */}
     if (err.status === 502) {/* payment provider unavailable — ask the shopper to retry */}
   }
   throw err;

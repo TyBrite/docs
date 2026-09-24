@@ -38,6 +38,8 @@ Every endpoint takes an API key in the `Authorization: Bearer` header. The reaso
 
 On a marketplace storefront that holds an operator key rather than a single merchant's key, pass `storeId` (the merchant the shopper is acting at) so the call resolves against that merchant.
 
+On a marketplace the shopper holds no customer record with the merchant, so ownership is decided by the order: it must belong to a purchase the shopper placed with their credential, or a guest purchase made with an email address they have verified. The dispute records the shopper's own credential, and only that credential can read, message or cancel it. When the operator decides a dispute as credit, the amount is added to the shopper's marketplace wallet, which `client.marketplace.getMarketplaceWallet` returns.
+
 ## Methods
 
 ### `listDisputeReasons()`

@@ -34,6 +34,10 @@ Every customer-scoped operation across the SDK — on `client.customers`, `clien
 
 ---
 
+<Note>
+  **On a marketplace key**, the `user` object returned by `register`, `login`, `verifyOtp` and `getCurrentUser` also carries `email_verified`: whether the account has proven control of its email address by verifying a one-time code or a sign-in link. It is `false` straight after `register` and `true` once `verifyOtp` succeeds. `email_confirmed` does not answer that question. A marketplace adds purchases made as a guest with an email address to the account only when `email_verified` is `true`.
+</Note>
+
 ## Core Authentication
 
 ### `register`
