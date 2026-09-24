@@ -7139,6 +7139,19 @@ paths:
         verbatim to finalize the order after payment succeeds; nothing the client sends
         after checkout can change what each merchant is paid.
 
+        **Shipping.** Each merchant's items are delivered, and priced, separately: one shipping
+        line per merchant. By default each merchant's own delivery rates price their line, from
+        the `shipping_destination` (or the `shipping_address`, which is located when no
+        destination is sent). The marketplace may instead charge a flat rate per merchant, and may
+        set a free-shipping threshold: a merchant whose items total at least that much ships free.
+        To offer carrier options, send a street `shipping_address` and a `parcel` per merchant in
+        `shipping_selections` to `POST /v1/cart/checkout/quote`; to choose one, send its `rate_id`
+        here. Shipping is paid to whoever ships the items — the merchant, or the marketplace when
+        it ships on the merchant's behalf. `total_amount` includes shipping, `shipping_total`
+        reports it, and `shipping_breakdown` lists each merchant's line. A shipping amount is never
+        read from the request. The same computation runs on `POST /v1/cart/checkout/quote`, so the
+        shopper can see each line before paying.
+
         Stock is reserved at checkout: the items are held against each merchant's
         inventory immediately so concurrent shoppers cannot oversell the last units,
         and the hold becomes a real stock reduction when payment succeeds. If an item
@@ -7163,6 +7176,11 @@ paths:
         The response reports `wallet_applied`, and `total_amount` is the amount charged
         after it. Each merchant is still paid their full net: the marketplace operator
         funds the wallet.
+
+        Shipping errors: `400 shipping_destination_required` when a merchant's delivery rate needs
+        a location and none can be found, `400 shipping_rate_invalid` when a chosen carrier option
+        is unknown, expired, not in the marketplace's currency, or chosen for items the marketplace
+        ships itself, and `502 shipping_unavailable` when shipping cannot be priced right now.
 
         Requires the marketplace operator key.
       security:
@@ -7234,6 +7252,14 @@ paths:
                 shipping_address:
                   type: object
                   additionalProperties: true
+                  description: Where the order is going (`line1`, `line2`, `city`, `state`, `postal_code`, `country`). Located to price shipping when `shipping_destination` is omitted.
+                shipping_destination:
+                  $ref: '#/components/schemas/MarketplaceShippingDestination'
+                shipping_selections:
+                  type: array
+                  description: 'Optional per-merchant shipping choices: a carrier option (`rate_id`) returned by `POST /v1/cart/checkout/quote`. Without one, the merchant''s own delivery rate applies.'
+                  items:
+                    $ref: '#/components/schemas/MarketplaceShippingSelection'
                 billing_address:
                   type: object
                   additionalProperties: true
@@ -7292,6 +7318,15 @@ paths:
               customer_email: john.doe@example.com
               customer_name: John Doe
               currency: USD
+              shipping_address:
+                line1: 350 5th Ave
+                city: New York
+                state: NY
+                postal_code: '10118'
+                country: US
+              shipping_destination:
+                latitude: 40.7484
+                longitude: -73.9857
               discounts:
                 - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
                   promotion_id: 8a7b6c5d-1234-5678-9abc-def012345678
@@ -7313,7 +7348,8 @@ paths:
                 client_secret: pi_3Pxxxxxxxxxxxx_secret_yyyyyyyy
                 currency: USD
                 subtotal: 245
-                total_amount: 230
+                total_amount: 235.99
+                shipping_total: 5.99
                 wallet_applied: 0
                 discount_total: 15
                 operator_funded_discount: 5
@@ -7322,13 +7358,29 @@ paths:
                     merchant_discount: 10
                     gift_card_amount: 0
                     operator_funded_discount: 5
+                shipping_breakdown:
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    amount: 5.99
+                    pricing: seller_rate
+                    fulfilled_by: seller
+                    is_free: false
+                    free_threshold: null
+                    description: Local (within 10 km)
+                    selected_rate_id: null
                 merchant_breakdown:
                   - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
-                    merchant_gross: 245
-                    discount_amount: 15
-                    gross_amount: 230
-                    commission_amount: 23
-                    net_amount: 207
+                    gross_amount: 245
+                    discount_amount: 10
+                    merchant_gross: 235
+                    operator_funded_discount: 5
+                    fulfillment_mode: merchant
+                    shipping_charged: 5.99
+                    shipping_amount: 5.99
+                    shipping_retained: 0
+                    shipping_commission: 0
+                    shipping_pricing: seller_rate
+                    commission_amount: 23.5
+                    net_amount: 217.49
                     commission_rule_id: 7e6d5c4b-1234-5678-9abc-def012345678
         '400':
           $ref: '#/components/responses/BadRequestError'
@@ -7354,7 +7406,7 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
         '502':
-          description: The payment provider could not be reached or rejected the request.
+          description: The payment provider could not be reached or rejected the request (`provider_error`), or shipping could not be priced (`shipping_unavailable`). No order is created.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -7366,6 +7418,206 @@ paths:
                 error:
                   code: provider_error
                   message: Payment initialization failed
+  /v1/cart/checkout/quote:
+    post:
+      operationId: marketplaceCheckoutQuote
+      tags:
+        - Marketplace
+      summary: Quote a multi-merchant checkout
+      description: |
+        What `POST /v1/cart/checkout` will charge for this basket, per merchant, before the
+        shopper pays — including each merchant's shipping line. It takes the same body and runs
+        the same computation as the checkout, but holds no stock, creates no order and starts no
+        payment, so it can be called as the shopper edits their basket or their address.
+
+        Each merchant's items are priced for delivery separately: by that merchant's own delivery
+        rates for the destination, or by the marketplace's flat rate per merchant, and free when
+        the merchant's items reach the marketplace's free-shipping threshold. When the request
+        carries a street `shipping_address` and a `parcel` for a merchant in
+        `shipping_selections`, that merchant's carrier options are listed in `rates`; send the
+        chosen option's `rate_id` (and `rate_source`) to the checkout. Carrier options are not
+        offered for items the marketplace ships itself.
+
+        The quote never includes commission or what a merchant is paid.
+
+        Requires the marketplace operator key (a publishable key is enough).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required:
+                      - variant_id
+                      - merchant_store_id
+                      - quantity
+                    properties:
+                      product_id:
+                        type: string
+                        format: uuid
+                      variant_id:
+                        type: string
+                        format: uuid
+                      merchant_store_id:
+                        type: string
+                        format: uuid
+                      quantity:
+                        type: integer
+                        minimum: 1
+                currency:
+                  type: string
+                  example: USD
+                customer_name:
+                  type: string
+                  description: Used as the recipient name on carrier options.
+                shipping_address:
+                  type: object
+                  additionalProperties: true
+                  description: Where the order is going (`line1`, `line2`, `city`, `state`, `postal_code`, `country`). Located to price shipping when `shipping_destination` is omitted, and needed for carrier options.
+                shipping_destination:
+                  $ref: '#/components/schemas/MarketplaceShippingDestination'
+                shipping_selections:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MarketplaceShippingSelection'
+                discounts:
+                  type: array
+                  description: The same per-merchant discounts the checkout accepts.
+                  items:
+                    type: object
+                    required:
+                      - merchant_store_id
+                    properties:
+                      merchant_store_id:
+                        type: string
+                        format: uuid
+                      promotion_id:
+                        type: string
+                        format: uuid
+                      gift_card_code:
+                        type: string
+            example:
+              items:
+                - variant_id: 22222222-2222-2222-2222-222222222222
+                  merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                  quantity: 2
+                - variant_id: 55555555-5555-5555-5555-555555555555
+                  merchant_store_id: 7a8b9c0d-1111-2222-3333-444455556666
+                  quantity: 1
+              currency: USD
+              shipping_address:
+                line1: 350 5th Ave
+                city: New York
+                state: NY
+                postal_code: '10118'
+                country: US
+              shipping_selections:
+                - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                  parcel:
+                    length: '10'
+                    width: '8'
+                    height: '4'
+                    distance_unit: in
+                    weight: '2'
+                    mass_unit: lb
+      responses:
+        '200':
+          description: The basket's price, per merchant, including shipping.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceCheckoutQuote'
+              example:
+                currency: USD
+                subtotal: 124
+                discount_total: 0
+                shipping_total: 5.99
+                total_amount: 129.99
+                sellers:
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    merchandise_total: 80
+                    shipping:
+                      amount: 0
+                      pricing: free
+                      fulfilled_by: seller
+                      is_free: true
+                      free_threshold: 75
+                      description: Free shipping
+                      selected_rate_id: null
+                      rates: []
+                  - merchant_store_id: 7a8b9c0d-1111-2222-3333-444455556666
+                    merchandise_total: 44
+                    shipping:
+                      amount: 5.99
+                      pricing: seller_rate
+                      fulfilled_by: seller
+                      is_free: false
+                      free_threshold: 75
+                      description: Local (within 10 km)
+                      selected_rate_id: null
+                      rates: []
+        '400':
+          description: The basket is invalid (`invalid_request`, `insufficient_stock`, `currency_mismatch`, `discount_invalid`), no location could be found for a merchant priced by location (`shipping_destination_required`), or a chosen carrier option cannot be used (`shipping_rate_invalid`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: shipping_destination_required
+                  message: Add a shipping address (or shipping_destination) so shipping can be priced.
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: The marketplace has not finished connecting its payment account (`provider_not_live`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_not_live
+                  message: This marketplace has not finished connecting its payment account.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '502':
+          description: Shipping could not be priced right now (`shipping_unavailable`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: shipping_unavailable
+                  message: Shipping could not be priced right now. Please try again.
   /v1/recommendations:
     post:
       operationId: getRecommendations
@@ -22565,14 +22817,165 @@ components:
             - sandbox
           description: Whether this wishlist item belongs to the live or test environment.
           example: production
-    MerchantBreakdownItem:
+    MarketplaceShippingDestination:
       type: object
-      description: Commission and payout breakdown for a single merchant within a unified order.
+      description: Where the basket is going, used to price each merchant's delivery rates. Send coordinates, or a place name. When omitted, the `shipping_address` is located instead.
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          example: 40.7589
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+          example: -73.9851
+        place_name:
+          type: string
+          maxLength: 300
+          description: A place to locate when coordinates are not known, such as a city or a full address.
+          example: New York, NY 10036, US
+        country_code:
+          type: string
+          description: ISO 3166-1 alpha-2 country code narrowing `place_name`.
+          example: US
+    MarketplaceShippingSelection:
+      type: object
+      description: 'A choice for one merchant''s delivery. `parcel` asks for that merchant''s carrier options in a quote; `rate_id` chooses one of the options a quote returned. The amount is never sent: the option is checked again against the merchant''s carrier account and charged at its current price.'
+      required:
+        - merchant_store_id
       properties:
         merchant_store_id:
           type: string
           format: uuid
-        merchant_gross:
+        parcel:
+          type: object
+          description: The parcel for this merchant's items, needed for carrier options.
+          required:
+            - length
+            - width
+            - height
+            - distance_unit
+            - weight
+            - mass_unit
+          properties:
+            length:
+              type: string
+              example: '10'
+            width:
+              type: string
+              example: '8'
+            height:
+              type: string
+              example: '4'
+            distance_unit:
+              type: string
+              example: in
+            weight:
+              type: string
+              example: '2'
+            mass_unit:
+              type: string
+              example: lb
+        rate_id:
+          type: string
+          description: A `rate_id` from this merchant's `rates` in a quote.
+        rate_source:
+          type: string
+          enum:
+            - shippo
+            - custom
+          description: The `source` of the chosen rate, as the quote returned it.
+    MarketplaceShippingRate:
+      type: object
+      description: One carrier option for a merchant's delivery.
+      properties:
+        rate_id:
+          type: string
+        provider:
+          type: string
+          example: USPS
+        service:
+          type:
+            - string
+            - 'null'
+          example: Priority Mail
+        amount:
+          type: number
+          example: 8.1
+        currency:
+          type: string
+          example: USD
+        estimated_days:
+          type:
+            - integer
+            - 'null'
+          example: 2
+        source:
+          type: string
+          enum:
+            - shippo
+            - custom
+    MarketplaceShippingLine:
+      type: object
+      description: One merchant's shipping line, as the shopper sees it.
+      properties:
+        merchant_store_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          description: What the shopper pays to deliver this merchant's items.
+          example: 6
+        pricing:
+          type: string
+          enum:
+            - seller_rate
+            - carrier_rate
+            - flat
+            - free
+          example: seller_rate
+        fulfilled_by:
+          type: string
+          enum:
+            - seller
+            - marketplace
+          description: Who ships these items.
+          example: seller
+        is_free:
+          type: boolean
+          example: false
+        free_threshold:
+          type:
+            - number
+            - 'null'
+          description: 'The marketplace''s free-shipping threshold: a merchant''s items totalling at least this much ship free. Null when the marketplace has none.'
+          example: 75
+        description:
+          type:
+            - string
+            - 'null'
+          description: The delivery rate or carrier option that priced this line.
+          example: Local delivery
+        selected_rate_id:
+          type:
+            - string
+            - 'null'
+          description: The carrier option charged, when the shopper chose one.
+        rates:
+          type: array
+          description: Carrier options for this merchant (quote only), present when the request carried a street address and a `parcel` for this merchant and the merchant ships the items.
+          items:
+            $ref: '#/components/schemas/MarketplaceShippingRate'
+    MerchantBreakdownItem:
+      type: object
+      description: Commission, shipping and payout breakdown for a single merchant within a unified order.
+      properties:
+        merchant_store_id:
+          type: string
+          format: uuid
+        gross_amount:
           type: number
           description: Total of this merchant's items before any discount is applied.
           example: 130
@@ -22580,18 +22983,54 @@ components:
           type: number
           description: Total discount applied to this merchant's portion of the basket (the merchant's own promotion and/or gift card). Reduces this merchant's subtotal.
           example: 10
-        gross_amount:
+        merchant_gross:
           type: number
-          description: Total of this merchant's items after discount and before commission.
+          description: Total of this merchant's items after their own discount — the base commission is charged on.
           example: 120
+        operator_funded_discount:
+          type: number
+          description: Discount on this merchant's portion funded by the marketplace operator. Lowers what the shopper pays, not what the merchant is paid.
+          example: 0
+        fulfillment_mode:
+          type: string
+          enum:
+            - merchant
+            - operator
+          description: 'Who ships this merchant''s items: the merchant, or the marketplace operator on their behalf. Decided at checkout, and decides who receives the shipping.'
+          example: merchant
+        shipping_charged:
+          type: number
+          description: What the shopper pays for delivering this merchant's items.
+          example: 6
+        shipping_amount:
+          type: number
+          description: The part of `shipping_charged` the merchant receives — all of it when the merchant ships, none when the marketplace does.
+          example: 6
+        shipping_retained:
+          type: number
+          description: The part of `shipping_charged` the marketplace keeps because it ships these items.
+          example: 0
+        shipping_commission:
+          type: number
+          description: Commission taken on the merchant's shipping, when the marketplace charges commission on shipping. Included in `commission_amount`.
+          example: 0
+        shipping_pricing:
+          type: string
+          enum:
+            - seller_rate
+            - carrier_rate
+            - flat
+            - free
+          description: 'How the shipping was priced: the merchant''s own delivery rates, a carrier option the shopper chose, the marketplace''s flat rate, or free under the marketplace''s free-shipping threshold.'
+          example: seller_rate
         commission_amount:
           type: number
-          description: Commission deducted from this merchant's gross.
+          description: Commission deducted from this merchant's share, including any `shipping_commission`.
           example: 12
         net_amount:
           type: number
-          description: Amount this merchant receives after commission.
-          example: 108
+          description: 'Amount this merchant receives: `merchant_gross` plus `shipping_amount`, less `commission_amount`.'
+          example: 114
         commission_rule_id:
           type:
             - string
@@ -22627,8 +23066,17 @@ components:
           example: 245
         total_amount:
           type: number
-          description: The amount charged — the basket after every discount, less `wallet_applied`.
+          description: The amount charged — the basket after every discount, plus shipping, less `wallet_applied`.
           example: 245
+        shipping_total:
+          type: number
+          description: Shipping across every merchant, included in `total_amount`.
+          example: 15
+        shipping_breakdown:
+          type: array
+          description: One shipping line per merchant.
+          items:
+            $ref: '#/components/schemas/MarketplaceShippingLine'
         wallet_applied:
           type: number
           description: How much of the shopper's marketplace wallet this checkout spends. Held while payment is pending and returned if the payment fails. Funded by the marketplace operator, so each merchant's net is unchanged.
@@ -22667,6 +23115,42 @@ components:
           description: Per-merchant gross, discount, commission, and net amounts for this order.
           items:
             $ref: '#/components/schemas/MerchantBreakdownItem'
+    MarketplaceCheckoutQuote:
+      type: object
+      description: What a unified checkout will charge, per merchant, before the shopper pays.
+      properties:
+        currency:
+          type: string
+          example: USD
+        subtotal:
+          type: number
+          description: The basket's merchandise before any discount.
+          example: 130
+        discount_total:
+          type: number
+          example: 0
+        shipping_total:
+          type: number
+          description: Shipping across every merchant.
+          example: 15
+        total_amount:
+          type: number
+          description: 'What the checkout will charge before any wallet balance: merchandise after discounts plus shipping.'
+          example: 145
+        sellers:
+          type: array
+          items:
+            type: object
+            properties:
+              merchant_store_id:
+                type: string
+                format: uuid
+              merchandise_total:
+                type: number
+                description: This merchant's items after every discount.
+                example: 80
+              shipping:
+                $ref: '#/components/schemas/MarketplaceShippingLine'
     Recommendation:
       type: object
       properties:

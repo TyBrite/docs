@@ -35,8 +35,9 @@ A marketplace storefront usually wires up in this order:
 3. **Shop a single merchant (optional)** — pass `storeId` to the reads above + `getMarketplaceInfo({ storeId })` for that merchant's shop page.
 4. **Sign the shopper in** — `client.authentication.register` / `login` (operator key) → you get a shopper session token.
 5. **Build a cart client-side** — collect line items, each tagged with its `merchant_store_id`.
-6. **Check out** — `marketplaceCheckout()` → returns a `client_secret`; complete the payment with Stripe.js on the storefront.
-7. **Order confirmation / account** — the order finalizes automatically on payment success; `getMarketplaceCustomer()` shows the shopper's cross-merchant history and `getMarketplaceWallet()` their marketplace credit.
+6. **Show the total** — `marketplaceCheckoutQuote()` with the cart and the delivery address returns each merchant's shipping line and the total, without reserving anything.
+7. **Check out** — `marketplaceCheckout()` → returns a `client_secret`; complete the payment with Stripe.js on the storefront.
+8. **Order confirmation / account** — the order finalizes automatically on payment success; `getMarketplaceCustomer()` shows the shopper's cross-merchant history and `getMarketplaceWallet()` their marketplace credit.
 
 ---
 
@@ -114,11 +115,13 @@ console.log(merchant.catalog?.products.sample);                  // a thin sampl
 
 Check out a cart that may contain items from **multiple merchants** in one call. Each line item names the merchant it belongs to. Tybrite validates the items against the live marketplace catalog, resolves commission per merchant, and creates **one payment** for the entire basket.
 
-The response gives you a `client_secret` to complete the payment on the storefront (with Stripe.js) and a per-merchant `merchant_breakdown` (gross, discount, commission, net) you can display.
+The response gives you a `client_secret` to complete the payment on the storefront (with Stripe.js), the shipping charged per merchant in `shipping_breakdown`, and a per-merchant `merchant_breakdown` (gross, discount, shipping, commission, net) you can display.
 
 You can also apply discounts. Pass an optional `discounts` array to apply a **merchant's own promotion or gift card** to that merchant's portion of the basket — each entry names a `merchant_store_id` and an optional `promotion_id` and/or `gift_card_code`, and the discount reduces only that merchant's subtotal. **Marketplace-wide promotions run by the operator apply automatically** — you don't pass them. The response then reports `discount_total`, the `operator_funded_discount` (the share the operator funded), a per-merchant `discount_breakdown`, and `discount_amount` + `merchant_gross` on each `merchant_breakdown` entry.
 
 **The shopper.** Pass the shopper's credential to tie the purchase to them: `xAuthToken` (a Galactic Core shopper session, also accepted as `xCustomerToken`) or `xExternalAuth` (an assertion signed by the marketplace's own backend with the marketplace's signing secret). Send at most one. With neither, the checkout is a guest checkout. The credential a purchase was placed with is what later lets the shopper see it in `getMarketplaceCustomer`, return it and dispute it. A guest purchase is added to an account once that account has verified the email address it was bought with, by a one-time code or a sign-in link.
+
+**Shipping.** Each merchant's items are delivered, and priced, separately, so the checkout carries one shipping line per merchant. By default a merchant's own delivery rates price their line, using `shipping_destination` or, when that is omitted, the located `shipping_address`. The marketplace may instead charge a flat rate per merchant, and may set a free-shipping threshold: a merchant whose items total at least that much ships free. To offer carrier options, call `marketplaceCheckoutQuote` with a street `shipping_address` and a `parcel` per merchant in `shipping_selections`, then send the chosen option's `rate_id` and `rate_source` here. Shipping is paid to whoever ships the items: the merchant, or the marketplace when it ships on the merchant's behalf. A shipping amount is never read from the request; `total_amount` includes shipping and `shipping_total` reports it.
 
 **The wallet.** A signed-in shopper can spend their marketplace wallet: `wallet_amount` spends up to that amount, and `use_wallet: true` spends as much as the checkout allows. The balance is held while payment is pending and returned if the payment fails or is abandoned. The charge never falls below the payment provider's minimum for the currency, so a wallet does not pay for a whole basket on its own. The response reports `wallet_applied`, and `total_amount` is the amount charged after it. Each merchant is still paid their full net, because the marketplace operator funds the wallet. Sending either wallet field without a shopper credential answers `401`.
 
@@ -135,8 +138,12 @@ const order = await client.marketplace.marketplaceCheckout({
     customer_email: 'john.doe@example.com',
     customer_name: 'John Doe',
     currency: 'USD',
-    shipping_address: { line1: '1 Market St', city: 'San Francisco', country: 'US' },
-    billing_address:  { line1: '1 Market St', city: 'San Francisco', country: 'US' },
+    shipping_address: { line1: '1 Market St', city: 'San Francisco', state: 'CA', postal_code: '94105', country: 'US' },
+    billing_address:  { line1: '1 Market St', city: 'San Francisco', state: 'CA', postal_code: '94105', country: 'US' },
+    // Optional: a carrier option chosen from a quote, per merchant.
+    shipping_selections: [
+      { merchant_store_id: 'merchant-b-uuid', rate_id: 'rate_8f2c1d', rate_source: 'shippo' },
+    ],
     // Optional: apply a merchant's own promotion / gift card to that merchant's portion.
     discounts: [
       { merchant_store_id: 'merchant-a-uuid', promotion_id: 'promo-uuid', gift_card_code: 'GC-XXXX-YYYY' },
@@ -146,12 +153,12 @@ const order = await client.marketplace.marketplaceCheckout({
   },
 });
 
-// The wallet spend, and what the shopper is charged after it:
-console.log(`wallet ${order.wallet_applied}, charged ${order.total_amount}`);
+// The wallet spend, shipping, and what the shopper is charged:
+console.log(`wallet ${order.wallet_applied}, shipping ${order.shipping_total}, charged ${order.total_amount}`);
 
 // Show the shopper what each merchant receives (already computed for you):
 order.merchant_breakdown.forEach(m =>
-  console.log(`${m.merchant_store_id}: gross ${m.gross_amount}, discount ${m.discount_amount}, fee ${m.commission_amount}, net ${m.net_amount}`)
+  console.log(`${m.merchant_store_id}: gross ${m.gross_amount}, discount ${m.discount_amount}, shipping ${m.shipping_amount}, fee ${m.commission_amount}, net ${m.net_amount}`)
 );
 
 // Total savings on the basket (per-merchant discounts + any marketplace-wide promotion):
@@ -184,7 +191,9 @@ const { error } = await stripe.confirmPayment({
 | `customer_name` | `string?` | Optional. |
 | `customer_phone` | `string?` | Optional. |
 | `currency` | `string?` | Optional ISO code; defaults to `USD`. |
-| `shipping_address` | `object?` | Optional address object. |
+| `shipping_address` | `object?` | Where the order is going: `line1`, `line2`, `city`, `state`, `postal_code`, `country`. Located to price shipping when `shipping_destination` is omitted. |
+| `shipping_destination` | `object?` | Optional. `latitude` and `longitude`, or a `place_name` with an optional `country_code`, used to price each merchant's delivery rate. |
+| `shipping_selections` | `array?` | Optional per-merchant carrier choices: `{ merchant_store_id, rate_id, rate_source }`, using a `rate_id` from `marketplaceCheckoutQuote`. Without one, the merchant's own delivery rate applies. |
 | `billing_address` | `object?` | Optional address object. |
 | `discounts` | `array?` | Optional per-merchant discounts. Each entry: `{ merchant_store_id, promotion_id?, gift_card_code? }`. Applies a merchant's own promotion/gift card to that merchant's portion of the basket. Marketplace-wide operator promotions apply automatically and are **not** passed here. |
 | `wallet_amount` | `number?` | Optional. Spend up to this much of the signed-in shopper's marketplace wallet. Must be positive; capped by the balance and by the payment provider's minimum charge. |
@@ -208,7 +217,8 @@ const { error } = await stripe.confirmPayment({
   "client_secret": "pi_3Pxxxxxxxxxxxx_secret_yyyyyyyy",
   "currency": "USD",
   "subtotal": 245,
-  "total_amount": 230,
+  "total_amount": 235.99,
+  "shipping_total": 5.99,
   "wallet_applied": 0,
   "discount_total": 15,
   "operator_funded_discount": 5,
@@ -220,33 +230,136 @@ const { error } = await stripe.confirmPayment({
       "operator_funded_discount": 5
     }
   ],
+  "shipping_breakdown": [
+    {
+      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "amount": 5.99,
+      "pricing": "seller_rate",
+      "fulfilled_by": "seller",
+      "is_free": false,
+      "free_threshold": null,
+      "description": "Local (within 10 km)",
+      "selected_rate_id": null
+    }
+  ],
   "merchant_breakdown": [
     {
       "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
-      "merchant_gross": 245,
-      "discount_amount": 15,
-      "gross_amount": 230,
-      "commission_amount": 23,
-      "net_amount": 207,
+      "gross_amount": 245,
+      "discount_amount": 10,
+      "merchant_gross": 235,
+      "operator_funded_discount": 5,
+      "fulfillment_mode": "merchant",
+      "shipping_charged": 5.99,
+      "shipping_amount": 5.99,
+      "shipping_retained": 0,
+      "shipping_commission": 0,
+      "shipping_pricing": "seller_rate",
+      "commission_amount": 23.5,
+      "net_amount": 217.49,
       "commission_rule_id": "7e6d5c4b-1234-5678-9abc-def012345678"
     }
   ]
 }
 ```
 
-`total_amount` is the amount charged: the basket after every discount, less `wallet_applied`. `merchant_gross` is a merchant's portion before discount, `gross_amount` after it, and `net_amount` what the merchant receives after commission.
+`total_amount` is the amount charged: the basket after every discount, plus shipping, less `wallet_applied`. In `merchant_breakdown`, `gross_amount` is a merchant's portion before discount and `merchant_gross` after the merchant's own discount. `shipping_charged` is the shopper's shipping for that merchant's items; `shipping_amount` is the part the merchant receives and `shipping_retained` the part the marketplace keeps when it ships the items itself (`fulfillment_mode: "operator"`). `shipping_commission` is commission on the merchant's shipping, when the marketplace charges it. `net_amount` is what the merchant receives: `merchant_gross` plus `shipping_amount`, less `commission_amount`, which includes any `shipping_commission`.
 
 **Responses**
 
 | Code | Meaning |
 | :--- | :--- |
 | `201` | Unified order created; awaiting payment. |
-| `400` | Invalid items/body (e.g. bad `variant_id`/`merchant_store_id`, missing email, a non-positive `wallet_amount`), or more than one shopper credential. |
+| `400` | Invalid items/body (e.g. bad `variant_id`/`merchant_store_id`, missing email, a non-positive `wallet_amount`), or more than one shopper credential. `shipping_destination_required` when a merchant's delivery rate needs a location and none can be found; `shipping_rate_invalid` when a chosen carrier option is unknown, expired, in another currency, or chosen for items the marketplace ships itself. |
 | `401` | A shopper credential is invalid or expired, or a wallet field was sent without one. |
 | `403` | Not a marketplace operator key, or unified checkout is disabled for this marketplace. |
 | `404` | An item isn't available on the marketplace (inactive merchant/product). |
 | `409` | `provider_not_live` — the marketplace has not finished connecting its payment account, so it cannot take payment yet. |
-| `500` / `502` | Server error or the payment provider could not be reached. |
+| `500` / `502` | Server error, the payment provider could not be reached, or `shipping_unavailable` — shipping could not be priced right now. No order is created. |
+
+---
+
+### `marketplaceCheckoutQuote`
+
+What `marketplaceCheckout` will charge for a basket, per merchant, before the shopper pays. It takes the same body and runs the same computation as the checkout, but holds no stock, creates no order and starts no payment, so a storefront can call it whenever the basket or the address changes. The quote carries each merchant's shipping line and never includes commission or what a merchant is paid.
+
+When a merchant's entry in `shipping_selections` carries a `parcel` and the request carries a street `shipping_address`, that merchant's carrier options are listed in `shipping.rates`. Send the chosen option's `rate_id` and `source` (as `rate_source`) to `marketplaceCheckout`. Carrier options are not offered for items the marketplace ships itself.
+
+```typescript
+const quote = await client.marketplace.marketplaceCheckoutQuote({
+  requestBody: {
+    items: [
+      { variant_id: 'v1', merchant_store_id: 'merchant-a-uuid', quantity: 1 },
+      { variant_id: 'v2', merchant_store_id: 'merchant-b-uuid', quantity: 2 },
+    ],
+    currency: 'USD',
+    shipping_address: { line1: '1 Market St', city: 'San Francisco', state: 'CA', postal_code: '94105', country: 'US' },
+  },
+});
+
+quote.sellers.forEach(s =>
+  console.log(`${s.merchant_store_id}: items ${s.merchandise_total}, shipping ${s.shipping.amount} (${s.shipping.description})`)
+);
+console.log(`shipping ${quote.shipping_total}, total ${quote.total_amount}`);
+```
+
+**Request body**
+
+The same fields as `marketplaceCheckout`. `customer_email` is not required, and the wallet fields are not read, because a quote charges nothing.
+
+**Response (`200`)**
+
+```json Response
+{
+  "currency": "USD",
+  "subtotal": 124,
+  "discount_total": 0,
+  "shipping_total": 5.99,
+  "total_amount": 129.99,
+  "sellers": [
+    {
+      "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "merchandise_total": 80,
+      "shipping": {
+        "amount": 0,
+        "pricing": "free",
+        "fulfilled_by": "seller",
+        "is_free": true,
+        "free_threshold": 75,
+        "description": "Free shipping",
+        "selected_rate_id": null,
+        "rates": []
+      }
+    },
+    {
+      "merchant_store_id": "7a8b9c0d-1111-2222-3333-444455556666",
+      "merchandise_total": 44,
+      "shipping": {
+        "amount": 5.99,
+        "pricing": "seller_rate",
+        "fulfilled_by": "seller",
+        "is_free": false,
+        "free_threshold": 75,
+        "description": "Local (within 10 km)",
+        "selected_rate_id": null,
+        "rates": []
+      }
+    }
+  ]
+}
+```
+
+`total_amount` is what the checkout will charge before any wallet balance. `merchandise_total` is a merchant's items after discounts. `shipping.pricing` names what priced the line: `seller_rate` (the merchant's own delivery rate), `carrier_rate` (a chosen carrier option), `flat` (the marketplace's flat rate) or `free`. `shipping.fulfilled_by` is `seller` or `marketplace`.
+
+**Responses**
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | The basket's price, per merchant, including shipping. |
+| `400` | Invalid items, `shipping_destination_required`, or `shipping_rate_invalid`, as for `marketplaceCheckout`. |
+| `403` | Not a marketplace operator key, or unified checkout is disabled for this marketplace. |
+| `404` | An item isn't available on the marketplace. |
+| `502` | `shipping_unavailable` — shipping could not be priced right now. |
 
 ---
 
