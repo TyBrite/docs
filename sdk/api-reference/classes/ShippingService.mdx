@@ -3,94 +3,114 @@ title: "Shipping & Logistics"
 description: "Reference for the ShippingService class in the Tybrite SDK."
 ---
 
-The `ShippingService` class (accessed via `client.shipping`) handles delivery fee calculations, zone checking, and shipping configuration retrieval for your commerce storefront.
+The `ShippingService` class (accessed via `client.shipping`) prices delivery for an address, lists a store's delivery rates, returns live carrier options, and tracks parcels.
 
+## How an address is priced
 
+A store's delivery rates are its delivery zones, its distance rates and its "everywhere else" rate. An address is priced by:
+
+1. **The first zone that contains it** — lowest `priority` first, then the zone created first.
+2. **Otherwise, the distance rate whose range contains its distance from the store.** A range includes its `min_distance_meters` and stops just before its `max_distance_meters`, so `0–10 km` and `10–50 km` share the 10 km point without overlapping.
+3. **Otherwise, the "everywhere else" rate.** When the store has zones or distance rates but no "everywhere else" rate, an address outside them is not delivered to, and `calculateShipping` answers `400 shipping_not_deliverable`.
+
+A matched rate is free when the order reaches its free-delivery threshold. A store with no delivery rates at all charges nothing through them (`applied_rule: none`, `configured: false`). Every amount is in the store's own currency, returned as `currency`.
 
 ## Methods
 
 ### `getShippingZones`
 
-Retrieve all active delivery zones and distance-based pricing tiers. This is useful for displaying delivery availability or potential costs to users early in the shopping journey.
+Retrieve the store's delivery rates: active distance rates, active delivery zones, and the "everywhere else" rate. Useful for showing delivery coverage or likely costs early in the shopping journey.
 
 ```typescript
-const { pricing_tiers, delivery_zones } = await client.shipping.getShippingZones();
-
-// Display zones on a map or list tiers
-console.log(`Configured ${delivery_zones.length} custom delivery zones.`);
+const { currency, pricing_tiers, delivery_zones, everywhere_else } = await client.shipping.getShippingZones();
 ```
 
-A store configured with distance tiers returns them ordered by `priority`:
-
-```json
+```json Response
 {
+  "currency": "USD",
   "pricing_tiers": [
     { "tier_name": "Local (within 10 km)", "min_distance_meters": 0, "max_distance_meters": 10000, "delivery_fee": 5.99, "free_delivery_threshold": 75, "is_active": true, "priority": 1 },
-    { "tier_name": "Metro (10–50 km)", "min_distance_meters": 10000, "max_distance_meters": 50000, "delivery_fee": 9.99, "free_delivery_threshold": 150, "is_active": true, "priority": 2 },
-    { "tier_name": "Regional (50–500 km)", "min_distance_meters": 50000, "max_distance_meters": 500000, "delivery_fee": 14.99, "free_delivery_threshold": 250, "is_active": true, "priority": 3 },
-    { "tier_name": "National (500 km+)", "min_distance_meters": 500000, "max_distance_meters": 20000000, "delivery_fee": 24.99, "free_delivery_threshold": 400, "is_active": true, "priority": 4 }
+    { "tier_name": "Metro (10–50 km)", "min_distance_meters": 10000, "max_distance_meters": 50000, "delivery_fee": 9.99, "free_delivery_threshold": 150, "is_active": true, "priority": 2 }
   ],
-  "delivery_zones": []
+  "delivery_zones": [],
+  "everywhere_else": { "delivery_fee": 29.99, "free_delivery_threshold": null }
 }
 ```
+
+`everywhere_else` is `null` when the store has none. The response is cached for up to 60 seconds and carries an ETag; `calculateShipping` and order creation always read the current rates.
 
 ---
 
 ### `calculateShipping`
 
-Calculate the exact delivery fee for a customer based on their location and order total.
+Calculate the delivery charge for an address and order total.
 
 <CodeGroup>
 
+```typescript Via Coordinates
+// Exact coordinates give the most precise match (recommended).
+const shipping = await client.shipping.calculateShipping({
+  requestBody: {
+    latitude: 40.6782,
+    longitude: -73.9442,
+    order_total: 50
+  }
+});
+```
+
 ```typescript Via Place Name
-// Calculate using a human-readable address or landmark
-// Tybrite internally geocodes this to find the best matching zone or tier.
+// A human-readable address or landmark; Galactic Core resolves it to coordinates.
 const shipping = await client.shipping.calculateShipping({
   requestBody: {
     place_name: "Brooklyn, New York",
     order_total: 50
   }
 });
-// returns { fee: 9.99, tier_name: "Metro (10–50 km)", is_free: false, applied_rule: "distance", ... }
-```
-
-```typescript Via Coordinates
-// Calculate using exact GPS coordinates (recommended)
-const shipping = await client.shipping.calculateShipping({
-  requestBody: {
-    latitude: 40.6782,
-    longitude: -73.9442,
-    order_total: 50 // Order subtotal in the store's currency (USD)
-  }
-});
-// returns { fee: 5.99, tier_name: "Local (within 10 km)", is_free: false, applied_rule: "distance", ... }
 ```
 
 </CodeGroup>
 
+```json Response
+{
+  "fee": 9.99,
+  "currency": "USD",
+  "zone_name": null,
+  "tier_name": "Metro (10–50 km)",
+  "distance_meters": 18432,
+  "is_free": false,
+  "free_threshold": 150,
+  "configured": true,
+  "reason": "Metro (10–50 km)",
+  "applied_rule": "distance",
+  "rate_source": "tier",
+  "coordinates": { "latitude": 40.6782, "longitude": -73.9442 }
+}
+```
+
 <Note>
-  `order_total` is the order subtotal in the store's currency (e.g. `50` = $50.00), **not** a
-  minor-unit (cents) value. It is used only to decide whether the order reaches a tier's or zone's
-  free-delivery threshold.
+  `order_total` is the order's merchandise total in the store's currency (e.g. `50` = $50.00), **not** a
+  minor-unit (cents) value — the line totals after any discount. It decides whether the order reaches
+  the matched rate's free-delivery threshold.
 </Note>
 
 **Response Fields:**
 
 | Field | Description |
 | :--- | :--- |
-| `fee` | The final calculated delivery cost. |
-| `applied_rule` | Indicates calculation logic: `'zone'`, `'distance'`, or `'default'`. |
-| `is_free` | Boolean indicating if a free delivery threshold was reached. |
-| `coordinates` | Returns the resolved [lat, lng] even if you searched via `place_name`. |
+| `fee` | The delivery charge, in `currency`. `null` only on a carrier-options-only request. |
+| `currency` | The currency of `fee` and `free_threshold` — the store's own. |
+| `applied_rule` | Which rate priced the address: `zone`, `distance`, `fallback` (the "everywhere else" rate) or `none` (no delivery rates, or a carrier-options-only request). |
+| `rate_source` | Which source produced the result: `zone`, `tier`, `fallback`, `shippo`, `custom` or `none`. |
+| `is_free` | `true` when no delivery charge applies to this order. |
+| `free_threshold` | The order total from which the matched rate delivers free, or `null`. |
+| `configured` | Whether the store has any delivery rates. |
+| `zone_name` / `tier_name` | The zone or distance rate that priced the address, when one did. |
+| `distance_meters` | Distance from the store to the address, when it was measured. |
+| `coordinates` | The resolved location, including when you sent a `place_name`. |
 
 ### Live carrier rates (multi-carrier)
 
-When the store has multi-carrier shipping connected, pass a destination `address_to` **and** a
-`parcel` to `calculateShipping` to ALSO get **live carrier rates** alongside the zone/tier fee. The
-response gains a `rates[]` array (real quotes from USPS, UPS, FedEx, DHL…) and `rate_source` becomes
-`shippo`. If the store has connected its own **custom carrier** (a Custom Extension shipping provider),
-its rates are appended too and `rate_source` becomes `custom`. When neither is connected, `rates[]` is
-simply absent and the zone/tier `fee` applies as before — the manual rates always work.
+When the store has a carrier account connected, or its own custom shipping extension, send a destination `address_to` **and** a `parcel` to also receive live carrier options in `rates[]`. Each option carries its `source` — the store's carrier account (`shippo`) or its custom shipping extension (`custom`).
 
 ```typescript
 const quote = await client.shipping.calculateShipping({
@@ -100,12 +120,11 @@ const quote = await client.shipping.calculateShipping({
     parcel: { length: '10', width: '8', height: '4', distance_unit: 'in', weight: '2', mass_unit: 'lb' },
   },
 });
-// quote.rate_source === 'shippo'
-// quote.rates === [ { rate_id, provider: 'USPS', service: 'Ground Advantage', amount: 10.43, currency: 'USD', estimated_days: 5 }, … ]
 ```
 
-Show `rates[]` to the shopper, let them pick, and carry the chosen `rate_id` into checkout (pass it as
-`shippo_rate_id` on `createOrder` so the order's shipping is validated against that real quote).
+To request carrier options only, send `address_to` and `parcel` with no coordinates or place name. The store's own rate is then not priced (there is no location to price it from), so `fee` is `null` and `applied_rule` is `none`. A store with no carrier connected answers that request with `400 provider_not_configured`.
+
+To order with a carrier option, pass its `rate_id` as `shipping_rate_id` and its `source` as `shipping_rate_source` on `createOrder` (with `shipping_parcel` for a custom-extension option). The option is fetched again from its source and checked before it is charged.
 
 <Note>
   Buying a shipping label is done by the merchant from their admin — it charges the merchant's carrier
@@ -115,8 +134,7 @@ Show `rates[]` to the shopper, let them pick, and carry the chosen `rate_id` int
 
 ### `trackShipment`
 
-Returns live tracking status for a parcel by carrier + tracking number — use this when you want to
-render the status timeline **inside** your own UI.
+Returns live tracking status for a parcel by carrier and tracking number, for rendering the status timeline inside your own UI. A secret key tracks any parcel on the store's carrier account; a publishable key tracks only a tracking number that is on one of the store's own orders, so a storefront can show a shopper their own parcel.
 
 ```typescript
 const status = await client.shipping.trackShipment({ carrier: 'usps', number: order.tracking_number });
@@ -153,50 +171,39 @@ const status = await client.shipping.trackShipment({ carrier: 'usps', number: or
   `trackShipment` only when you want the status shown natively in your storefront.
 </Tip>
 
-### How Fees Are Calculated
-
-Tybrite uses a priority-based logic to determine the shipping fee:
-
-1.  **Custom Zones**: If the location falls within a defined polygon, the specific zone fee is applied.
-2.  **Distance Tiers**: If the customer is outside all zones, the system calculates the distance from your store and matches it to a pricing tier (e.g., 5-10km).
-3.  **Free Delivery**: If the `order_total` exceeds the threshold for that zone/tier, the fee is waived.
-
----
-
-<Tip>
-  **Precision Tip:** For the best user experience, use the browser's Geolocation API to get high-precision coordinates for the `calculateShipping` method.
-</Tip>
-
----
-
-<Note>
-  **Input Flexibility:** `calculateShipping` accepts **either** `{ latitude, longitude, order_total }` **or** `{ place_name, country_code?, order_total }`. When you supply a `place_name`, Galactic Core resolves it to coordinates for you. The response shape is identical regardless of input mode: `{ fee, zone_name, tier_name, distance_meters, is_free, reason, applied_rule, coordinates }`.
-</Note>
-
 ## Response Codes
 
-Both methods accept **publishable** and **secret** keys. `calculateShipping` uses `POST` purely to carry a structured request body — it is read-only.
+All three methods accept **publishable** and **secret** keys. `calculateShipping` uses `POST` purely to carry a structured request body — it is read-only.
 
 ### `getShippingZones` (`GET /v1/shipping/zones`)
 
 | Code | Meaning |
 | :--- | :--- |
-| `200` | Zones and pricing tiers returned. |
+| `200` | Delivery rates returned. |
+| `304` | Not modified (you sent a matching `If-None-Match`). |
 | `401` | Invalid or missing API key. |
 | `403` | Forbidden (e.g., key disabled or store suspended). |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |
 
-This method has no `400` because it takes no input to validate.
-
 ### `calculateShipping` (`POST /v1/shipping/calculate`)
 
 | Code | Meaning |
 | :--- | :--- |
-| `200` | Fee calculated and returned. |
-| `400` | Invalid coordinates (out-of-range lat/lng), missing `order_total`, or `geocoding_failed` when a `place_name` could not be resolved. |
+| `200` | Charge calculated and returned. |
+| `400` | `invalid_request` (a location outside -90..90 / -180..180, an `order_total` that is not a number of zero or more, or no location at all), `geocoding_failed` (a `place_name` could not be found), `shipping_not_deliverable` (the store does not deliver to the location), or `provider_not_configured` (a carrier-options-only request to a store with no carrier connected). |
 | `401` | Invalid or missing API key. |
 | `403` | Forbidden (e.g., key disabled or store suspended). |
-| `404` | Store has no shipping configuration (no zones and no distance tiers). |
 | `429` | Rate limit exceeded. |
-| `500` | Internal server error — including upstream geocoding or geographic-lookup failure. |
+| `500` | Internal server error. |
+
+### `trackShipment` (`GET /v1/shipping/tracking/{carrier}/{number}`)
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Tracking status returned. |
+| `400` | Invalid carrier or tracking number. |
+| `401` | Invalid or missing API key. |
+| `404` | With a publishable key, the tracking number is not on any of the store's orders. |
+| `429` | Rate limit exceeded. |
+| `502` | The carrier's tracking service could not be reached (`tracking_unavailable`). |

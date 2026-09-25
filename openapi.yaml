@@ -3567,11 +3567,34 @@ paths:
           price, never the value you send.)
         - **`subtotal`, `tax_amount`, `total_amount`** must reconcile to `subtotal + tax + shipping −
           discount` over those catalog prices → otherwise **`400 price_mismatch`**.
+        - **`tax_amount`** is calculated by the server when you omit it: for the `shipping_address` when
+          the store has automatic tax (the shipping charge is rated as its own line), otherwise at the
+          store's own rate — on the line totals, plus the shipping charge when the store charges tax on
+          shipping. At the store's own rate a `tax_amount` you send must match that figure to the cent →
+          otherwise **`400 price_mismatch`**. When the store's prices include tax, the tax is taken from
+          what the shopper pays (line totals − discount, plus shipping when taxed) and `subtotal` is the
+          line totals minus that tax. `POST /v1/tax/preview` returns the same figure before checkout.
         - **`discount_amount`** is validated against the discount the promotions / gift card you claim
           actually grant (computed server-side from `promotion_usages` + `gift_card_redemption`). A
           `discount_amount` greater than that legitimate maximum → **`400 discount_invalid`**. A discount
           with no real promotion/gift card behind it → max is `0`. (You may apply *less* than the maximum.)
-        - **`shipping_amount`** may not be negative → **`400 price_mismatch`**.
+        - **`shipping_amount`** is checked on every order, $0 included, and may not be negative:
+          - With a carrier option (`shipping_rate_id` + `shipping_rate_source`, or `shippo_rate_id`),
+            the option is fetched again from its source — the store's carrier account, or its custom
+            shipping extension re-quoted for `shipping_address` and `shipping_parcel`. An unknown,
+            expired or foreign option, one in another currency, or a test-mode option on a live order →
+            **`400 shipping_rate_invalid`**; an amount that differs from the option →
+            **`400 price_mismatch`**.
+          - Otherwise, when the store has delivery rates and the destination is known
+            (`shipping_latitude`/`shipping_longitude`, or a `shipping_address` that can be located), the
+            amount must equal the store's charge for that address, free-delivery thresholds measured
+            against the line totals after `discount_amount` → otherwise **`400 price_mismatch`**. A
+            destination the store does not deliver to → **`400 shipping_not_deliverable`**.
+          - A store with no delivery rates (it ships through its own arrangements) accepts the amount
+            sent; so does an order whose destination cannot be located. Such an order is recorded as
+            not checked.
+          - When shipping cannot be checked because the service is unreachable →
+            **`502 shipping_unavailable`**; the order is not created.
 
         In short: send the **real catalog prices** and the **actual promotions/gift card** the shopper is
         entitled to. Don't compute or invent prices/discounts client-side — the server is the authority.
@@ -3953,8 +3976,44 @@ paths:
                   example: -74.006
                 shippo_rate_id:
                   type: string
-                  description: The id of the shipping rate the shopper chose, when rates came from a multi-carrier quote. The rate is re-fetched and validated server-side before it is charged, so a modified or stale rate is rejected rather than honoured.
+                  description: 'The id of a carrier option from the store''s connected carrier account. Equivalent to `shipping_rate_id` with `shipping_rate_source: shippo`. The option is fetched again and checked before it is charged, so a modified, stale or foreign option is rejected.'
                   example: rate_8f2c1a9b4d7e4f109a3b2c5e7f1d0a44
+                shipping_rate_id:
+                  type: string
+                  description: The id of the carrier option the shopper chose, as returned in `rates[]` by `POST /v1/shipping/calculate`. Send with `shipping_rate_source`.
+                  example: rate_8f2c1a9b4d7e4f109a3b2c5e7f1d0a44
+                shipping_rate_source:
+                  type: string
+                  enum:
+                    - shippo
+                    - custom
+                  description: 'Where the chosen option came from — its `source` in `rates[]`: the store''s carrier account (`shippo`) or its custom shipping extension (`custom`).'
+                  example: shippo
+                shipping_parcel:
+                  type: object
+                  description: 'The parcel the option was quoted for. Required with `shipping_rate_source: custom`, because the extension is asked for its options again to check the one chosen.'
+                  properties:
+                    length:
+                      type: string
+                      example: '10'
+                    width:
+                      type: string
+                      example: '8'
+                    height:
+                      type: string
+                      example: '4'
+                    distance_unit:
+                      type: string
+                      example: in
+                    weight:
+                      type: string
+                      example: '2'
+                    mass_unit:
+                      type: string
+                      example: lb
+                shipping_address_from:
+                  type: object
+                  description: The ship-from address the option was quoted with, when one was sent to `POST /v1/shipping/calculate` as `address_from`.
                 attribution:
                   type:
                     - object
@@ -4232,6 +4291,25 @@ paths:
                     error:
                       code: invalid_request
                       message: Store uses tax-exclusive pricing. Please provide both subtotal and tax_amount.
+                shipping_rate_invalid:
+                  summary: The chosen carrier option is unknown, expired, foreign or in another currency
+                  value:
+                    error:
+                      code: shipping_rate_invalid
+                      message: That shipping option is not available for this store. Get fresh shipping options and choose again.
+                shipping_not_deliverable:
+                  summary: The store does not deliver to the shipping address
+                  value:
+                    error:
+                      code: shipping_not_deliverable
+                      message: This store does not deliver to the shipping address.
+                shipping_mismatch:
+                  summary: shipping_amount differs from the store's charge for the address
+                  value:
+                    error:
+                      code: price_mismatch
+                      message: shipping_amount does not match the delivery charge for this address
+                      details: expected 5.99, got 0.00
         '401':
           description: Unauthorized - Invalid or missing authentication credentials, or HMAC signature verification failed
           content:
@@ -4295,6 +4373,16 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+        '502':
+          description: Shipping could not be checked right now (`shipping_unavailable`). No order is created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: shipping_unavailable
+                  message: Shipping could not be checked right now. Please try again.
   /v1/orders/{id}:
     get:
       operationId: getOrder
@@ -7177,10 +7265,24 @@ paths:
         after it. Each merchant is still paid their full net: the marketplace operator
         funds the wallet.
 
+        Currency: every price is charged in the marketplace's currency. A merchant who prices in
+        another currency is converted with the exchange rate the marketplace sets for that currency —
+        items, the merchant's discounts, gift-card amounts and delivery fees alike, each rounded to
+        the marketplace currency's minor units. A merchant whose currency has no rate in the
+        marketplace cannot be bought from there (`400 item_currency_unsupported`).
+
+        Shipping: each merchant's items are priced by that merchant's delivery rates, converted to
+        the marketplace's currency with the marketplace's exchange rate; items the marketplace ships
+        itself are priced by the marketplace's own delivery rates (`pricing: operator_rate`). A
+        marketplace flat rate or free-shipping threshold overrides both.
+
         Shipping errors: `400 shipping_destination_required` when a merchant's delivery rate needs
-        a location and none can be found, `400 shipping_rate_invalid` when a chosen carrier option
-        is unknown, expired, not in the marketplace's currency, or chosen for items the marketplace
-        ships itself, and `502 shipping_unavailable` when shipping cannot be priced right now.
+        a location and none can be found, `400 shipping_not_deliverable` when a merchant (or the
+        marketplace, for items it ships) does not deliver to the address, `400
+        shipping_currency_unsupported` when the marketplace has no exchange rate for the currency a
+        merchant's delivery rates are set in, `400 shipping_rate_invalid` when a chosen carrier option is unknown,
+        expired, not in the marketplace's currency, or chosen for items the marketplace ships itself,
+        and `502 shipping_unavailable` when shipping cannot be priced right now.
 
         Requires the marketplace operator key.
       security:
@@ -7570,7 +7672,7 @@ paths:
                       selected_rate_id: null
                       rates: []
         '400':
-          description: The basket is invalid (`invalid_request`, `insufficient_stock`, `currency_mismatch`, `discount_invalid`), no location could be found for a merchant priced by location (`shipping_destination_required`), or a chosen carrier option cannot be used (`shipping_rate_invalid`).
+          description: The basket is invalid (`invalid_request`, `insufficient_stock`, `currency_mismatch`, `discount_invalid`), a merchant's currency has no exchange rate in the marketplace (`item_currency_unsupported`), no location could be found for a merchant priced by location (`shipping_destination_required`), a merchant or the marketplace does not deliver to the address (`shipping_not_deliverable`), the marketplace has no exchange rate for a merchant's delivery-rate currency (`shipping_currency_unsupported`), or a chosen carrier option cannot be used (`shipping_rate_invalid`).
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -8073,14 +8175,30 @@ paths:
         order**, so a storefront can show the shopper the final, tax-inclusive total before they pay.
 
         When the store has automatic tax enabled, the response is calculated for the `ship_to`
-        address and includes a per-jurisdiction `breakdown`. When automatic tax is not
-        configured, the response is `{ "tax_source": "fallback" }` and you should apply the store's
-        own tax rate (the same amount the order endpoint would use). The estimate is never recorded
-        for filing — it is a quote only.
+        address and includes a per-jurisdiction `breakdown`. A positive `shipping_amount` is rated as
+        its own shipping line, so the destination's rules decide whether shipping is taxed.
 
-        Publishable keys are accepted, so the call can be made directly from the browser during
-        checkout. Use the returned `tax_amount` to compute `total_amount` (`subtotal + tax_amount +
-        shipping − discount`) and pass that same total to `createOrder`.
+        When automatic tax is not configured, `tax_source` is `fallback` and the response carries the
+        tax the order endpoint charges at the store's own rate: `tax_amount`, the `rate`, whether the
+        store's prices already include tax (`prices_include_tax`), and whether the shipping charge was
+        taxed (`shipping_taxed`, which follows the store's "Charge tax on shipping" setting). A store
+        with no rate returns a `tax_amount` of `0`.
+
+        The estimate is never recorded for filing — it is a quote only. Publishable keys are accepted,
+        so the call can be made directly from the browser during checkout.
+
+        **Building the order total from the estimate.** Send the same `shipping_amount` (and, for a
+        store whose prices include tax, the same `discount_amount`) that the order will carry, so the
+        estimate matches the order to the cent.
+
+        - Prices exclude tax (`prices_include_tax` false, or any `automatic` response):
+          `total_amount = subtotal + tax_amount + shipping − discount`, where `subtotal` is the sum of
+          the line totals.
+        - Prices include tax (`prices_include_tax` true): the tax is already inside the line totals, so
+          `total_amount = line totals + shipping − discount` and `subtotal = line totals − tax_amount`.
+
+        Pass that `total_amount` to `createOrder`; `tax_amount` may be omitted there, and the order
+        records the same figure.
       security:
         - BearerAuth: []
       requestBody:
@@ -8175,6 +8293,18 @@ paths:
                   type: string
                   example: USD
                   description: ISO 4217 currency code. Defaults to the store currency.
+                shipping_amount:
+                  type: number
+                  format: float
+                  minimum: 0
+                  example: 12.5
+                  description: The shipping charge the order will carry. With automatic tax it is rated as its own shipping line; at the store's own rate it is taxed when the store charges tax on shipping. Defaults to 0.
+                discount_amount:
+                  type: number
+                  format: float
+                  minimum: 0
+                  example: 0
+                  description: The discount the order will carry. Only affects the estimate for a store whose prices include tax, where the tax is taken from what the shopper pays after the discount. Defaults to 0.
             examples:
               usNewYork:
                 summary: A New York shipment
@@ -8190,6 +8320,21 @@ paths:
                       amount: 598
                       item_code: SAM-WATCH-6
                       category_name: Wearables
+                  currency: USD
+              withShipping:
+                summary: A cart with a shipping charge
+                value:
+                  ship_to:
+                    line1: 350 Fifth Avenue
+                    city: New York
+                    region: NY
+                    country: US
+                    postal_code: '10118'
+                  lines:
+                    - quantity: 1
+                      amount: 100
+                      item_code: SKU-001
+                  shipping_amount: 10
                   currency: USD
       responses:
         '200':
@@ -8216,6 +8361,20 @@ paths:
                       - automatic
                       - fallback
                     example: automatic
+                    description: '`automatic` when the tax was calculated for the destination; `fallback` when automatic tax is not configured and the store''s own rate applies.'
+                  rate:
+                    type: number
+                    format: float
+                    example: 0.1
+                    description: The store's own tax rate as a fraction (`fallback` responses only).
+                  prices_include_tax:
+                    type: boolean
+                    example: false
+                    description: Whether the store's prices already include tax (`fallback` responses only). When true, `tax_amount` is the tax contained in the line totals, not an amount to add.
+                  shipping_taxed:
+                    type: boolean
+                    example: true
+                    description: Whether the shipping charge is part of the taxed amount (`fallback` responses only).
                   breakdown:
                     type: array
                     description: Per-jurisdiction detail (present when `tax_source` is `automatic`).
@@ -8276,6 +8435,16 @@ paths:
                         rate: 0.00375
                         taxable: 598
                         tax: 2.25
+                storeRate:
+                  summary: The store's own 10% rate, shipping taxed
+                  value:
+                    tax_amount: 11
+                    taxable: 110
+                    currency: USD
+                    tax_source: fallback
+                    rate: 0.1
+                    prices_include_tax: false
+                    shipping_taxed: true
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -14903,25 +15072,27 @@ paths:
         - Shipping
       summary: Get shipping zones and pricing tiers
       description: |-
-        Retrieve available delivery zones and distance-based pricing tiers for the store.
-          
-        **Returns:**
-        - **pricing_tiers**: Distance-based pricing (e.g., 0-10km: $5.99, 10-50km: $9.99)
-        - **delivery_zones**: Custom polygon zones (e.g., Manhattan Zone: $7.99)
-          
-        **Dual Pricing System:**
-        - Distance-based tiers are automatically applied based on calculated distance
-        - Custom zones override tiers when customer is inside a defined zone
-        - Both can have free delivery thresholds based on order total
-          
-        **Caching:**
-        - This endpoint uses ETag caching (60 seconds)
-        - Supports If-None-Match header for conditional requests
+        The store's delivery rates: its active distance-based pricing tiers, its active delivery zones,
+        and its "everywhere else" rate.
+
+        **How an address is priced** (see `POST /v1/shipping/calculate`):
+        1. The first zone that contains it — lowest `priority` first, then the zone created first.
+        2. Otherwise, the tier whose range contains its distance from the store. A range includes its
+           `min_distance_meters` and stops just before its `max_distance_meters`.
+        3. Otherwise, `everywhere_else`. When that is null and the store has zones or tiers, an address
+           outside them is not delivered to.
+
+        Every amount is in `currency`. A store with no tiers, zones or `everywhere_else` rate charges
+        nothing for delivery through these rates.
+
+        **Caching:** the response is cached for up to 60 seconds and carries an ETag (send
+        `If-None-Match` for a `304`). Changes to the store's rates appear here within that window;
+        `POST /v1/shipping/calculate` and order creation always read the current rates.
       security:
         - BearerAuth: []
       responses:
         '200':
-          description: Shipping zones and pricing tiers
+          description: The store's delivery rates
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -14930,6 +15101,12 @@ paths:
               schema:
                 type: object
                 properties:
+                  currency:
+                    type:
+                      - string
+                      - 'null'
+                    description: The currency every fee and threshold here is in — the store's own.
+                    example: USD
                   pricing_tiers:
                     type: array
                     items:
@@ -14938,7 +15115,22 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/DeliveryZone'
+                  everywhere_else:
+                    type:
+                      - object
+                      - 'null'
+                    description: The rate for any address outside the zones and tiers. Null when the store has none.
+                    properties:
+                      delivery_fee:
+                        type: number
+                        example: 29.99
+                      free_delivery_threshold:
+                        type:
+                          - number
+                          - 'null'
+                        example: null
               example:
+                currency: USD
                 pricing_tiers:
                   - tier_name: Local (within 10 km)
                     min_distance_meters: 0
@@ -14962,6 +15154,9 @@ paths:
                     is_active: true
                     priority: 3
                 delivery_zones: []
+                everywhere_else:
+                  delivery_fee: 29.99
+                  free_delivery_threshold: null
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -14977,28 +15172,24 @@ paths:
         - Shipping
       summary: Calculate shipping fee
       description: |-
-        Calculate the delivery fee for a customer based on their location and order total.
-          
-        **Location Input Options:**
-        - **Option 1:** Provide `latitude` and `longitude` (GPS coordinates)
-        - **Option 2:** Provide `place_name` (e.g., "Brooklyn, New York") - automatically geocoded
-          
-        **Calculation Logic:**
-        1. If `place_name` provided, geocode to coordinates internally
-        2. Check if customer is within any active delivery zone (by priority)
-        3. If in zone: Apply zone fee (unless order reaches free_delivery_threshold)
-        4. If not in zone: Calculate distance and match to pricing tier
-        5. Apply tier fee (unless order reaches free_delivery_threshold)
-        6. Return detailed breakdown with applied rule and coordinates
-          
-        **Response Fields:**
-        - applied_rule: Indicates which pricing system was used (zone, distance, or default)
-        - zone_name: Populated if zone-based, null otherwise
-        - tier_name: Populated if distance-based, null otherwise
-        - distance_meters: Calculated distance (null if zone-based)
-        - is_free: Whether free delivery was applied
-        - coordinates: Always returned (latitude/longitude) for frontend caching
-          
+        The store's delivery charge for a shopper's location and order total, plus carrier options when
+        a destination address and parcel are sent.
+
+        **Location:** `latitude` + `longitude`, or a `place_name` (geocoded). With neither, `address_to`
+        + `parcel` returns carrier options only, with `fee` null.
+
+        **Pricing:** the first zone containing the location; otherwise the distance tier matching its
+        distance from the store (a range includes its start and stops just before its end); otherwise
+        the store's "everywhere else" rate. A matched rate is free when `order_total` — the merchandise
+        after discounts, before tax and shipping — reaches its free-delivery threshold. A store with no
+        rates at all charges nothing (`applied_rule: none`). When the store has zones or tiers but none
+        covers the location and it has no "everywhere else" rate, the answer is
+        `400 shipping_not_deliverable`.
+
+        **Carrier options** (`rates[]`) come from the store's connected carrier account and its custom
+        shipping extension. To order with one, pass its `rate_id` and `source` on `POST /v1/orders` as
+        `shipping_rate_id` and `shipping_rate_source`.
+
         This is a **read-only operation** (safe for publishable keys).
       security:
         - BearerAuth: []
@@ -15021,9 +15212,26 @@ paths:
                   latitude: 40.6782
                   longitude: -73.9442
                   order_total: 100
+              carrier_options_only:
+                summary: Carrier options for an address and parcel, no location
+                value:
+                  address_to:
+                    name: Jordan Lee
+                    street1: 350 Fifth Avenue
+                    city: New York
+                    state: NY
+                    zip: '10118'
+                    country: US
+                  parcel:
+                    length: '10'
+                    width: '8'
+                    height: '4'
+                    distance_unit: in
+                    weight: '2'
+                    mass_unit: lb
       responses:
         '200':
-          description: Shipping fee calculated successfully
+          description: The delivery charge for the location
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -15036,48 +15244,91 @@ paths:
                   summary: Distance-based pricing (Brooklyn → Local tier $5.99)
                   value:
                     fee: 5.99
+                    currency: USD
                     zone_name: null
                     tier_name: Local (within 10 km)
                     distance_meters: 8547.99
                     is_free: false
-                    reason: 8.5 km away
+                    free_threshold: 75
+                    configured: true
+                    reason: Local (within 10 km)
                     applied_rule: distance
+                    coordinates:
+                      latitude: 40.6782
+                      longitude: -73.9442
+                    rate_source: tier
                 free_delivery:
                   summary: Free delivery (order over the free-shipping threshold)
                   value:
                     fee: 0
+                    currency: USD
                     zone_name: null
                     tier_name: Local (within 10 km)
                     distance_meters: 8547.99
                     is_free: true
-                    reason: Free delivery (order qualifies for free shipping)
+                    free_threshold: 75
+                    configured: true
+                    reason: 'Free delivery: the order qualifies'
                     applied_rule: distance
-                regional:
-                  summary: Distance-based pricing (Philadelphia → Regional tier $14.99)
+                    coordinates:
+                      latitude: 40.6782
+                      longitude: -73.9442
+                    rate_source: tier
+                everywhere_else:
+                  summary: Outside every zone and tier (the store's "everywhere else" rate)
                   value:
-                    fee: 14.99
+                    fee: 29.99
+                    currency: USD
                     zone_name: null
-                    tier_name: Regional (50–500 km)
-                    distance_meters: 133600.52
+                    tier_name: null
+                    distance_meters: 3944112.2
                     is_free: false
-                    reason: 133.6 km away
-                    applied_rule: distance
+                    free_threshold: null
+                    configured: true
+                    reason: Everywhere else
+                    applied_rule: fallback
+                    coordinates:
+                      latitude: 34.0522
+                      longitude: -118.2437
+                    rate_source: fallback
+                no_rates:
+                  summary: The store has no delivery rates
+                  value:
+                    fee: 0
+                    currency: USD
+                    zone_name: null
+                    tier_name: null
+                    distance_meters: null
+                    is_free: true
+                    free_threshold: null
+                    configured: false
+                    reason: No delivery charge is set up
+                    applied_rule: none
+                    coordinates:
+                      latitude: 40.6782
+                      longitude: -73.9442
+                    rate_source: none
         '400':
-          $ref: '#/components/responses/BadRequestError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          description: No shipping configuration available
+          description: 'The request is invalid (`invalid_request`: a location outside -90..90 / -180..180, an `order_total` that is not a number of zero or more, or no location at all), a `place_name` could not be found (`geocoding_failed`), the store does not deliver to the location (`shipping_not_deliverable`), or a carrier-options-only request was sent to a store with no carrier connected (`provider_not_configured`).'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: not_found
-                  message: No shipping configuration available for this store
+              examples:
+                not_deliverable:
+                  value:
+                    error:
+                      code: shipping_not_deliverable
+                      message: This store does not deliver to that address.
+                invalid_total:
+                  value:
+                    error:
+                      code: invalid_request
+                      message: order_total must be a number of zero or more.
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -15091,6 +15342,10 @@ paths:
       description: |-
         Returns the live tracking status for a parcel by carrier + tracking number. Requires the
         store to have multi-carrier shipping connected.
+
+        A secret key tracks any parcel on the store's carrier account. A publishable key tracks only a
+        tracking number that is on one of the store's own orders (in the key's environment), so a
+        storefront can show a shopper their own parcel; any other number answers `404`.
       security:
         - BearerAuth: []
       parameters:
@@ -15171,6 +15426,28 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: With a publishable key, the tracking number is not on any of this store's orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: No order from this store carries that tracking number.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '502':
+          description: The carrier's tracking service could not be reached (`tracking_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: tracking_unavailable
+                  message: Could not fetch tracking.
   /v1/connect/authorize:
     get:
       operationId: getConnectAuthorize
@@ -22932,9 +23209,11 @@ components:
           type: string
           enum:
             - seller_rate
+            - operator_rate
             - carrier_rate
             - flat
             - free
+          description: 'What priced the line: the merchant''s own delivery rates (`seller_rate`), the marketplace''s own delivery rates when the marketplace ships the items (`operator_rate`), a carrier option the shopper chose (`carrier_rate`), the marketplace''s flat rate (`flat`), or its free-shipping threshold (`free`).'
           example: seller_rate
         fulfilled_by:
           type: string
@@ -24525,11 +24804,11 @@ components:
           type: integer
           minimum: 0
           example: 0
-          description: Minimum distance in meters (inclusive)
+          description: Start of the range in meters. An address at exactly this distance is in the range.
         max_distance_meters:
           type: integer
           example: 50000
-          description: Maximum distance in meters (inclusive)
+          description: End of the range in meters. An address at exactly this distance belongs to the next range, so adjacent ranges can share an end point (0–10,000 and 10,000–50,000).
         delivery_fee:
           type: number
           format: float
@@ -24577,7 +24856,7 @@ components:
         priority:
           type: integer
           example: 1
-          description: Zone priority (lower number = higher priority when zones overlap)
+          description: Where zones overlap, the lowest number wins; on a tie, the zone created first.
         color:
           type: string
           pattern: ^#[0-9A-Fa-f]{6}$
@@ -24657,8 +24936,8 @@ components:
           type: number
           format: float
           minimum: 0
-          description: Total order value (before shipping)
-          example: 5000
+          description: The order's merchandise after discounts, before tax and shipping. A free-delivery threshold is compared against this figure. Must be a number of zero or more; defaults to 0.
+          example: 50
         address_to:
           $ref: '#/components/schemas/ShippingAddressInput'
         address_from:
@@ -24684,8 +24963,21 @@ components:
           type: number
           format: float
           minimum: 0
-          description: Total order value (before shipping)
-          example: 5000
+          description: The order's merchandise after discounts, before tax and shipping. A free-delivery threshold is compared against this figure. Must be a number of zero or more; defaults to 0.
+          example: 50
+        address_to:
+          $ref: '#/components/schemas/ShippingAddressInput'
+        address_from:
+          $ref: '#/components/schemas/ShippingAddressInput'
+        parcel:
+          $ref: '#/components/schemas/ShippingParcelInput'
+    ShippingCalculationByCarrierAddress:
+      type: object
+      description: 'Carrier options only: a destination address and a parcel with no coordinates or place name. The store''s own delivery rate is not priced (there is no location to price it from); the response carries the carrier options from the store''s connected carrier account and its custom shipping extension, with `fee` null.'
+      required:
+        - address_to
+        - parcel
+      properties:
         address_to:
           $ref: '#/components/schemas/ShippingAddressInput'
         address_from:
@@ -24693,94 +24985,118 @@ components:
         parcel:
           $ref: '#/components/schemas/ShippingParcelInput'
     ShippingCalculationRequest:
-      description: Input for a shipping fee calculation. Provide either GPS coordinates (latitude + longitude) or a place_name to geocode.
-      oneOf:
+      description: Input for a shipping fee calculation. Provide GPS coordinates (latitude + longitude), a place_name to geocode, or — for carrier options only — address_to with a parcel.
+      anyOf:
         - $ref: '#/components/schemas/ShippingCalculationByCoordinates'
         - $ref: '#/components/schemas/ShippingCalculationByPlace'
+        - $ref: '#/components/schemas/ShippingCalculationByCarrierAddress'
     DeliveryFeeCalculation:
       type: object
-      description: Calculated delivery fee based on customer location and order total
+      description: 'The store''s delivery charge for a location and order total. An address is priced by the first zone that contains it, otherwise by the distance rate for its distance from the store, otherwise by the store''s "everywhere else" rate. A store with no delivery rates at all charges nothing (`applied_rule: none`). A store whose rates do not reach the address answers `400 shipping_not_deliverable` instead.'
       properties:
         fee:
-          type: number
+          type:
+            - number
+            - 'null'
           format: float
           minimum: 0
-          example: 100
-          description: Calculated delivery fee
+          example: 5.99
+          description: The delivery charge, in `currency`. Null only on a carrier-options-only request (no location was sent).
+        currency:
+          type:
+            - string
+            - 'null'
+          example: USD
+          description: The currency of `fee` and `free_threshold` — the store's own currency.
         zone_name:
           type:
             - string
             - 'null'
           example: null
-          description: Name of delivery zone if customer is in a zone
+          description: The zone that priced the address, when a zone did.
         tier_name:
           type:
             - string
             - 'null'
-          example: Within Manhattan
-          description: Name of pricing tier if distance-based pricing was applied
+          example: Local (within 10 km)
+          description: The distance rate that priced the address, when one did.
         distance_meters:
           type:
             - number
             - 'null'
           format: float
-          example: 29556.31
-          description: Distance from store to customer in meters (null if zone-based)
+          example: 8547.99
+          description: Distance from the store to the address in meters, when it was measured.
         is_free:
           type: boolean
           example: false
-          description: Whether delivery is free due to order threshold
+          description: True when no delivery charge applies to this order (`fee` is 0).
+        free_threshold:
+          type:
+            - number
+            - 'null'
+          example: 75
+          description: The order total from which the matched rate delivers free, or null when it has none.
+        configured:
+          type:
+            - boolean
+            - 'null'
+          example: true
+          description: Whether the store has any delivery rates. False means delivery is not charged through the store's rates at all.
         reason:
           type: string
-          example: 29.6 km away
-          description: Human-readable explanation of the fee
+          example: Local (within 10 km)
+          description: A short, shopper-readable explanation of the charge.
         applied_rule:
           type: string
           enum:
             - zone
             - distance
-            - default
+            - fallback
+            - none
           example: distance
           description: |-
-            Pricing rule that was applied:
-            - zone: Customer is within a custom delivery zone
-            - distance: Distance-based tier pricing was used
-            - default: Fallback pricing (no zone or tier matched)
+            Which of the store's rates priced the address:
+            - zone: a delivery zone contains it
+            - distance: a distance rate matched its distance from the store
+            - fallback: the store's "everywhere else" rate
+            - none: the store has no delivery rates (fee 0), or a carrier-options-only request
         coordinates:
           type: object
-          description: Customer coordinates (geocoded if place_name was provided)
+          description: The address's coordinates (geocoded when a place_name was sent).
           properties:
             latitude:
               type: number
               format: double
-              example: -1.106583
-              description: Customer latitude
+              example: 40.758
             longitude:
               type: number
               format: double
-              example: 37.013954
-              description: Customer longitude
+              example: -73.9855
         rate_source:
           type: string
           enum:
             - zone
             - tier
+            - fallback
             - shippo
             - custom
             - none
-          example: shippo
-          description: Which source produced the result — the store's delivery `zone`/`tier` rules, live carrier `shippo` rates, a `custom` carrier the store has connected, or `none` (unconfigured).
+          example: tier
+          description: Which source produced the result — the store's `zone`, distance `tier` or `fallback` rate, a connected carrier account (`shippo`), the store's custom shipping extension (`custom`), or `none`.
         rates:
           type: array
-          description: Live multi-carrier rate options, present only when the store has carrier shipping connected AND a destination address + parcel were supplied. Each entry is a real carrier quote; pass a chosen `rate_id` to buy a label or place an order with that rate.
+          description: Carrier options, present when the store has a carrier account or a custom shipping extension AND a destination address + parcel were sent. Each is a real quote. To order with one, pass its `rate_id` and `source` as `shipping_rate_id` / `shipping_rate_source` on createOrder, where the option is fetched again from its source before it is charged.
           items:
             type: object
             properties:
               rate_id:
                 type: string
-                description: The chosen carrier rate. Pass as shippo_rate_id on createOrder so the order's shipping amount is validated against this real quote.
+                description: The carrier option's id, as issued by its source.
               provider:
-                type: string
+                type:
+                  - string
+                  - 'null'
                 example: USPS
               service:
                 type:
@@ -24799,6 +25115,12 @@ components:
                   - integer
                   - 'null'
                 example: 5
+              source:
+                type: string
+                enum:
+                  - shippo
+                  - custom
+                description: Where the option came from — the store's carrier account, or its custom shipping extension.
     ConnectAuthorizeResponse:
       type: object
       required:

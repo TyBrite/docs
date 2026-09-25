@@ -40,17 +40,20 @@ const tax = await client.tax.previewTax({
     currency: 'USD'
   }
 });
-// returns {
-//   tax_amount: 53.08,
-//   taxable: 598,
-//   currency: 'USD',
-//   tax_source: 'automatic',
-//   breakdown: [
-//     { country: 'US', region: 'NY', jurisName: 'NEW YORK',      taxName: 'NY STATE TAX', rate: 0.04,    taxable: 598, tax: 23.92 },
-//     { country: 'US', region: 'NY', jurisName: 'NEW YORK CITY', taxName: 'NY CITY TAX',  rate: 0.045,   taxable: 598, tax: 26.91 },
-//     { country: 'US', region: 'NY', jurisName: 'METROPOLITAN COMMUTER TRANSPORTATION DISTRICT', taxName: 'NY SPECIAL TAX', rate: 0.00375, taxable: 598, tax: 2.25 }
-//   ]
-// }
+```
+
+```json Response
+{
+  "tax_amount": 53.08,
+  "taxable": 598,
+  "currency": "USD",
+  "tax_source": "automatic",
+  "breakdown": [
+    { "country": "US", "region": "NY", "jurisName": "NEW YORK", "taxName": "NY STATE TAX", "rate": 0.04, "taxable": 598, "tax": 23.92 },
+    { "country": "US", "region": "NY", "jurisName": "NEW YORK CITY", "taxName": "NY CITY TAX", "rate": 0.045, "taxable": 598, "tax": 26.91 },
+    { "country": "US", "region": "NY", "jurisName": "METROPOLITAN COMMUTER TRANSPORTATION DISTRICT", "taxName": "NY SPECIAL TAX", "rate": 0.00375, "taxable": 598, "tax": 2.25 }
+  ]
+}
 ```
 
 **Parameters** (`requestBody`)
@@ -60,6 +63,8 @@ const tax = await client.tax.previewTax({
 | `ship_to` | yes | The destination. `country` is required; include `region`, `city`, and `postal_code` for accuracy. |
 | `lines` | yes | The cart lines. Each needs `amount` (the line total); include `quantity`, `item_code`, and `category_name` where you have them. |
 | `currency` | no | ISO 4217 code; defaults to the store currency. |
+| `shipping_amount` | no | The delivery charge. Rated as its own line by automatic tax (the destination decides whether shipping is taxable); at the store's own rate it is taxed when the store charges tax on shipping. A number of 0 or more. |
+| `discount_amount` | no | The order's discount. Used by the store's own rate when prices include tax, where the tax is taken from what the shopper pays. A number of 0 or more. |
 | `ship_from` | no | The origin the goods ship from. Which jurisdictions may tax a sale depends on where it ships from as well as where it ships to, so send this when fulfilling from somewhere other than the store's own address. Defaults to the store's address. |
 | `customer_code` | no | Your identifier for the buyer. Send it when the buyer holds a tax exemption, so the estimate reflects it; otherwise the cart is priced as an ordinary retail sale. |
 | `doc_code` | no | Your own reference for this estimate, echoed back so you can tie it to a cart or quote in your system. |
@@ -70,7 +75,10 @@ const tax = await client.tax.previewTax({
 | :--- | :--- |
 | `tax_amount` | Total tax for the cart at this destination. |
 | `taxable` | The taxable base. |
-| `tax_source` | `automatic` (calculated for the destination) or `fallback` (automatic tax isn't configured — apply the store's own rate). |
+| `tax_source` | `automatic` (calculated for the destination) or `fallback` (automatic tax isn't configured; the figures are the store's own rate). |
+| `rate` | With `fallback`: the store's rate, as a fraction (`0.08` = 8%). |
+| `prices_include_tax` | With `fallback`: whether the store's prices already include tax. |
+| `shipping_taxed` | With `fallback`: whether the delivery charge was part of the taxable base. |
 | `breakdown` | Per-jurisdiction detail (state, county, city, special district…), each with its `rate` and `tax`. Present when `tax_source` is `automatic`. |
 
 <Tip>
@@ -87,9 +95,12 @@ recalculates the tax server-side and confirms the total matches.
 
 ```typescript
 const subtotal = 598, shipping = 5.99, discount = 0;
-const total_amount = subtotal + (tax.tax_amount ?? 0) + shipping - discount; // 657.07
+const total_amount = subtotal + (tax.tax_amount ?? 0) + shipping - discount;
 // pass total_amount to client.orders.createOrder — omit tax_amount so the server records it
 ```
 
-When `tax_source` is `fallback`, apply the store's configured rate to compute the total; the order
-endpoint uses that same rate, so the figures agree.
+Send the same `shipping_amount` and `discount_amount` to `previewTax` that the order will carry, so the
+estimate covers the delivery charge. When `tax_source` is `fallback`, `tax_amount` is the store's own
+rate, computed by the same rules the order endpoint applies, so the figures agree. When
+`prices_include_tax` is true the tax is already inside the prices: the total is
+`subtotal + shipping − discount`, and `tax_amount` is the part of it that is tax.
