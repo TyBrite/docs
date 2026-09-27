@@ -114,6 +114,8 @@ Each method in the returned list includes:
 
 Create a payment session with your chosen provider. Requires a **Secret Key**, a valid HMAC signature, and a mandatory `Idempotency-Key`. On the first successful call this returns **`201 Created`**; subsequent calls with the same idempotency key and identical payload return **`200 OK`** with `idempotent: true` and the original session.
 
+A request refused before it reaches the payment provider — an invalid body, an unknown order, or an amount that does not match the order — does not use up its `Idempotency-Key`, so the corrected request can be sent with the same key. While another request with the same key is still being initialized, the call returns `409 idempotency_in_progress`; sending it again shortly with the same key returns the session once it exists.
+
 <Tip>
   The mandatory `Idempotency-Key` also makes this call eligible for the SDK's [automatic retries](/sdk/introduction#automatic-retries): a transient failure is retried safely and returns the original session rather than starting a second charge.
 </Tip>
@@ -353,6 +355,7 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 | `403` | Publishable key supplied — initialize requires a secret key. |
 | `404` | `order_id` provided but no matching order exists. |
 | `409` | `provider_not_live` — the payment method is still configured with test credentials, so it cannot take a real payment. The merchant switches it to live mode in their dashboard. Sandbox requests are unaffected. |
+| `409` | `idempotency_in_progress` — another request with the same `Idempotency-Key` is still being initialized. Retry shortly with the same key. |
 | `429` | Rate limit exceeded (100 / hour per API key on initialize). |
 | `500` | Upstream payment provider error or server configuration error. |
 | `502` | `provider_unavailable` — a payment method the merchant added themselves did not complete the request. Retry, or offer another method. |

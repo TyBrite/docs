@@ -209,7 +209,7 @@ Every endpoint accepts one of the credentials above, or a combination of them. T
 | --- | --- |
 | Products, collections, specifications (`client.products.*`) | `pk` or `sk` |
 | Categories & subcategories (`client.taxonomy.*`) | `pk` or `sk` |
-| Prices (`client.pricing.*`) | `pk` or `sk` |
+| Prices (`client.pricing.*`) | `pk` or `sk` · customer-specific prices **+ session** |
 | Search — text & semantic (`client.search.*`) | `pk` or `sk` |
 | Tax preview (`client.tax.previewTax`) | `pk` or `sk` (browser) |
 | Recommendations (`client.recommendations.*`) | **`sk` only** |
@@ -263,7 +263,7 @@ Every endpoint accepts one of the credentials above, or a combination of them. T
 
 | Endpoints | Key |
 | --- | --- |
-| Webhook endpoints & events (`client.webhooks.*`) | **`sk` only** |
+| Webhook endpoints & events (`client.webhooks.*`) | **`sk` only** · scoped to the key's environment |
 | Catalog ingestion — push (`client.ingestion.ingestProducts`) | **`sk` only + HMAC** (idempotency key required) |
 | Ingestion sample / dry-run test (`getIngestSample`, `testIngest`) | **`sk` only** |
 | Connect — authorize validate, token, revoke (`client.gcConnect.*`) | Public (OAuth-style client credentials) |

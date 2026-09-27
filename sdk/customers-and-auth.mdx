@@ -112,11 +112,10 @@ await client.customers.createCustomer({
 // Later, in any backend code that needs the Galactic Core customer:
 // 1. You stored the GC customer.id when you created it → use that directly.
 // 2. Or, store only the external_id and look up the GC customer when needed
-//    via your own DB / cache, or by fetching `/v1/customers?external_id=…`
-//    once that filter ships.
+//    via your own DB / cache.
 ```
 
-Set it on `createCustomer`, update it on `updateCustomer` if the upstream identifier changes (e.g. provider migration).
+Set it on `createCustomer`. `updateCustomer` does not change it: `external_id` is the identifier an `x-external-auth` assertion resolves to, so it is fixed once the customer exists, and an `external_id` sent to `updateCustomer` is ignored.
 
 ## Customer-self endpoints in Path B — the `x-external-auth` assertion
 

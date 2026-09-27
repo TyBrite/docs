@@ -80,7 +80,7 @@ The list returns order summaries **without line items** (to keep responses fast)
 | `limit` | number | How many orders to return per page (1–200, default 50). |
 | `cursor` | string | Pass the `next_cursor` from a previous response to fetch the next page. |
 | `paymentStatus` | string | Filter by payment status: `pending`, `paid`, `failed`, or `refunded`. |
-| `orderStatus` | string | Filter by fulfillment status: `pending`, `processing`, `shipped`, `delivered`, or `cancelled`. |
+| `orderStatus` | string | Filter by fulfillment status: `pending`, `confirmed`, `processing`, `shipped`, `delivered`, or `cancelled`. |
 | `customerId` | string | Return only orders belonging to a specific customer. |
 | `fields` | string | Comma-separated list of fields to return per order (e.g. `order_number,total_amount,created_at`). |
 
@@ -146,13 +146,15 @@ Use it when there's a gap between "customer commits to buy" and "payment confirm
 
 Reservations are all-or-nothing: if any item lacks available stock, nothing is reserved and you get `409 insufficient_stock`. Each hold expires automatically (15 minutes by default), so an abandoned checkout lets the hold lapse without an explicit release call. Works with publishable or secret keys.
 
+Each request is bounded. With a publishable key it can hold at most 25 items and 25 units of any one variant; with a secret key, 100 items and 1,000 units of any one variant. Quantities for a variant that appears on several lines are added together. A request over a limit returns `400` and reserves nothing. Reservations are rate limited to 300 requests an hour per API key and, with a publishable key, 60 an hour per visitor. `customer_id` is recorded on the hold only when the call is made with a secret key; from a publishable key the hold is kept without a customer. A key issued through GC Connect needs the `orders:write` scope to reserve stock, and returns `403` without it.
+
 ```typescript
 const { reservation_ids, expires_in_seconds } = await client.orders.reserveStock({
   requestBody: {
     items: [
       { variant_id: 'variant-uuid', quantity: 2 }
     ],
-    // optional: ttl_seconds, customer_id, session_id (for checkout recovery)
+    // optional: ttl_seconds, session_id, and customer_id (secret key only) for checkout recovery
   }
 });
 
@@ -198,7 +200,7 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
 
 *   **Required body fields**: `customer_email`, `customer_name`, `billing_address`, `shipping_address`, `subtotal`, `total_amount`, `payment_method`, and a non-empty `items` array. Each item must include **`variant_id` or `product_id`** (at least one).
 *   **`variant_id` vs `product_id` per item** — prefer **`variant_id`** (the exact variant the shopper chose; pass the same one you put in the cart straight through). If you send only `product_id`, the order is placed against the product's **default** variant — fine for single-variant products, but for a multi-variant product it may not be the one the shopper selected. Sending both is fine: `variant_id` wins and `product_id` is resolved from it. See [Products and variants — which ID to send where](/concepts#products-and-variants-which-id-to-send-where) for the full picture.
-*   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `shipping_rate_id` + `shipping_rate_source` (a carrier option from `calculateShipping`), `shipping_parcel` (required with `shipping_rate_source: custom`), `shipping_address_from`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement).
+*   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `shipping_rate_id` + `shipping_rate_source` (a carrier option from `calculateShipping`), `shipping_parcel` (required with `shipping_rate_source: custom`), `shipping_address_from`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement). On a `pending` order the reservation ids are kept with the order: they are committed when the order is marked paid and released when it is cancelled or its payment fails. Only holds on the order's own items are committed, and at most 100 ids are accepted.
 *   **`currency`** — the ISO 4217 code the order is priced in. Defaults to the store's default storefront currency. Set it when you present prices in a currency the shopper picked, so the order is recorded in the currency they actually paid in.
 *   **`order_number`** — your own order reference. Galactic Core generates one when you omit it; pass your own to keep numbering aligned with a system you already run.
 *   **Attribution (optional)**: pass `attribution` to record where the sale came from, so it is credited to the right traffic source in the merchant's reports: `{ session_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, referrer }`, plus `content_id` + `content_type` to close the loop on a shopper who arrived from a blog post or lookbook. `utm_term` and `utm_content` carry the paid keyword and the creative, so a merchant can compare one ad variant against another rather than only one source against another. The same fields are also accepted at the top level of the body if you already send them that way. Promotions are recorded from the server-validated result rather than what you pass, so the record always reflects the discount the shopper actually received.
@@ -283,7 +285,7 @@ const order = result.order;
 </Tip>
 
 <Note>
-  `createOrder` returns `{ order, store_credit_applied?, post_processing_warnings? }`. `store_credit_applied` is present only when store credit was applied. `getOrder`, `updateOrder`, and `listOrders` return the order resource(s) at the top level.
+  `createOrder` returns `{ order, store_credit_applied?, post_processing_warnings? }`. `store_credit_applied` is present only when store credit was applied. `getOrder`, `updateOrder`, and `listOrders` return the order resource(s) at the top level. An `updateOrder` that marks the order paid can also carry `post_processing_warnings` beside the order fields.
 </Note>
 
 ---
@@ -454,6 +456,17 @@ The full updated order is returned at the top level:
 }
 ```
 
+Status changes follow a fixed set of transitions:
+
+*   **`payment_status`** moves from `pending` to `paid` or `failed`, and from `failed` to `paid`. A `paid` order does not move back. `refunded` is set by processing a refund, not by `updateOrder`.
+*   **`order_status`** moves forward only: `pending` → `confirmed` → `processing` → `shipped` → `delivered`. `cancelled` is available until the order ships. `cancelled` and `delivered` are final, and a cancelled order cannot be marked paid.
+*   Sending a field with the value it already has is not a transition: the call succeeds and nothing is repeated, so marking an order paid twice runs the paid side effects once.
+*   Any other move returns `409 invalid_transition`. When two updates change the same order at once, one succeeds and the other returns `409 order_changed`; fetch the order and decide whether to send the update again.
+
+When an unpaid order is cancelled or its payment fails, its stock holds are released and any store credit applied to it is returned to the customer.
+
+If the update marked the order paid and a follow-up step did not complete, the response carries `post_processing_warnings` with the same `{ stage, message }` entries described in [Post-Processing Warnings](#post-processing-warnings). The order stays paid.
+
 ## Security & Error Handling
 
 | Error Code | Meaning | Resolution |
@@ -485,6 +498,7 @@ Transitioning an order to the **paid** state automatically triggers:
 | `400` | `POST /v1/orders` | `price_mismatch` (a price, tax, shipping or total that does not match the server's figure), `shipping_rate_invalid` (a carrier option that cannot be used), `shipping_not_deliverable` (the store does not deliver to the address). |
 | `404` | `GET /v1/orders/{id}`, `PATCH`, `POST` | Order not found, or a `product_id` referenced in `items` not found. |
 | `409` | `POST /v1/orders` | Idempotency key reused with a different payload, or an order-number collision between two orders created in the same instant — retry the request. |
+| `409` | `PATCH /v1/orders/{id}` | `invalid_transition` — the status change is not allowed from the order's current state. `order_changed` — another update changed the order first. The order is left as it was. |
 | `422` | `POST /v1/orders` | `order_rejected` — the store runs its own order-validation rule and that rule declined the order; the message carries the store's reason. No order is created. Also returned when the store requires validation but the rule could not be reached, so an order is never created unchecked. |
 | `422` | `PATCH /v1/orders/{id}` | `payment_not_verified` — you marked the order paid with a `payment_reference`, but the payment method the merchant added does not report that reference as paid. The order is left unchanged rather than accepted on an unverified claim. |
 | `502` | `POST /v1/orders` | `shipping_unavailable` — the order's shipping could not be checked right now. No order is created; retry. |

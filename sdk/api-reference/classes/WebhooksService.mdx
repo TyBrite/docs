@@ -84,6 +84,10 @@ app.post('/webhooks/tybrite', express.raw({ type: 'application/json' }), (req, r
 
 ## Endpoint Management
 
+An endpoint belongs to the environment of the key that created it, returned as `environment`. An endpoint created with a test key receives only sandbox events, and one created with a live key receives only production events. Endpoints are listed, read, updated, deleted and tested only with a key of the same environment; a key of the other environment gets `404`.
+
+Delivery follows redirects, and each redirect target is held to the same rules as the registered URL: HTTPS and a public address. A redirect to any other target fails the delivery.
+
 ### `createWebhookEndpoint` 🔒
 
 Register a new HTTPS endpoint to receive event notifications.
@@ -112,6 +116,7 @@ console.log('Store this secret:', signingSecret);
     "events": ["order.paid", "order.fulfilled", "payment.succeeded", "payment.failed"],
     "enabled": true,
     "metadata": { "label": "production-erp", "team": "platform" },
+    "environment": "production",
     "created_at": "2026-06-20T11:30:48.673+00:00",
     "updated_at": "2026-06-20T11:30:48.673+00:00",
     "signing_secret": "6c08d77c…09103824"
@@ -183,6 +188,7 @@ const { webhook_endpoints, pagination } = await client.webhooks.listWebhookEndpo
       "events": ["order.created", "order.updated", "customer.created"],
       "enabled": true,
       "metadata": {},
+      "environment": "production",
       "last_success_at": null,
       "last_failure_at": null,
       "consecutive_failures": 0,
@@ -344,12 +350,6 @@ const { webhook_events: failedPayments } = await client.webhooks.listWebhookEven
   type: 'payment.failed',
   limit: 20,
 });
-
-// Filter by environment (production vs sandbox/test)
-const { webhook_events: liveEvents } = await client.webhooks.listWebhookEvents({
-  environment: 'production',
-  limit: 50,
-});
 ```
 
 Each call returns the same shape — a `webhook_events` array plus a `pagination` cursor:
@@ -388,13 +388,13 @@ Each call returns the same shape — a `webhook_events` array plus a `pagination
 }
 ```
 
-Each event also carries an `environment` field (`production` or `sandbox`) so you can tell live and test events apart in the log.
+The log is scoped to the calling key's environment: a test key returns only sandbox events and a live key only production events. Each event carries that `environment` value. The optional `environment` parameter, when sent, must match the key's environment; a different value returns `403`.
 
 ---
 
 ### `getWebhookEvent` 🔒
 
-Returns a single event with all its delivery attempts across all endpoints.
+Returns a single event with all its delivery attempts across all endpoints. An event from the other environment than the calling key returns `404`.
 
 ```typescript
 const { webhook_event } = await client.webhooks.getWebhookEvent({
@@ -443,7 +443,7 @@ for (const delivery of webhook_event.deliveries) {
 
 ### `retryWebhookEvent` 🔒
 
-Manually re-delivers the event to all enabled endpoints subscribed to its event type. Each re-delivery is recorded as a new attempt.
+Manually re-delivers the event to all enabled endpoints of the same environment that are subscribed to its event type. Each re-delivery is recorded as a new attempt. An event from the other environment than the calling key returns `404`.
 
 ```typescript
 const result = await client.webhooks.retryWebhookEvent({
@@ -537,7 +537,7 @@ await processEvent(event);
 | `201` | New endpoint created. |
 | `400` | Invalid URL (must be HTTPS), empty event list, invalid event type, or disabled endpoint on test. |
 | `401` | Missing or invalid API key. |
-| `403` | Publishable key used — all webhook operations require a secret key. |
-| `404` | Endpoint or event not found. |
+| `403` | Publishable key used — all webhook operations require a secret key. Also returned by `listWebhookEvents` when `environment` names the other environment than the calling key. |
+| `404` | Endpoint or event not found, including one that belongs to the other environment than the calling key. |
 | `429` | Rate limit exceeded (500 req/hr per secret key). |
 | `500` | Internal server error. |

@@ -3447,6 +3447,7 @@ paths:
             type: string
             enum:
               - pending
+              - confirmed
               - processing
               - shipped
               - delivered
@@ -3777,6 +3778,7 @@ paths:
                   description: Order fulfillment status (defaults to pending)
                   enum:
                     - pending
+                    - confirmed
                     - processing
                     - shipped
                     - delivered
@@ -3959,7 +3961,7 @@ paths:
                   example: USD
                 reservation_ids:
                   type: array
-                  description: Stock reservation ids returned by `POST /v1/checkout/reserve`. Supplying them commits the stock already held for this shopper instead of decrementing it again, which is what keeps a high-demand drop from overselling between reservation and payment.
+                  description: 'Stock reservation ids returned by `POST /v1/checkout/reserve`. Supplying them commits the stock already held for this shopper instead of decrementing it again, which is what keeps a high-demand drop from overselling between reservation and payment. On a `pending` order the ids are kept with the order: they are committed when the order is paid and released when it is cancelled or its payment fails. Only holds on the order''s own items are committed. At most 100 ids.'
                   items:
                     type: string
                   example:
@@ -4508,21 +4510,38 @@ paths:
         - Multiple promotion usage recordings
 
         **Updatable Fields:**
-        - `payment_status`: Payment status (pending, paid, failed, refunded)
-        - `order_status`: Order fulfillment status (pending, processing, shipped, delivered, cancelled)
+        - `payment_status`: Payment status (pending, paid, failed)
+        - `order_status`: Order fulfillment status (pending, confirmed, processing, shipped, delivered, cancelled)
         - `notes`: Additional order notes
         - `tracking_number`: Shipping tracking number
         - `estimated_delivery`: Estimated delivery date/time
         - `shipped_at`: Timestamp when order was shipped
         - `delivered_at`: Timestamp when order was delivered
 
+        **Status transitions:**
+        - `payment_status`: `pending` → `paid` or `failed`; `failed` → `paid`. A `paid` order
+          does not move back, and `refunded` is set by processing a refund, not by this endpoint.
+        - `order_status` moves forward only (`pending` → `confirmed` → `processing` → `shipped` →
+          `delivered`). `cancelled` is available until the order ships. `cancelled` and `delivered`
+          are final, and a cancelled order cannot be marked paid.
+        - Sending a field with the value it already has is not a transition: the request succeeds
+          and nothing is repeated. Any other move is refused with `409 invalid_transition`.
+        - A status change applies only if the order is still in the state it was in when the
+          request began. When two requests change it at once, one succeeds and the other receives
+          `409 order_changed`.
+
         **Automatic Accounting:**
-        When `payment_status` is updated to `paid`, the system automatically:
+        When `payment_status` is updated to `paid`, the system automatically, and once:
         - Triggers accounting entry creation (production only)
-        - Reduces inventory stock for all order items
+        - Reduces inventory stock for all order items, committing the order's own stock holds
         - Updates customer purchase metrics
-        - Processes gift card redemptions (if applicable)
-        - Records promotion usage (if applicable)
+        - Redeems the gift card applied at checkout (if applicable)
+        - Records promotion usage and campaign spend (if applicable)
+        Anything that does not complete is listed in `post_processing_warnings` on the response; the
+        order stays paid.
+
+        When an unpaid order is cancelled or its payment fails, its stock holds are released and any
+        store credit applied to it is returned to the customer.
 
         **Key Type Support:**
         - ✅ Secret keys (full access)
@@ -4576,18 +4595,18 @@ paths:
                     - pending
                     - paid
                     - failed
-                    - refunded
-                  description: Payment status
+                  description: Payment status. See the allowed transitions above.
                   example: paid
                 order_status:
                   type: string
                   enum:
                     - pending
+                    - confirmed
                     - processing
                     - shipped
                     - delivered
                     - cancelled
-                  description: Order fulfillment status
+                  description: Order fulfillment status. See the allowed transitions above.
                   example: processing
                 notes:
                   type: string
@@ -4658,7 +4677,30 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Order'
+                allOf:
+                  - $ref: '#/components/schemas/Order'
+                  - type: object
+                    properties:
+                      post_processing_warnings:
+                        type: array
+                        description: |
+                          Present only when the update marked the order paid and one or more of the
+                          steps that follow (stock, gift card, store credit, promotion usage) did not
+                          complete. The order stays paid; each warning names the step and what needs
+                          follow-up.
+                        items:
+                          type: object
+                          required:
+                            - stage
+                            - message
+                          properties:
+                            stage:
+                              type: string
+                              description: The step that did not complete
+                              example: gift_card_redemption
+                            message:
+                              type: string
+                              description: Human-readable description of the failure
               example:
                 id: 880e8400-e29b-41d4-a716-446655440003
                 customer_id: 550e8400-e29b-41d4-a716-446655440000
@@ -4740,6 +4782,25 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: The requested status change is not allowed from the order's current state (`invalid_transition`), or the order changed while the request was being applied (`order_changed`). The order is left as it was.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_transition:
+                  summary: Transition not allowed
+                  value:
+                    error:
+                      code: invalid_transition
+                      message: payment_status cannot change from paid to pending.
+                order_changed:
+                  summary: Concurrent change
+                  value:
+                    error:
+                      code: order_changed
+                      message: The order changed while this update was being applied. Fetch it and try again.
         '422':
           description: You marked the order paid with a `payment_reference`, but the payment method the merchant added does not report that reference as paid. The order is left unchanged rather than accepted on an unverified claim.
           content:
@@ -4784,7 +4845,16 @@ paths:
         Works with both publishable and secret keys (checkout originates in the
         browser).
 
-        **Rate limit:** 300 requests/hour per API key.
+        **Limits per request:** with a publishable key, at most 25 items and 25 units
+        of any one variant (quantities for a repeated variant are added together);
+        with a secret key, at most 100 items and 1,000 units of any one variant. A
+        request over a limit is refused with `400` and nothing is reserved.
+
+        **Rate limit:** 300 requests/hour per API key, and with a publishable key
+        60 requests/hour per visitor.
+
+        A key issued through GC Connect needs the `orders:write` scope; without it
+        the request returns `403`.
       security:
         - BearerAuth: []
       requestBody:
@@ -4823,7 +4893,7 @@ paths:
                 customer_id:
                   type: string
                   format: uuid
-                  description: Optional - associate the hold with a customer (used for checkout recovery).
+                  description: Optional - associate the hold with a customer (used for checkout recovery). Honoured only with a secret key; with a publishable key the hold is recorded without a customer.
                 session_id:
                   type: string
                   description: Optional - associate the hold with an anonymous browser session.
@@ -4881,6 +4951,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '409':
           description: Insufficient stock - nothing was reserved
           content:
@@ -5014,6 +5086,11 @@ paths:
         - Must be unique per payment attempt
         - Prevents duplicate charges on network retries
         - Returns existing payment if key already used
+        - A request refused before it reaches a payment provider (an invalid body, an unknown order, an
+          amount that does not match the order) does not use up the key: the corrected request can be
+          sent with the same key
+        - While another request with the same key is still being initialized, the response is
+          `409 idempotency_in_progress`; retry shortly with the same key
 
         **🛡️ Amount validation (anti-tampering)**
 
@@ -5464,15 +5541,24 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
-          description: The payment method is still configured with test credentials and cannot take a real payment. The store must switch it to live mode first. On a sandbox request this does not apply.
+          description: '`provider_not_live` — the payment method is still configured with test credentials and cannot take a real payment; the store must switch it to live mode first (a sandbox request is not affected). `idempotency_in_progress` — another request with the same `Idempotency-Key` is still being initialized; retry shortly with the same key.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: provider_not_live
-                  message: stripe is configured with sandbox/test credentials and cannot process live payments. The store must switch stripe to live mode before accepting real payments.
+              examples:
+                provider_not_live:
+                  summary: Payment method not live
+                  value:
+                    error:
+                      code: provider_not_live
+                      message: stripe is configured with sandbox/test credentials and cannot process live payments. The store must switch stripe to live mode before accepting real payments.
+                idempotency_in_progress:
+                  summary: Same Idempotency-Key still in flight
+                  value:
+                    error:
+                      code: idempotency_in_progress
+                      message: A payment with this Idempotency-Key is still being initialized. Retry shortly with the same key.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -10153,8 +10239,19 @@ paths:
           which Galactic Core forwards to the store's Auth verifier (fail-closed).
 
         Mismatch returns `403`. Providing more than one of these headers returns
-        `400`. Protected fields (`store_id`, `auth_user_id`, `environment`) cannot
-        be modified.
+        `400`.
+
+        Only the profile fields listed in the request body are writable. Any other
+        field on the customer record (for example `tier`, `total_spent`,
+        `total_purchases` or `external_id`) is ignored. A body naming no writable
+        field leaves the customer unchanged and returns it.
+
+        `email` is writable only when the request is made with a secret key, from
+        the storefront's server after it has verified the new address. With a
+        publishable key, `email` is ignored like any other non-writable field,
+        because guest orders are linked to a customer by email address. Changing
+        `email` to an address another customer of the store already uses returns
+        `409`.
       security:
         - BearerAuth: []
       parameters:
@@ -10195,6 +10292,7 @@ paths:
                 email:
                   type: string
                   format: email
+                  description: Writable with a secret key only; ignored when the request uses a publishable key.
                 phone:
                   type: string
                 name:
@@ -10206,12 +10304,9 @@ paths:
                   enum:
                     - active
                     - inactive
-                external_id:
-                  type: string
-                  description: |
-                    Optional identifier from an external identity provider. Set or update
-                    the link between this Galactic Core customer and your upstream user.
-                  example: auth0|66a3f8c2b1d9c204a1f7e3d1
+                marketing_consent:
+                  type: boolean
+                  description: Whether the shopper agrees to receive marketing messages from the store.
       responses:
         '200':
           description: Customer updated successfully
@@ -10250,6 +10345,8 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -12374,9 +12471,25 @@ paths:
           description: |
             Customer UUID for personalized pricing.
 
-            When provided, the worker resolves the customer's RFM segment and tier
-            server-side (from the customers + customer_stores tables) and feeds them
-            into pricing rule evaluation. There is no need to pass segment/tier directly.
+            Honored only together with that shopper's own credential: an
+            `x-auth-token` session or an `x-external-auth` assertion that resolves
+            to the same customer. The customer's segment, tier and first-purchase
+            status then feed pricing rule evaluation, and the response is private
+            to that shopper. Without a matching credential the request returns the
+            public price; it is not rejected.
+        - name: x-auth-token
+          in: header
+          required: false
+          description: Galactic Core customer session access_token. Required, together with `customer_id`, for personalized pricing. Provide at most one of `x-auth-token` or `x-external-auth`.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for personalized pricing, resolving to the `customer_id` supplied. Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` signed with the store's `hmac_secret`. Provide at most one of `x-auth-token` or `x-external-auth`.
+          schema:
+            type: string
         - name: quantity
           in: query
           schema:
@@ -12543,9 +12656,7 @@ paths:
                   pricing_context:
                     type: object
                     description: |
-                      Global pricing context for the request. `customer_segment` and
-                      `customer_tier` are resolved server-side from `customer_id`
-                      (they are not request parameters).
+                      Global pricing context for the request.
                     properties:
                       location:
                         type:
@@ -12557,16 +12668,6 @@ paths:
                           - 'null'
                         description: Detected or specified region
                         example: United States
-                      customer_segment:
-                        type:
-                          - string
-                          - 'null'
-                        description: Resolved RFM segment for the supplied customer_id
-                      customer_tier:
-                        type:
-                          - string
-                          - 'null'
-                        description: Resolved customer tier for the supplied customer_id
                       quantity:
                         type:
                           - integer
@@ -12613,8 +12714,6 @@ paths:
                     pricing_context:
                       location: null
                       region: United Kingdom
-                      customer_segment: null
-                      customer_tier: null
                       quantity: null
                       currency: GBP
                       exchange_rate: 0.79
@@ -12762,9 +12861,25 @@ paths:
           description: |
             Customer UUID for personalized pricing.
 
-            When provided, the worker resolves the customer's RFM segment and tier
-            server-side (from the customers + customer_stores tables) and feeds them
-            into pricing rule evaluation. There is no need to pass segment/tier directly.
+            Honored only together with that shopper's own credential: an
+            `x-auth-token` session or an `x-external-auth` assertion that resolves
+            to the same customer. The customer's segment, tier and first-purchase
+            status then feed pricing rule evaluation, and the response is private
+            to that shopper. Without a matching credential the request returns the
+            public price; it is not rejected.
+        - name: x-auth-token
+          in: header
+          required: false
+          description: Galactic Core customer session access_token. Required, together with `customer_id`, for personalized pricing. Provide at most one of `x-auth-token` or `x-external-auth`.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for personalized pricing, resolving to the `customer_id` supplied. Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` signed with the store's `hmac_secret`. Provide at most one of `x-auth-token` or `x-external-auth`.
+          schema:
+            type: string
         - name: quantity
           in: query
           schema:
@@ -13054,9 +13169,7 @@ paths:
                   pricing_context:
                     type: object
                     description: |
-                      Global context used for pricing rule evaluation. `customer_segment`
-                      and `customer_tier` are resolved server-side from `customer_id`
-                      (they are not request parameters).
+                      Global context used for pricing rule evaluation.
                     properties:
                       location:
                         type:
@@ -13067,16 +13180,6 @@ paths:
                           - string
                           - 'null'
                         example: United Kingdom
-                      customer_segment:
-                        type:
-                          - string
-                          - 'null'
-                        description: Resolved RFM segment for the supplied customer_id
-                      customer_tier:
-                        type:
-                          - string
-                          - 'null'
-                        description: Resolved customer tier for the supplied customer_id
                       quantity:
                         type:
                           - integer
@@ -13118,8 +13221,6 @@ paths:
                     pricing_context:
                       location: null
                       region: United Kingdom
-                      customer_segment: null
-                      customer_tier: null
                       quantity: 1
                       currency: GBP
                       exchange_rate: 0.79
@@ -13204,8 +13305,6 @@ paths:
                     pricing_context:
                       location: null
                       region: United Kingdom
-                      customer_segment: null
-                      customer_tier: null
                       quantity: 1
                       currency: GBP
                       exchange_rate: 0.79
@@ -13398,9 +13497,25 @@ paths:
           description: |
             Customer UUID for personalized pricing.
 
-            When provided, the worker resolves the customer's RFM segment and tier
-            server-side (from the customers + customer_stores tables) and feeds them
-            into pricing rule evaluation. There is no need to pass segment/tier directly.
+            Honored only together with that shopper's own credential: an
+            `x-auth-token` session or an `x-external-auth` assertion that resolves
+            to the same customer. The customer's segment, tier and first-purchase
+            status then feed pricing rule evaluation, and the response is private
+            to that shopper. Without a matching credential the request returns the
+            public price; it is not rejected.
+        - name: x-auth-token
+          in: header
+          required: false
+          description: Galactic Core customer session access_token. Required, together with `customer_id`, for personalized pricing. Provide at most one of `x-auth-token` or `x-external-auth`.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for personalized pricing, resolving to the `customer_id` supplied. Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` signed with the store's `hmac_secret`. Provide at most one of `x-auth-token` or `x-external-auth`.
+          schema:
+            type: string
         - name: quantity
           in: query
           schema:
@@ -13690,9 +13805,7 @@ paths:
                   pricing_context:
                     type: object
                     description: |
-                      Global context used for pricing rule evaluation. `customer_segment`
-                      and `customer_tier` are resolved server-side from `customer_id`
-                      (they are not request parameters).
+                      Global context used for pricing rule evaluation.
                     properties:
                       location:
                         type:
@@ -13703,16 +13816,6 @@ paths:
                           - string
                           - 'null'
                         example: United Kingdom
-                      customer_segment:
-                        type:
-                          - string
-                          - 'null'
-                        description: Resolved RFM segment for the supplied customer_id
-                      customer_tier:
-                        type:
-                          - string
-                          - 'null'
-                        description: Resolved customer tier for the supplied customer_id
                       quantity:
                         type:
                           - integer
@@ -13754,8 +13857,6 @@ paths:
                     pricing_context:
                       location: null
                       region: United Kingdom
-                      customer_segment: null
-                      customer_tier: null
                       quantity: 1
                       currency: GBP
                       exchange_rate: 0.79
@@ -13839,8 +13940,6 @@ paths:
                     pricing_context:
                       location: null
                       region: United Kingdom
-                      customer_segment: null
-                      customer_tier: null
                       quantity: 1
                       currency: GBP
                       exchange_rate: 0.79
@@ -18839,6 +18938,16 @@ paths:
         it is automatically disabled (`enabled: false`) and stamped with a
         `disabled_reason`. Re-enable it with a `PATCH` once the endpoint is healthy
         again; re-enabling resets the failure counter.
+
+        An endpoint belongs to the environment of the key that created it
+        (`environment`): an endpoint created with a test key receives only sandbox
+        events, and one created with a live key receives only production events.
+        Endpoints are listed, read, updated, deleted and tested only with a key of
+        the same environment; with a key of the other environment they return `404`.
+
+        Delivery follows redirects, and each redirect target is held to the same
+        rules as the registered URL (HTTPS, public address). A redirect to a
+        disallowed target fails the delivery.
       security:
         - BearerAuth: []
       requestBody:
@@ -19011,6 +19120,7 @@ paths:
                   enabled: true
                   metadata:
                     label: production-erp
+                  environment: production
                   created_at: '2026-06-20T13:39:11.631+00:00'
                   updated_at: '2026-06-20T13:39:11.631+00:00'
                   signing_secret: 68c216748eb34be5adf93e39cda61386337883e7420c4a6d1994eb11346bce20
@@ -19072,6 +19182,7 @@ paths:
                     enabled: true
                     metadata:
                       label: production-erp
+                    environment: production
                     last_success_at: null
                     last_failure_at: null
                     consecutive_failures: 0
@@ -19131,6 +19242,7 @@ paths:
                     - customer.created
                   enabled: true
                   metadata: {}
+                  environment: production
                   last_success_at: null
                   last_failure_at: null
                   consecutive_failures: 0
@@ -19211,6 +19323,7 @@ paths:
                     - order.created
                   enabled: true
                   metadata: {}
+                  environment: production
                   last_success_at: null
                   last_failure_at: null
                   consecutive_failures: 0
@@ -19402,6 +19515,9 @@ paths:
       description: |
         Returns the event log for your store in reverse-chronological order.
         Use this for debugging delivery failures or auditing event history.
+
+        A test key returns only sandbox events and a live key only production
+        events. Requesting the other environment returns `403`.
       security:
         - BearerAuth: []
       parameters:
@@ -19420,7 +19536,10 @@ paths:
             enum:
               - production
               - sandbox
-          description: Filter by the environment the event was emitted in.
+          description: |
+            Must match the calling key's environment (`sandbox` for a test key,
+            `production` for a live key). The key's environment is applied whether or
+            not this parameter is sent; a different value returns `403`.
           example: production
         - name: limit
           in: query
@@ -19489,7 +19608,9 @@ paths:
       tags:
         - Webhooks
       summary: Get a webhook event
-      description: Returns a single event with all its delivery attempts across all endpoints.
+      description: |
+        Returns a single event with all its delivery attempts across all endpoints.
+        An event from the other environment than the calling key returns `404`.
       security:
         - BearerAuth: []
       parameters:
@@ -19560,9 +19681,10 @@ paths:
         - Webhooks
       summary: Retry a webhook event
       description: |
-        Manually re-delivers the event to all enabled endpoints that are subscribed
-        to its event type. Each re-delivery is recorded as a new attempt in the
-        delivery log.
+        Manually re-delivers the event to all enabled endpoints of the same
+        environment that are subscribed to its event type. Each re-delivery is
+        recorded as a new attempt in the delivery log. An event from the other
+        environment than the calling key returns `404`.
       security:
         - BearerAuth: []
       parameters:
@@ -22644,6 +22766,7 @@ components:
           type: string
           enum:
             - pending
+            - confirmed
             - processing
             - shipped
             - delivered
@@ -26109,6 +26232,15 @@ components:
           example:
             - order.paid
             - order.fulfilled
+        environment:
+          type: string
+          enum:
+            - production
+            - sandbox
+          description: |
+            The environment of the key that created the endpoint. The endpoint
+            receives only events from this environment.
+          example: production
         enabled:
           type: boolean
           description: |

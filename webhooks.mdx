@@ -399,6 +399,8 @@ export async function POST(request: Request) {
 | **Retry schedule** | 1 min → 5 min → 30 min → 2 h → 8 h → 24 h → 48 h, then dead-lettered. |
 | **Ordering** | Best-effort. Use `event.created_at` for sequencing logic. |
 | **Payload size** | Capped at 256 KB. |
+| **Environment** | An endpoint receives events from one environment only: sandbox for an endpoint created with a test key, production for one created with a live key or in the Dashboard. |
+| **Redirects** | Followed, with each redirect target held to the same rules as the registered URL (HTTPS, public address). A redirect elsewhere fails the delivery. |
 
 A handler that has not returned `2xx` within 30 seconds is treated as a failed delivery and retried, so heavy processing belongs on a queue rather than inline in the response path.
 

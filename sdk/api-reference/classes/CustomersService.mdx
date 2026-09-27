@@ -160,6 +160,10 @@ const customer = await client.customers.getCustomer({
 
 Partially update a customer's profile. Only the fields you supply are modified. Typical caller: a "Save changes" button on the customer's account page.
 
+The writable fields are `name`, `phone`, `address`, `status` (`active` or `inactive`) and `marketing_consent`. Any other field in `requestBody` — `external_id`, `tier` or a purchase total, for example — is ignored, and a body naming no writable field returns the customer unchanged.
+
+`email` is writable only when the call is made with a secret key, from your storefront's server after it has verified the new address. With a publishable key, `email` is ignored like any other non-writable field, because guest orders are linked to a customer by email address. Changing `email` to an address another customer of the store already uses returns `409`.
+
 ```typescript
 const assertion = signCustomerAssertion(upstreamUserId, process.env.GC_HMAC_SECRET);
 
@@ -396,4 +400,4 @@ const profile = await client.customers.getCustomer({
 | `401` | Invalid API key, or missing/invalid `xAuthToken` |
 | `403` | Forbidden — the customer token does not match the `customer_id` in the path |
 | `404` | Customer not found |
-| `409` | Duplicate email at this store (on `createCustomer`) |
+| `409` | Duplicate email at this store (on `createCustomer`, or an `email` change on `updateCustomer`) |
