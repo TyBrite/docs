@@ -111,13 +111,21 @@ available in the meantime.
 
 A request in conversation runs once and ends there. A **dynamic workflow** is the same intent kept
 running: ask for something ongoing — "keep my featured collection showing what's actually selling",
-"every week, check for slow stock" — and it becomes a rule that re-evaluates on a schedule.
+"every week, check for slow stock" — and it becomes a rule that re-evaluates on a schedule, and
+also as soon as something it depends on changes in the store: a product selling out, new products
+arriving, a burst of orders.
 
 They are dynamic rather than fixed: each evaluation re-reads the store's current figures and decides
 whether anything warrants doing, so the outcome follows the business rather than a predetermined
 sequence — the same workflow features different products as the sales change. This is what
 distinguishes them from [event-driven automations](/workflows/webhooks-automation), where a defined
-action follows a specific event.
+action follows a specific event. An event can wake a workflow early, but what the workflow then does
+is still decided from the store's figures at that moment.
+
+A burst of related changes wakes a workflow once rather than once per change, a workflow's own
+changes never wake it again, and the scheduled evaluation still runs, which is how conditions that no
+single change announces — stock that has stopped selling, a collection member that has gone stale —
+are noticed.
 
 A workflow observes the same approval boundary as a conversation. Reversible merchandising runs
 unattended: rotating a collection to current best sellers, retiring members that stopped selling,
@@ -220,9 +228,10 @@ the ordinary case, nothing changes.
 
 ### Product pages
 
-One workflow arrives with every store rather than being asked for. Once a month it looks for products
-whose search title and description are empty and writes them, so those pages can be found by search
-engines. It works from the product itself and from the terms shoppers on that store have searched for,
+One workflow arrives with every store rather than being asked for. It looks for products whose
+search title and description are empty and writes them, so those pages can be found by search
+engines. A product added or edited without them is picked up shortly afterwards, and a pass once a
+month works through anything still outstanding. It works from the product itself and from the terms shoppers on that store have searched for,
 it only ever fills a gap rather than replacing wording a merchant wrote, and it starts with the pages
 that have nothing at all. A catalogue larger than a month's budget is covered over several months,
 emptiest pages first.
