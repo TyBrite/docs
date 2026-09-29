@@ -358,6 +358,49 @@ const xml = await client.ingestion.getStoreCatalogFeedXml({
 
 **Feed response codes:** `200` (the catalog), `404` (no public feed — not opted in, or a wrong/missing token), `429` (rate limit exceeded).
 
+### `getStoreLlmsTxt`
+
+Returns a store's summary for AI assistants as Markdown, in the llms.txt format: the store's name, description, website and product count, the categories and subcategories it sells with product counts, and its featured products and collections, each linked to the storefront. It carries only what the storefront already shows and follows catalog changes.
+
+The file is published by default. A wholesale store publishes it once the merchant turns it on, and any merchant can turn it off from **Settings → Agentic Commerce**. A store on a trial or with a lapsed subscription returns `404`. No API key is required, and there is no token: the file is either public or not published.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `store` | `string` | Yes | The store's id or its short store code. |
+
+```typescript
+const summary = await client.ingestion.getStoreLlmsTxt({ store: 'GTS001' });
+// summary is a Markdown string:
+// # Galactic Test Store
+//
+// Website: https://gc.tybritelabs.com
+// Products: 54
+//
+// ## What this store sells
+// - Men's Clothing (7)
+//   - Graphic Tees (3)
+```
+
+AI assistants look for `/llms.txt` at the root of a site, so a storefront typically forwards its own `/llms.txt` and `/llms-full.txt` to these two addresses.
+
+### `getStoreLlmsFullTxt`
+
+The complete form of the same file: every product the storefront lists, with its storefront link, category, brand and description, and one line per variant giving its SKU, price, any previous price and whether it is in stock. Same publishing rules as `getStoreLlmsTxt`.
+
+```typescript
+const catalog = await client.ingestion.getStoreLlmsFullTxt({ store: 'GTS001' });
+// ### [4K Action Camera](https://demo-store.tybritelabs.com/products/4k-action-camera-fbc60-de4aeb12)
+//
+// Category: Cameras & Photography › Action Cameras
+// Brand: Pulsewave
+//
+// - Standard — SKU ELEC-ACTIONCAM-01-de4a — 129.00 USD (was 149.00 USD) — in stock
+```
+
+**llms.txt response codes:** `200` (the Markdown file), `404` (the store does not publish one), `429` (rate limit exceeded).
+
 ---
 
 ## Response Codes

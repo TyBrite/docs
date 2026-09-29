@@ -17669,9 +17669,10 @@ paths:
                   format: email
                 name:
                   type: string
-                  description: Customer full name
+                  description: Customer full name. Defaults to the part of the email address before the `@` when omitted.
                 phone:
                   type: string
+                  description: Customer phone number. Stored as an empty string when omitted.
                 address:
                   type: string
                 status:
@@ -28092,6 +28093,99 @@ paths:
                 </products>
         '404':
           description: The store has no public feed.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+  /v1/feeds/{store}/llms.txt:
+    get:
+      operationId: getStoreLlmsTxt
+      tags:
+        - Ingestion
+      summary: Store summary for AI assistants (llms.txt)
+      description: |
+        A Markdown summary of the store in the llms.txt format: its name, description, website and
+        product count, the categories and subcategories it sells with product counts, and its featured
+        products and collections, each linking to the storefront. It carries only what the storefront
+        already shows and is regenerated as the catalog changes.
+
+        `{store}` is the store id or store code. The file is published by default; a wholesale store
+        publishes it only once the merchant turns it on, and the merchant can turn it off at any time.
+        A store on a trial or with a lapsed subscription returns 404. No API key required.
+
+        AI assistants look for `/llms.txt` at the root of a site, so a storefront typically forwards its
+        own `/llms.txt` to this address.
+      parameters:
+        - name: store
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The store summary as Markdown.
+          content:
+            text/markdown:
+              schema:
+                type: string
+              example: |
+                # Galactic Test Store
+
+                Website: https://gc.tybritelabs.com
+                Shop: https://demo-store.tybritelabs.com
+                Products: 54
+
+                ## What this store sells
+
+                - Men's Clothing (7)
+                  - Graphic Tees (3)
+                  - T-Shirts (1)
+                - Kitchen & Dining (5)
+                  - Drinkware (4)
+        '404':
+          description: The store does not publish an llms.txt.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+  /v1/feeds/{store}/llms-full.txt:
+    get:
+      operationId: getStoreLlmsFullTxt
+      tags:
+        - Ingestion
+      summary: Full catalog for AI assistants (llms-full.txt)
+      description: |
+        The complete form of the store's llms.txt: every product the storefront lists, with its
+        storefront link, category, brand and description, and one line per variant giving its SKU,
+        price, any previous price and whether it is in stock. Published under the same rules as the
+        summary. No API key required.
+      parameters:
+        - name: store
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The full catalog as Markdown.
+          content:
+            text/markdown:
+              schema:
+                type: string
+              example: |
+                # Galactic Test Store
+
+                Website: https://gc.tybritelabs.com
+                Shop: https://demo-store.tybritelabs.com
+                Products: 54
+
+                ## Products
+
+                ### [4K Action Camera](https://demo-store.tybritelabs.com/products/4k-action-camera-fbc60-de4aeb12)
+
+                Category: Cameras & Photography › Action Cameras
+                Brand: Pulsewave
+                Waterproof 4K action camera with image stabilization and dual screens.
+
+                - Standard — SKU ELEC-ACTIONCAM-01-de4a — 129.00 USD (was 149.00 USD) — in stock
+        '404':
+          description: The store does not publish an llms.txt.
         '429':
           $ref: '#/components/responses/RateLimitError'
   /v1/marketplace/info:
