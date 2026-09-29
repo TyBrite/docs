@@ -17036,10 +17036,13 @@ paths:
         **Why Secret Key?** Authentication endpoints create and manage user sessions, which should
         only be performed from secure server-side environments.
 
-        **Attempt limits:** attempts are counted per email address — 5 per 15 minutes from one store,
-        20 across every store, whether they succeed or fail. Beyond that the call returns
-        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
-        the same for an address with no account, so a refusal says nothing about whether one exists.
+        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
+        5 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
+        every 60 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
+        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
+        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
+        every store and address, past 20 attempts for one email the call is slowed to one every 60 seconds.
+        Every attempt counts, successful or not, and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -17157,10 +17160,13 @@ paths:
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
 
-        **Attempt limits:** attempts are counted per email address — 10 per 15 minutes from one store,
-        30 across every store, whether they succeed or fail. Beyond that the call returns
-        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
-        the same for an address with no account, so a refusal says nothing about whether one exists.
+        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
+        10 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
+        every 15 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
+        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
+        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
+        every store and address, past 50 attempts for one email the call is slowed to one every 10 seconds.
+        Every attempt counts, successful or not, and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -17288,10 +17294,13 @@ paths:
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
 
-        **Attempt limits:** attempts are counted per email address — 5 per 15 minutes from one store,
-        10 across every store, whether they succeed or fail. Beyond that the call returns
-        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
-        the same for an address with no account, so a refusal says nothing about whether one exists.
+        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
+        5 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
+        every 60 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
+        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
+        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
+        every store and address, past 10 attempts for one email the call is slowed to one every 60 seconds.
+        Every attempt counts, successful or not, and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -17361,10 +17370,13 @@ paths:
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
 
-        **Attempt limits:** attempts are counted per email address — 10 per 15 minutes from one store,
-        10 across every store, whether they succeed or fail. Beyond that the call returns
-        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
-        the same for an address with no account, so a refusal says nothing about whether one exists.
+        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
+        10 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
+        every 30 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
+        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
+        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
+        every store and address, past 20 attempts for one email the call is slowed to one every 30 seconds.
+        Every attempt counts, successful or not, and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -17451,10 +17463,13 @@ paths:
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
 
-        **Attempt limits:** attempts are counted per email address — 5 per 15 minutes from one store,
-        10 across every store, whether they succeed or fail. Beyond that the call returns
-        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
-        the same for an address with no account, so a refusal says nothing about whether one exists.
+        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
+        5 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
+        every 60 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
+        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
+        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
+        every store and address, past 10 attempts for one email the call is slowed to one every 60 seconds.
+        Every attempt counts, successful or not, and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -23712,8 +23727,9 @@ paths:
         **Security:** Always verify that the `state` value in the callback
         matches what you sent before calling this endpoint.
 
-        **Attempt limits:** 30 exchanges per `client_id` and 5 per authorization code in any 10 minutes.
-        Beyond that the call returns `429 rate_limited` with a `Retry-After` header.
+        **Attempt limits:** 30 exchanges per `client_id` from one calling address, and 5 per authorization
+        code, in any 10 minutes; beyond that the call returns `429 rate_limited` with a `Retry-After` header.
+        Past 200 exchanges for one `client_id` across all addresses, it is slowed to one every 2 seconds.
       security: []
       requestBody:
         required: true
@@ -23810,8 +23826,9 @@ paths:
 
         **Rate limit:** 60 requests/hour per IP address.
 
-        **Attempt limits:** 60 revocations per `client_id` in any 10 minutes. Beyond that the call
-        returns `429 rate_limited` with a `Retry-After` header.
+        **Attempt limits:** 60 revocations per `client_id` from one calling address in any 10 minutes;
+        beyond that the call returns `429 rate_limited` with a `Retry-After` header. Past 300 for one
+        `client_id` across all addresses, it is slowed to one every 2 seconds.
       security: []
       requestBody:
         required: true

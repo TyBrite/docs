@@ -371,19 +371,29 @@ await client.authentication.logout();
 
 ### Attempt limits
 
-Attempts are counted against what they act on, whether they succeed or fail. Beyond a limit the call returns `429 rate_limited` with a `Retry-After` header giving the seconds until the window closes.
+Attempts are limited by where they come from, and an account is never locked by attempts made on it. Every attempt counts, successful or not, and an address with no account is treated identically, so a `429` says nothing about whether an account exists. A refused call returns `429 rate_limited` with a `Retry-After` header giving the seconds to wait.
 
-| Method | Counted per | Limit |
+With a **secret key** (a storefront's server, whose address is not the shopper's), each method is limited per store and email address. Past the threshold the account is not refused; it is slowed to one attempt per interval, and `Retry-After` gives the seconds until the next one is accepted.
+
+| Method | Per store and email, 15 minutes | Then one attempt every |
 | --- | --- | --- |
-| `login` | email address | 10 per 15 minutes from one store; 30 per 15 minutes across all stores |
-| `verifyOtp` | email address | 10 per 15 minutes |
-| `register` | email address | 5 per 15 minutes from one store; 20 across all stores |
-| `sendMagicLink`, `resetPassword` | email address | 5 per 15 minutes from one store; 10 across all stores |
-| `refreshToken` | refresh token | 20 per 15 minutes |
-| `updatePassword` | session | 5 per 15 minutes |
-| `getCurrentUser` | session | 120 per minute |
+| `login` | 10 | 15 seconds |
+| `verifyOtp` | 10 | 30 seconds |
+| `register` | 5 | 60 seconds |
+| `sendMagicLink`, `resetPassword` | 5 | 60 seconds |
 
-An address with no account is limited in exactly the same way, so a `429` says nothing about whether an account exists. Because the limits follow the account rather than the caller's address, one busy storefront server signing in many shoppers is not slowed by them.
+With a **publishable key** (a browser), attempts are limited per calling address: 10 per address and email, and 30 per address across all emails, in 15 minutes.
+
+Across every store and address, a higher per-email threshold slows an attack spread over many sources:
+
+| Method | Per email across all stores, 15 minutes | Then one attempt every |
+| --- | --- | --- |
+| `login` | 50 | 10 seconds |
+| `verifyOtp` | 20 | 30 seconds |
+| `register` | 20 | 60 seconds |
+| `sendMagicLink`, `resetPassword` | 10 | 60 seconds |
+
+Session calls are limited per session or token: `refreshToken` 20 per refresh token and `updatePassword` 5 per session in 15 minutes, `getCurrentUser` 120 per session per minute.
 
 <Note>
   **Token Lifetime:** Access tokens are valid for 1 hour. We recommend implementing an interceptor in your application to automatically call `refreshToken` before the access token expires.
