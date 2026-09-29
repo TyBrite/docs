@@ -21,7 +21,7 @@ Published at **[docs.tybritelabs.com](https://docs.tybritelabs.com)**.
 ## The API
 
 <!-- api-counts:start -->
-**160 operations across 139 paths**, grouped into 30 services. The full specification is
+**185 operations across 163 paths**, grouped into 31 services. The full specification is
 [`openapi.yaml`](./openapi.yaml) in this repository, and the reference is generated from it.
 
 **Commerce core** — Products (10), Taxonomy (4), Pricing (3), Cart & Wishlist (10), Orders (5), Customers (7), Payments (3), Shipping (3), Promotions (4), Campaigns (2), Gift Cards (2), Tax (1)
@@ -29,6 +29,8 @@ Published at **[docs.tybritelabs.com](https://docs.tybritelabs.com)**.
 **Discovery** — Search (3), Recommendations (1), Discovery (3), Events (1), Analytics (1)
 
 **Post-purchase and support** — Returns (8), Reviews (5), Messaging (10), Disputes (6)
+
+**Agents** — Agent (25)
 
 **Selling models** — Marketplace (9), B2B wholesale (12)
 

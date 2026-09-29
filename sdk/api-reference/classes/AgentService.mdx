@@ -1,0 +1,2120 @@
+---
+title: "Agent"
+description: "Reference for the AgentService class in the Tybrite SDK: the tools an AI shopping assistant uses to search a store, price a basket and hand a checkout to the shopper."
+---
+
+The `AgentService` class (accessed via `client.agent`) is a set of tools for an AI shopping assistant working on a store. The assistant is yours — your model, your prompts, your conversation design, in a chat widget, a voice interface or a third-party assistant. These tools supply what the model cannot know or must not guess: live stock per variant, the price a shopper is actually charged, the promotion that applies, shipping and tax for an address, the store's return window, and a checkout the shopper confirms themselves.
+
+The tools fall into three kinds:
+
+| Kind | Methods | Cost |
+| :--- | :--- | :--- |
+| **Deterministic tools** | Everything except the two below. Structured input, structured output, read from the store's own data. | The same as any storefront request, counted against the plan's normal request allowance. |
+| **Hosted helpers** | `interpret`, `draftCartFromIntent` | Run a language model and are paid for with the store's **Agent Compute credits**. Optional. |
+| **Checkout intents** | `createCheckoutIntent`, `confirmCheckoutIntent`, `getCheckoutIntent`, `cancelCheckoutIntent` | Deterministic. An assistant creates the intent; the shopper confirms it. |
+
+An assistant built on your own model uses only the deterministic tools and never touches the credit balance. The hosted helpers exist for integrations without a model of their own, or that would rather not spend one on turning a sentence into search filters.
+
+<Note>
+  An assistant never places an order or takes payment by itself. It can price a basket and hold the stock with a checkout intent; the order is placed only when the shopper confirms, and payment then follows the store's normal payment flow.
+</Note>
+
+## The response envelope
+
+Every tool returns the same envelope:
+
+| Field | Meaning |
+| :--- | :--- |
+| `data` | The tool's result. Every figure in it is read from the store, never estimated. |
+| `evidence` | Where each figure was read from — the underlying operation and field, so an assistant can cite its source or a reviewer can trace a number. |
+| `computed_at` | When the figures were read. |
+| `currency` | The ISO 4217 code every amount in `data` is expressed in, or `null` when `data` holds no amounts. |
+| `environment` | `production` or `sandbox`, from the key used. |
+
+The two hosted helpers add `usage`: `credits_debited` (in US dollars) and `model_class`. Most read tools accept `fields`, a comma-separated list of top-level `data` keys to return, to keep an assistant's context small.
+
+## Credentials
+
+Most tools need only an API key, and a publishable key is enough. Tools that read or act on one shopper's own data also need that shopper's credential — exactly one of:
+
+| Parameter | What it is |
+| :--- | :--- |
+| `xAuthToken` | A Galactic Core session token from `client.authentication.*`. |
+| `xExternalAuth` | A short assertion your backend signs after verifying the shopper in your own identity provider. |
+| `xIdpToken` | The shopper's raw token from the store's own identity provider, checked by the verifier the store registered. |
+
+`getUsage` is the only tool that requires a secret key.
+
+## Discovering products
+
+### `getCapabilities`
+
+The tool manifest for the store: every tool with its HTTP operation, a JSON Schema for its request and for its response `data`, the credential it needs, and its cost class (`deterministic` or `hosted_helper`). An assistant can register its tools from this manifest instead of from a hand-written list.
+
+`hosted_helpers_available` says whether the two hosted helpers can be called now. When it is `false`, `hosted_helpers_reason` gives the reason — `disabled` (the merchant has not turned them on), `paused`, or `insufficient_credits`. The deterministic tools are always available. The response below shows one entry from the manifest's `tools` array, with its request schema shortened to three properties.
+
+```typescript
+const { data } = await client.agent.getCapabilities();
+
+const tools = data.tools!.filter(
+  (t) => t.cost_class === 'deterministic' || data.hosted_helpers_available
+);
+```
+
+```json Response
+{
+  "data": {
+    "tools": [
+      {
+        "name": "search",
+        "method": "POST",
+        "path": "/v1/agent/search",
+        "auth": "publishable",
+        "cost_class": "deterministic",
+        "description": "Constraint search. Each result lists which constraints it satisfied.",
+        "request_schema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "maxLength": 300,
+              "description": "Free text matched semantically where the store supports it, else against name, brand, category, SKU and tags."
+            },
+            "price_max": {
+              "type": "number",
+              "minimum": 0
+            },
+            "in_stock_only": {
+              "type": "boolean"
+            }
+          }
+        },
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "product_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "variant_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "brand": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "price": {
+                    "type": "number"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "in_stock": {
+                    "type": "boolean"
+                  },
+                  "match_reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "constraint": {
+                          "type": "string"
+                        },
+                        "detail": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "total_matched": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    ],
+    "hosted_helpers_available": false,
+    "hosted_helpers_reason": "disabled",
+    "response_contract": {
+      "data": "object",
+      "evidence": "array",
+      "computed_at": "date-time",
+      "currency": "string|null",
+      "environment": "production|sandbox"
+    }
+  },
+  "evidence": [
+    {
+      "source": "agent",
+      "field": "tools"
+    },
+    {
+      "source": "store",
+      "field": "hosted_helpers"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:20.260Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+### `search`
+
+Constraint search over the catalogue. Every constraint is optional; each result carries `match_reasons` naming which constraints it satisfied, so an assistant can explain a recommendation from the data rather than from its own impression of the product.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `requestBody.query` | `string` | Free text, matched by meaning where the store has semantic search, and against name, brand, category, SKU and tags. A direct text match ranks above a match by meaning alone. |
+| `requestBody.price_min` / `price_max` | `number` | Bounds on the catalogue selling price. |
+| `requestBody.category` | `string` | A category or subcategory name, case-insensitive. |
+| `requestBody.attributes` | `Record<string, string>` | Attribute name to wanted value, such as `{ "color": "black" }`, matched against variant attributes, product attributes, brand and category. |
+| `requestBody.in_stock_only` | `boolean` | Excludes a product only when no variant is in stock. |
+| `requestBody.limit` | `number` | 1–50, default 10. |
+
+`price` in a result is the catalogue selling price. What a shopper pays after dynamic pricing, promotions, shipping and tax comes from `quote`. `semantic_search` reports whether ranking by meaning was used for this call.
+
+```typescript
+const { data } = await client.agent.search({
+  requestBody: { query: 'hoodie', price_max: 60, in_stock_only: true, limit: 2 },
+});
+
+for (const r of data.results!) {
+  console.log(r.name, r.price, r.match_reasons!.map((m) => m.detail).join('; '));
+}
+```
+
+```json Response
+{
+  "data": {
+    "results": [
+      {
+        "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+        "name": "Galactic Zip Hoodie",
+        "brand": "Galactic",
+        "category": "Wearables",
+        "subcategory": "Hoodies",
+        "price": 48,
+        "list_price": 48,
+        "currency": "EUR",
+        "in_stock": true,
+        "stock": 25,
+        "has_variants": true,
+        "thumbnail_url": "https://images.unsplash.com/photo-1565693413579-8a73ffa8de15?w=400",
+        "attributes": {
+          "brand": "Galactic",
+          "category": "Wearables",
+          "subcategory": "Hoodies"
+        },
+        "match_reasons": [
+          {
+            "constraint": "query",
+            "detail": "semantic match (score 0.67) and text match"
+          },
+          {
+            "constraint": "price",
+            "detail": "price 48"
+          },
+          {
+            "constraint": "in_stock_only",
+            "detail": "in stock"
+          }
+        ],
+        "score": 0.67
+      }
+    ],
+    "total_matched": 1,
+    "scanned": 216,
+    "catalog_truncated": false,
+    "semantic_search": "used",
+    "constraints": {
+      "query": "hoodie",
+      "price_max": 60,
+      "in_stock_only": true
+    }
+  },
+  "evidence": [
+    {
+      "source": "products",
+      "operation": "GET /v1/products",
+      "field": "selling_price"
+    },
+    {
+      "source": "products",
+      "operation": "GET /v1/products",
+      "field": "stock"
+    },
+    {
+      "source": "search",
+      "operation": "POST /v1/search",
+      "field": "score"
+    },
+    {
+      "source": "products",
+      "operation": "GET /v1/products/{id}",
+      "field": "variants.stock"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:25.353Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `interpret`
+
+A hosted helper. It turns a request in plain language into the exact constraint object `search` accepts, and lists in `unresolved` the parts it could not map to a constraint — a recipient, an occasion — so the assistant can ask a follow-up question or carry them into its own reply.
+
+It debits the store's Agent Compute credits at the true cost of the call and reports the amount in `usage`. A call that fails keeps no credits. `query` is required, up to 500 characters.
+
+```typescript
+const { data } = await client.agent.interpret({
+  requestBody: { query: 'a black hoodie under 60 for my brother' },
+});
+
+const { data: found } = await client.agent.search({ requestBody: data.constraints! });
+```
+
+```json Response
+{
+  "data": {
+    "constraints": {
+      "query": "hoodie",
+      "price_max": 60,
+      "attributes": {
+        "color": "black"
+      },
+      "in_stock_only": true
+    },
+    "unresolved": [
+      "for my brother"
+    ]
+  },
+  "evidence": [
+    {
+      "source": "hosted_helper",
+      "operation": "interpret",
+      "field": "constraints"
+    }
+  ],
+  "computed_at": "2026-09-28T21:49:12.108Z",
+  "currency": null,
+  "environment": "sandbox",
+  "usage": {
+    "credits_debited": 0.000412,
+    "model_class": "fast"
+  }
+}
+```
+
+### `getProductContext`
+
+A dossier on one product: each variant with its live stock and the price a shopper is charged, the promotion that applies to a single unit, published specifications (per variant and merged), the review summary with its rating distribution, where the store ships and at what base fees, and the store's return window.
+
+A specification the merchant has not published is absent — the dossier never fills a gap by inference. The exact shipping fee for a particular address comes from `quote`.
+
+```typescript
+const { data } = await client.agent.getProductContext({
+  id: '289533e8-f5b6-4d4f-bb23-2127875feb70',
+});
+
+const inStock = data.variants!.filter((v) => v.in_stock);
+```
+
+```json Response
+{
+  "data": {
+    "product": {
+      "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+      "name": "Galactic Zip Hoodie",
+      "brand": "Galactic",
+      "category": "Wearables",
+      "subcategory": "Hoodies",
+      "slug": "galactic-zip-hoodie-28953",
+      "thumbnail_url": "https://images.unsplash.com/photo-1565693413579-8a73ffa8de15?w=400",
+      "description": "Comfortable zip hoodie with galactic design and soft fabric.",
+      "tags": [],
+      "attributes": null
+    },
+    "variants": [
+      {
+        "variant_id": "212c75d3-063e-40ed-800e-24f7fb302928",
+        "sku": "FEED-HOODIE-GRY-L",
+        "name": "Grey / L",
+        "attributes": null,
+        "is_default": false,
+        "price": 48,
+        "list_price": 48,
+        "sale_price": null,
+        "price_adjustments": [],
+        "stock": 20,
+        "in_stock": true,
+        "specifications": null
+      },
+      {
+        "variant_id": "ba03d8ca-83d1-4509-add1-96a98f8d1c08",
+        "sku": "FEED-HOODIE-BLK-M",
+        "name": "Black / M",
+        "attributes": null,
+        "is_default": false,
+        "price": 50,
+        "list_price": 50,
+        "sale_price": null,
+        "price_adjustments": [],
+        "stock": 15,
+        "in_stock": true,
+        "specifications": null
+      },
+      {
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+        "sku": "FEED-HOODIE-GRY-M",
+        "name": "Grey / M",
+        "attributes": null,
+        "is_default": true,
+        "price": 48,
+        "list_price": 48,
+        "sale_price": null,
+        "price_adjustments": [],
+        "stock": 25,
+        "in_stock": true,
+        "specifications": null
+      }
+    ],
+    "price_range": {
+      "min": 48,
+      "max": 50
+    },
+    "total_stock": 60,
+    "promotion": null,
+    "specifications": {},
+    "reviews": {
+      "count": 0,
+      "average_rating": null,
+      "distribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      },
+      "verified_count": 0
+    },
+    "shipping": {
+      "currency": "EUR",
+      "ships_anywhere": false,
+      "zones": [
+        {
+          "name": "USA",
+          "fee": 1500,
+          "free_threshold": 100000
+        },
+        {
+          "name": "United Kingdom",
+          "fee": 2500,
+          "free_threshold": 100000
+        },
+        {
+          "name": "Kenya",
+          "fee": 250,
+          "free_threshold": 10000
+        }
+      ],
+      "distance_tiers": [
+        {
+          "name": "Within Nairobi",
+          "fee": 100,
+          "max_distance_meters": 50000,
+          "free_threshold": 100000
+        }
+      ],
+      "note": "The exact fee for an address comes from POST /v1/agent/quote."
+    },
+    "returns": {
+      "accepted": true,
+      "window_days": 10
+    }
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+      "field": "variants.resolved_price"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:27.388Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `compare`
+
+Two to five products side by side: price and price range, stock, rating and the return window, with `spec_rows` aligning every published specification across them. A specification one product does not publish is `null` in its column.
+
+```typescript
+const { data } = await client.agent.compare({
+  requestBody: {
+    product_ids: ['289533e8-f5b6-4d4f-bb23-2127875feb70', '3afdb59a-7f7f-4abb-baa1-2e37709c1128'],
+  },
+});
+```
+
+```json Response
+{
+  "data": {
+    "products": [
+      {
+        "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+        "name": "Galactic Zip Hoodie",
+        "brand": "Galactic",
+        "category": "Wearables",
+        "price": 48,
+        "price_range": {
+          "min": 48,
+          "max": 50
+        },
+        "in_stock": true,
+        "total_stock": 60,
+        "rating": {
+          "average": null,
+          "count": 0
+        },
+        "return_window_days": 10,
+        "returns_accepted": true
+      },
+      {
+        "product_id": "3afdb59a-7f7f-4abb-baa1-2e37709c1128",
+        "name": "Selling Plans Ski Wax",
+        "brand": "GC-Test",
+        "category": "General",
+        "price": 9.95,
+        "price_range": {
+          "min": 9.95,
+          "max": 49.95
+        },
+        "in_stock": true,
+        "total_stock": 30,
+        "rating": {
+          "average": null,
+          "count": 0
+        },
+        "return_window_days": 10,
+        "returns_accepted": true
+      }
+    ],
+    "spec_rows": []
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "field": "resolved_price"
+    },
+    {
+      "source": "products",
+      "operation": "GET /v1/product-specifications",
+      "field": "specification_data"
+    },
+    {
+      "source": "reviews",
+      "operation": "GET /v1/reviews",
+      "field": "summary"
+    },
+    {
+      "source": "store",
+      "field": "returns_window_days"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:29.740Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `checkFit`
+
+Checks one product against a set of constraints and sorts them into `met`, `missed` and `unknown`. `unknown` holds constraints that cannot be judged because the merchant has not published that attribute — the difference between "not black" and "colour not stated". A price constraint is met when any variant's price fits it, and a stock constraint when any variant is in stock. When a constraint is missed or unknown, `alternatives` lists in-stock products that meet more of them.
+
+```typescript
+const { data } = await client.agent.checkFit({
+  requestBody: {
+    product_id: '289533e8-f5b6-4d4f-bb23-2127875feb70',
+    constraints: { price_max: 30, in_stock_only: true, attributes: { color: 'black' } },
+  },
+});
+```
+
+```json Response
+{
+  "data": {
+    "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+    "met": [
+      {
+        "constraint": "in_stock",
+        "detail": "in stock"
+      }
+    ],
+    "missed": [
+      {
+        "constraint": "price",
+        "detail": "price 48"
+      }
+    ],
+    "unknown": [
+      {
+        "constraint": "attribute:color",
+        "detail": "not published for this product"
+      }
+    ],
+    "alternatives": []
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+      "field": "resolved_price"
+    },
+    {
+      "source": "products",
+      "operation": "GET /v1/product-specifications",
+      "field": "specification_data"
+    },
+    {
+      "source": "products",
+      "operation": "GET /v1/products",
+      "field": "stock"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:33.256Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `getAlternatives`
+
+Alternatives to a product by `mode`: `similar`, `cheaper` (priced below the product's lowest variant), `in_stock`, or `same_spec` (matching every specification both products publish, ignoring identity fields such as a model number). `basis` reports where the candidates came from — `recommendations` where the store's recommendations are available, otherwise `same_category`. `limit` is 1–20, default 5.
+
+```typescript
+const { data } = await client.agent.getAlternatives({
+  requestBody: { product_id: '289533e8-f5b6-4d4f-bb23-2127875feb70', mode: 'in_stock', limit: 2 },
+});
+```
+
+```json Response
+{
+  "data": {
+    "base": {
+      "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+      "name": "Galactic Zip Hoodie",
+      "price": 48
+    },
+    "mode": "in_stock",
+    "basis": "same_category",
+    "alternatives": []
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+      "field": "resolved_price"
+    },
+    {
+      "source": "products",
+      "operation": "GET /v1/products",
+      "field": "selling_price"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:35.751Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+## Pricing and carts
+
+### `quote`
+
+The landed price of a basket: each line at the price a shopper is charged, the best promotion for the basket, shipping and tax for the address, and the grand total. The steps run in the order an order is priced — the promotion first, shipping on the discounted amount, tax last — so a quote and the order placed from it agree.
+
+A line that cannot be bought as asked is flagged with `available: false` and an `unavailable_reason`; it stays in `lines` and is left out of the totals. Without an address, `shipping` and `tax` report `status: 'address_required'` and `total_is_final` is `false`. `country` (ISO 3166-1 alpha-2) is needed for tax; `line1` with `city`, or `latitude` with `longitude`, for shipping.
+
+```typescript
+const { data: quote } = await client.agent.quote({
+  requestBody: {
+    items: [
+      { variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a', quantity: 2 },
+      { variant_id: '06cf8d3e-da82-4d6f-896f-d756f80c592f', quantity: 1 },
+    ],
+    shipping_address: {
+      name: 'John Doe', line1: '350 Fifth Avenue', city: 'New York',
+      state: 'NY', postal_code: '10118', country: 'US',
+    },
+  },
+});
+```
+
+```json Response
+{
+  "data": {
+    "lines": [
+      {
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+        "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+        "name": "Galactic Zip Hoodie",
+        "variant_name": "Grey / M",
+        "sku": "FEED-HOODIE-GRY-M",
+        "quantity": 2,
+        "unit_price": 48,
+        "list_price": 48,
+        "line_total": 96,
+        "category_name": "Wearables",
+        "available": true,
+        "stock": 25,
+        "unavailable_reason": null
+      },
+      {
+        "variant_id": "06cf8d3e-da82-4d6f-896f-d756f80c592f",
+        "product_id": "3afdb59a-7f7f-4abb-baa1-2e37709c1128",
+        "name": "Selling Plans Ski Wax",
+        "variant_name": "Selling Plans Ski Wax",
+        "sku": "selling-plans-ski-wax-selling-plans-ski-wax",
+        "quantity": 1,
+        "unit_price": 24.95,
+        "list_price": 24.95,
+        "line_total": 24.95,
+        "category_name": "General",
+        "available": true,
+        "stock": 10,
+        "unavailable_reason": null
+      }
+    ],
+    "subtotal": 120.95,
+    "discount": {
+      "amount": 0,
+      "promotion": null
+    },
+    "shipping": {
+      "status": "quoted",
+      "amount": 1500,
+      "description": "USA",
+      "free_threshold": 100000,
+      "is_free": false
+    },
+    "tax": {
+      "status": "quoted",
+      "amount": 223.58,
+      "source": "fallback",
+      "prices_include_tax": true
+    },
+    "grand_total": 1620.95,
+    "total_is_final": true,
+    "unavailable_count": 0,
+    "currency": "EUR",
+    "shipping_address": {
+      "line1": "350 Fifth Avenue",
+      "city": "New York",
+      "state": "NY",
+      "postal_code": "10118",
+      "country": "US",
+      "name": "John Doe"
+    }
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+      "field": "resolved_price"
+    },
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "06cf8d3e-da82-4d6f-896f-d756f80c592f",
+      "field": "resolved_price"
+    },
+    {
+      "source": "promotions",
+      "operation": "POST /v1/promotions/calculate-best",
+      "field": "discount"
+    },
+    {
+      "source": "shipping",
+      "operation": "shipping quote",
+      "field": "fee"
+    },
+    {
+      "source": "tax",
+      "operation": "POST /v1/tax/preview",
+      "field": "tax_amount"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:38.925Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `createCartDraft`
+
+A draft cart, kept apart from the shopper's live cart, returned with its quote. An assistant can build and revise a draft through a conversation without touching what the shopper has already put in their cart. A draft expires after 24 hours. Sending a shopper credential records the draft against that shopper; without one the draft is anonymous.
+
+```typescript
+const { data } = await client.agent.createCartDraft({
+  requestBody: { items: [{ variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a', quantity: 1 }] },
+});
+
+const draftId = data.draft!.id;
+```
+
+```json Response
+{
+  "data": {
+    "draft": {
+      "id": "b45506d9-6f01-4ac5-aaf7-7fc3a19e8863",
+      "items": [
+        {
+          "quantity": 1,
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a"
+        }
+      ],
+      "source": "items",
+      "expires_at": "2026-09-29T21:53:40.76+00:00",
+      "applied_at": null,
+      "created_at": "2026-09-28T21:53:40.856357+00:00"
+    },
+    "quote": {
+      "lines": [
+        {
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+          "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+          "name": "Galactic Zip Hoodie",
+          "variant_name": "Grey / M",
+          "sku": "FEED-HOODIE-GRY-M",
+          "quantity": 1,
+          "unit_price": 48,
+          "list_price": 48,
+          "line_total": 48,
+          "category_name": "Wearables",
+          "available": true,
+          "stock": 25,
+          "unavailable_reason": null
+        }
+      ],
+      "subtotal": 48,
+      "discount": {
+        "amount": 0,
+        "promotion": null
+      },
+      "shipping": {
+        "status": "address_required",
+        "amount": null,
+        "description": null,
+        "free_threshold": null,
+        "is_free": null
+      },
+      "tax": {
+        "status": "address_required",
+        "amount": null,
+        "source": null,
+        "prices_include_tax": false
+      },
+      "grand_total": 48,
+      "total_is_final": false,
+      "unavailable_count": 0,
+      "currency": "EUR",
+      "shipping_address": null
+    }
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+      "field": "resolved_price"
+    },
+    {
+      "source": "promotions",
+      "operation": "POST /v1/promotions/calculate-best",
+      "field": "discount"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:40.945Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `draftCartFromIntent`
+
+A hosted helper. An intent such as "a birthday gift for a runner, under 80" and an optional `budget` become a priced, stock-checked draft. The request is turned into constraints, the catalogue is searched for in-stock products, and a model chooses from those results only, by variant — it never supplies a price. Every amount in the draft comes from the quote, and `over_budget` reports whether the quoted total exceeds the budget. `selections` gives the reason for each choice.
+
+It debits the store's Agent Compute credits for both model steps; `usage` reports the total. A request that no in-stock product matches returns `404`.
+
+```typescript
+const { data } = await client.agent.draftCartFromIntent({
+  requestBody: { intent: 'a black hoodie for my brother', budget: 60 },
+});
+```
+
+```json Response
+{
+  "data": {
+    "draft": {
+      "id": "b45506d9-6f01-4ac5-aaf7-7fc3a19e8863",
+      "items": [
+        {
+          "quantity": 1,
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a"
+        }
+      ],
+      "source": "intent",
+      "expires_at": "2026-09-29T21:53:40.76+00:00",
+      "applied_at": null,
+      "created_at": "2026-09-28T21:53:40.856357+00:00"
+    },
+    "quote": {
+      "lines": [
+        {
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+          "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+          "name": "Galactic Zip Hoodie",
+          "variant_name": "Grey / M",
+          "sku": "FEED-HOODIE-GRY-M",
+          "quantity": 1,
+          "unit_price": 48,
+          "list_price": 48,
+          "line_total": 48,
+          "category_name": "Wearables",
+          "available": true,
+          "stock": 25,
+          "unavailable_reason": null
+        }
+      ],
+      "subtotal": 48,
+      "discount": {
+        "amount": 0,
+        "promotion": null
+      },
+      "shipping": {
+        "status": "address_required",
+        "amount": null,
+        "description": null,
+        "free_threshold": null,
+        "is_free": null
+      },
+      "tax": {
+        "status": "address_required",
+        "amount": null,
+        "source": null,
+        "prices_include_tax": false
+      },
+      "grand_total": 48,
+      "total_is_final": false,
+      "unavailable_count": 0,
+      "currency": "EUR",
+      "shipping_address": null
+    },
+    "selections": [
+      {
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+        "quantity": 1,
+        "reason": "A grey zip hoodie within the budget"
+      }
+    ],
+    "constraints": {
+      "query": "hoodie",
+      "price_max": 60,
+      "in_stock_only": true
+    },
+    "unresolved": [
+      "for my brother"
+    ],
+    "over_budget": false
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+      "field": "resolved_price"
+    },
+    {
+      "source": "promotions",
+      "operation": "POST /v1/promotions/calculate-best",
+      "field": "discount"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:40.945Z",
+  "currency": "EUR",
+  "environment": "sandbox",
+  "usage": {
+    "credits_debited": 0.001873,
+    "model_class": "fast+reasoning"
+  }
+}
+```
+
+### `getCartDraft`
+
+A draft with a fresh quote: prices, promotion and availability, and — when the draft was created with an address — shipping and tax, all read again at the time of the call.
+
+```typescript
+const { data } = await client.agent.getCartDraft({ id: draftId });
+```
+
+```json Response
+{
+  "data": {
+    "draft": {
+      "id": "b45506d9-6f01-4ac5-aaf7-7fc3a19e8863",
+      "items": [
+        {
+          "quantity": 1,
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a"
+        }
+      ],
+      "source": "items",
+      "expires_at": "2026-09-29T21:53:40.76+00:00",
+      "applied_at": null,
+      "created_at": "2026-09-28T21:53:40.856357+00:00"
+    },
+    "quote": {
+      "lines": [
+        {
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+          "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+          "name": "Galactic Zip Hoodie",
+          "variant_name": "Grey / M",
+          "sku": "FEED-HOODIE-GRY-M",
+          "quantity": 1,
+          "unit_price": 48,
+          "list_price": 48,
+          "line_total": 48,
+          "category_name": "Wearables",
+          "available": true,
+          "stock": 25,
+          "unavailable_reason": null
+        }
+      ],
+      "subtotal": 48,
+      "discount": {
+        "amount": 0,
+        "promotion": null
+      },
+      "shipping": {
+        "status": "address_required",
+        "amount": null,
+        "description": null,
+        "free_threshold": null,
+        "is_free": null
+      },
+      "tax": {
+        "status": "address_required",
+        "amount": null,
+        "source": null,
+        "prices_include_tax": false
+      },
+      "grand_total": 48,
+      "total_is_final": false,
+      "unavailable_count": 0,
+      "currency": "EUR",
+      "shipping_address": null
+    }
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+      "field": "resolved_price"
+    },
+    {
+      "source": "promotions",
+      "operation": "POST /v1/promotions/calculate-best",
+      "field": "discount"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:45.495Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `applyCartDraft`
+
+Adds each of the draft's items to the shopper's live cart and returns the cart. `applied` reports the outcome per item. A draft is applied once. Requires the shopper's credential.
+
+```typescript
+const { data } = await client.agent.applyCartDraft({ id: draftId, xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": {
+    "draft_id": "b45506d9-6f01-4ac5-aaf7-7fc3a19e8863",
+    "applied": [
+      {
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+        "quantity": 1,
+        "added": true
+      }
+    ],
+    "cart": {
+      "items": [
+        {
+          "id": "3f4a5acc-74d2-429a-bd3d-08ca1b9d489f",
+          "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+          "product_name": "Galactic Zip Hoodie",
+          "variant_name": "Grey / M",
+          "variant_attributes": {},
+          "product_sku": "FEED-HOODIE-GRY-M",
+          "thumbnail_url": "https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=400",
+          "media": [
+            {
+              "id": "da966102-1b52-4ce3-ae56-afbfbd390fd8",
+              "url": "https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=400",
+              "type": "image",
+              "alt_text": null,
+              "position": 1,
+              "is_primary": true
+            }
+          ],
+          "quantity": 1,
+          "unit_price": 48,
+          "selling_price": 48,
+          "total_price": 48,
+          "stock_available": 25,
+          "has_variants": true,
+          "created_at": "2026-09-28T21:54:02.394507+00:00",
+          "updated_at": "2026-09-28T21:54:02.394507+00:00"
+        }
+      ],
+      "total_items": 1,
+      "subtotal": 48,
+      "session_id": null,
+      "customer_id": "9d2a554d-3141-4a19-b096-2ecb9e053c4c"
+    }
+  },
+  "evidence": [
+    {
+      "source": "cart",
+      "operation": "POST /v1/cart/items",
+      "field": "items"
+    }
+  ],
+  "computed_at": "2026-09-28T21:54:03.154Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+### `getCartInsights`
+
+What an assistant might point out about a cart: lines that can no longer be bought as they are, prices that changed since each item was added, the promotion the cart qualifies for, the gap to free shipping for a destination, and complementary items where the store's recommendations provide them.
+
+It reads a draft when `draftId` is given; otherwise the shopper's live cart, identified by their credential or, for an anonymous cart, by `xSessionId`. Pass the destination (`country`, and optionally `postalCode`, `city`, `state`, `line1`) for the free-shipping gap.
+
+```typescript
+const { data } = await client.agent.getCartInsights({
+  draftId,
+  country: 'US',
+  postalCode: '10118',
+  city: 'New York',
+});
+```
+
+```json Response
+{
+  "data": {
+    "source": "draft",
+    "draft_id": "b45506d9-6f01-4ac5-aaf7-7fc3a19e8863",
+    "unavailable": [],
+    "price_changes": [],
+    "promotion": null,
+    "free_shipping": {
+      "threshold": 100000,
+      "qualifies": false,
+      "gap": 99952
+    },
+    "free_shipping_status": "quoted",
+    "complementary": [],
+    "complementary_basis": "unavailable",
+    "subtotal": 48
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+      "field": "resolved_price"
+    },
+    {
+      "source": "promotions",
+      "operation": "POST /v1/promotions/calculate-best",
+      "field": "discount"
+    },
+    {
+      "source": "shipping",
+      "operation": "shipping quote",
+      "field": "fee"
+    },
+    {
+      "source": "tax",
+      "operation": "POST /v1/tax/preview",
+      "field": "tax_amount"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:49.480Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+## The shopper's own data
+
+These tools read only the shopper's own records, identified by their credential. `getShopperContext` and `getReorderSuggestions` read the shopper's order history for personalisation, so they also require the shopper's consent; without it they return `403 consent_required`. This consent is separate from email marketing consent.
+
+### `getConsent`
+
+Whether the shopper has allowed agent tools to use their own history.
+
+```typescript
+const { data } = await client.agent.getConsent({ xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": {
+    "personalization": true,
+    "granted_at": "2026-09-28T21:53:54.725+00:00",
+    "revoked_at": null,
+    "updated_at": "2026-09-28T21:53:54.725+00:00"
+  },
+  "evidence": [
+    {
+      "source": "agent",
+      "field": "consent"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:55.045Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+### `setConsent`
+
+Records the shopper's choice. Pass `personalization: false` to revoke.
+
+```typescript
+const { data } = await client.agent.setConsent({
+  requestBody: { personalization: true },
+  xAuthToken: shopperToken,
+});
+```
+
+```json Response
+{
+  "data": {
+    "personalization": true,
+    "granted_at": "2026-09-28T21:53:54.725+00:00",
+    "revoked_at": null,
+    "updated_at": "2026-09-28T21:53:54.725+00:00"
+  },
+  "evidence": [
+    {
+      "source": "agent",
+      "field": "consent"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:55.045Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+### `getShopperContext`
+
+From the shopper's own data only: sizes they have ordered, the price band of what they buy, their recent orders, and their wishlist with availability. Requires consent. The example is a shopper with no orders yet.
+
+```typescript
+const { data } = await client.agent.getShopperContext({ xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": {
+    "sizes": [],
+    "price_band": null,
+    "recent_orders": [],
+    "order_count": 0,
+    "wishlist": []
+  },
+  "evidence": [
+    {
+      "source": "orders",
+      "field": "orders (own)"
+    },
+    {
+      "source": "orders",
+      "field": "order items unit_price (own)"
+    },
+    {
+      "source": "products",
+      "field": "variant_attributes"
+    },
+    {
+      "source": "wishlist",
+      "operation": "GET /v1/wishlist",
+      "field": "stock_available"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:57.300Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+### `getWishlistInsights`
+
+The shopper's wishlist with each item's current stock and the price they would be charged now, and whether that price is below the item's list price — the basis for "back in stock" and "now cheaper" prompts.
+
+```typescript
+const { data } = await client.agent.getWishlistInsights({ xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": {
+    "items": [],
+    "in_stock_count": 0,
+    "below_list_price_count": 0
+  },
+  "evidence": [
+    {
+      "source": "wishlist",
+      "operation": "GET /v1/wishlist",
+      "field": "items"
+    },
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "field": "resolved_price"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:59.100Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+### `getReorderSuggestions`
+
+Items the shopper has bought before, most often first, with how many they usually buy and the current price and stock. Requires consent.
+
+```typescript
+const { data } = await client.agent.getReorderSuggestions({ xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": {
+    "suggestions": [],
+    "orders_considered": 0
+  },
+  "evidence": [
+    {
+      "source": "orders",
+      "field": "order items (own)"
+    },
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "field": "resolved_price"
+    }
+  ],
+  "computed_at": "2026-09-28T21:54:00.080Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+### `getOrderStatus`
+
+The status of one of the shopper's own orders: order and payment status, tracking, the return window for this order, and `allowed_actions` — what the shopper can do next, such as `request_return` until a date, `track_shipment`, or `complete_payment`. `placed_through_agent` is `true` for an order placed from a checkout intent.
+
+```typescript
+const { data } = await client.agent.getOrderStatus({
+  id: '74a3221b-a5dc-4e56-9b9e-2d0c55611bd5',
+  xAuthToken: shopperToken,
+});
+```
+
+```json Response
+{
+  "data": {
+    "order_id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+    "order_number": "ORD-1790632457762",
+    "status": "pending",
+    "payment_status": "pending",
+    "total": 1548,
+    "tracking_number": null,
+    "estimated_delivery": null,
+    "shipped_at": null,
+    "delivered_at": null,
+    "placed_at": "2026-09-28T21:54:20.218758+00:00",
+    "placed_through_agent": true,
+    "returns": {
+      "eligible": true,
+      "reason": null,
+      "window_days": 10,
+      "closes_at": "2026-10-08T21:54:20.218Z",
+      "days_remaining": 10
+    },
+    "allowed_actions": [
+      {
+        "action": "complete_payment"
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "source": "orders",
+      "id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+      "field": "order_status"
+    },
+    {
+      "source": "returns",
+      "operation": "GET /v1/returns/eligibility",
+      "field": "closes_at"
+    }
+  ],
+  "computed_at": "2026-09-28T21:54:25.824Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+## Checkout intents
+
+A checkout intent is how an assistant hands a purchase to the shopper. The assistant creates the intent; the basket is priced for the address, the price is frozen, and the stock is held for 30 minutes. It returns a single-use `confirmation_token`. The shopper reviews the frozen quote in your interface and approves it, and your application confirms the intent with the token. Only then is an order placed, with payment pending; payment is then taken through `client.payments.initializePayment`, exactly as for any other order.
+
+The token is returned once, when the intent is created, and is stored only as a hash — a retry with the same `Idempotency-Key` returns the intent without it. It is single use: a second confirmation returns `409 intent_not_pending`, and a wrong token returns `403 invalid_token` without disclosing anything about the intent. An intent that is not confirmed in time reads as `expired` and its stock is released.
+
+### `createCheckoutIntent`
+
+Creates an intent for a basket and an address. `idempotencyKey` is required; a retry with the same key returns the same intent. A shopper credential, when sent, ties the intent to that shopper, who must then confirm with it.
+
+The intent is refused, with the quote in `error.details`, when a line cannot be bought (`409 items_unavailable`), the store does not deliver to the address (`409 shipping_not_deliverable`), or shipping or tax cannot be priced for it (`409 quote_incomplete`).
+
+```typescript
+const { data: intent } = await client.agent.createCheckoutIntent({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    items: [{ variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a', quantity: 1 }],
+    shipping_address: {
+      name: 'John Doe', line1: '350 Fifth Avenue', city: 'New York',
+      state: 'NY', postal_code: '10118', country: 'US',
+    },
+  },
+});
+
+// Show intent.quote to the shopper and keep intent.confirmation_token until they decide.
+```
+
+```json Response
+{
+  "data": {
+    "id": "0ff91bd6-aa86-4ef6-8242-fe8644bca1bb",
+    "status": "pending_confirmation",
+    "confirmation_mode": "token",
+    "expires_at": "2026-09-28T22:24:09.629+00:00",
+    "order_id": null,
+    "customer_id": null,
+    "total": 1548,
+    "currency": "EUR",
+    "items": [
+      {
+        "quantity": 1,
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a"
+      }
+    ],
+    "quote": {
+      "tax": {
+        "amount": 213.52,
+        "source": "fallback",
+        "status": "quoted",
+        "prices_include_tax": true
+      },
+      "lines": [
+        {
+          "sku": "FEED-HOODIE-GRY-M",
+          "name": "Galactic Zip Hoodie",
+          "stock": 25,
+          "quantity": 1,
+          "available": true,
+          "line_total": 48,
+          "list_price": 48,
+          "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+          "unit_price": 48,
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+          "variant_name": "Grey / M",
+          "category_name": "Wearables",
+          "unavailable_reason": null
+        }
+      ],
+      "currency": "EUR",
+      "discount": {
+        "amount": 0,
+        "promotion": null
+      },
+      "shipping": {
+        "amount": 1500,
+        "status": "quoted",
+        "is_free": false,
+        "description": "USA",
+        "free_threshold": 100000
+      },
+      "subtotal": 48,
+      "grand_total": 1548,
+      "total_is_final": true,
+      "shipping_address": {
+        "city": "New York",
+        "name": "John Doe",
+        "line1": "350 Fifth Avenue",
+        "state": "NY",
+        "country": "US",
+        "postal_code": "10118"
+      },
+      "unavailable_count": 0
+    },
+    "created_at": "2026-09-28T21:54:09.713316+00:00",
+    "confirmed_at": null,
+    "cancelled_at": null,
+    "confirmation_token": "HnYBO4omfk1-CXT0gqUhNfo02aHMI2-shiJSRl-MFSo",
+    "confirmation_url": null
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+      "field": "resolved_price"
+    },
+    {
+      "source": "promotions",
+      "operation": "POST /v1/promotions/calculate-best",
+      "field": "discount"
+    },
+    {
+      "source": "shipping",
+      "operation": "shipping quote",
+      "field": "fee"
+    },
+    {
+      "source": "tax",
+      "operation": "POST /v1/tax/preview",
+      "field": "tax_amount"
+    },
+    {
+      "source": "orders",
+      "operation": "POST /v1/checkout/reserve",
+      "field": "reservations"
+    }
+  ],
+  "computed_at": "2026-09-28T21:54:09.790Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `getCheckoutIntent`
+
+The intent's status and its frozen quote. `status` is one of `pending_confirmation`, `confirmed`, `expired`, `cancelled` or `completed`.
+
+```typescript
+const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
+```
+
+```json Response
+{
+  "data": {
+    "id": "0ff91bd6-aa86-4ef6-8242-fe8644bca1bb",
+    "status": "pending_confirmation",
+    "confirmation_mode": "token",
+    "expires_at": "2026-09-28T22:24:09.629+00:00",
+    "order_id": null,
+    "customer_id": null,
+    "total": 1548,
+    "currency": "EUR",
+    "items": [
+      {
+        "quantity": 1,
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a"
+      }
+    ],
+    "quote": {
+      "tax": {
+        "amount": 213.52,
+        "source": "fallback",
+        "status": "quoted",
+        "prices_include_tax": true
+      },
+      "lines": [
+        {
+          "sku": "FEED-HOODIE-GRY-M",
+          "name": "Galactic Zip Hoodie",
+          "stock": 25,
+          "quantity": 1,
+          "available": true,
+          "line_total": 48,
+          "list_price": 48,
+          "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+          "unit_price": 48,
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+          "variant_name": "Grey / M",
+          "category_name": "Wearables",
+          "unavailable_reason": null
+        }
+      ],
+      "currency": "EUR",
+      "discount": {
+        "amount": 0,
+        "promotion": null
+      },
+      "shipping": {
+        "amount": 1500,
+        "status": "quoted",
+        "is_free": false,
+        "description": "USA",
+        "free_threshold": 100000
+      },
+      "subtotal": 48,
+      "grand_total": 1548,
+      "total_is_final": true,
+      "shipping_address": {
+        "city": "New York",
+        "name": "John Doe",
+        "line1": "350 Fifth Avenue",
+        "state": "NY",
+        "country": "US",
+        "postal_code": "10118"
+      },
+      "unavailable_count": 0
+    },
+    "created_at": "2026-09-28T21:54:09.713316+00:00",
+    "confirmed_at": null,
+    "cancelled_at": null
+  },
+  "evidence": [
+    {
+      "source": "agent",
+      "id": "0ff91bd6-aa86-4ef6-8242-fe8644bca1bb",
+      "field": "checkout_intent"
+    }
+  ],
+  "computed_at": "2026-09-28T21:54:10.618Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `confirmCheckoutIntent`
+
+The shopper's approval. Send the `confirmation_token` with the shopper's credential, or — for a guest — with `contact` (`email` and `name`, optionally `phone`). `payment_method` optionally records the method the shopper intends to use.
+
+The basket is priced again first. If anything the shopper pays has changed — a line price, the discount, shipping, tax or the total — the response is `409 quote_changed` with the new quote in `error.details`, and nothing is placed: show the shopper the new figures and create a new intent. Otherwise the order is placed with payment pending, using the held stock, and the response carries `payment.initialize_body` — the body `client.payments.initializePayment` takes, which your server sends signed like any other payment initialisation — and the store's payment methods.
+
+```typescript
+const { data } = await client.agent.confirmCheckoutIntent({
+  id: intent.id!,
+  requestBody: {
+    confirmation_token: intent.confirmation_token!,
+    contact: { email: 'john.doe@example.com', name: 'John Doe' },
+  },
+});
+
+// data.order.payment_status === 'pending'
+// data.payment.initialize_body → the body for payments.initializePayment, called from your server
+```
+
+```json Response
+{
+  "data": {
+    "intent": {
+      "id": "0ff91bd6-aa86-4ef6-8242-fe8644bca1bb",
+      "status": "confirmed",
+      "confirmation_mode": "token",
+      "expires_at": "2026-09-28T22:24:09.629+00:00",
+      "order_id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+      "customer_id": null,
+      "total": 1548,
+      "currency": "EUR",
+      "items": [
+        {
+          "quantity": 1,
+          "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a"
+        }
+      ],
+      "quote": {
+        "tax": {
+          "amount": 213.52,
+          "source": "fallback",
+          "status": "quoted",
+          "prices_include_tax": true
+        },
+        "lines": [
+          {
+            "sku": "FEED-HOODIE-GRY-M",
+            "name": "Galactic Zip Hoodie",
+            "stock": 25,
+            "quantity": 1,
+            "available": true,
+            "line_total": 48,
+            "list_price": 48,
+            "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+            "unit_price": 48,
+            "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+            "variant_name": "Grey / M",
+            "category_name": "Wearables",
+            "unavailable_reason": null
+          }
+        ],
+        "currency": "EUR",
+        "discount": {
+          "amount": 0,
+          "promotion": null
+        },
+        "shipping": {
+          "amount": 1500,
+          "status": "quoted",
+          "is_free": false,
+          "description": "USA",
+          "free_threshold": 100000
+        },
+        "subtotal": 48,
+        "grand_total": 1548,
+        "total_is_final": true,
+        "shipping_address": {
+          "city": "New York",
+          "name": "John Doe",
+          "line1": "350 Fifth Avenue",
+          "state": "NY",
+          "country": "US",
+          "postal_code": "10118"
+        },
+        "unavailable_count": 0
+      },
+      "created_at": "2026-09-28T21:54:09.713316+00:00",
+      "confirmed_at": "2026-09-28T21:54:17.256+00:00",
+      "cancelled_at": null
+    },
+    "order": {
+      "id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+      "order_number": "ORD-1790632457762",
+      "total_amount": 1548,
+      "currency": "EUR",
+      "payment_status": "pending",
+      "order_status": "pending"
+    },
+    "payment": {
+      "next_step": "POST /v1/payments/initialize",
+      "initialize_body": {
+        "order_id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+        "amount": 1548,
+        "currency": "EUR",
+        "email": "john.doe@example.com"
+      },
+      "methods": [
+        {
+          "provider": "cash",
+          "display_name": "Cash on Delivery",
+          "type": "manual",
+          "environment": "production",
+          "is_configured": true
+        },
+        {
+          "provider": "stripe",
+          "display_name": "Stripe",
+          "type": "redirect",
+          "environment": "test",
+          "is_configured": true
+        }
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "source": "orders",
+      "operation": "order create",
+      "id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+      "field": "total_amount"
+    }
+  ],
+  "computed_at": "2026-09-28T21:54:23.191Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `cancelCheckoutIntent`
+
+Cancels a pending intent and releases its stock hold at once.
+
+```typescript
+const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
+```
+
+```json Response
+{
+  "data": {
+    "id": "56f13df1-c566-4c5b-83ab-618e0cc47a50",
+    "status": "cancelled",
+    "confirmation_mode": "token",
+    "expires_at": "2026-09-28T22:24:32.905+00:00",
+    "order_id": null,
+    "customer_id": null,
+    "total": 1524.95,
+    "currency": "EUR",
+    "items": [
+      {
+        "quantity": 1,
+        "variant_id": "06cf8d3e-da82-4d6f-896f-d756f80c592f"
+      }
+    ],
+    "quote": {
+      "tax": {
+        "amount": 210.34,
+        "source": "fallback",
+        "status": "quoted",
+        "prices_include_tax": true
+      },
+      "lines": [
+        {
+          "sku": "selling-plans-ski-wax-selling-plans-ski-wax",
+          "name": "Selling Plans Ski Wax",
+          "stock": 10,
+          "quantity": 1,
+          "available": true,
+          "line_total": 24.95,
+          "list_price": 24.95,
+          "product_id": "3afdb59a-7f7f-4abb-baa1-2e37709c1128",
+          "unit_price": 24.95,
+          "variant_id": "06cf8d3e-da82-4d6f-896f-d756f80c592f",
+          "variant_name": "Selling Plans Ski Wax",
+          "category_name": "General",
+          "unavailable_reason": null
+        }
+      ],
+      "currency": "EUR",
+      "discount": {
+        "amount": 0,
+        "promotion": null
+      },
+      "shipping": {
+        "amount": 1500,
+        "status": "quoted",
+        "is_free": false,
+        "description": "USA",
+        "free_threshold": 100000
+      },
+      "subtotal": 24.95,
+      "grand_total": 1524.95,
+      "total_is_final": true,
+      "shipping_address": {
+        "city": "New York",
+        "name": "John Doe",
+        "line1": "350 Fifth Avenue",
+        "state": "NY",
+        "country": "US",
+        "postal_code": "10118"
+      },
+      "unavailable_count": 0
+    },
+    "created_at": "2026-09-28T21:54:32.986631+00:00",
+    "confirmed_at": null,
+    "cancelled_at": "2026-09-28T21:54:33.89+00:00"
+  },
+  "evidence": [
+    {
+      "source": "agent",
+      "id": "56f13df1-c566-4c5b-83ab-618e0cc47a50",
+      "field": "status"
+    },
+    {
+      "source": "orders",
+      "field": "stock hold released"
+    }
+  ],
+  "computed_at": "2026-09-28T21:54:34.447Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+## Store and usage
+
+### `getStorePolicies`
+
+The facts a shopper asks before buying: whether the store accepts returns, its return window and reasons, where it ships and the base fees, the payment methods it accepts, and its currencies. With a live key, only payment methods configured for live payments are listed.
+
+```typescript
+const { data } = await client.agent.getStorePolicies();
+```
+
+```json Response
+{
+  "data": {
+    "store": {
+      "name": "Galactic Core Store",
+      "timezone": "Africa/Nairobi",
+      "email": "store@example.com",
+      "website": "https://tybritelabs.com"
+    },
+    "currencies": {
+      "default": "EUR",
+      "accepted": [
+        "CNY",
+        "EUR",
+        "GBP",
+        "KES",
+        "USD"
+      ]
+    },
+    "payment_methods": [
+      {
+        "provider": "cash",
+        "display_name": "Cash on Delivery",
+        "type": "manual"
+      },
+      {
+        "provider": "stripe",
+        "display_name": "Stripe",
+        "type": "redirect"
+      },
+      {
+        "provider": "paypal",
+        "display_name": "PayPal",
+        "type": "popup"
+      },
+      {
+        "provider": "paystack",
+        "display_name": "Paystack",
+        "type": "popup"
+      }
+    ],
+    "shipping": {
+      "currency": "EUR",
+      "zones": [
+        {
+          "name": "USA",
+          "fee": 1500,
+          "free_threshold": 100000
+        },
+        {
+          "name": "United Kingdom",
+          "fee": 2500,
+          "free_threshold": 100000
+        },
+        {
+          "name": "Kenya",
+          "fee": 250,
+          "free_threshold": 10000
+        }
+      ],
+      "distance_tiers": [
+        {
+          "name": "Within Nairobi",
+          "fee": 100,
+          "max_distance_meters": 50000,
+          "free_threshold": 100000
+        }
+      ],
+      "everywhere_else": null
+    },
+    "returns": {
+      "accepted": true,
+      "window_days": 10,
+      "reasons": [
+        {
+          "code": "damaged",
+          "label": "Arrived damaged"
+        },
+        {
+          "code": "defective",
+          "label": "Defective / not working"
+        },
+        {
+          "code": "wrong_item",
+          "label": "Wrong item received"
+        },
+        {
+          "code": "not_as_described",
+          "label": "Not as described"
+        },
+        {
+          "code": "wrong_size",
+          "label": "Wrong size / fit"
+        },
+        {
+          "code": "no_longer_needed",
+          "label": "No longer needed"
+        },
+        {
+          "code": "arrived_late",
+          "label": "Arrived too late"
+        },
+        {
+          "code": "other",
+          "label": "Other (please describe)"
+        }
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "source": "store",
+      "field": "returns_window_days"
+    },
+    {
+      "source": "store-info",
+      "operation": "GET /v1/store/info",
+      "field": "currencies"
+    },
+    {
+      "source": "payments",
+      "operation": "GET /v1/payments/methods",
+      "field": "methods"
+    },
+    {
+      "source": "shipping",
+      "operation": "GET /v1/shipping/zones",
+      "field": "delivery_zones"
+    },
+    {
+      "source": "returns",
+      "operation": "GET /v1/returns/reasons",
+      "field": "data"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:51.241Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+### `getUsage`
+
+The store's Agent Compute credit balance, the state of its automatic recharge and of its hosted helpers, and this month's hosted-helper spend by tool, with production and sandbox shown separately. Requires a secret key, so call it from your server.
+
+```typescript
+const server = new Tybrite({ apiKey: 'tybrite_sk_live_...' });
+const { data } = await server.agent.getUsage();
+```
+
+```json Response
+{
+  "data": {
+    "balance_usd": 0,
+    "expires_at": null,
+    "hosted_helpers": {
+      "enabled": false,
+      "paused": false,
+      "available": false,
+      "reason": "disabled"
+    },
+    "auto_recharge": {
+      "enabled": false
+    },
+    "month": {
+      "from": "2026-09-01T00:00:00.000Z",
+      "helper_calls": 0,
+      "spend_usd": 0,
+      "refunded_usd": 0,
+      "production_spend_usd": 0,
+      "sandbox_spend_usd": 0,
+      "by_feature": {}
+    }
+  },
+  "evidence": [
+    {
+      "source": "wallet",
+      "field": "balance_usd"
+    },
+    {
+      "source": "wallet",
+      "field": "ledger (this month)"
+    },
+    {
+      "source": "auto_recharge",
+      "field": "kind=agent"
+    }
+  ],
+  "computed_at": "2026-09-28T21:53:51.978Z",
+  "currency": "USD",
+  "environment": "sandbox"
+}
+```
+
+### Agent Compute credits
+
+The hosted helpers are paid for from the store's **Agent Compute credit** balance, which the merchant funds. The shopper never pays for them. Each call is debited at its true cost, reported in `usage.credits_debited`; a call that fails keeps no credits.
+
+Hosted helpers are off until the merchant turns them on, which requires automatic recharge with a monthly limit, so the balance does not run out mid-conversation. When the helpers cannot run, they answer `403 helpers_unavailable` (not enabled, or paused) or `402 insufficient_credits`, and every deterministic tool keeps working — an assistant can fall back to building constraints itself and calling `search`. Calls made with a test key run the model too and debit the same balance; `getUsage` reports that spend separately.
+
+The hosted helpers carry an additional rate limit of 60 calls a minute per client and 1,000 an hour per key, on top of the standard limits.
+
+### Webhook events
+
+A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receive three events for checkout intents:
+
+| Event | Fired when |
+| :--- | :--- |
+| `agent.checkout_intent.created` | An assistant created an intent. Carries `id`, `total`, `currency`, `items`, `expires_at`, `customer_id` and `agent_client_ref`. |
+| `agent.checkout_intent.confirmed` | The shopper confirmed; the order now exists. Carries `id`, `order_id`, `order_number`, `total`, `currency`, `customer_id` and `agent_client_ref`. |
+| `agent.checkout_intent.expired` | An intent lapsed unconfirmed and its stock was released. Carries `id`, `total`, `currency`, `expired_at` and `agent_client_ref`. |
+
+`order.created` carries `source_channel` — `storefront`, or `agent` for an order placed from a confirmed checkout intent — and, for an agent order, `agent_client_ref`, which identifies the API key (`key:<id>`) or the connected application (`connect:<id>`) that created the intent.
+
+### Response codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success. |
+| `201` | A cart draft or checkout intent was created. |
+| `400` | Invalid body or parameter — for example `compare` with fewer than two products, or a `limit` out of range. |
+| `401` | Invalid or missing API key; a shopper tool called without a shopper credential; or an intent created for a signed-in shopper confirmed without their credential. |
+| `402` | `insufficient_credits` — a hosted helper was called with no Agent Compute credits available. |
+| `403` | `helpers_unavailable`, `consent_required`, `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
+| `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
+| `409` | `quote_changed`, `intent_not_pending`, `items_unavailable`, `shipping_not_deliverable`, `quote_incomplete`, or an `Idempotency-Key` reused with a different basket. |
+| `429` | Rate limit exceeded. |
+
+```json
+{
+  "error": {
+    "code": "consent_required",
+    "message": "The shopper has not granted personalisation. Ask them to, then call POST /v1/agent/me/consent."
+  }
+}
+```

@@ -156,6 +156,18 @@ fiscal reporting, loyalty — subscribes to both families.
 | `checkout.abandoned` | A shopper reached checkout and did not complete it. The latest stage a shopper reaches before buying, so the strongest signal of intent in this group |
 | `wishlist.added` | A shopper saved a product for later |
 
+### Agent checkouts
+
+A checkout an AI shopping assistant prepared through the [Agent API](/sdk/api-reference/classes/AgentService).
+
+| Event | Fired when |
+| :--- | :--- |
+| `agent.checkout_intent.created` | An assistant created a checkout intent: the price is frozen and the stock held |
+| `agent.checkout_intent.confirmed` | The shopper confirmed the intent and the order now exists. Carries `order_id` |
+| `agent.checkout_intent.expired` | An intent lapsed unconfirmed and its stock was released |
+
+An order placed from a confirmed intent carries `source_channel: "agent"` on `order.created`, with `agent_client_ref` naming the API key or connected application that created the intent; an order placed directly through `POST /v1/orders` carries `source_channel: "storefront"`.
+
 ### Gift cards
 
 | Event | Fired when |

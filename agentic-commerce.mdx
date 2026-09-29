@@ -1,6 +1,6 @@
 ---
 title: "Agentic Commerce"
-description: "Your in-app assistant can prepare gift cards, promotions, pricing rules and search merchandising from your store's own data — and you approve before anything goes live."
+description: "Your in-app assistant prepares gift cards, promotions, pricing rules and search merchandising from your store's own data for you to approve, and any AI shopping assistant can search, price and hand off a checkout on your store through the Agent API."
 ---
 
 # Agentic Commerce
@@ -9,6 +9,10 @@ Your in-app assistant already sees your store — sales, catalogue, the traffic 
 commerce lets it act on what it sees. It can prepare the things it would otherwise only suggest — a gift card
 for a lapsed customer, a promotion on slow-moving stock, a dynamic-pricing rule that targets a customer
 segment — and it handles the reversible catalogue housekeeping outright.
+
+Agentic commerce has a shopper side as well: the [Agent API](#shopping-assistants-the-agent-api) lets any
+AI shopping assistant search a store, price a basket and hand a checkout to the shopper, described at the
+end of this page.
 
 Anything that moves money arrives as a **draft you approve** — a gift card, a promotion, a pricing
 rule — and is inert until you do. The organisational actions, which are reversible, happen directly:
@@ -288,3 +292,71 @@ bound before any concept is read, and margin arriving as a computed figure rathe
 behind it. That is how it can refuse a discount for selling below cost without the cost itself ever
 entering the conversation. The arrangement is described in full under
 [the business schema the assistant reads through](/how-gc-works/guardrails#the-business-schema-the-assistant-reads-through).
+
+## Shopping assistants: the Agent API
+
+The in-app assistant works for the merchant. The Agent API serves the other side of the counter: an AI
+shopping assistant helping a shopper buy from a store — the store's own chat widget, a voice interface, a
+generated storefront, or a third-party assistant. Galactic Core supplies the tools rather than the
+assistant. The developer brings the model and the conversation design; the tools supply what a model
+cannot know or must not guess — live stock, the price a shopper is actually charged, the promotion that
+applies, shipping and tax for an address, the return window — and a checkout the shopper confirms
+themselves.
+
+The endpoints live under `/v1/agent/*` and are available in the SDK as `client.agent`; the
+[Agent reference](/sdk/api-reference/classes/AgentService) documents every method with real responses.
+Every response shares one envelope: the result in `data`, and an `evidence` array naming the operation and
+field each figure was read from, so an assistant can cite a number and a reviewer can trace it. Most tools
+need only a publishable key.
+
+### The tools
+
+| Group | Tools |
+| :--- | :--- |
+| **Discovery** | A manifest of every tool with the JSON Schema of its request and response; constraint search (price, category, attributes, stock) where each result lists which constraints it met; a product dossier with each variant's live stock and price, specifications, review summary, shipping and return window; side-by-side comparison with specifications aligned; a fit check that separates constraints met, missed, and unknown because the attribute is not published; alternatives by similarity, price, stock or matching specification. |
+| **Cart and decision** | A quote giving the landed total of a basket — promotion, shipping and tax for the address, priced in the same order as an order; cart drafts kept apart from the shopper's live cart, re-quoted on every read and added to the live cart on request; insights on a cart such as price changes, the gap to free shipping and complementary items. |
+| **The shopper's own data** | Order status with the next allowed actions, and wishlist availability and price drops. Personal context from the shopper's own orders — sizes, price band, reorder suggestions — is read only after the shopper grants consent, which is separate from email marketing consent. |
+| **Checkout intents** | Create, read, confirm and cancel — described below. |
+| **Store** | Return policy and reasons, shipping regions and base fees, accepted payment methods and currencies. |
+
+A specification the merchant has not published is reported as absent, never inferred, and a basket line
+that cannot be bought is flagged rather than dropped. No tool exposes cost, margin, or what other shoppers
+are doing.
+
+### Two ways to pay for the model
+
+| Mode | Who pays for inference |
+| :--- | :--- |
+| **The developer's own model** | The developer, with their own model provider. The assistant calls only the deterministic tools, which cost what any storefront request costs. |
+| **Hosted helpers** | The store, from its **Agent Compute credits**. Two helpers run a model: one turns a request in plain language into the constraints search accepts, the other drafts a priced, stock-checked cart from an intent and a budget, choosing only among in-stock search results. |
+
+Every tool other than the two helpers is deterministic. The helpers are off until the merchant turns them
+on, which requires automatic recharge of the credit balance with a monthly limit. Each call is debited at
+its true cost and reports the amount; a failed call keeps nothing. When the helpers cannot run — not
+enabled, paused, or out of credits — they say so, and every deterministic tool keeps working. A server
+holding the store's secret key reads the balance, the recharge state and each month's helper spend with
+`getUsage`.
+
+### Checkout intents
+
+An assistant never places an order or takes payment. It creates a **checkout intent**: the basket is
+priced for the shipping address, the price is frozen, the stock is held for 30 minutes, and a single-use
+confirmation token is returned. The shopper reviews the frozen total in the developer's interface and
+approves it; the application then confirms the intent with the token, alongside the shopper's credential
+or, for a guest, their contact details.
+
+Confirmation prices the basket again. If anything the shopper would pay has changed — a line price, the
+discount, shipping, tax or the total — nothing is placed, and the response carries the new quote so the
+shopper can decide again. Otherwise the order is placed with payment pending, using the held stock, and
+payment proceeds through the store's normal payment flow. The token is stored only as a hash, works once,
+and a wrong one reveals nothing about the intent. An intent left unconfirmed expires and releases its
+stock; one the shopper declines can be cancelled at once.
+
+### Events and attribution
+
+Checkout intents emit three [webhook events](/webhooks): `agent.checkout_intent.created` when an assistant
+prepares one, `agent.checkout_intent.confirmed` when the shopper confirms and the order exists, and
+`agent.checkout_intent.expired` when one lapses unconfirmed. An order placed from a confirmed intent is
+recorded as an agent order: its `order.created` event carries `source_channel: "agent"` (an order placed
+directly through `POST /v1/orders` carries `"storefront"`) and `agent_client_ref`, which identifies the API key or the connected application
+that created the intent.
