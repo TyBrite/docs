@@ -330,6 +330,11 @@ are doing.
 | **The developer's own model** | The developer, with their own model provider. The assistant calls only the deterministic tools, which cost what any storefront request costs. |
 | **Hosted helpers** | The store, from its **Agent Compute credits**. Two helpers run a model: one turns a request in plain language into the constraints search accepts, the other drafts a priced, stock-checked cart from an intent and a budget, choosing only among in-stock search results. |
 
+A helper call runs entirely on the store's side — the model, the tool calls it makes, and the pricing and
+stock checks behind its answer — and returns a finished result, so the calling application holds no model
+provider key and runs no model of its own for that step. The conversation itself, and when to call each
+tool, remain the application's.
+
 Every tool other than the two helpers is deterministic. The helpers are off until the merchant turns them
 on, which requires automatic recharge of the credit balance with a monthly limit. Each call is debited at
 its true cost and reports the amount; a failed call keeps nothing. When the helpers cannot run — not
@@ -365,3 +370,9 @@ prepares one, `agent.checkout_intent.confirmed` when the shopper confirms and th
 recorded as an agent order: its `order.created` event carries `source_channel: "agent"` (an order placed
 directly through `POST /v1/orders` carries `"storefront"`) and `agent_client_ref`, which identifies the API key or the connected application
 that created the intent.
+
+The store also keeps a record of assistant activity for its own merchant, separate from its storefront
+analytics: the words of each search and how many products matched, the products an assistant opened or
+compared, cart drafts, and how each checkout intent ended. These records carry no shopper identity. The
+merchant reads them through the in-app assistant, which can answer what shopping assistants asked for,
+which searches found nothing in the catalogue, and which products they looked at most.
