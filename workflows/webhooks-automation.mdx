@@ -438,10 +438,10 @@ An endpoint subscribes to any of these, or to `["*"]` for everything:
   set a merchant enables or disables — so these are the only lifecycle events they emit, and the only
   signal available to navigation or any layout built from the taxonomy
 - **Store lifecycle & configuration** — `store.updated` (name / logo / branding / contact / base
-  currency; carries `changed_fields`), `payment_provider.connected`, `shipping_provider.connected`,
+  currency / the shopping assistant's name or logo; carries `changed_fields`), `payment_provider.connected`, `shipping_provider.connected`,
   `channel.connected`
 - **Feature availability** — `feature.status_changed` (a capability crossed between `available`,
-  `awaiting_data`, and `not_in_plan`; carries `feature`, `status`, `previous_status`)
+  `awaiting_data`, `not_in_plan`, and `unavailable`; carries `feature`, `status`, `previous_status`)
 - **Catalog sync & syndication** — `feed.sync.completed` (a scheduled inbound feed-pull finished —
   carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished —
   carries pushed/rejected counts)

@@ -341,9 +341,14 @@ holding the store's secret key reads the balance, the recharge state and each mo
 
 An assistant never places an order or takes payment. It creates a **checkout intent**: the basket is
 priced for the shipping address, the price is frozen, the stock is held for 30 minutes, and a single-use
-confirmation token is returned. The shopper reviews the frozen total in the developer's interface and
-approves it; the application then confirms the intent with the token, alongside the shopper's credential
-or, for a guest, their contact details.
+confirmation token is returned. The shopper's approval is collected in one of two ways. By default the
+shopper reviews the frozen total in the developer's interface and approves it; the application then
+confirms the intent with the token, alongside the shopper's credential or, for a guest, their contact
+details. Alternatively the assistant asks for **hosted confirmation** and receives a link to the store's
+own confirmation page, which it gives to the shopper. The page shows the frozen quote, takes the
+shopper's contact details, confirms the intent, and passes payment to the store's payment provider — a
+Stripe Checkout redirect, a Paystack popup, PayPal buttons, or a custom provider's redirect — so an
+assistant without a checkout interface of its own can still complete a purchase.
 
 Confirmation prices the basket again. If anything the shopper would pay has changed — a line price, the
 discount, shipping, tax or the total — nothing is placed, and the response carries the new quote so the

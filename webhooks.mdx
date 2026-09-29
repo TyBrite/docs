@@ -238,7 +238,7 @@ A category that is switched off is filtered out of every catalog read, so it dis
 
 | Event | Fired when |
 | :--- | :--- |
-| `store.updated` | The store's name, logo, branding, contact details, or base currency changes. Carries a `changed_fields` list of which of those changed |
+| `store.updated` | The store's name, logo, branding, contact details, base currency, or its shopping assistant's name or logo changes. Carries a `changed_fields` list of which of those changed; the assistant appears as `agent_assistant_name` and `agent_assistant_logo_url` |
 | `payment_provider.connected` | A payment provider is connected. Carries `provider` |
 | `shipping_provider.connected` | A shipping-rate provider is connected. Carries `provider` |
 | `channel.connected` | A sales channel (Google, Meta, Shopify, …) is connected. Carries `provider` |
@@ -247,7 +247,7 @@ A category that is switched off is filtered out of every catalog read, so it dis
 
 | Event | Fired when |
 | :--- | :--- |
-| `feature.status_changed` | A capability crosses from *awaiting data* to *available* (or the reverse) — for example, the store's first approved reviews arrive, so reviews become usable, or its first live promotion appears. Carries `feature`, `status` (`available` / `awaiting_data` / `not_in_plan`), and `previous_status`. |
+| `feature.status_changed` | A capability crosses from *awaiting data* to *available* (or the reverse) — for example, the store's first approved reviews arrive, so reviews become usable, or its first live promotion appears. Carries `feature`, `status` (`available` / `awaiting_data` / `not_in_plan` / `unavailable`), and `previous_status`. `feature` is any key of `features.feature_status` in the store info, including `agentic_commerce` and `agent_hosted_helpers`, which moves between `available` and `unavailable` as the Agent API's hosted helpers become callable or stop being callable. |
 
 <Note>
 The **Content & collections**, **Store lifecycle**, and **Feature availability** events describe a

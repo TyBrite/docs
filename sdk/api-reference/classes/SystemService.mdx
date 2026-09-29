@@ -11,9 +11,9 @@ Access this service via `client.system`.
 
 Retrieve comprehensive store metadata, configuration, and catalog statistics in a single API call. This endpoint is specifically optimized for initial data synchronizations, AI agent context setting, and dashboard overviews.
 
-The `store` section includes business context — `name`, `logo_url`, `description`, `website`, `phone`, `email`, and `address` (any of which may be `null`) — alongside currencies, timezone, and creation date. `logo_variants` carries the same brand in the forms a storefront needs, keyed by the placement each mark is drawn for: `light_bg`, `dark_bg`, `icon`, `wordmark`, `monochrome`, and `primary`. Each entry is `{ url, usage_note }`, where `usage_note` is the merchant's own guidance for that mark or `null`. Every variant is optional and the object is empty when a merchant has supplied none, so it can be indexed without a guard — fall back to `logo_url` for any placement that is absent. Rendering `logo_url` everywhere means recolouring or shrinking one file: a full-colour lockup is unreadable at favicon size, and a dark-ink wordmark disappears on a dark header. It also carries `commerce_model`: `retail` (a normal browse → add-to-cart → pay-now storefront) or `wholesale` (the store sells to business buyers, often on payment terms). A wholesale storefront supports two buying flows — direct checkout, for an approved buyer reordering routine items, and request-for-quote, for negotiated or bespoke orders. `client.b2B.createDirectOrder` returns a `settlement` of `terms` (a terms invoice was issued, and is paid against the invoice) or `pay_now` (complete payment against the returned `order_id` through `/v1/payments/*`, exactly like a retail order). The server decides which from the buyer's own terms, so a wholesale storefront builds both flows and branches on that response rather than on `commerce_model`. A wholesale store additionally carries `vendor_type`, its position in the supply chain from upstream to downstream: `supplier` (raw materials, components, or unbranded goods sold to other producers), `manufacturer` (makes the finished product), `distributor` (an authorised reseller for a brand, usually in set regions), or `wholesaler` (buys in bulk and resells to businesses). It is `null` on a retail store. Where `commerce_model` decides how a storefront sells, `vendor_type` identifies who the seller is — buying direct from a manufacturer and buying from a wholesaler differ in price, minimum order quantity, and lead time. The `features` block also carries `returns_window_days`: how many days after delivery a shopper may start a return, or `null` when the merchant has stated no period — in which case say returns are accepted without naming a window rather than assuming a default. It is only meaningful while `returns` is true, and it is the store's policy rather than a verdict on one order; for that, call `client.returns.checkReturnEligibility`, which accounts for when the specific parcel was delivered. The window is enforced when a return is lodged, not merely advertised, so a figure shown from here is one the API will honour. The `catalog.products` block includes a thin `sample` array (at most 10 items, each `{ id, name, category, price, image, featured }`) — a small sample of products for context; use `client.products.listProducts` to browse the full catalog.
+The `store` section includes business context — `name`, `logo_url`, `description`, `website`, `phone`, `email`, and `address` (any of which may be `null`) — alongside currencies, timezone, and creation date. `logo_variants` carries the same brand in the forms a storefront needs, keyed by the placement each mark is drawn for: `light_bg`, `dark_bg`, `icon`, `wordmark`, `monochrome`, and `primary`. Each entry is `{ url, usage_note }`, where `usage_note` is the merchant's own guidance for that mark or `null`. Every variant is optional and the object is empty when a merchant has supplied none, so it can be indexed without a guard — fall back to `logo_url` for any placement that is absent. Rendering `logo_url` everywhere means recolouring or shrinking one file: a full-colour lockup is unreadable at favicon size, and a dark-ink wordmark disappears on a dark header. `shopping_assistant` is the name and logo the merchant has given their shopping assistant, `{ name, logo_url }`, each `null` when not set; a storefront chat or an assistant shopping the store uses it to present the assistant the way the store does. It also carries `commerce_model`: `retail` (a normal browse → add-to-cart → pay-now storefront) or `wholesale` (the store sells to business buyers, often on payment terms). A wholesale storefront supports two buying flows — direct checkout, for an approved buyer reordering routine items, and request-for-quote, for negotiated or bespoke orders. `client.b2B.createDirectOrder` returns a `settlement` of `terms` (a terms invoice was issued, and is paid against the invoice) or `pay_now` (complete payment against the returned `order_id` through `/v1/payments/*`, exactly like a retail order). The server decides which from the buyer's own terms, so a wholesale storefront builds both flows and branches on that response rather than on `commerce_model`. A wholesale store additionally carries `vendor_type`, its position in the supply chain from upstream to downstream: `supplier` (raw materials, components, or unbranded goods sold to other producers), `manufacturer` (makes the finished product), `distributor` (an authorised reseller for a brand, usually in set regions), or `wholesaler` (buys in bulk and resells to businesses). It is `null` on a retail store. Where `commerce_model` decides how a storefront sells, `vendor_type` identifies who the seller is — buying direct from a manufacturer and buying from a wholesaler differ in price, minimum order quantity, and lead time. The `features` block also carries `returns_window_days`: how many days after delivery a shopper may start a return, or `null` when the merchant has stated no period — in which case say returns are accepted without naming a window rather than assuming a default. It is only meaningful while `returns` is true, and it is the store's policy rather than a verdict on one order; for that, call `client.returns.checkReturnEligibility`, which accounts for when the specific parcel was delivered. The window is enforced when a return is lodged, not merely advertised, so a figure shown from here is one the API will honour. The `catalog.products` block includes a thin `sample` array (at most 10 items, each `{ id, name, category, price, image, featured }`) — a small sample of products for context; use `client.products.listProducts` to browse the full catalog.
 
-*   **Caching**: Responses are cached for 5 minutes by default.
+*   **Caching**: Responses are cached for 5 minutes by default. `cache: false` builds the response from the store's current data, including the `features` flags and their `feature_status`.
 *   **Selective Loading**: Use the `sections` parameter to tailor the response and reduce payload size by up to 80%.
 *   **Single-store only**: This endpoint describes one store. A **marketplace operator key** receives `403` — use `client.marketplace.getMarketplaceInfo` for the marketplace's own information, or `getMarketplaceInfo({ storeId })` for one merchant within it.
 
@@ -62,7 +62,11 @@ const freshData = await client.system.getStoreInfo({ cache: false });
     "timezone": "America/New_York",
     "created_at": "2026-06-19T19:59:48.799138+00:00",
     "commerce_model": "retail",
-    "vendor_type": null
+    "vendor_type": null,
+    "shopping_assistant": {
+      "name": null,
+      "logo_url": null
+    }
   },
   "marketplace": { "mode": "standard", "marketplace_enabled": false },
   "catalog": {
@@ -101,11 +105,15 @@ const freshData = await client.system.getStoreInfo({ cache: false });
     "messaging": true,
     "specifications": true,
     "collections": true,
+    "agentic_commerce": true,
+    "agent_hosted_helpers": false,
     "feature_status": {
       "ai_recommendations": "available",
       "dynamic_pricing": "awaiting_data",
       "gift_cards": "available",
-      "returns": "available"
+      "returns": "available",
+      "agentic_commerce": "available",
+      "agent_hosted_helpers": "unavailable"
     }
   }
 }
@@ -242,7 +250,7 @@ direct children, so a client renders breadcrumbs and the nested tree without fur
 }
 ```
 
-The `features` block is a flat set of booleans your storefront uses to show or hide capabilities: `ai_recommendations`, `semantic_search`, `multi_currency`, `dynamic_pricing`, `cms` (blog posts), `lookbooks` (shoppable lookbooks — separate from `cms`), `returns`, `gift_cards`, `promotions`, `messaging`, `specifications`, and `collections`.
+The `features` block is a flat set of booleans your storefront uses to show or hide capabilities: `ai_recommendations`, `semantic_search`, `multi_currency`, `dynamic_pricing`, `cms` (blog posts), `lookbooks` (shoppable lookbooks — separate from `cms`), `returns`, `gift_cards`, `promotions`, `messaging`, `specifications`, `collections`, `agentic_commerce`, and `agent_hosted_helpers`.
 
 #### What `true` / `false` mean
 
@@ -254,6 +262,7 @@ There are two kinds of flag:
 | :--- | :--- | :--- |
 | **Plan-gated** | `ai_recommendations`, `semantic_search`, `multi_currency`, `dynamic_pricing`, `cms`, `lookbooks`, `returns` | The store's plan **includes** the feature **and** it's configured. By plan: **Starter** has none of these; **Growth** adds `cms`, `lookbooks`, `returns`; **Premium** / **Enterprise** add `ai_recommendations`, `semantic_search`, `dynamic_pricing`, `multi_currency`. |
 | **Data-presence** (every plan) | `gift_cards`, `promotions`, `messaging`, `specifications`, `collections` | The store **has at least one** of that item (e.g. `gift_cards: true` = at least one gift card issued). Not plan-gated; `false` means none exist yet. |
+| **Shopping assistants** | `agentic_commerce`, `agent_hosted_helpers` | `agentic_commerce` is `true` on every store: the [Agent API](/sdk/api-reference/classes/AgentService) is available to assistants shopping it. `agent_hosted_helpers` is `true` while the Agent API's hosted helpers (`interpret`, `draftCartFromIntent`) can be called. |
 
 #### `feature_status` — the reason behind each flag
 
@@ -264,6 +273,7 @@ Because `false` is ambiguous, `features` also includes a **`feature_status`** ob
 | `available` | Usable now (the boolean is `true`). | Render the feature. |
 | `awaiting_data` | In the plan (or ungated) but no data yet (boolean `false`). | **Pre-build the UI** — it lights up automatically once the merchant adds data; no redeploy needed. |
 | `not_in_plan` | A plan-gated feature the store's plan excludes (boolean `false`). | Hide it; an upgrade is required. |
+| `unavailable` | Switched off or not ready at the moment (boolean `false`). The reason is not disclosed. | Hide it for now; it can return to `available` without any change on your side. `agent_hosted_helpers` is always `available` or `unavailable`. |
 
 So a Premium store with no pricing rules yet returns `dynamic_pricing: false` **and** `feature_status.dynamic_pricing: "awaiting_data"` — you can ship the dynamic-pricing UI ahead of time and it activates when the first rule is created. Data-presence features are never `not_in_plan`.
 

@@ -56,7 +56,7 @@ const tools = data.tools!.filter(
       }
     ],
     "hosted_helpers_available": false,
-    "hosted_helpers_reason": "disabled"
+    "assistant": { "name": null, "logo_url": null }
   }
 }
 ```
@@ -64,6 +64,8 @@ const tools = data.tools!.filter(
 `auth` is `publishable`, `shopper` (a shopper credential is
 required), `shopper_optional`, `shopper_or_guest_token`, or `secret`. `hosted_helpers_available` is
 `false` on this store because the merchant has not turned the hosted helpers on; step 9 covers them.
+`assistant` is the name and logo the merchant has given their shopping assistant, each `null` until
+set, so an assistant can introduce itself the way the store does.
 
 ## 2. Searching with constraints
 
@@ -388,6 +390,33 @@ An intent is refused, with the current quote in `error.details`, when a line can
 (`409 items_unavailable`), the store does not deliver to the address (`409 shipping_not_deliverable`),
 or shipping or tax cannot be priced for it (`409 quote_incomplete`).
 
+### Confirming on the store's page
+
+An assistant with no checkout interface of its own sets `confirmation_mode: 'hosted'`. The intent then
+also carries `confirmation_url`, a link to the store's own confirmation page with the token in the URL
+fragment, which a browser does not send to any server. The assistant gives the link to the shopper, and
+the page shows the frozen quote, takes the shopper's contact details, confirms the intent and passes
+payment to the store's payment provider. In this mode the confirmation calls below and step 8 happen on
+the page rather than in your application.
+
+```typescript
+const { data: intent } = await storefront.agent.createCheckoutIntent({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    items: [{ variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a', quantity: 1 }],
+    shipping_address: address,
+    confirmation_mode: 'hosted',
+  },
+});
+
+// Send intent.confirmation_url to the shopper, e.g.
+// 'https://gc.tybritelabs.com/confirm/4cf0636f-00d5-4382-b3a3-171818215740#t=sfWxDWJP…'
+```
+
+A replay with the same `idempotencyKey` returns `confirmation_url: null`, as it does the token, so the
+link is kept from the first response. `agent.checkout_intent.confirmed` reports the confirmation either
+way.
+
 ### Confirming for a guest
 
 A guest confirms with `contact` — an email and a name, and optionally a phone number.
@@ -612,8 +641,8 @@ balance. When they cannot run, they answer with an error and every deterministic
 }
 ```
 
-`hosted_helpers_available` and `hosted_helpers_reason` in the manifest from step 1 report the same state
-before a call is made, so an assistant can leave the helpers out of its tool list and fall back to its
+`hosted_helpers_available` in the manifest from step 1 reports whether the helpers can run before a call
+is made, so an assistant can leave the helpers out of its tool list and fall back to its
 own model. A server holding the secret key reads the balance, the recharge state and the month's helper
 spend with `getUsage`.
 

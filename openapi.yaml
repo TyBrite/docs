@@ -1046,7 +1046,7 @@ paths:
           
         **Purpose:**
         This endpoint consolidates store metadata that would normally require 10+ separate API calls:
-        - Store basic info (name, currencies, timezone)
+        - Store basic info (name, currencies, timezone, the shopping assistant's name and logo)
         - Catalog overview (products, categories, collections, brands, specifications)
         - Pricing configuration (dynamic pricing, customer tiers, rules)
         - Active promotions (types, counts)
@@ -1117,8 +1117,13 @@ paths:
               
             **Cache Duration:** 5 minutes (300 seconds)
               
+            With `cache=false` the response is built from the store's current data, including the
+            `features` flags and their `feature_status`, and `X-Cache` is `MISS`.
+
             **When to Bypass Cache:**
             - After updating store configuration
+            - When a feature's availability matters at this moment (for example
+              `features.agent_hosted_helpers` before calling a hosted helper)
             - After adding/removing products or categories
             - After changing payment or shipping settings
             - When you need real-time data
@@ -1169,6 +1174,9 @@ paths:
                       created_at: '2026-06-19T19:59:48.799138+00:00'
                       commerce_model: retail
                       vendor_type: null
+                      shopping_assistant:
+                        name: null
+                        logo_url: null
                     catalog:
                       products:
                         total: 53
@@ -1316,6 +1324,8 @@ paths:
                       promotions: true
                       messaging: true
                       specifications: true
+                      agentic_commerce: true
+                      agent_hosted_helpers: false
                       feature_status:
                         ai_recommendations: awaiting_data
                         semantic_search: awaiting_data
@@ -1329,6 +1339,8 @@ paths:
                         promotions: available
                         messaging: available
                         specifications: available
+                        agentic_commerce: available
+                        agent_hosted_helpers: unavailable
                 filtered_response:
                   summary: Filtered sections (catalog and features only)
                   value:
@@ -1344,6 +1356,9 @@ paths:
                       created_at: '2026-06-19T19:59:48.799138+00:00'
                       commerce_model: retail
                       vendor_type: null
+                      shopping_assistant:
+                        name: null
+                        logo_url: null
                     catalog:
                       products:
                         total: 53
@@ -1430,6 +1445,8 @@ paths:
                       promotions: true
                       messaging: true
                       specifications: true
+                      agentic_commerce: true
+                      agent_hosted_helpers: true
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -8803,8 +8820,12 @@ paths:
         store's Agent Compute credits.
 
         `hosted_helpers_available` says whether the two hosted helpers can be called right now. When it is
-        false, `hosted_helpers_reason` says why: `disabled` (the merchant has not turned them on), `paused`,
-        or `insufficient_credits`. The deterministic tools are always available.
+        false, calling one returns `403 helpers_unavailable` or `402 insufficient_credits`. The deterministic
+        tools are always available.
+
+        `assistant` carries the name and logo the merchant has given their shopping assistant, so an assistant
+        shopping the store can introduce itself the way the store does. Each field is null when the merchant
+        has not set it.
 
         Every Agent API response shares one envelope: `data`, `evidence` (where each figure was read from),
         `computed_at`, `currency` and `environment`.
@@ -8863,10 +8884,25 @@ paths:
                               type: object
                       hosted_helpers_available:
                         type: boolean
-                      hosted_helpers_reason:
-                        type:
-                          - string
-                          - 'null'
+                        description: Whether the hosted helpers can be called right now.
+                      assistant:
+                        type: object
+                        description: The shopping assistant as the merchant has named it. Null fields are not set.
+                        required:
+                          - name
+                          - logo_url
+                        properties:
+                          name:
+                            type:
+                              - string
+                              - 'null'
+                            description: The assistant's display name.
+                          logo_url:
+                            type:
+                              - string
+                              - 'null'
+                            format: uri
+                            description: The assistant's logo image.
                       response_contract:
                         type: object
                   evidence:
@@ -8988,7 +9024,9 @@ paths:
                           total_matched:
                             type: integer
                   hosted_helpers_available: false
-                  hosted_helpers_reason: disabled
+                  assistant:
+                    name: null
+                    logo_url: null
                   response_contract:
                     data: object
                     evidence: array
@@ -13993,6 +14031,20 @@ paths:
         it is stored only as a hash, so a replay of the same `Idempotency-Key` returns the intent without it.
         No order exists and nothing is charged until the shopper confirms.
 
+        `confirmation_mode` chooses who collects the shopper's approval:
+
+        - `token` (the default): the agent confirms through `POST /v1/agent/checkout-intents/{id}/confirm`,
+          sending the token with the shopper's credential or contact details. `confirmation_url` is null.
+        - `hosted`: `confirmation_url` is a link to the store's own confirmation page,
+          `https://{store host}/confirm/{intent_id}#t={confirmation_token}`. The token travels in the URL
+          fragment, which a browser does not send to any server. The agent hands the link to the shopper; the
+          page shows the frozen quote, takes the shopper's contact details, confirms the intent and passes
+          payment to the store's own payment provider (a Stripe Checkout redirect, a Paystack popup, PayPal
+          buttons, or a custom provider's redirect). Card details are entered only on the provider's page.
+
+        A replay of the same `Idempotency-Key` returns `confirmation_token` and `confirmation_url` as null in
+        either mode, with `replayed: true`.
+
         The intent is refused when a line cannot be bought (`409 items_unavailable`), the store does not deliver
         to the address (`409 shipping_not_deliverable`), or shipping or tax cannot be priced for it
         (`409 quote_incomplete`); each carries the quote in `error.details`.
@@ -14083,6 +14135,7 @@ paths:
                     - token
                     - hosted
                   default: token
+                  description: '`token` returns a token the agent confirms with. `hosted` also returns `confirmation_url`, a link to the store''s hosted confirmation page for the shopper to open.'
             example:
               items:
                 - variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
@@ -14133,12 +14186,15 @@ paths:
                         type:
                           - string
                           - 'null'
-                        description: Returned once, when the intent is created. Store it only for as long as the shopper needs to confirm.
+                        description: Always null on a replay. The token is returned only by the request that created the intent.
                       confirmation_url:
                         type:
                           - string
                           - 'null'
-                        description: Reserved for a hosted confirmation page. Currently always null; confirm with the token.
+                        description: Always null on a replay.
+                      replayed:
+                        type: boolean
+                        description: True when this response replays an earlier request with the same `Idempotency-Key`.
                       expires_at:
                         type: string
                         format: date-time
@@ -14399,12 +14455,13 @@ paths:
                         type:
                           - string
                           - 'null'
-                        description: Returned once, when the intent is created. Store it only for as long as the shopper needs to confirm.
+                        description: The shopper's confirmation secret, returned only here. In `hosted` mode it is also carried inside `confirmation_url`.
                       confirmation_url:
                         type:
                           - string
                           - 'null'
-                        description: Reserved for a hosted confirmation page. Currently always null; confirm with the token.
+                        format: uri
+                        description: In `hosted` mode, the store's hosted confirmation page for this intent, with the token in the URL fragment. Null in `token` mode.
                       expires_at:
                         type: string
                         format: date-time
@@ -14836,16 +14893,6 @@ paths:
                         enum:
                           - token
                           - hosted
-                      confirmation_token:
-                        type:
-                          - string
-                          - 'null'
-                        description: Returned once, when the intent is created. Store it only for as long as the shopper needs to confirm.
-                      confirmation_url:
-                        type:
-                          - string
-                          - 'null'
-                        description: Reserved for a hosted confirmation page. Currently always null; confirm with the token.
                       expires_at:
                         type: string
                         format: date-time
@@ -15316,16 +15363,6 @@ paths:
                             enum:
                               - token
                               - hosted
-                          confirmation_token:
-                            type:
-                              - string
-                              - 'null'
-                            description: Returned once, when the intent is created. Store it only for as long as the shopper needs to confirm.
-                          confirmation_url:
-                            type:
-                              - string
-                              - 'null'
-                            description: Reserved for a hosted confirmation page. Currently always null; confirm with the token.
                           expires_at:
                             type: string
                             format: date-time
@@ -15924,16 +15961,6 @@ paths:
                         enum:
                           - token
                           - hosted
-                      confirmation_token:
-                        type:
-                          - string
-                          - 'null'
-                        description: Returned once, when the intent is created. Store it only for as long as the shopper needs to confirm.
-                      confirmation_url:
-                        type:
-                          - string
-                          - 'null'
-                        description: Reserved for a hosted confirmation page. Currently always null; confirm with the token.
                       expires_at:
                         type: string
                         format: date-time
@@ -26896,16 +26923,22 @@ paths:
                     render navigation, a category strip, or any layout built from the taxonomy.
 
                     **Store lifecycle & configuration:** `store.updated` (the store's name,
-                    logo, branding, contact, or base currency changed — carries a
-                    `changed_fields` list), `payment_provider.connected` (a payment provider was
+                    logo, branding, contact, base currency, or the shopping assistant's name or
+                    logo changed — carries a `changed_fields` list, which names
+                    `agent_assistant_name` and `agent_assistant_logo_url` for the assistant),
+                    `payment_provider.connected` (a payment provider was
                     connected), `shipping_provider.connected` (a shipping-rate provider was
                     connected), `channel.connected` (a sales channel was connected)
 
-                    **Feature availability:** `feature.status_changed` — a capability crossed
-                    from awaiting data to available (or the reverse), e.g. the store's first
-                    approved reviews arrive and reviews become usable. Carries `feature`,
-                    `status`, and `previous_status`. Use this to light up a storefront surface
-                    the moment its data exists. See the `automation-webhooks` guide.
+                    **Feature availability:** `feature.status_changed` — a capability's
+                    `feature_status` in `GET /v1/store/info` changed, e.g. the store publishes its
+                    first post and `cms` becomes `available`. Carries `feature`,
+                    `status`, and `previous_status`, each status one of `available`,
+                    `awaiting_data`, `not_in_plan` or `unavailable`. `feature` includes
+                    `agentic_commerce` and `agent_hosted_helpers`, so a shopping assistant can
+                    follow when the hosted helper tools become available or unavailable. Use this
+                    to light up a storefront surface the moment its data exists. See the
+                    `automation-webhooks` guide.
 
                     **Catalog sync & syndication:** `feed.sync.completed` (a scheduled
                     inbound feed-pull finished — carries created/updated/failed counts),
@@ -29404,6 +29437,26 @@ components:
                 icon:
                   url: https://cdn.example.com/stores/acme/icon.png
                   usage_note: null
+            shopping_assistant:
+              type: object
+              description: The name and logo the merchant has given their shopping assistant, for a storefront or an assistant shopping the store to present it the way the store does. Always present; each field is null when the merchant has not set it.
+              required:
+                - name
+                - logo_url
+              properties:
+                name:
+                  type:
+                    - string
+                    - 'null'
+                  description: The assistant's display name, or null if not set.
+                logo_url:
+                  type:
+                    - string
+                    - 'null'
+                  description: URL of the assistant's logo, or null if not set.
+              example:
+                name: Nova
+                logo_url: https://cdn.example.com/stores/acme/assistant.png
             description:
               type:
                 - string
@@ -29815,6 +29868,13 @@ components:
               `messaging`, `specifications`, `collections`. Not plan-gated at all; `true` simply means
               the store currently has at least one of that item (e.g. `gift_cards: true` = the store has issued
               one or more gift cards). `false` means none exist yet, not that the feature is forbidden.
+
+            - **Shopping assistants** — `agentic_commerce` and `agent_hosted_helpers` describe the Agent
+              API for assistants shopping the store. `agentic_commerce` is `true` on every store;
+              `agent_hosted_helpers` is `true` while the model-backed helper tools can be called.
+
+
+            Pass `cache=false` to read the flags as they are at this moment rather than as cached.
           properties:
             ai_recommendations:
               type: boolean
@@ -29858,20 +29918,29 @@ components:
             collections:
               type: boolean
               description: The store has product collections (storefront catalog groupings) to display.
+            agentic_commerce:
+              type: boolean
+              description: 'The Agent API is available for assistants shopping this store: discovery, quotes, cart drafts and checkout intents. `true` on every store.'
+            agent_hosted_helpers:
+              type: boolean
+              description: The Agent API's hosted helper tools (natural-language interpretation and intent-based cart drafting) can be called right now. When `false`, its status is `unavailable` and the other Agent API tools still work.
             feature_status:
               type: object
-              description: 'The REASON behind each flag above, keyed by the same feature name — so you can tell a feature that''s off because the plan excludes it apart from one that''s in the plan but has no data yet. Each value is one of: `available` (usable now — the boolean is `true`); `awaiting_data` (entitled/ungated but nothing to show yet — the boolean is `false`, but you can safely **pre-build the UI** and it will light up automatically once data exists); or `not_in_plan` (a plan-gated feature the store''s plan doesn''t include — hide it, an upgrade is required). Data-presence features (gift_cards, promotions, messaging, specifications, collections) are never `not_in_plan`.'
+              description: 'The REASON behind each flag above, keyed by the same feature name — so you can tell a feature that''s off because the plan excludes it apart from one that''s in the plan but has no data yet. Each value is one of: `available` (usable now — the boolean is `true`); `awaiting_data` (entitled/ungated but nothing to show yet — the boolean is `false`, but you can safely **pre-build the UI** and it will light up automatically once data exists); `not_in_plan` (a plan-gated feature the store''s plan doesn''t include — hide it, an upgrade is required); or `unavailable` (switched off or not ready at the moment; the reason is not disclosed, and the feature may become `available` without any change on the caller''s side). Data-presence features (gift_cards, promotions, messaging, specifications, collections) are never `not_in_plan`. `agent_hosted_helpers` is either `available` or `unavailable`.'
               additionalProperties:
                 type: string
                 enum:
                   - available
                   - awaiting_data
                   - not_in_plan
+                  - unavailable
               example:
                 ai_recommendations: available
                 dynamic_pricing: awaiting_data
                 gift_cards: awaiting_data
                 returns: available
+                agentic_commerce: available
+                agent_hosted_helpers: unavailable
         custom_fields:
           type: object
           description: |-

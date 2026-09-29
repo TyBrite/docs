@@ -51,7 +51,7 @@ Most tools need only an API key, and a publishable key is enough. Tools that rea
 
 The tool manifest for the store: every tool with its HTTP operation, a JSON Schema for its request and for its response `data`, the credential it needs, and its cost class (`deterministic` or `hosted_helper`). An assistant can register its tools from this manifest instead of from a hand-written list.
 
-`hosted_helpers_available` says whether the two hosted helpers can be called now. When it is `false`, `hosted_helpers_reason` gives the reason — `disabled` (the merchant has not turned them on), `paused`, or `insufficient_credits`. The deterministic tools are always available. The response below shows one entry from the manifest's `tools` array, with its request schema shortened to three properties.
+`hosted_helpers_available` says whether the two hosted helpers can be called now. When it is `false`, calling one returns `403 helpers_unavailable` or `402 insufficient_credits`; the deterministic tools are always available. `assistant` carries the name and logo the merchant has given their shopping assistant (`name` and `logo_url`, each `null` when not set), so an assistant shopping the store can present itself the way the store does. The response below shows one entry from the manifest's `tools` array, with its request schema shortened to three properties.
 
 ```typescript
 const { data } = await client.agent.getCapabilities();
@@ -148,7 +148,10 @@ const tools = data.tools!.filter(
       }
     ],
     "hosted_helpers_available": false,
-    "hosted_helpers_reason": "disabled",
+    "assistant": {
+      "name": null,
+      "logo_url": null
+    },
     "response_contract": {
       "data": "object",
       "evidence": "array",
@@ -1417,13 +1420,16 @@ const { data } = await client.agent.getOrderStatus({
 
 ## Checkout intents
 
-A checkout intent is how an assistant hands a purchase to the shopper. The assistant creates the intent; the basket is priced for the address, the price is frozen, and the stock is held for 30 minutes. It returns a single-use `confirmation_token`. The shopper reviews the frozen quote in your interface and approves it, and your application confirms the intent with the token. Only then is an order placed, with payment pending; payment is then taken through `client.payments.initializePayment`, exactly as for any other order.
+A checkout intent is how an assistant hands a purchase to the shopper. The assistant creates the intent; the basket is priced for the address, the price is frozen, and the stock is held for 30 minutes. It returns a single-use `confirmation_token`, and the shopper's approval is collected in one of two ways, chosen with `confirmation_mode`:
 
-The token is returned once, when the intent is created, and is stored only as a hash — a retry with the same `Idempotency-Key` returns the intent without it. It is single use: a second confirmation returns `409 intent_not_pending`, and a wrong token returns `403 invalid_token` without disclosing anything about the intent. An intent that is not confirmed in time reads as `expired` and its stock is released.
+- **`token`** (the default) — the shopper reviews the frozen quote in your interface and approves it, and your application confirms the intent with the token. Only then is an order placed, with payment pending; payment is then taken through `client.payments.initializePayment`, exactly as for any other order.
+- **`hosted`** — the intent also returns `confirmation_url`, a link to the store's own confirmation page. The assistant gives the link to the shopper, and the page shows the frozen quote, takes the shopper's contact details, confirms the intent and passes payment to the store's payment provider: a Stripe Checkout redirect, a Paystack popup, PayPal buttons, or a custom provider's redirect. Card details are entered only on the provider's page. This suits an assistant that has no checkout interface of its own.
+
+The token is returned once, when the intent is created, and is stored only as a hash — a retry with the same `Idempotency-Key` returns the intent with `confirmation_token` and `confirmation_url` set to `null` and `replayed: true`. `getCheckoutIntent`, `confirmCheckoutIntent` and `cancelCheckoutIntent` do not return either field. It is single use: a second confirmation returns `409 intent_not_pending`, and a wrong token returns `403 invalid_token` without disclosing anything about the intent. An intent that is not confirmed in time reads as `expired` and its stock is released.
 
 ### `createCheckoutIntent`
 
-Creates an intent for a basket and an address. `idempotencyKey` is required; a retry with the same key returns the same intent. A shopper credential, when sent, ties the intent to that shopper, who must then confirm with it.
+Creates an intent for a basket and an address. `idempotencyKey` is required; a retry with the same key returns the same intent. A shopper credential, when sent, ties the intent to that shopper, who must then confirm with it. `confirmation_mode` is `token` (the default) or `hosted`; in `token` mode `confirmation_url` is `null`.
 
 The intent is refused, with the quote in `error.details`, when a line cannot be bought (`409 items_unavailable`), the store does not deliver to the address (`409 shipping_not_deliverable`), or shipping or tax cannot be priced for it (`409 quote_incomplete`).
 
@@ -1547,6 +1553,39 @@ const { data: intent } = await client.agent.createCheckoutIntent({
   "environment": "sandbox"
 }
 ```
+
+In `hosted` mode the response is the same intent with `confirmation_mode: "hosted"` and a `confirmation_url` of the form `https://{store host}/confirm/{intent_id}#t={confirmation_token}`. The token travels in the URL fragment, which a browser does not send to any server.
+
+```typescript
+const { data: intent } = await client.agent.createCheckoutIntent({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    items: [{ variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a', quantity: 1 }],
+    shipping_address: {
+      name: 'John Doe', line1: '350 Fifth Avenue', city: 'New York',
+      state: 'NY', postal_code: '10118', country: 'US',
+    },
+    confirmation_mode: 'hosted',
+  },
+});
+
+// Give intent.confirmation_url to the shopper.
+```
+
+```json
+{
+  "id": "4cf0636f-00d5-4382-b3a3-171818215740",
+  "status": "pending_confirmation",
+  "confirmation_mode": "hosted",
+  "expires_at": "2026-09-29T12:54:27.299+00:00",
+  "total": 1548,
+  "currency": "EUR",
+  "confirmation_token": "sfWxDWJP7nmUWRS5I2HL7a6ngq5BIU8rDQthvQQuMZ4",
+  "confirmation_url": "https://gc.tybritelabs.com/confirm/4cf0636f-00d5-4382-b3a3-171818215740#t=sfWxDWJP7nmUWRS5I2HL7a6ngq5BIU8rDQthvQQuMZ4"
+}
+```
+
+The `data` above is shortened to the fields that differ by mode; `items` and `quote` are as in the token-mode response.
 
 ### `getCheckoutIntent`
 
@@ -2093,6 +2132,8 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | `agent.checkout_intent.created` | An assistant created an intent. Carries `id`, `total`, `currency`, `items`, `expires_at`, `customer_id` and `agent_client_ref`. |
 | `agent.checkout_intent.confirmed` | The shopper confirmed; the order now exists. Carries `id`, `order_id`, `order_number`, `total`, `currency`, `customer_id` and `agent_client_ref`. |
 | `agent.checkout_intent.expired` | An intent lapsed unconfirmed and its stock was released. Carries `id`, `total`, `currency`, `expired_at` and `agent_client_ref`. |
+
+`feature.status_changed` fires with `feature: "agent_hosted_helpers"` when the hosted helpers become `available` or `unavailable`, and `store.updated` lists `agent_assistant_name` or `agent_assistant_logo_url` in `changed_fields` when the merchant renames the assistant or changes its logo.
 
 `order.created` carries `source_channel` — `storefront`, or `agent` for an order placed from a confirmed checkout intent — and, for an agent order, `agent_client_ref`, which identifies the API key (`key:<id>`) or the connected application (`connect:<id>`) that created the intent.
 
