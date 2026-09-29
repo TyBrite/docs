@@ -8820,8 +8820,8 @@ paths:
         store's Agent Compute credits.
 
         `hosted_helpers_available` says whether the two hosted helpers can be called right now. When it is
-        false, calling one returns `403 helpers_unavailable` or `402 insufficient_credits`. The deterministic
-        tools are always available.
+        false, calling one with a publishable key returns `403 helpers_unavailable`, the same answer whatever
+        the reason; a secret key receives the reason. The deterministic tools are always available.
 
         `assistant` carries the name and logo the merchant has given their shopping assistant, so an assistant
         shopping the store can introduce itself the way the store does. Each field is null when the merchant
@@ -9530,7 +9530,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
-          description: The store has no Agent Compute credits available
+          description: The store has no Agent Compute credits available. Returned to a secret key only; a publishable key receives `403 helpers_unavailable` instead.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -9562,7 +9562,7 @@ paths:
                   code: insufficient_credits
                   message: This store has no Agent Compute credits available. The deterministic tools remain available.
         '403':
-          description: Hosted helpers are not enabled for this store
+          description: Hosted helpers are unavailable. To a publishable key this is the one answer for every reason and carries no `details`. A secret key receives `details.reason` (`disabled`, `paused` or `unavailable`), and `402 insufficient_credits` when the store is out of credits.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -9592,9 +9592,7 @@ paths:
               example:
                 error:
                   code: helpers_unavailable
-                  message: Hosted helpers are not enabled for this store. The deterministic tools remain available.
-                  details:
-                    reason: disabled
+                  message: Hosted helpers are not available for this store. The deterministic tools remain available.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -11916,7 +11914,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
-          description: The store has no Agent Compute credits available
+          description: The store has no Agent Compute credits available. Returned to a secret key only; a publishable key receives `403 helpers_unavailable` instead.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -11948,7 +11946,7 @@ paths:
                   code: insufficient_credits
                   message: This store has no Agent Compute credits available. The deterministic tools remain available.
         '403':
-          description: Hosted helpers are not enabled for this store
+          description: Hosted helpers are unavailable. To a publishable key this is the one answer for every reason and carries no `details`. A secret key receives `details.reason` (`disabled`, `paused` or `unavailable`), and `402 insufficient_credits` when the store is out of credits.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -11978,9 +11976,7 @@ paths:
               example:
                 error:
                   code: helpers_unavailable
-                  message: Hosted helpers are not enabled for this store. The deterministic tools remain available.
-                  details:
-                    reason: disabled
+                  message: Hosted helpers are not available for this store. The deterministic tools remain available.
         '404':
           description: Nothing in stock matches the intent
           headers:
@@ -14842,6 +14838,13 @@ paths:
       description: |-
         The intent's status and frozen quote. An intent past its expiry reads as `expired` and its stock hold
         is released.
+
+        The shopper's personal data — `customer_id` and the quote's `shipping_address` — is returned to a secret
+        key, and to a publishable key that also sends a shopper credential (`x-auth-token`, `x-external-auth` or
+        `x-idp-token`) for the intent's own customer. A publishable key alone, a guest intent read with a
+        publishable key, or another shopper's credential receives the intent without those two fields; its
+        status, lines and totals are unchanged. A credential that is sent and cannot be verified is answered
+        with its own error rather than the reduced view.
       security:
         - BearerAuth: []
       parameters:
@@ -14852,6 +14855,24 @@ paths:
             type: string
             format: uuid
           description: The checkout intent.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. With a publishable key, a credential for the intent's own customer returns the shipping address and `customer_id`. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. With a publishable key, an assertion for the intent's own customer returns the shipping address and `customer_id`. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider. With a publishable key, a token for the intent's own customer returns the shipping address and `customer_id`. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
         - name: fields
           in: query
           required: false
@@ -14906,6 +14927,7 @@ paths:
                           - string
                           - 'null'
                         format: uuid
+                        description: The customer the intent belongs to. Present only for a secret key or the intent's own shopper credential.
                       total:
                         type: number
                       currency:
@@ -15073,6 +15095,7 @@ paths:
                             type:
                               - object
                               - 'null'
+                            description: Where the order is going. Present only for a secret key or the intent's own shopper credential.
                       created_at:
                         type: string
                         format: date-time
@@ -15122,7 +15145,6 @@ paths:
                   confirmation_mode: token
                   expires_at: '2026-09-28T22:24:09.629+00:00'
                   order_id: null
-                  customer_id: null
                   total: 1548
                   currency: EUR
                   items:
@@ -15161,13 +15183,6 @@ paths:
                     subtotal: 48
                     grand_total: 1548
                     total_is_final: true
-                    shipping_address:
-                      city: New York
-                      name: John Doe
-                      line1: 350 Fifth Avenue
-                      state: NY
-                      country: US
-                      postal_code: '10118'
                     unavailable_count: 0
                   created_at: '2026-09-28T21:54:09.713316+00:00'
                   confirmed_at: null
@@ -15915,7 +15930,9 @@ paths:
       tags:
         - Agent
       summary: Cancel a checkout intent
-      description: Cancels a pending intent and releases its stock hold at once.
+      description: |-
+        Cancels a pending intent and releases its stock hold at once. The answer is the cancelled intent, with the
+        shopper's personal data returned on the same terms as `GET /v1/agent/checkout-intents/{id}`.
       security:
         - BearerAuth: []
       parameters:
@@ -15926,6 +15943,24 @@ paths:
             type: string
             format: uuid
           description: The checkout intent.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. With a publishable key, a credential for the intent's own customer returns the shipping address and `customer_id`. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. With a publishable key, an assertion for the intent's own customer returns the shipping address and `customer_id`. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider. With a publishable key, a token for the intent's own customer returns the shipping address and `customer_id`. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
       responses:
         '200':
           description: The cancelled intent
@@ -15974,6 +16009,7 @@ paths:
                           - string
                           - 'null'
                         format: uuid
+                        description: The customer the intent belongs to. Present only for a secret key or the intent's own shopper credential.
                       total:
                         type: number
                       currency:
@@ -16141,6 +16177,7 @@ paths:
                             type:
                               - object
                               - 'null'
+                            description: Where the order is going. Present only for a secret key or the intent's own shopper credential.
                       created_at:
                         type: string
                         format: date-time
@@ -16190,7 +16227,6 @@ paths:
                   confirmation_mode: token
                   expires_at: '2026-09-28T22:24:32.905+00:00'
                   order_id: null
-                  customer_id: null
                   total: 1524.95
                   currency: EUR
                   items:
@@ -16229,13 +16265,6 @@ paths:
                     subtotal: 24.95
                     grand_total: 1524.95
                     total_is_final: true
-                    shipping_address:
-                      city: New York
-                      name: John Doe
-                      line1: 350 Fifth Avenue
-                      state: NY
-                      country: US
-                      postal_code: '10118'
                     unavailable_count: 0
                   created_at: '2026-09-28T21:54:32.986631+00:00'
                   confirmed_at: null
@@ -17006,6 +17035,11 @@ paths:
           
         **Why Secret Key?** Authentication endpoints create and manage user sessions, which should
         only be performed from secure server-side environments.
+
+        **Attempt limits:** attempts are counted per email address — 5 per 15 minutes from one store,
+        20 across every store, whether they succeed or fail. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
+        the same for an address with no account, so a refusal says nothing about whether one exists.
       security:
         - BearerAuth: []
       requestBody:
@@ -17122,6 +17156,11 @@ paths:
         **⚠️ SECRET KEY REQUIRED**
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+
+        **Attempt limits:** attempts are counted per email address — 10 per 15 minutes from one store,
+        30 across every store, whether they succeed or fail. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
+        the same for an address with no account, so a refusal says nothing about whether one exists.
       security:
         - BearerAuth: []
       requestBody:
@@ -17248,6 +17287,11 @@ paths:
         **⚠️ SECRET KEY REQUIRED**
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+
+        **Attempt limits:** attempts are counted per email address — 5 per 15 minutes from one store,
+        10 across every store, whether they succeed or fail. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
+        the same for an address with no account, so a refusal says nothing about whether one exists.
       security:
         - BearerAuth: []
       requestBody:
@@ -17316,6 +17360,11 @@ paths:
         **⚠️ SECRET KEY REQUIRED**
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+
+        **Attempt limits:** attempts are counted per email address — 10 per 15 minutes from one store,
+        10 across every store, whether they succeed or fail. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
+        the same for an address with no account, so a refusal says nothing about whether one exists.
       security:
         - BearerAuth: []
       requestBody:
@@ -17401,6 +17450,11 @@ paths:
         **⚠️ SECRET KEY REQUIRED**
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+
+        **Attempt limits:** attempts are counted per email address — 5 per 15 minutes from one store,
+        10 across every store, whether they succeed or fail. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header (seconds until the window closes). The limit is
+        the same for an address with no account, so a refusal says nothing about whether one exists.
       security:
         - BearerAuth: []
       requestBody:
@@ -17482,6 +17536,9 @@ paths:
           "password": "newSecurePassword123"
         }
         ```
+
+        **Attempt limits:** 5 password changes per session per 15 minutes. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header.
       security:
         - BearerAuth: []
       parameters:
@@ -17556,6 +17613,9 @@ paths:
         **⚠️ SECRET KEY REQUIRED**
           
         This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+
+        **Attempt limits:** 20 refreshes per refresh token per 15 minutes. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header.
       security:
         - BearerAuth: []
       requestBody:
@@ -17625,6 +17685,9 @@ paths:
         Authorization: Bearer tybrite_sk_live_YOUR_API_KEY
         x-auth-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         ```
+
+        **Attempt limits:** 120 requests per session per minute. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header.
       security:
         - BearerAuth: []
       parameters:
@@ -23436,7 +23499,7 @@ paths:
         Validation errors are returned as JSON error responses, never
         as redirects (prevents open redirect attacks).
 
-        **Rate limit:** 60 requests/hour per IP address.
+        **Rate limit:** 60 requests/hour and 30 per 10 minutes per IP address.
       security: []
       parameters:
         - name: client_id
@@ -23539,7 +23602,7 @@ paths:
         the `Authorization: Bearer` header. This is not an API key — it is the
         session token issued by the GC login flow.
 
-        **Rate limit:** 20 requests/hour per IP address.
+        **Rate limit:** 20 requests/hour per IP address, and 20 approvals per hour per merchant.
 
         This endpoint is called by the hosted consent page — you do not call
         it directly from your integration.
@@ -23644,10 +23707,13 @@ paths:
         Unix time and `X-Signature` to the base64 HMAC-SHA256 of
         `{timestamp}.{requestBody}`. Neither value can be retrieved later.
 
-        **Rate limit:** 10 requests/minute per IP address.
+        **Rate limit:** 60 requests/minute per IP address.
 
         **Security:** Always verify that the `state` value in the callback
         matches what you sent before calling this endpoint.
+
+        **Attempt limits:** 30 exchanges per `client_id` and 5 per authorization code in any 10 minutes.
+        Beyond that the call returns `429 rate_limited` with a `Retry-After` header.
       security: []
       requestBody:
         required: true
@@ -23743,6 +23809,9 @@ paths:
         endpoint for merchant-initiated disconnects.
 
         **Rate limit:** 60 requests/hour per IP address.
+
+        **Attempt limits:** 60 revocations per `client_id` in any 10 minutes. Beyond that the call
+        returns `429 rate_limited` with a `Retry-After` header.
       security: []
       requestBody:
         required: true
@@ -35185,6 +35254,11 @@ components:
       headers:
         Tybrite-Environment:
           $ref: '#/components/headers/TybriteEnvironment'
+        Retry-After:
+          description: Seconds until the limit that refused the request resets. Sent with `rate_limited`.
+          schema:
+            type: integer
+          example: 540
       content:
         application/json:
           schema:

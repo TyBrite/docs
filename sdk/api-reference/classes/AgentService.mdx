@@ -51,7 +51,7 @@ Most tools need only an API key, and a publishable key is enough. Tools that rea
 
 The tool manifest for the store: every tool with its HTTP operation, a JSON Schema for its request and for its response `data`, the credential it needs, and its cost class (`deterministic` or `hosted_helper`). An assistant can register its tools from this manifest instead of from a hand-written list.
 
-`hosted_helpers_available` says whether the two hosted helpers can be called now. When it is `false`, calling one returns `403 helpers_unavailable` or `402 insufficient_credits`; the deterministic tools are always available. `assistant` carries the name and logo the merchant has given their shopping assistant (`name` and `logo_url`, each `null` when not set), so an assistant shopping the store can present itself the way the store does. The response below shows one entry from the manifest's `tools` array, with its request schema shortened to three properties.
+`hosted_helpers_available` says whether the two hosted helpers can be called now. When it is `false`, calling one with a publishable key returns `403 helpers_unavailable`, the same answer whatever the reason; a secret key receives the reason. The deterministic tools are always available. `assistant` carries the name and logo the merchant has given their shopping assistant (`name` and `logo_url`, each `null` when not set), so an assistant shopping the store can present itself the way the store does. The response below shows one entry from the manifest's `tools` array, with its request schema shortened to three properties.
 
 ```typescript
 const { data } = await client.agent.getCapabilities();
@@ -1589,7 +1589,7 @@ The `data` above is shortened to the fields that differ by mode; `items` and `qu
 
 ### `getCheckoutIntent`
 
-The intent's status and its frozen quote. `status` is one of `pending_confirmation`, `confirmed`, `expired`, `cancelled` or `completed`.
+The intent's status and its frozen quote. `status` is one of `pending_confirmation`, `confirmed`, `expired`, `cancelled` or `completed`. The shopper's personal data — `customer_id` and `quote.shipping_address` — is included for a secret key, or for a publishable key sent with a shopper credential (`xAuthToken`, `xExternalAuth` or `xIdpToken`) for the intent's own customer. A publishable key alone, a guest intent read with a publishable key, or another shopper's credential receives the intent without those two fields; status, lines and totals are the same. A credential that is sent and cannot be verified returns its own error. The response below is a publishable-key read of a guest intent.
 
 ```typescript
 const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
@@ -1603,7 +1603,6 @@ const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
     "confirmation_mode": "token",
     "expires_at": "2026-09-28T22:24:09.629+00:00",
     "order_id": null,
-    "customer_id": null,
     "total": 1548,
     "currency": "EUR",
     "items": [
@@ -1651,14 +1650,6 @@ const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
       "subtotal": 48,
       "grand_total": 1548,
       "total_is_final": true,
-      "shipping_address": {
-        "city": "New York",
-        "name": "John Doe",
-        "line1": "350 Fifth Avenue",
-        "state": "NY",
-        "country": "US",
-        "postal_code": "10118"
-      },
       "unavailable_count": 0
     },
     "created_at": "2026-09-28T21:54:09.713316+00:00",
@@ -1818,7 +1809,7 @@ const { data } = await client.agent.confirmCheckoutIntent({
 
 ### `cancelCheckoutIntent`
 
-Cancels a pending intent and releases its stock hold at once.
+Cancels a pending intent and releases its stock hold at once. The cancelled intent carries the shopper's personal data on the same terms as `getCheckoutIntent`; the response below is a publishable-key cancel.
 
 ```typescript
 const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
@@ -1832,7 +1823,6 @@ const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
     "confirmation_mode": "token",
     "expires_at": "2026-09-28T22:24:32.905+00:00",
     "order_id": null,
-    "customer_id": null,
     "total": 1524.95,
     "currency": "EUR",
     "items": [
@@ -1880,14 +1870,6 @@ const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
       "subtotal": 24.95,
       "grand_total": 1524.95,
       "total_is_final": true,
-      "shipping_address": {
-        "city": "New York",
-        "name": "John Doe",
-        "line1": "350 Fifth Avenue",
-        "state": "NY",
-        "country": "US",
-        "postal_code": "10118"
-      },
       "unavailable_count": 0
     },
     "created_at": "2026-09-28T21:54:32.986631+00:00",
@@ -2119,7 +2101,7 @@ const { data } = await server.agent.getUsage();
 
 The hosted helpers are paid for from the store's **Agent Compute credit** balance, which the merchant funds. The shopper never pays for them. Each call is debited at its true cost, reported in `usage.credits_debited`; a call that fails keeps no credits.
 
-Hosted helpers are off until the merchant turns them on, which requires automatic recharge with a monthly limit, so the balance does not run out mid-conversation. When the helpers cannot run, they answer `403 helpers_unavailable` (not enabled, or paused) or `402 insufficient_credits`, and every deterministic tool keeps working — an assistant can fall back to building constraints itself and calling `search`. Calls made with a test key run the model too and debit the same balance; `getUsage` reports that spend separately.
+Hosted helpers are off until the merchant turns them on, which requires automatic recharge with a monthly limit, so the balance does not run out mid-conversation. When the helpers cannot run, a publishable key receives `403 helpers_unavailable` with no reason, whatever the cause, so no store reads publicly as switched off or out of credits. A secret key receives the reason: `403 helpers_unavailable` with `details.reason` (`disabled`, `paused` or `unavailable`), or `402 insufficient_credits`. Every deterministic tool keeps working — an assistant can fall back to building constraints itself and calling `search`. Calls made with a test key run the model too and debit the same balance; `getUsage` reports that spend separately.
 
 The hosted helpers carry an additional rate limit of 60 calls a minute per client and 1,000 an hour per key, on top of the standard limits.
 
@@ -2145,7 +2127,7 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | `201` | A cart draft or checkout intent was created. |
 | `400` | Invalid body or parameter — for example `compare` with fewer than two products, or a `limit` out of range. |
 | `401` | Invalid or missing API key; a shopper tool called without a shopper credential; or an intent created for a signed-in shopper confirmed without their credential. |
-| `402` | `insufficient_credits` — a hosted helper was called with no Agent Compute credits available. |
+| `402` | `insufficient_credits` — a hosted helper was called with a secret key and no Agent Compute credits available (a publishable key receives `403 helpers_unavailable`). |
 | `403` | `helpers_unavailable`, `consent_required`, `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
 | `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
 | `409` | `quote_changed`, `intent_not_pending`, `items_unavailable`, `shipping_not_deliverable`, `quote_incomplete`, or an `Idempotency-Key` reused with a different basket. |

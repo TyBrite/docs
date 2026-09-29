@@ -497,6 +497,21 @@ const { data: confirmed } = await storefront.agent.confirmCheckoutIntent({
 An intent created with a shopper credential is tied to that shopper and must be confirmed with the same
 credential.
 
+### Reading an intent
+
+`getCheckoutIntent` returns the intent's status, lines and frozen totals to any key. The shopper's
+shipping address (`quote.shipping_address`) and `customer_id` are included only for a secret key, or for
+a publishable key sent with a credential for the intent's own shopper. A publishable key alone receives
+the intent without those two fields, because the publishable key is public and a hosted intent's id
+appears in its confirmation link. The same applies to the intent returned by `cancelCheckoutIntent`.
+
+```typescript
+const { data: current } = await storefront.agent.getCheckoutIntent({
+  id: intent.id!,
+  xExternalAuth: shopperAssertion, // omit for a guest intent; the address is then left out
+});
+```
+
 ### Declining
 
 An intent the shopper declines is cancelled at once, which releases its stock hold. One that is left
@@ -624,22 +639,25 @@ const results = await storefront.agent.search({ requestBody: data.constraints! }
 call that fails is refunded in full.
 
 The helpers are off until the merchant turns them on, which requires automatic recharge of the credit
-balance. When they cannot run, they answer with an error and every deterministic tool keeps working:
-
-| Status | `error.code` | When |
-| :--- | :--- | :--- |
-| `403` | `helpers_unavailable` | The helpers cannot run on this store: `details.reason` is `disabled` (not turned on), `paused`, or `unavailable`. |
-| `402` | `insufficient_credits` | The store has no Agent Compute credits available. |
+balance. When they cannot run, they answer with an error and every deterministic tool keeps working.
+A publishable key receives one answer whatever the reason, so no store reads publicly as switched off
+or out of credits:
 
 ```json Response (403)
 {
   "error": {
     "code": "helpers_unavailable",
-    "message": "Hosted helpers are not enabled for this store. The deterministic tools remain available.",
-    "details": { "reason": "disabled" }
+    "message": "Hosted helpers are not available for this store. The deterministic tools remain available."
   }
 }
 ```
+
+A secret key — the store's own server — receives the reason:
+
+| Status | `error.code` | When |
+| :--- | :--- | :--- |
+| `403` | `helpers_unavailable` | `details.reason` is `disabled` (not turned on), `paused`, or `unavailable`. |
+| `402` | `insufficient_credits` | The store has no Agent Compute credits available. |
 
 `hosted_helpers_available` in the manifest from step 1 reports whether the helpers can run before a call
 is made, so an assistant can leave the helpers out of its tool list and fall back to its
