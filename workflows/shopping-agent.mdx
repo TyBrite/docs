@@ -1,0 +1,627 @@
+---
+title: "Build a Shopping Agent"
+description: "An AI shopping assistant end to end — register the tools, search, read a product, compare, price a basket, draft a cart, and hand a checkout intent to the shopper to confirm before payment."
+---
+
+A shopping assistant helps a shopper find and buy from one store: a chat widget on the storefront, a
+voice interface, or an assistant in another product. The assistant's model decides what to ask and what
+to suggest; the `client.agent` tools supply the facts it cannot know — live stock, the price the shopper
+is charged, the promotion that applies, shipping and tax for an address — and the checkout the shopper
+confirms. [Agentic Commerce](/agentic-commerce#shopping-assistants-the-agent-api) describes the surface
+as a whole, and the [Agent reference](/sdk/api-reference/classes/AgentService) documents every method.
+
+Steps 1–6 take a publishable key and are safe to call from a browser. Step 7 places an order, and step 8
+takes payment on your server with the secret key. The responses are captured from a sandbox store, and
+each is trimmed to the fields the step uses. [Workflow Examples](/workflows/introduction) has the client
+setup.
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const storefront = new Tybrite({ apiKey: 'tybrite_pk_live_YOUR_API_KEY' });
+```
+
+Every tool returns the same envelope: the result in `data`, and `evidence` naming the operation and
+field each figure was read from, alongside `computed_at`, `currency` and `environment`. The envelope is
+shown in full once, in step 2, and elided after that.
+
+## 1. Registering the tools
+
+The manifest lists every tool with its HTTP operation, a JSON Schema for its request and for its
+response `data`, the credential it needs, and a `cost_class`. An assistant can register its tools from
+the manifest rather than from a hand-written list, so a tool added to the API reaches the assistant
+without a code change.
+
+```typescript
+const { data } = await storefront.agent.getCapabilities();
+
+const tools = data.tools!.filter(
+  (t) => t.cost_class === 'deterministic' || data.hosted_helpers_available
+);
+```
+
+```json Response
+{
+  "data": {
+    "tools": [
+      {
+        "name": "quote",
+        "method": "POST",
+        "path": "/v1/agent/quote",
+        "auth": "publishable",
+        "cost_class": "deterministic",
+        "description": "Price a basket: each line, the best promotion, shipping and tax for an address, and the grand total. Unavailable lines are flagged, not dropped.",
+        "request_schema": { "type": "object", "required": ["items"], "properties": { "…": {} } },
+        "response_schema": { "type": "object", "properties": { "…": {} } }
+      }
+    ],
+    "hosted_helpers_available": false,
+    "hosted_helpers_reason": "disabled"
+  }
+}
+```
+
+`auth` is `publishable`, `shopper` (a shopper credential is
+required), `shopper_optional`, `shopper_or_guest_token`, or `secret`. `hosted_helpers_available` is
+`false` on this store because the merchant has not turned the hosted helpers on; step 9 covers them.
+
+## 2. Searching with constraints
+
+Search takes the constraints a shopper states — free text, a price range, a category, attribute values,
+in stock only — and returns products with `match_reasons` listing which constraint each one met. A model
+can say *why* a product is on the list without guessing.
+
+```typescript
+const { data } = await storefront.agent.search({
+  requestBody: { query: 'Galactic Zip Hoodie', price_max: 49, in_stock_only: true, limit: 3 },
+});
+```
+
+```json Response
+{
+  "data": {
+    "results": [
+      {
+        "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+        "name": "Galactic Zip Hoodie",
+        "brand": "Galactic",
+        "category": "Wearables",
+        "subcategory": "Hoodies",
+        "price": 48,
+        "list_price": 48,
+        "currency": "EUR",
+        "in_stock": true,
+        "stock": 25,
+        "has_variants": true,
+        "match_reasons": [
+          { "constraint": "query", "detail": "semantic match (score 0.75) and text match" },
+          { "constraint": "price", "detail": "price 48" },
+          { "constraint": "in_stock_only", "detail": "in stock" }
+        ],
+        "score": 0.75
+      }
+    ],
+    "total_matched": 1,
+    "scanned": 216,
+    "catalog_truncated": false,
+    "semantic_search": "used"
+  },
+  "evidence": [
+    { "source": "products", "operation": "GET /v1/products", "field": "selling_price" },
+    { "source": "products", "operation": "GET /v1/products", "field": "stock" },
+    { "source": "search", "operation": "POST /v1/search", "field": "score" }
+  ],
+  "computed_at": "2026-09-29T10:58:26.545Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+## 3. Reading one product
+
+The product dossier carries each variant with its own price and live stock, the promotion that applies
+to one unit, published specifications, the review summary, the shipping zones with their base fees, and
+the return window. A specification the merchant has not published is absent rather than inferred.
+
+```typescript
+const { data } = await storefront.agent.getProductContext({
+  id: '289533e8-f5b6-4d4f-bb23-2127875feb70',
+});
+```
+
+```json Response
+{
+  "data": {
+    "product": {
+      "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+      "name": "Galactic Zip Hoodie",
+      "brand": "Galactic",
+      "description": "Comfortable zip hoodie with galactic design and soft fabric."
+    },
+    "variants": [
+      { "variant_id": "ba03d8ca-83d1-4509-add1-96a98f8d1c08", "sku": "FEED-HOODIE-BLK-M", "name": "Black / M", "price": 50, "stock": 15, "in_stock": true },
+      { "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a", "sku": "FEED-HOODIE-GRY-M", "name": "Grey / M", "price": 48, "stock": 25, "in_stock": true }
+    ],
+    "price_range": { "min": 48, "max": 50 },
+    "total_stock": 60,
+    "promotion": null,
+    "specifications": {},
+    "reviews": { "count": 0, "average_rating": null, "verified_count": 0 },
+    "shipping": {
+      "currency": "EUR",
+      "ships_anywhere": false,
+      "zones": [
+        { "name": "USA", "fee": 1500, "free_threshold": 100000 },
+        { "name": "United Kingdom", "fee": 2500, "free_threshold": 100000 }
+      ],
+      "note": "The exact fee for an address comes from POST /v1/agent/quote."
+    },
+    "returns": { "accepted": true, "window_days": 10 }
+  }
+}
+```
+
+The dossier is cached at the edge for up to five minutes and purged when the catalogue changes.
+
+## 4. Comparing and checking fit
+
+`compare` sets two to five products side by side, with their specifications aligned into rows; a
+specification one product does not publish is `null` in its column. `checkFit` sorts a shopper's
+constraints for one product into those it meets, those it misses, and those it cannot be judged on.
+
+```typescript
+const { data: fit } = await storefront.agent.checkFit({
+  requestBody: {
+    product_id: '289533e8-f5b6-4d4f-bb23-2127875feb70',
+    constraints: { price_max: 58, in_stock_only: true, attributes: { color: 'black' } },
+  },
+});
+```
+
+```json Response
+{
+  "data": {
+    "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+    "met": [
+      { "constraint": "price", "detail": "price 48" },
+      { "constraint": "in_stock", "detail": "in stock" }
+    ],
+    "missed": [],
+    "unknown": [
+      { "constraint": "attribute:color", "detail": "not published for this product" }
+    ],
+    "alternatives": []
+  }
+}
+```
+
+The colour lands in `unknown` because this product publishes no `color` specification — the variant
+name says "Grey / M", but the tool reports only what the merchant published. An assistant can ask the
+shopper, or read the variant names from step 3, rather than assert a colour. When a constraint is
+missed, `alternatives` lists in-stock products that meet more of them; `getAlternatives` returns the
+same kind of list directly, by similarity, lower price, stock, or matching specification.
+
+## 5. Pricing a basket
+
+A quote prices a basket the way an order is priced: each line at the price the shopper is charged, the
+best promotion, then shipping and tax for the address. `total_is_final` is `true` only when every line
+is available and both shipping and tax were priced; without an address, both report `address_required`
+and the total is not final. A line that cannot be bought is flagged with `unavailable_reason`, never
+dropped, so the assistant can tell the shopper what changed.
+
+```typescript
+const address = {
+  name: 'John Doe', line1: '350 Fifth Avenue', city: 'New York',
+  state: 'NY', postal_code: '10118', country: 'US',
+};
+
+const { data: quote } = await storefront.agent.quote({
+  requestBody: {
+    items: [
+      { variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a', quantity: 2 },
+      { variant_id: '06cf8d3e-da82-4d6f-896f-d756f80c592f', quantity: 1 },
+    ],
+    shipping_address: address,
+  },
+});
+```
+
+```json Response
+{
+  "data": {
+    "lines": [
+      {
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+        "name": "Galactic Zip Hoodie",
+        "variant_name": "Grey / M",
+        "quantity": 2,
+        "unit_price": 48,
+        "list_price": 48,
+        "line_total": 96,
+        "available": true,
+        "stock": 25,
+        "unavailable_reason": null
+      },
+      {
+        "variant_id": "06cf8d3e-da82-4d6f-896f-d756f80c592f",
+        "name": "Selling Plans Ski Wax",
+        "variant_name": "Selling Plans Ski Wax",
+        "quantity": 1,
+        "unit_price": 24.95,
+        "list_price": 24.95,
+        "line_total": 24.95,
+        "available": true,
+        "stock": 10,
+        "unavailable_reason": null
+      }
+    ],
+    "subtotal": 120.95,
+    "discount": { "amount": 0, "promotion": null },
+    "shipping": { "status": "quoted", "amount": 1500, "description": "USA", "free_threshold": 100000, "is_free": false },
+    "tax": { "status": "quoted", "amount": 223.58, "source": "fallback", "prices_include_tax": true },
+    "grand_total": 1620.95,
+    "total_is_final": true,
+    "unavailable_count": 0,
+    "currency": "EUR"
+  },
+  "evidence": [
+    { "source": "pricing", "operation": "GET /v1/prices/products/{id}", "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a", "field": "resolved_price" },
+    { "source": "promotions", "operation": "POST /v1/promotions/calculate-best", "field": "discount" },
+    { "source": "shipping", "operation": "shipping quote", "field": "fee" },
+    { "source": "tax", "operation": "POST /v1/tax/preview", "field": "tax_amount" }
+  ]
+}
+```
+
+This store's prices include tax, so `tax.amount` is the share of the total that is tax and is not added
+to it: the grand total is the subtotal, less the discount, plus shipping.
+
+## 6. Keeping a cart draft
+
+A cart draft holds a basket the assistant is building without touching the shopper's live cart. It
+carries its own quote, is re-quoted on every read, and expires after 24 hours. When the shopper wants the
+items in their cart, `applyCartDraft` adds them — that call needs the shopper's credential.
+
+```typescript
+const { data } = await storefront.agent.createCartDraft({
+  requestBody: {
+    items: [
+      { variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a', quantity: 2 },
+      { variant_id: '06cf8d3e-da82-4d6f-896f-d756f80c592f', quantity: 1 },
+    ],
+    shipping_address: address,
+  },
+});
+
+// Later: re-quoted at the current prices and stock
+const { data: current } = await storefront.agent.getCartDraft({ id: data.draft!.id! });
+```
+
+```json Response
+{
+  "data": {
+    "draft": {
+      "id": "2610b923-3c48-4703-a29a-ed257e8ff52e",
+      "items": [
+        { "quantity": 2, "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a" },
+        { "quantity": 1, "variant_id": "06cf8d3e-da82-4d6f-896f-d756f80c592f" }
+      ],
+      "source": "items",
+      "expires_at": "2026-09-30T10:58:34.153+00:00",
+      "applied_at": null,
+      "created_at": "2026-09-29T10:58:34.185382+00:00"
+    },
+    "quote": {
+      "subtotal": 120.95,
+      "grand_total": 1620.95,
+      "total_is_final": true,
+      "currency": "EUR"
+    }
+  }
+}
+```
+
+`getCartInsights` reads a draft or the shopper's live cart and reports what has moved since items were
+added: lines no longer available, price changes, the gap to free shipping, and complementary products.
+
+## 7. Creating and confirming a checkout intent
+
+The assistant does not place the order. It creates a **checkout intent**, which prices the basket for
+the address, freezes that price, holds the stock for 30 minutes, and returns a single-use
+`confirmation_token`. The application shows the frozen quote to the shopper; the order is placed only
+when the shopper approves and the application confirms the intent with the token.
+
+`idempotencyKey` is required. A retry with the same key and basket returns the same intent without the
+token, so the token is kept from the first response.
+
+```typescript
+const { data: intent } = await storefront.agent.createCheckoutIntent({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    items: [
+      { variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a', quantity: 2 },
+      { variant_id: '06cf8d3e-da82-4d6f-896f-d756f80c592f', quantity: 1 },
+    ],
+    shipping_address: address,
+  },
+});
+
+// Show intent.quote to the shopper. Keep intent.confirmation_token until they decide.
+```
+
+```json Response
+{
+  "data": {
+    "id": "fcb74784-a3a3-499b-98a9-27bb640e6d07",
+    "status": "pending_confirmation",
+    "confirmation_mode": "token",
+    "expires_at": "2026-09-29T11:28:36.849+00:00",
+    "order_id": null,
+    "customer_id": null,
+    "total": 1620.95,
+    "currency": "EUR",
+    "items": [
+      { "quantity": 2, "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a" },
+      { "quantity": 1, "variant_id": "06cf8d3e-da82-4d6f-896f-d756f80c592f" }
+    ],
+    "quote": {
+      "subtotal": 120.95,
+      "discount": { "amount": 0, "promotion": null },
+      "shipping": { "amount": 1500, "status": "quoted", "is_free": false, "description": "USA", "free_threshold": 100000 },
+      "tax": { "amount": 223.58, "source": "fallback", "status": "quoted", "prices_include_tax": true },
+      "grand_total": 1620.95,
+      "total_is_final": true
+    },
+    "created_at": "2026-09-29T10:58:36.88197+00:00",
+    "confirmed_at": null,
+    "cancelled_at": null,
+    "confirmation_token": "HuOCuAcxjAyo89bja79HB7ZsdRruuFJrGMc4UR1md34"
+  },
+  "evidence": [
+    { "source": "orders", "operation": "POST /v1/checkout/reserve", "field": "reservations" }
+  ]
+}
+```
+
+An intent is refused, with the current quote in `error.details`, when a line cannot be bought
+(`409 items_unavailable`), the store does not deliver to the address (`409 shipping_not_deliverable`),
+or shipping or tax cannot be priced for it (`409 quote_incomplete`).
+
+### Confirming for a guest
+
+A guest confirms with `contact` — an email and a name, and optionally a phone number.
+
+```typescript
+const { data: confirmed } = await storefront.agent.confirmCheckoutIntent({
+  id: intent.id!,
+  requestBody: {
+    confirmation_token: intent.confirmation_token!,
+    contact: { email: 'john.doe@example.com', name: 'John Doe' },
+  },
+});
+```
+
+```json Response
+{
+  "data": {
+    "intent": {
+      "id": "fcb74784-a3a3-499b-98a9-27bb640e6d07",
+      "status": "confirmed",
+      "order_id": "b73d71da-9c73-46b3-872e-257f395c5538",
+      "total": 1620.95,
+      "currency": "EUR",
+      "confirmed_at": "2026-09-29T10:58:39.427+00:00"
+    },
+    "order": {
+      "id": "b73d71da-9c73-46b3-872e-257f395c5538",
+      "order_number": "ORD-1790679519588",
+      "total_amount": 1620.95,
+      "currency": "EUR",
+      "payment_status": "pending",
+      "order_status": "pending"
+    },
+    "payment": {
+      "next_step": "POST /v1/payments/initialize",
+      "initialize_body": {
+        "order_id": "b73d71da-9c73-46b3-872e-257f395c5538",
+        "amount": 1620.95,
+        "currency": "EUR",
+        "email": "john.doe@example.com"
+      },
+      "methods": [
+        { "provider": "cash", "display_name": "Cash on Delivery", "type": "manual", "environment": "production", "is_configured": true },
+        { "provider": "stripe", "display_name": "Stripe", "type": "redirect", "environment": "test", "is_configured": true },
+        { "provider": "paypal", "display_name": "PayPal", "type": "popup", "environment": "sandbox", "is_configured": true }
+      ]
+    }
+  }
+}
+```
+
+Confirmation prices the basket again. If anything the shopper would pay has changed — a line price, the
+discount, shipping, tax, or the total — nothing is placed, and the response is `409 quote_changed` with
+the new quote in `error.details`; the shopper decides on the new figures and a new intent is created
+for them. Otherwise the order is placed with payment
+pending, using the stock the intent held.
+
+The token works once: a second confirmation returns `409 intent_not_pending`, and a wrong token returns
+`403 invalid_token` without revealing anything about the intent.
+
+### Confirming for a signed-in shopper
+
+A shopper who is signed in confirms with their credential instead of `contact`, and the order is placed
+on their customer record. The credential is one of `xAuthToken` (a Galactic Core session token),
+`xExternalAuth` (an assertion your backend signs after the shopper signs in with your own identity
+provider), or `xIdpToken` (a token from the store's registered identity provider).
+[Customers & auth](/sdk/customers-and-auth#customer-self-endpoints-in-path-b--the-x-external-auth-assertion)
+shows how to sign the assertion.
+
+```typescript
+const { data: confirmed } = await storefront.agent.confirmCheckoutIntent({
+  id: intent.id!,
+  xExternalAuth: shopperAssertion, // signed on your server for the signed-in shopper
+  requestBody: { confirmation_token: intent.confirmation_token! },
+});
+```
+
+An intent created with a shopper credential is tied to that shopper and must be confirmed with the same
+credential.
+
+### Declining
+
+An intent the shopper declines is cancelled at once, which releases its stock hold. One that is left
+unconfirmed reads as `expired` after 30 minutes and its stock is released the same way.
+
+```typescript
+await storefront.agent.cancelCheckoutIntent({ id: intent.id! });
+```
+
+```json Response
+{
+  "data": {
+    "id": "9ee4c70e-4379-4f2f-b015-142aa1503a14",
+    "status": "cancelled",
+    "cancelled_at": "2026-09-29T10:58:44.673+00:00"
+  },
+  "evidence": [
+    { "source": "agent", "id": "9ee4c70e-4379-4f2f-b015-142aa1503a14", "field": "status" },
+    { "source": "orders", "field": "stock hold released" }
+  ]
+}
+```
+
+## 8. Taking payment (server, signed)
+
+A confirmed intent leaves an order with payment pending. `payment.initialize_body` is the body that
+`initializePayment` takes, and the call is made from your server with the secret key, an HMAC signature
+and an idempotency key, exactly as in
+[Storefront checkout](/workflows/storefront-checkout#8-taking-payment-server-signed).
+
+```typescript
+const server = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+
+const payment = await server.payments.initializePayment({
+  idempotencyKey: `pay-${confirmed.order!.id}`,
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: paymentSignature, // HMAC of `${timestamp}.${JSON.stringify(requestBody)}`
+  requestBody: {
+    ...confirmed.payment!.initialize_body!,
+    provider: 'stripe',
+    success_url: 'https://example.com/payment-success',
+    cancel_url: 'https://example.com/payment-cancelled',
+  },
+});
+
+// Redirect the shopper to payment.checkout_url
+```
+
+The order is recorded as an agent order: its `order.created` [webhook](/webhooks) carries
+`source_channel: "agent"` and `agent_client_ref`, which identifies the API key or connected application
+that created the intent. The intent itself raises `agent.checkout_intent.created`,
+`agent.checkout_intent.confirmed` and `agent.checkout_intent.expired`.
+
+## 9. Supplying the reasoning
+
+Every tool above is deterministic: structured input, structured output, read from the store's data. The
+model that turns a shopper's sentence into those calls can come from either side.
+
+### Your own model
+
+The assistant runs on your model and calls the tools from step 1 as functions. The tools cost what any
+storefront request costs, counted against the plan's normal request allowance; no Agent Compute credits
+are involved. A tool loop registers the manifest entries and executes each call the model makes:
+
+```typescript
+const { data: manifest } = await storefront.agent.getCapabilities();
+const tools = manifest.tools!.filter((t) => t.cost_class === 'deterministic');
+
+// Each entry supplies the function definition your model needs.
+const functions = tools.map((t) => ({
+  name: t.name,
+  description: t.description,
+  parameters: t.request_schema,
+}));
+
+// When the model calls a tool, route it to the matching method, e.g.
+//   search            → storefront.agent.search({ requestBody: args })
+//   quote             → storefront.agent.quote({ requestBody: args })
+//   get_product_context → storefront.agent.getProductContext({ id: args.id })
+```
+
+The figures the model repeats to the shopper come from `data`, and `evidence` gives it a source to cite
+for each one.
+
+### Hosted helpers
+
+Two tools run a model on the store's side and are paid for from the store's **Agent Compute credits**:
+
+- `interpret` turns a request in plain language into the constraint object `search` accepts, and lists
+  any part it could not map in `unresolved`.
+- `draftCartFromIntent` turns an intent and an optional budget into a priced, stock-checked cart draft.
+  It chooses only among in-stock search results, by variant, and every amount in the draft comes from
+  the quote; `over_budget` reports whether the total exceeds the budget.
+
+```typescript
+const { data, usage } = await storefront.agent.interpret({
+  requestBody: { query: 'a black hoodie under 60 for my brother' },
+});
+
+const results = await storefront.agent.search({ requestBody: data.constraints! });
+```
+
+```json Response
+{
+  "data": {
+    "constraints": {
+      "query": "hoodie",
+      "price_max": 60,
+      "attributes": { "color": "black" },
+      "in_stock_only": true
+    },
+    "unresolved": ["for my brother"]
+  },
+  "evidence": [
+    { "source": "hosted_helper", "operation": "interpret", "field": "constraints" }
+  ],
+  "computed_at": "2026-09-28T21:49:12.108Z",
+  "currency": null,
+  "environment": "sandbox",
+  "usage": { "credits_debited": 0.000412, "model_class": "fast" }
+}
+```
+
+`usage.credits_debited` is the amount taken from the store's balance for the call, in US dollars. A
+call that fails is refunded in full.
+
+The helpers are off until the merchant turns them on, which requires automatic recharge of the credit
+balance. When they cannot run, they answer with an error and every deterministic tool keeps working:
+
+| Status | `error.code` | When |
+| :--- | :--- | :--- |
+| `403` | `helpers_unavailable` | The helpers cannot run on this store: `details.reason` is `disabled` (not turned on), `paused`, or `unavailable`. |
+| `402` | `insufficient_credits` | The store has no Agent Compute credits available. |
+
+```json Response (403)
+{
+  "error": {
+    "code": "helpers_unavailable",
+    "message": "Hosted helpers are not enabled for this store. The deterministic tools remain available.",
+    "details": { "reason": "disabled" }
+  }
+}
+```
+
+`hosted_helpers_available` and `hosted_helpers_reason` in the manifest from step 1 report the same state
+before a call is made, so an assistant can leave the helpers out of its tool list and fall back to its
+own model. A server holding the secret key reads the balance, the recharge state and the month's helper
+spend with `getUsage`.
+
+## What's next
+
+- The [Agent reference](/sdk/api-reference/classes/AgentService) documents the shopper-scoped tools —
+  consent, personal context, reorder suggestions, wishlist insights and order status.
+- [Storefront checkout](/workflows/storefront-checkout) covers the same purchase built directly on the
+  catalog, cart and order services.
+- [Webhooks & automation](/workflows/webhooks-automation) handles `order.created` and the checkout
+  intent events.
