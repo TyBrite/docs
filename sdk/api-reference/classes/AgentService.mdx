@@ -45,6 +45,224 @@ Most tools need only an API key, and a publishable key is enough. Tools that rea
 
 `getUsage` is the only tool that requires a secret key.
 
+## On a marketplace
+
+A client created with a marketplace operator key shops every seller of that marketplace, and no other marketplace. The tools that span sellers work with it; the tools that act on one store's data need that store's own key and answer `403` to a marketplace key.
+
+| Works with a marketplace key | Needs the store's own key |
+| :--- | :--- |
+| `getCapabilities`, `search`, `compare`, `getAlternatives`, `quote`, `interpret`, `draftCartFromIntent`, `getCartDraft`, `createCheckoutIntent`, `getCheckoutIntent`, `confirmCheckoutIntent`, `cancelCheckoutIntent` | `getProductContext`, `checkFit`, `createCartDraft`, `applyCartDraft`, `getCartInsights`, the shopper's own data, `getOrderStatus`, `getStorePolicies`, `getUsage` |
+
+What changes with a marketplace key:
+
+- **Discovery.** `search`, `compare` and `getAlternatives` read every active seller of the marketplace. Each result names its seller in `merchant_store_id` and `merchant_name`, prices are in the marketplace's own currency, and `search` reports `sellers_matched`. A product that is not sold on the marketplace answers `404` in `compare` and `getAlternatives`.
+- **Quote.** `quote` returns what the marketplace checkout will charge: each line, a `sellers` breakdown with each seller's merchandise total and shipping, marketplace-wide promotions in `discount.amount`, and the `grand_total`. Tax is not added (`tax.status: 'not_charged'`). A line may name its seller with `merchant_store_id`; a variant not sold on the marketplace is flagged `not_available_on_this_marketplace`, and one sold by a different seller than named is flagged `not_sold_by_that_seller`. `shipping_selections` chooses a carrier option a seller offered in an earlier quote.
+- **Hosted helpers.** `interpret` and `draftCartFromIntent` are paid from the marketplace operator's own Agent Compute credits, never a seller's. With a secret key they answer `403 helpers_unavailable` when the operator has not switched hosted helpers on, and `402 insufficient_credits` when the operator's credits are exhausted; a publishable key receives `403 helpers_unavailable` whatever the reason, as on a single store. A draft from `draftCartFromIntent` holds only that marketplace's items, each naming its seller, and is priced with the marketplace quote; `getCartDraft` with the same key re-quotes it, and its items go straight into `createCheckoutIntent`.
+- **Checkout intents.** An intent records each seller's lines in `sellers`. Only token confirmation is available. Stock is held when the shopper confirms, for the payment window. Confirming requires `contact.email` and `contact.name`, and a shopper credential, when sent, is recorded on the purchase. Confirmation places one marketplace order across the sellers and returns a single payment: the storefront confirms `payment.client_secret` with the payment provider's own card form. Once paid, each seller receives their own order, marked as placed through a shopping assistant.
+
+```typescript
+// `marketplace` is a client created with the marketplace's operator key.
+const { data: quote } = await marketplace.agent.quote({
+  requestBody: {
+    items: [
+      { variant_id: 'b0302f76-3e39-4744-8401-33ef80c25a6a', quantity: 1 },
+      { variant_id: '82c56d38-4ca0-4f6a-a87b-b1b8563b73e8', quantity: 1 },
+    ],
+    shipping_address: {
+      name: 'John Doe', line1: '350 5th Ave', city: 'New York', state: 'NY',
+      postal_code: '10118', country: 'US', latitude: 40.7484, longitude: -73.9857,
+    },
+  },
+});
+```
+
+```json Response
+{
+  "data": {
+    "marketplace": true,
+    "lines": [
+      {
+        "variant_id": "b0302f76-3e39-4744-8401-33ef80c25a6a",
+        "product_id": "de4aeb12-6621-4a3b-b83f-6ca493aeae6e",
+        "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+        "merchant_name": "Galactic Test Store",
+        "name": "4K Action Camera",
+        "variant_name": "Default",
+        "sku": "ELEC-ACTIONCAM-01-de4a",
+        "quantity": 1,
+        "unit_price": 159,
+        "line_total": 159,
+        "stock": 98,
+        "available": true,
+        "unavailable_reason": null
+      },
+      {
+        "variant_id": "82c56d38-4ca0-4f6a-a87b-b1b8563b73e8",
+        "product_id": "b8e0c434-353c-48ea-ba38-72b0e68b28ab",
+        "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+        "merchant_name": "Galactic Core Store",
+        "name": "Beauty product Test",
+        "variant_name": "Default",
+        "sku": "BTY001",
+        "quantity": 1,
+        "unit_price": 38.5,
+        "line_total": 38.5,
+        "stock": 10,
+        "available": true,
+        "unavailable_reason": null
+      }
+    ],
+    "sellers": [
+      {
+        "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+        "merchant_name": "Galactic Test Store",
+        "variant_ids": [
+          "b0302f76-3e39-4744-8401-33ef80c25a6a"
+        ],
+        "merchandise_total": 159,
+        "shipping": {
+          "amount": 0,
+          "pricing": "seller_rate",
+          "fulfilled_by": "seller",
+          "is_free": true,
+          "free_threshold": null,
+          "description": "Local (within 10 km)",
+          "selected_rate_id": null
+        }
+      },
+      {
+        "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+        "merchant_name": "Galactic Core Store",
+        "variant_ids": [
+          "82c56d38-4ca0-4f6a-a87b-b1b8563b73e8"
+        ],
+        "merchandise_total": 38.5,
+        "shipping": {
+          "amount": 1650,
+          "pricing": "seller_rate",
+          "fulfilled_by": "seller",
+          "is_free": false,
+          "free_threshold": null,
+          "description": "USA",
+          "selected_rate_id": null
+        }
+      }
+    ],
+    "subtotal": 197.5,
+    "discount": {
+      "amount": 0,
+      "promotion": null
+    },
+    "shipping": {
+      "status": "quoted",
+      "amount": 1650
+    },
+    "tax": {
+      "status": "not_charged",
+      "amount": 0,
+      "prices_include_tax": false
+    },
+    "grand_total": 1847.5,
+    "total_is_final": true,
+    "unavailable_count": 0,
+    "currency": "USD",
+    "shipping_address": {
+      "line1": "350 5th Ave",
+      "city": "New York",
+      "state": "NY",
+      "postal_code": "10118",
+      "country": "US",
+      "name": "John Doe",
+      "latitude": 40.7484,
+      "longitude": -73.9857
+    },
+    "shipping_selections": []
+  },
+  "evidence": [
+    {
+      "source": "marketplace",
+      "operation": "GET /v1/products",
+      "field": "variant availability"
+    },
+    {
+      "source": "marketplace",
+      "operation": "POST /v1/cart/checkout/quote",
+      "field": "total_amount"
+    },
+    {
+      "source": "marketplace",
+      "operation": "POST /v1/cart/checkout/quote",
+      "field": "sellers"
+    }
+  ],
+  "computed_at": "2026-09-30T17:39:04.715Z",
+  "currency": "USD",
+  "environment": "sandbox"
+}
+```
+
+```typescript
+const { data: intent } = await marketplace.agent.createCheckoutIntent({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: { items: quote.lines.map(({ variant_id, quantity }) => ({ variant_id, quantity })), shipping_address: quote.shipping_address },
+});
+
+// After the shopper approves:
+const { data: placed } = await marketplace.agent.confirmCheckoutIntent({
+  id: intent.id,
+  requestBody: {
+    confirmation_token: intent.confirmation_token,
+    contact: { email: 'john.doe@example.com', name: 'John Doe' },
+  },
+});
+```
+
+```json Response
+{
+  "data": {
+    "intent": {
+      "id": "b506f2f9-a2d3-42be-aa8c-2519200719b2",
+      "status": "confirmed",
+      "confirmation_mode": "token",
+      "order_group_id": "7b397721-1a0d-4668-a318-5d82674ef145",
+      "total": 1847.5,
+      "currency": "USD",
+      "confirmed_at": "2026-09-30T17:39:14.727+00:00"
+    },
+    "order_group": {
+      "id": "7b397721-1a0d-4668-a318-5d82674ef145",
+      "group_number": "MKT-2026-000086",
+      "total_amount": 1847.5,
+      "currency": "USD",
+      "payment_status": "pending",
+      "sellers": [
+        {
+          "merchant_store_id": "ef7b07d3-424b-4b03-b1d4-30a2d2073b61",
+          "shipping_amount": 0,
+          "fulfilled_by": "seller"
+        },
+        {
+          "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
+          "shipping_amount": 1650,
+          "fulfilled_by": "seller"
+        }
+      ]
+    },
+    "payment": {
+      "provider": "stripe",
+      "next_step": "Confirm the payment in the browser with client_secret using the payment provider's own card form.",
+      "client_secret": "pi_3ULRTMDxNG9Imxmb1KDbjI79_secret_XXXXXXXXXXXXXXXXXXXXXXXXX",
+      "payment_intent_id": "pi_3ULRTMDxNG9Imxmb1KDbjI79",
+      "amount": 1847.5,
+      "currency": "USD"
+    }
+  },
+  "computed_at": "2026-09-30T17:39:16.915Z",
+  "currency": "USD",
+  "environment": "sandbox"
+}
+```
+
 ## Discovering products
 
 ### `getCapabilities`
