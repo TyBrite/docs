@@ -1,0 +1,229 @@
+---
+title: "Store Profile & Policies"
+description: "Reference for the StoreService class in the Tybrite SDK."
+---
+
+The `StoreService` class reads a store's public business profile and its published legal documents. A storefront uses it for the contact block, the social links and the legal notice in its footer, and to render each document at a `/policies/{slug}` route on its own domain.
+
+Access this service via `client.store`. All three methods accept a publishable key. Nothing here is writable through the API: the merchant maintains the profile and the documents in their admin, under **Settings → Store profile**.
+
+Only published material is returned. A document that exists only as a draft, has been switched off or has been unpublished does not appear in any response, and neither do custom entries the merchant has kept private.
+
+### `getStoreProfile`
+
+Returns the store's public profile in one call:
+
+*   **`contact`** — `email`, `phone`, `whatsapp`, `support_hours` and `contact_page_url`, each `null` when not set. `email` and `phone` fall back to the store's own contact details when the merchant has not entered dedicated support ones. `contact` is `null` only when the store has no contact details at all.
+*   **`addresses`** — `business` (where the store trades from) and `returns` (where returned items are sent), each `{ line1, line2, city, region, postal_code, country }` or `null`. `country` is an ISO 3166-1 alpha-2 code.
+*   **`business`** — the legal identity behind the store: `legal_name`, `registration_number`, `tax_number`, and `country`, the country whose law its policies are written under. `null` when the merchant has entered none. This is what a legal notice, an invoice footer or a policy page names as the seller.
+*   **`social`** — the store's social profiles, each `{ platform, url, handle }`. `platform` is one of `instagram`, `tiktok`, `facebook`, `x`, `youtube`, `pinterest`, `linkedin`, `whatsapp`, `threads`, `snapchat` or `other`, and for a named platform `url` is always an address on that platform's own domain.
+*   **`policies`** — the published documents without their text, in the same shape `listStorePolicies` returns.
+*   **`custom_fields`** — store-level custom entries the merchant has defined and marked public, each `{ name, label, type, value }`. Entries with no value are omitted.
+*   **`updated_at`** — when the merchant last saved the profile, or `null` if they never have.
+
+```typescript
+const { profile } = await client.store.getStoreProfile();
+
+if (profile.contact?.email) {
+  renderSupportLink(`mailto:${profile.contact.email}`);
+}
+
+for (const account of profile.social) {
+  renderSocialIcon(account.platform, account.url);
+}
+
+// The seller named in a legal notice or an invoice footer
+const seller = profile.business?.legal_name ?? storeName;
+```
+
+```json Response
+{
+  "profile": {
+    "contact": {
+      "email": "john.doe@example.com",
+      "phone": "+1 415 555 0132",
+      "whatsapp": null,
+      "support_hours": "Mon-Fri 9am-5pm PT",
+      "contact_page_url": "https://example.com/contact"
+    },
+    "addresses": {
+      "business": {
+        "line1": "500 Market Street",
+        "line2": null,
+        "city": "San Francisco",
+        "region": "CA",
+        "postal_code": "94105",
+        "country": "US"
+      },
+      "returns": {
+        "line1": "1200 Harbor Blvd",
+        "line2": null,
+        "city": "Oakland",
+        "region": "CA",
+        "postal_code": "94607",
+        "country": "US"
+      }
+    },
+    "business": {
+      "legal_name": "Galactic Core Store LLC",
+      "registration_number": "LLC-2024-118842",
+      "tax_number": "94-1234567",
+      "country": "US"
+    },
+    "social": [
+      { "platform": "instagram", "url": "https://instagram.com/galactictest", "handle": "@galactictest" },
+      { "platform": "x", "url": "https://x.com/galactictest", "handle": null }
+    ],
+    "policies": [
+      {
+        "slug": "privacy",
+        "title": "Privacy policy",
+        "version": 2,
+        "external_url": null,
+        "published_at": "2026-09-30T12:07:48.007304+00:00",
+        "effective_date": "2026-10-01"
+      },
+      {
+        "slug": "terms",
+        "title": "Terms of service",
+        "version": 1,
+        "external_url": null,
+        "published_at": "2026-09-30T12:07:48.007304+00:00",
+        "effective_date": "2026-09-30"
+      }
+    ],
+    "custom_fields": [],
+    "updated_at": "2026-09-30T12:07:48.007304+00:00"
+  }
+}
+```
+
+A compact form of the same profile — contact, social, the published-document list and which built-in documents exist — is also available as the `profile` section of [`client.system.getStoreInfo`](/sdk/api-reference/classes/SystemService), for a storefront that already loads store information at startup.
+
+---
+
+### `listStorePolicies`
+
+Returns the store's published legal documents without their text. A storefront renders one footer link, and one `/policies/{slug}` route, per entry.
+
+Every store has seven built-in documents. Five are core and always available to publish — `privacy`, `terms`, `returns`, `shipping` and `cookies` — and two are optional and off until the merchant switches them on: `imprint` (a legal notice, required in several European countries) and `accessibility`. A merchant may also add documents of their own under any other slug. Whichever of these are published appear here; the rest do not.
+
+When `external_url` is set, the merchant hosts that document elsewhere, and a storefront links to that address rather than rendering the text itself.
+
+```typescript
+const { policies } = await client.store.listStorePolicies();
+
+const footerLinks = policies.map((policy) => ({
+  label: policy.title,
+  href: policy.external_url ?? `/policies/${policy.slug}`,
+}));
+```
+
+```json Response
+{
+  "policies": [
+    {
+      "slug": "privacy",
+      "title": "Privacy policy",
+      "version": 2,
+      "external_url": null,
+      "published_at": "2026-09-30T12:07:48.007304+00:00",
+      "effective_date": "2026-10-01"
+    },
+    {
+      "slug": "terms",
+      "title": "Terms of service",
+      "version": 1,
+      "external_url": null,
+      "published_at": "2026-09-30T12:07:48.007304+00:00",
+      "effective_date": "2026-09-30"
+    }
+  ]
+}
+```
+
+---
+
+### `getStorePolicy`
+
+Returns one published document with its text. `body` is Markdown and `format` is always `markdown`; render it with any Markdown renderer. `body` is empty when the merchant publishes only an `external_url`.
+
+Each publish creates a new version, and every published version is kept. Without `version` the latest is returned; with `version` that earlier version is returned instead, so an order confirmation or a dispute can show the terms that applied when the order was placed. `latest_version` always reports the current version, so a page showing an earlier one can say that it has been superseded. `effective_date` is the date from which that version applies, as the merchant set it, and may differ from `published_at`.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `slug` | `string` | **Required.** The document's address — `privacy`, `terms`, `returns`, `shipping`, `cookies`, `imprint`, `accessibility`, or a slug the merchant chose. Lowercase letters, digits and hyphens, starting with a letter, 2 to 48 characters. |
+| `version` | `number` | A specific published version. Omit for the latest. |
+
+```typescript
+// The current privacy policy, for a /policies/privacy page
+const { policy } = await client.store.getStorePolicy({ slug: 'privacy' });
+renderMarkdown(policy.body);
+renderFootnote(`Effective ${policy.effective_date}`);
+
+// The terms in force when an order was placed
+const { policy: terms } = await client.store.getStorePolicy({ slug: 'terms', version: 1 });
+if (terms.version < terms.latest_version) {
+  renderNotice('A newer version of these terms has since been published.');
+}
+```
+
+```json Response
+{
+  "policy": {
+    "slug": "privacy",
+    "title": "Privacy policy",
+    "version": 2,
+    "latest_version": 2,
+    "effective_date": "2026-10-01",
+    "published_at": "2026-09-30T12:07:48.007304+00:00",
+    "body": "# Privacy policy\n\nWe collect your name, email address and shipping address to fulfil your order, and we never sell your data.",
+    "format": "markdown",
+    "external_url": null
+  }
+}
+```
+
+A slug that has never been published, is switched off or has been unpublished returns `404`, as does a version number that does not exist. Earlier versions remain readable only while the document itself is published.
+
+---
+
+<Note>
+  **Caching and updates.** Responses are cached for up to five minutes and carry an `ETag`, so a browser or a server-side fetch can revalidate cheaply. To react to changes as they happen, subscribe to the `store.profile_updated`, `store.policy_published` and `store.policy_unpublished` [webhook events](/sdk/api-reference/classes/WebhooksService).
+</Note>
+
+## Response Codes
+
+All three methods accept a **publishable** or a **secret** key.
+
+### `getStoreProfile` (`GET /v1/store/profile`)
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Profile returned. |
+| `401` | Invalid or missing API key. |
+| `403` | Forbidden — a marketplace operator key was used; these endpoints describe a single store. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |
+
+### `listStorePolicies` (`GET /v1/store/policies`)
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Published documents returned (an empty list when none are published). |
+| `401` | Invalid or missing API key. |
+| `403` | Forbidden — a marketplace operator key was used. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |
+
+### `getStorePolicy` (`GET /v1/store/policies/{slug}`)
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Document returned. |
+| `400` | `slug` is malformed, or `version` is not a positive integer. |
+| `401` | Invalid or missing API key. |
+| `403` | Forbidden — a marketplace operator key was used. |
+| `404` | No published document with this slug, or no such version. |
+| `429` | Rate limit exceeded. |
+| `500` | Internal server error. |

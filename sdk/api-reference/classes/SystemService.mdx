@@ -131,6 +131,7 @@ const freshData = await client.system.getStoreInfo({ cache: false });
 | `cms` | Number of published posts and lookbooks. |
 | `features` | Platform capability flags (AI, Currency, etc.). |
 | `custom_fields` | Extra fields the merchant has added to their own records, grouped by what they describe. |
+| `profile` | Support contact, social profiles, published legal documents and legal identity, in summary. |
 
 <Note>
   The `store` section (ID, Name, Timezone, Currencies) is **always included** regardless of the filtered sections.
@@ -184,6 +185,50 @@ everything in this section is safe to show a shopper.
 
 These are definitions. A field's **value** belongs to a record and comes back with that record, in
 its own `custom_fields` array.
+
+#### Store profile
+
+The `profile` section is a compact form of the store profile, for a storefront that renders its
+footer from the store information it already loads at startup. `contact` and `social` have the same
+shape as in [`client.store.getStoreProfile`](/sdk/api-reference/classes/StoreService); `policies`
+lists the published legal documents without their text; `has` reports whether each built-in
+document is currently published, so footer links can be decided without a further call; and
+`business` carries the legal name and the country whose law the policies are written under, or
+`null` when neither is set.
+
+```json Response
+{
+  "profile": {
+    "contact": {
+      "email": "john.doe@example.com",
+      "phone": "+1 415 555 0132",
+      "whatsapp": null,
+      "support_hours": "Mon-Fri 9am-5pm PT",
+      "contact_page_url": "https://example.com/contact"
+    },
+    "social": [
+      { "platform": "instagram", "url": "https://instagram.com/galactictest", "handle": "@galactictest" }
+    ],
+    "policies": [
+      { "slug": "privacy", "title": "Privacy policy", "version": 2, "effective_date": "2026-10-01", "external_url": null },
+      { "slug": "terms", "title": "Terms of service", "version": 1, "effective_date": "2026-09-30", "external_url": null }
+    ],
+    "has": {
+      "privacy": true,
+      "terms": true,
+      "returns": false,
+      "shipping": false,
+      "cookies": false,
+      "imprint": false,
+      "accessibility": false
+    },
+    "business": { "legal_name": "Galactic Core Store LLC", "country": "US" }
+  }
+}
+```
+
+Addresses, registration and tax numbers, custom entries and each document's text are available
+from the [Store service](/sdk/api-reference/classes/StoreService).
 
 #### Category and subcategory counts
 

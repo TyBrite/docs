@@ -429,6 +429,17 @@ security:
 tags:
   - name: System
     description: API information and health checks
+  - name: Store
+    description: |
+      The store's public business profile and its published legal documents.
+
+      The profile carries support contact details, addresses, legal identity, social profiles and the
+      custom entries a merchant has made public. The policies are the documents a storefront renders
+      at `/policies/{slug}` and links from its footer: privacy, terms, returns, shipping and cookies,
+      plus an optional legal notice, an accessibility statement, and documents the merchant adds.
+      Each document is versioned, and every published version stays readable.
+
+      All three endpoints accept a publishable key. Drafts and private entries are never returned.
   - name: Authentication
     description: |
       Customer authentication and session management.
@@ -1060,6 +1071,7 @@ paths:
         - Shipping zones (delivery fees, free thresholds)
         - CMS content (posts, lookbooks)
         - Feature flags (enabled capabilities)
+        - Store profile summary (support contact, social profiles, published legal documents)
           
         **Use Cases:**
         - AI agents understanding store capabilities before making recommendations
@@ -1097,6 +1109,8 @@ paths:
             - `shipping` - Delivery zones and fees
             - `cms` - CMS posts and lookbooks
             - `features` - Feature flags and capabilities
+            - `custom_fields` - The custom fields the merchant has defined, by record type
+            - `profile` - Contact details, social profiles, published legal documents and legal identity, in summary
               
             **Note:** The `store` section is always included regardless of this parameter.
               
@@ -1459,6 +1473,278 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/store/profile:
+    get:
+      operationId: getStoreProfile
+      tags:
+        - Store
+      summary: Get the store profile
+      description: |
+        Returns the store's public business profile: support contact details, business and returns
+        addresses, legal identity, social profiles, the list of published legal documents, and the
+        store-level custom entries the merchant has made public.
+
+        Everything in the response is intended for display on a storefront, so a publishable key may
+        read it. Draft documents and private custom entries are never included. Contact `email` and
+        `phone` fall back to the store's own contact details when the merchant has not set dedicated
+        support ones.
+
+        Responses are cached for up to five minutes and carry an `ETag`; send it back as
+        `If-None-Match` to receive `304 Not Modified` when nothing has changed. Subscribe to the
+        `store.profile_updated` webhook event to learn when the profile changes.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The store profile
+          headers:
+            ETag:
+              description: Entity tag of the response body.
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=300, s-maxage=300
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - profile
+                properties:
+                  profile:
+                    $ref: '#/components/schemas/StoreProfile'
+              example:
+                profile:
+                  contact:
+                    email: john.doe@example.com
+                    phone: +1 415 555 0132
+                    whatsapp: null
+                    support_hours: Mon-Fri 9am-5pm PT
+                    contact_page_url: https://example.com/contact
+                  addresses:
+                    business:
+                      line1: 500 Market Street
+                      line2: null
+                      city: San Francisco
+                      region: CA
+                      postal_code: '94105'
+                      country: US
+                    returns:
+                      line1: 1200 Harbor Blvd
+                      line2: null
+                      city: Oakland
+                      region: CA
+                      postal_code: '94607'
+                      country: US
+                  business:
+                    legal_name: Galactic Core Store LLC
+                    registration_number: LLC-2024-118842
+                    tax_number: 94-1234567
+                    country: US
+                  social:
+                    - platform: instagram
+                      url: https://instagram.com/galactictest
+                      handle: '@galactictest'
+                    - platform: x
+                      url: https://x.com/galactictest
+                      handle: null
+                  policies:
+                    - slug: privacy
+                      title: Privacy policy
+                      version: 2
+                      external_url: null
+                      published_at: '2026-09-30T12:07:48.007304+00:00'
+                      effective_date: '2026-10-01'
+                    - slug: terms
+                      title: Terms of service
+                      version: 1
+                      external_url: null
+                      published_at: '2026-09-30T12:07:48.007304+00:00'
+                      effective_date: '2026-09-30'
+                  custom_fields: []
+                  updated_at: '2026-09-30T12:07:48.007304+00:00'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/store/policies:
+    get:
+      operationId: listStorePolicies
+      tags:
+        - Store
+      summary: List published policies
+      description: |
+        Returns the store's published legal documents — privacy policy, terms of service, returns,
+        shipping and cookie policies, a legal notice, an accessibility statement, and any documents the
+        merchant has added — without their text. A storefront uses this list to render footer links and
+        a `/policies/{slug}` route for each entry.
+
+        Only documents the merchant has published appear. A document that exists only as a draft, has
+        been switched off, or has been unpublished is not listed. When `external_url` is set the
+        merchant hosts that document elsewhere, and a storefront links to that address instead.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The published documents
+          headers:
+            ETag:
+              description: Entity tag of the response body.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - policies
+                properties:
+                  policies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StorePolicySummary'
+              example:
+                policies:
+                  - slug: privacy
+                    title: Privacy policy
+                    version: 2
+                    external_url: null
+                    published_at: '2026-09-30T12:07:48.007304+00:00'
+                    effective_date: '2026-10-01'
+                  - slug: terms
+                    title: Terms of service
+                    version: 1
+                    external_url: null
+                    published_at: '2026-09-30T12:07:48.007304+00:00'
+                    effective_date: '2026-09-30'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/store/policies/{slug}:
+    get:
+      operationId: getStorePolicy
+      tags:
+        - Store
+      summary: Get a published policy
+      description: |
+        Returns one published legal document with its text, in Markdown. Without `version` the latest
+        published version is returned; with `version` that earlier version is returned, so an order
+        can be shown the terms that applied when it was placed. `latest_version` always reports the
+        current one.
+
+        Every published version is kept and stays readable for as long as the document is published.
+        A slug that was never published, has been switched off or has been unpublished returns `404`,
+        as does a version number that does not exist.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: 'The document''s address: `privacy`, `terms`, `returns`, `shipping`, `cookies`, `imprint`, `accessibility`, or a slug the merchant chose for a document of their own. Lowercase letters, digits and hyphens, starting with a letter, 2 to 48 characters.'
+          schema:
+            type: string
+            pattern: ^[a-z][a-z0-9-]{1,47}$
+          example: privacy
+        - name: version
+          in: query
+          required: false
+          description: A specific published version. Omit for the latest.
+          schema:
+            type: integer
+            minimum: 1
+          example: 1
+      responses:
+        '200':
+          description: The published document
+          headers:
+            ETag:
+              description: Entity tag of the response body.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - policy
+                properties:
+                  policy:
+                    $ref: '#/components/schemas/StorePolicy'
+              examples:
+                latest:
+                  summary: The latest version
+                  value:
+                    policy:
+                      slug: privacy
+                      title: Privacy policy
+                      version: 2
+                      latest_version: 2
+                      effective_date: '2026-10-01'
+                      published_at: '2026-09-30T12:07:48.007304+00:00'
+                      body: |-
+                        # Privacy policy
+
+                        We collect your name, email address and shipping address to fulfil your order, and we never sell your data.
+                      format: markdown
+                      external_url: null
+                earlier_version:
+                  summary: An earlier version (?version=1)
+                  value:
+                    policy:
+                      slug: privacy
+                      title: Privacy policy
+                      version: 1
+                      latest_version: 2
+                      effective_date: '2026-09-30'
+                      published_at: '2026-09-30T12:07:48.007304+00:00'
+                      body: |-
+                        # Privacy policy
+
+                        We collect your name, email address and shipping address to fulfil your order.
+                      format: markdown
+                      external_url: null
+        '400':
+          description: The slug or version is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_request
+                  message: 'slug must be 2-48 characters: lowercase letters, digits and hyphens, starting with a letter'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: No published document with this slug, or no such version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: No published policy "shipping"
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -27022,6 +27308,15 @@ paths:
                     connected), `shipping_provider.connected` (a shipping-rate provider was
                     connected), `channel.connected` (a sales channel was connected)
 
+                    **Store profile & policies:** `store.profile_updated` (the store's support
+                    contact details, addresses, legal identity or social profiles changed — carries
+                    `changed_fields`; read the new values from `GET /v1/store/profile`),
+                    `store.policy_published` (a legal document was published or republished —
+                    carries `slug`, `title`, `version`, `effective_date`, `published_at` and
+                    `external_url`), `store.policy_unpublished` (a document was taken down and
+                    `GET /v1/store/policies/{slug}` now returns `404` — carries `slug`, `title`,
+                    `version` and `unpublished_at`)
+
                     **Feature availability:** `feature.status_changed` — a capability's
                     `feature_status` in `GET /v1/store/info` changed, e.g. the store publishes its
                     first post and `cms` becomes `available`. Carries `feature`,
@@ -27429,6 +27724,9 @@ paths:
                     - post.published
                     - review.approved
                     - store.updated
+                    - store.profile_updated
+                    - store.policy_published
+                    - store.policy_unpublished
                     - payment_provider.connected
                     - feature.status_changed
                     - product.deleted
@@ -29477,6 +29775,148 @@ components:
         version:
           type: string
           example: 1.0.0
+    StoreContact:
+      type: object
+      description: How a shopper reaches the store. `email` and `phone` fall back to the store's own contact details when the merchant has not set dedicated support ones.
+      properties:
+        email:
+          type:
+            - string
+            - 'null'
+          example: john.doe@example.com
+        phone:
+          type:
+            - string
+            - 'null'
+          example: +1 415 555 0132
+        whatsapp:
+          type:
+            - string
+            - 'null'
+          description: A WhatsApp number shoppers can message.
+          example: null
+        support_hours:
+          type:
+            - string
+            - 'null'
+          description: Free text, as the merchant wrote it.
+          example: Mon-Fri 9am-5pm PT
+        contact_page_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: The merchant's own contact page, when they host one.
+          example: https://example.com/contact
+    StoreSocialProfile:
+      type: object
+      required:
+        - platform
+        - url
+      properties:
+        platform:
+          type: string
+          enum:
+            - instagram
+            - tiktok
+            - facebook
+            - x
+            - youtube
+            - pinterest
+            - linkedin
+            - whatsapp
+            - threads
+            - snapchat
+            - other
+          example: instagram
+        url:
+          type: string
+          format: uri
+          description: The profile's address. For a named platform it is always on that platform's domain.
+          example: https://instagram.com/galactictest
+        handle:
+          type:
+            - string
+            - 'null'
+          description: The account name as the merchant wrote it, for display.
+          example: '@galactictest'
+    StoreProfileSummary:
+      type: object
+      description: A compact form of the store profile, returned as the `profile` section of `GET /v1/store/info`. `GET /v1/store/profile` returns the full profile.
+      properties:
+        contact:
+          anyOf:
+            - $ref: '#/components/schemas/StoreContact'
+            - type: 'null'
+        social:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoreSocialProfile'
+        policies:
+          type: array
+          items:
+            type: object
+            properties:
+              slug:
+                type: string
+                example: privacy
+              title:
+                type: string
+                example: Privacy policy
+              version:
+                type: integer
+                example: 2
+              effective_date:
+                type: string
+                format: date
+                example: '2026-10-01'
+              external_url:
+                type:
+                  - string
+                  - 'null'
+                format: uri
+                example: null
+        has:
+          type: object
+          description: Whether each built-in document is currently published, so a storefront can decide which footer links to render without fetching the list.
+          properties:
+            privacy:
+              type: boolean
+              example: true
+            terms:
+              type: boolean
+              example: true
+            returns:
+              type: boolean
+              example: false
+            shipping:
+              type: boolean
+              example: false
+            cookies:
+              type: boolean
+              example: false
+            imprint:
+              type: boolean
+              example: false
+            accessibility:
+              type: boolean
+              example: false
+        business:
+          description: The legal name and governing country, or null when neither is set.
+          anyOf:
+            - type: object
+              properties:
+                legal_name:
+                  type:
+                    - string
+                    - 'null'
+                  example: Galactic Core Store LLC
+                country:
+                  type:
+                    - string
+                    - 'null'
+                  example: US
+            - type: 'null'
     StoreInfoResponse:
       type: object
       required:
@@ -30107,6 +30547,8 @@ components:
                       - Standard
                       - Express
             total_fields: 3
+        profile:
+          $ref: '#/components/schemas/StoreProfileSummary'
         marketplace:
           type: object
           description: Indicates whether this store is part of a marketplace, so a storefront can adapt its experience accordingly.
@@ -30159,6 +30601,235 @@ components:
             reset:
               type: integer
               description: Unix timestamp when the rate limit / quota window resets (present on rate_limited / quota_exceeded errors).
+    StoreAddress:
+      type: object
+      description: A postal address. Members the merchant left blank are null.
+      properties:
+        line1:
+          type:
+            - string
+            - 'null'
+          example: 500 Market Street
+        line2:
+          type:
+            - string
+            - 'null'
+          example: null
+        city:
+          type:
+            - string
+            - 'null'
+          example: San Francisco
+        region:
+          type:
+            - string
+            - 'null'
+          description: State, province or county.
+          example: CA
+        postal_code:
+          type:
+            - string
+            - 'null'
+          example: '94105'
+        country:
+          type:
+            - string
+            - 'null'
+          description: ISO 3166-1 alpha-2 country code.
+          example: US
+    StoreBusinessIdentity:
+      type: object
+      description: The legal identity behind a store.
+      properties:
+        legal_name:
+          type:
+            - string
+            - 'null'
+          example: Galactic Core Store LLC
+        registration_number:
+          type:
+            - string
+            - 'null'
+          description: Company or business registration number.
+          example: LLC-2024-118842
+        tax_number:
+          type:
+            - string
+            - 'null'
+          description: VAT, GST or tax identification number.
+          example: 94-1234567
+        country:
+          type:
+            - string
+            - 'null'
+          description: ISO 3166-1 alpha-2 code of the country whose law the store's policies are written under.
+          example: US
+    StorePolicySummary:
+      type: object
+      description: A published legal document, without its text. Only documents the merchant has published appear; a draft or an unpublished document is never listed.
+      required:
+        - slug
+        - title
+        - version
+        - effective_date
+        - published_at
+      properties:
+        slug:
+          type: string
+          pattern: ^[a-z][a-z0-9-]{1,47}$
+          description: The document's address. The built-in documents are `privacy`, `terms`, `returns`, `shipping`, `cookies`, `imprint` and `accessibility`; a merchant may add documents of their own under any other slug.
+          example: privacy
+        title:
+          type: string
+          example: Privacy policy
+        version:
+          type: integer
+          minimum: 1
+          description: The current published version. Each publish creates a new version.
+          example: 2
+        effective_date:
+          type: string
+          format: date
+          description: The date from which this version applies, as set by the merchant.
+          example: '2026-10-01'
+        published_at:
+          type: string
+          format: date-time
+          example: '2026-09-30T12:07:48.007304+00:00'
+        external_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Set when the merchant hosts this document elsewhere. A storefront links to it instead of rendering the text.
+          example: null
+    StoreProfile:
+      type: object
+      description: 'The store''s public business profile: how shoppers reach it, where it trades from, its legal identity, its social profiles, the legal documents it has published, and the custom entries the merchant has made public. Everything here is intended for display on a storefront.'
+      required:
+        - contact
+        - addresses
+        - business
+        - social
+        - policies
+        - custom_fields
+        - updated_at
+      properties:
+        contact:
+          description: Null when the store has no contact details at all.
+          anyOf:
+            - $ref: '#/components/schemas/StoreContact'
+            - type: 'null'
+        addresses:
+          type: object
+          properties:
+            business:
+              description: The store's registered or trading address.
+              anyOf:
+                - $ref: '#/components/schemas/StoreAddress'
+                - type: 'null'
+            returns:
+              description: Where returned items are sent, when it differs from the business address.
+              anyOf:
+                - $ref: '#/components/schemas/StoreAddress'
+                - type: 'null'
+        business:
+          description: The legal identity behind the store, for a legal notice, an invoice footer or a policy page. Null when the merchant has entered none.
+          anyOf:
+            - $ref: '#/components/schemas/StoreBusinessIdentity'
+            - type: 'null'
+        social:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoreSocialProfile'
+        policies:
+          type: array
+          description: The published legal documents, without their text. Fetch one with `GET /v1/store/policies/{slug}`.
+          items:
+            $ref: '#/components/schemas/StorePolicySummary'
+        custom_fields:
+          type: array
+          description: Store-level custom entries the merchant has defined and marked public, with their values. Entries without a value are omitted.
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: The key the value is stored under.
+                example: founded_year
+              label:
+                type: string
+                example: Founded
+              type:
+                type: string
+                description: The field type, e.g. `text`, `number`, `date`, `select`.
+                example: number
+              value:
+                description: The value, typed per the field.
+                example: 2019
+        updated_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the merchant last saved the profile. Null when it has never been saved.
+          example: '2026-09-30T12:07:48.007304+00:00'
+    StorePolicy:
+      type: object
+      description: One published version of a legal document, with its text.
+      required:
+        - slug
+        - title
+        - version
+        - latest_version
+        - effective_date
+        - published_at
+        - body
+        - format
+      properties:
+        slug:
+          type: string
+          example: privacy
+        title:
+          type: string
+          example: Privacy policy
+        version:
+          type: integer
+          minimum: 1
+          description: The version returned — the latest unless `?version=` asked for an earlier one.
+          example: 2
+        latest_version:
+          type: integer
+          minimum: 1
+          description: The current published version. Differs from `version` when an earlier one was requested.
+          example: 2
+        effective_date:
+          type: string
+          format: date
+          example: '2026-10-01'
+        published_at:
+          type: string
+          format: date-time
+          example: '2026-09-30T12:07:48.007304+00:00'
+        body:
+          type: string
+          description: The document text in Markdown. Empty when the merchant publishes only an `external_url`.
+          example: |-
+            # Privacy policy
+
+            We collect your name, email address and shipping address to fulfil your order.
+        format:
+          type: string
+          enum:
+            - markdown
+          description: The format of `body`.
+        external_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Set when the merchant hosts this document elsewhere.
+          example: null
     ProductVariant:
       type: object
       description: |

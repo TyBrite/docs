@@ -156,7 +156,7 @@ await client.webhooks.createWebhookEndpoint({
 | Content & collections | `collection.created`, `collection.updated` (includes membership changes, carrying `members_changed`), `post.published`, `lookbook.published`, `review.approved` |
 | Deletion & restore | `product.deleted`, `product_variant.deleted`, `promotion.deleted`, `collection.deleted`, `post.deleted`, `lookbook.deleted`, `pricing_rule.deleted`, `subcategory.deleted`, `customer.deleted` — the record has left the API. Each has a matching `.restored` (deleting is reversible for 90 days); payloads carry `deleted_at` and `restorable_until`. Deleting a product also deletes its variants |
 | Visibility | `category.activated` / `category.deactivated`, `subcategory.activated` / `subcategory.deactivated` — a category switched off is filtered out of every catalog read. Categories cannot be deleted, so these are their only lifecycle events |
-| Store lifecycle | `store.updated` (carries `changed_fields`, which names `agent_assistant_name` / `agent_assistant_logo_url` when the shopping assistant's identity changes), `payment_provider.connected`, `shipping_provider.connected`, `channel.connected` |
+| Store lifecycle | `store.updated` (carries `changed_fields`, which names `agent_assistant_name` / `agent_assistant_logo_url` when the shopping assistant's identity changes), `store.profile_updated` (carries `changed_fields`), `store.policy_published` (carries `slug`, `title`, `version`, `effective_date`), `store.policy_unpublished`, `payment_provider.connected`, `shipping_provider.connected`, `channel.connected` |
 | Feature availability | `feature.status_changed` (a capability crossed between `available` / `awaiting_data` / `not_in_plan` / `unavailable` — carries `feature`, `status`, `previous_status`; `feature` includes `agentic_commerce` and `agent_hosted_helpers`) |
 | Catalog Sync | `feed.sync.completed` (a scheduled inbound feed-pull finished — carries created/updated/failed counts), `channel.sync.completed` (a sales-channel push finished — carries pushed/rejected counts) |
 | Wholesale (B2B) | `b2b.rfq.created`, `b2b.quote.sent` / `.accepted` / `.rejected`, `b2b.po.issued` / `.confirmed` / `.fulfilled`, `b2b.invoice.issued` / `.paid` / `.overdue` (stores with wholesale enabled) |
@@ -332,7 +332,7 @@ console.log(result.status_code); // 200
 }
 ```
 
-Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `checkout.abandoned`, `wishlist.added`, `gift_card.issued`, `promotion.applied`, `promotion.activated`, `pricing_rule.activated`, `collection.created`, `post.published`, `review.approved`, `store.updated`, `payment_provider.connected`, `feature.status_changed`, `feed.sync.completed`, `channel.sync.completed`.
+Available test event types: `order.created`, `order.paid`, `order.fulfilled`, `order.shipped`, `order.cancelled`, `payment.succeeded`, `payment.failed`, `customer.created`, `product.created`, `product.stock_low`, `cart.abandoned`, `checkout.abandoned`, `wishlist.added`, `gift_card.issued`, `promotion.applied`, `promotion.activated`, `pricing_rule.activated`, `collection.created`, `post.published`, `review.approved`, `store.updated`, `store.profile_updated`, `store.policy_published`, `store.policy_unpublished`, `payment_provider.connected`, `feature.status_changed`, `feed.sync.completed`, `channel.sync.completed`.
 
 ---
 

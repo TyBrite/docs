@@ -440,6 +440,10 @@ An endpoint subscribes to any of these, or to `["*"]` for everything:
 - **Store lifecycle & configuration** — `store.updated` (name / logo / branding / contact / base
   currency / the shopping assistant's name or logo; carries `changed_fields`), `payment_provider.connected`, `shipping_provider.connected`,
   `channel.connected`
+- **Store profile & policies** — `store.profile_updated` (support contact, addresses, legal identity
+  or social profiles changed; carries `changed_fields`), `store.policy_published` (a legal document or
+  a new version of it was published; carries `slug`, `title`, `version`, `effective_date`),
+  `store.policy_unpublished` (a document was taken down)
 - **Feature availability** — `feature.status_changed` (a capability crossed between `available`,
   `awaiting_data`, `not_in_plan`, and `unavailable`; carries `feature`, `status`, `previous_status`)
 - **Catalog sync & syndication** — `feed.sync.completed` (a scheduled inbound feed-pull finished —

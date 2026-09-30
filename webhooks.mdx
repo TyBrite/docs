@@ -239,6 +239,9 @@ A category that is switched off is filtered out of every catalog read, so it dis
 | Event | Fired when |
 | :--- | :--- |
 | `store.updated` | The store's name, logo, branding, contact details, base currency, or its shopping assistant's name or logo changes. Carries a `changed_fields` list of which of those changed; the assistant appears as `agent_assistant_name` and `agent_assistant_logo_url` |
+| `store.profile_updated` | The store's support contact details, addresses, legal identity or social profiles change. Carries `changed_fields`; the new values are read from `GET /v1/store/profile` |
+| `store.policy_published` | A legal document is published, or a new version of one is. Carries `slug`, `title`, `version`, `effective_date`, `published_at` and `external_url` |
+| `store.policy_unpublished` | A published document is taken down; `GET /v1/store/policies/{slug}` returns `404` from then on. Carries `slug`, `title`, `version` and `unpublished_at` |
 | `payment_provider.connected` | A payment provider is connected. Carries `provider` |
 | `shipping_provider.connected` | A shipping-rate provider is connected. Carries `provider` |
 | `channel.connected` | A sales channel (Google, Meta, Shopify, …) is connected. Carries `provider` |
