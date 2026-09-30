@@ -56,8 +56,9 @@ reads.
 
 Limits are enforced at the edge, before a request reaches the workers or the database.
 
-Rate limits are tiered by key type: publishable keys are limited per IP and per key, secret keys per key,
-with tighter limits on sensitive endpoints such as payments and authentication. A throttled request
+Rate limits scale with the store's plan: every key is limited per hour and per day, and publishable keys
+also per shopper network, counted separately for each store, with tighter limits on sensitive endpoints
+such as payments and authentication. A throttled request
 receives a `429` with a `rate_limited` code rather than a dropped connection. Usage quotas are counted
 atomically per store, so plan limits and overage are metered exactly even under concurrent traffic from
 many locations at once. The [Core Concepts](/concepts) page documents the response contract.

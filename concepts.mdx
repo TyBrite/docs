@@ -136,11 +136,22 @@ There are **two independent limits**, and a `429` tells you which one you hit by
 | `rate_limited` | A short-term **abuse throttle** — too many requests from one client in a small window (per-IP, per-key, or per-session). Transient. | Back off and retry (honor `Retry-After`). This does **not** count against the store's monthly plan. |
 | `quota_exceeded` | The store's **monthly plan limit** is used up (a billing/capacity signal, not abuse). | Wait for the next cycle, or the merchant upgrades their plan. |
 
-Rate-limit tiers (the abuse throttle): publishable keys are limited per-IP **and** per-key
-(hourly + daily); secret keys per-key (hourly + daily); signed-in shoppers also get a per-session
-cap. These are flat across plans — they protect a store from any single client monopolizing it.
-**Abuse-throttled traffic is never billed to the merchant**, so a flood can't deplete their monthly
-quota. The monthly quota itself scales with the plan.
+The abuse throttle grows with the store's plan. Every key is limited per hour and per day; a
+publishable key is also limited per shopper network, counted separately for each store, so a busy
+office or mobile network shopping at another store never uses up this store's allowance. Signed-in
+shoppers also get a per-session cap.
+
+| Plan | Per API key, per hour | Per API key, per day | Per shopper network, per hour (publishable keys) |
+| :--- | :--- | :--- | :--- |
+| Free trial | 2,500 | 10,000 | 2,000 |
+| Starter | 10,000 | 50,000 | 2,000 |
+| Growth | 30,000 | 150,000 | 5,000 |
+| Premium | 150,000 | 750,000 | 25,000 |
+| Enterprise | By agreement | By agreement | By agreement |
+
+`Retry-After` on a `rate_limited` response is the end of the current hour, or of the UTC day for the
+daily limit. **Abuse-throttled traffic is never billed to the merchant**, so a flood can't deplete
+their monthly quota. The monthly quota itself also scales with the plan.
 
 ## What an order does for you
 
