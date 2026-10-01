@@ -1880,6 +1880,8 @@ An intent holds stock, and a publishable key can be read from any storefront, so
 
 Past a limit the intent is refused with `409 hold_limit_reached` and the limit in `details.limit`, or, for the hourly limit, `429 rate_limited` with a `Retry-After` header. A secret key — the store's own server — is bound only by its plan.
 
+An **address** here is the requester's network (IP) address. Requests from a recognised assistant platform are limited per platform instead: a request that carries a valid Web Bot Auth signature (HTTP Message Signatures with `tag="web-bot-auth"`, verified against the platform's published key directory) or that arrives from the IP ranges a platform publishes for its assistant traffic counts against that platform's allowance of 600 new intents an hour and 100 waiting per store. Recognised platforms include ChatGPT (agent and user-initiated requests), Claude, Perplexity, Google-Agent, Amazon Bedrock AgentCore Browser and Cloudflare Browser Run. The per-intent unit limits and the share-of-stock limit apply to them unchanged, and a request whose signature does not verify is treated like any other.
+
 ```json
 {
   "error": {

@@ -15648,6 +15648,15 @@ paths:
         for a signed-in shopper, and guests together may hold at most half of an item's stock. Past a limit the
         answer is `409 hold_limit_reached` with `details.limit`, or `429 rate_limited` with `Retry-After`. A secret key
         (the store's own server) is bound only by its plan.
+
+        **Verified assistant platforms.** Many shoppers using one assistant reach the store from the same few network
+        addresses, so a request identified as coming from an assistant platform Galactic Core recognises is counted
+        per store and platform instead of per address: 600 new intents an hour and 100 waiting for confirmation. A
+        request is identified either by a Web Bot Auth signature (HTTP Message Signatures with `tag="web-bot-auth"`,
+        an Ed25519 key from the platform's published key directory, `created` within the last five minutes, covering
+        `@authority` and the platform's `Signature-Agent` member) or by a source address inside the platform's
+        published egress ranges. The per-item limits and the share-of-stock limit apply unchanged. A signature that
+        cannot be verified is not an error: the request is counted by address, as an unsigned one is.
       security:
         - BearerAuth: []
       parameters:
@@ -28899,12 +28908,28 @@ paths:
       operationId: payInvoice
       tags:
         - B2B
-      summary: Pay an invoice (not available to buyers)
+      summary: Start paying an invoice
       description: |
-        A terms invoice is settled by the supplier when payment is received; a buyer credential
-        cannot record an invoice settlement, so this operation always returns `403 not_supported`
-        for an invoice the buyer owns (and `404` for one they do not). To pay online, place a
-        prepaid order with `POST /v1/b2b/orders` and pay it through the payments API.
+        Opens a payment for one of the buyer's own invoices and returns a hosted payment link. The
+        buyer follows `payment_url` to a page branded as the supplier, which shows the invoice and
+        hands off to one of the supplier's payment providers; no card details are entered on that
+        page.
+
+        `amount` is optional. Without it the payment is for the whole open balance; with it, any
+        amount from `0.01` up to the open balance, so an invoice can be paid in parts. The currency is
+        the invoice's.
+
+        The invoice is updated only when the payment provider confirms the money arrived, for exactly
+        the amount and currency of this payment: `amount_paid` rises, the status becomes
+        `partially_paid` or `paid`, and the `b2b.invoice.partially_paid` or `b2b.invoice.paid` event
+        fires. Opening a payment records nothing on the invoice.
+
+        The link is valid for 24 hours. The `t` value in its fragment is the page's only credential;
+        treat the whole link as a secret and send it only to the buyer. Opening a new payment for the
+        same invoice replaces an earlier link that has not reached a payment provider yet.
+
+        Requires a secret key and the buyer's identity (exactly one of x-auth-token, x-external-auth or
+        x-idp-token).
       security:
         - BearerAuth: []
       parameters:
@@ -28935,21 +28960,64 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: number
+                  description: Amount to pay now, from 0.01 up to the open balance. Omit to pay the whole balance.
+            example:
+              amount: 40
       responses:
+        '201':
+          description: The payment was opened. Follow `payment_url` to pay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/B2bInvoicePaymentResponse'
+              example:
+                data:
+                  payment_session_id: 4efd5771-1e1b-4e58-b518-1df95232af9a
+                  amount: 40
+                  currency: USD
+                  payment_url: https://gc.tybritelabs.com/pay-invoice/4efd5771-1e1b-4e58-b518-1df95232af9a#t=PAYMENT_PAGE_TOKEN
+                  expires_at: '2026-10-03T09:12:44.512Z'
         '400':
-          $ref: '#/components/responses/BadRequestError'
-        '403':
-          description: A buyer cannot record an invoice settlement.
+          description: The amount is not a number, is below 0.01, has more than two decimal places, or is more than the open balance.
           content:
             application/json:
               example:
                 error:
-                  code: not_supported
-                  message: A net-terms invoice is settled by the supplier when payment is received. To pay online, place a prepaid order; a buyer cannot record an invoice settlement.
+                  code: invalid_amount
+                  message: The amount is more than the 100.00 USD still due on this invoice.
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The key is publishable, or the customer has no wholesale account with this store.
+          content:
+            application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: The invoice is already paid or was voided.
+          content:
+            application/json:
+              example:
+                error:
+                  code: invoice_not_payable
+                  message: This invoice has already been paid.
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/b2b/orders:
@@ -29276,7 +29344,9 @@ paths:
                     **Wholesale (B2B):** for stores with wholesale enabled — the trade itself:
                     `b2b.rfq.created`, `b2b.quote.sent`, `b2b.quote.accepted`, `b2b.quote.rejected`,
                     `b2b.po.issued`, `b2b.po.confirmed`, `b2b.po.fulfilled`,
-                    `b2b.invoice.issued`, `b2b.invoice.paid`, `b2b.invoice.overdue`
+                    `b2b.invoice.issued`, `b2b.invoice.partially_paid` (a payment arrived and a
+                    balance remains — fires for each such payment), `b2b.invoice.paid`,
+                    `b2b.invoice.overdue`
 
                     **Wholesale credit and approvals:** `b2b.credit.threshold_reached` and
                     `b2b.credit.exhausted` fire when a buyer crosses a share of their credit limit,
@@ -36970,6 +37040,39 @@ components:
         created_at:
           type: string
           format: date-time
+    B2bInvoicePayment:
+      type: object
+      description: A payment opened for one of the buyer's invoices. `payment_url` is the hosted page where the buyer pays through one of the supplier's payment providers; it carries its own credential in the fragment and is valid until `expires_at`.
+      required:
+        - payment_session_id
+        - amount
+        - currency
+        - payment_url
+        - expires_at
+      properties:
+        payment_session_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          description: The amount this payment is for.
+        currency:
+          type: string
+          example: USD
+        payment_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+    B2bInvoicePaymentResponse:
+      type: object
+      description: A payment opened for a B2B invoice. The payment is under `data`.
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/B2bInvoicePayment'
     B2bDirectOrder:
       type: object
       description: The result of a direct wholesale order. `settlement` is `terms` (a terms invoice was issued — `invoice_id`, `invoice_number`, and `due_date` are present) or `pay_now` (the order awaits payment — `order_id`, `order_number`, and `amount` are present; complete payment through the standard payment flow using `order_id`). `purchase_order_id`, `po_number`, and `currency` are always present.

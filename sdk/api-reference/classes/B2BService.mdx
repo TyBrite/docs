@@ -197,15 +197,30 @@ Returns one of your invoices by `id`.
 
 ### `payInvoice(options)`
 
-A terms invoice is settled by the supplier when payment is received, so a buyer credential cannot record an invoice settlement. For an invoice the buyer owns, this method always rejects with `403 not_supported`; for an invoice they do not own, `404`. Online payment is taken on a prepaid order: when the supplier's policy for the buyer is prepaid, `createDirectOrder` returns `settlement: "pay_now"` with an `order_id`, which is paid through `client.payments.initializePayment`.
+Opens an online payment for one of the buyer's invoices and returns `payment_url`, the supplier's hosted payment page. The buyer pays there through one of the supplier's own payment providers; no card details pass through the page. The invoice is updated only once the provider confirms the payment: to `partially_paid` while a balance remains, then `paid`, and the `b2b.invoice.partially_paid` and `b2b.invoice.paid` webhook events follow. Each payment frees the buyer's credit by the amount paid.
 
 - `id` — the invoice id.
+- `requestBody.amount` — optional; the amount to pay now, from 0.01 up to the open balance. Omitted, the full balance.
+
+The link carries its own credential after `#t=` and is valid until `expires_at` (24 hours). Responses: `400 invalid_amount` for an amount below 0.01 or above the balance, `404` for an invoice the buyer does not own, `409 invoice_not_payable` for an invoice already paid or voided, and `403` for a publishable key or a customer without a wholesale account.
+
+```typescript
+const { data: payment } = await client.b2B.payInvoice({
+  id: 'invoice-uuid',
+  requestBody: { amount: 40 },
+  xAuthToken: session,
+});
+// Redirect the buyer to payment.payment_url
+```
 
 ```json Response
 {
-  "error": {
-    "code": "not_supported",
-    "message": "A net-terms invoice is settled by the supplier when payment is received. To pay online, place a prepaid order; a buyer cannot record an invoice settlement."
+  "data": {
+    "payment_session_id": "4efd5771-1e1b-4e58-b518-1df95232af9a",
+    "amount": 40,
+    "currency": "USD",
+    "payment_url": "https://gc.tybritelabs.com/pay-invoice/4efd5771-1e1b-4e58-b518-1df95232af9a#t=PAYMENT_PAGE_TOKEN",
+    "expires_at": "2026-10-03T09:12:44.512Z"
   }
 }
 ```
