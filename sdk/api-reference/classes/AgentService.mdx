@@ -1,6 +1,6 @@
 ---
 title: "Agent"
-description: "Reference for the AgentService class in the Tybrite SDK: the tools an AI shopping assistant uses to search a store, price a basket and hand a checkout to the shopper."
+description: "Reference for the AgentService class in the Tybrite SDK: the tools an AI shopping assistant uses to search a store, price a basket, hand a checkout to the shopper, lodge a return and keep a standing instruction."
 ---
 
 The `AgentService` class (accessed via `client.agent`) is a set of tools for an AI shopping assistant working on a store. The assistant is yours — your model, your prompts, your conversation design, in a chat widget, a voice interface or a third-party assistant. These tools supply what the model cannot know or must not guess: live stock per variant, the price a shopper is actually charged, the promotion that applies, shipping and tax for an address, the store's return window, and a checkout the shopper confirms themselves.
@@ -51,12 +51,12 @@ A client created with a marketplace operator key shops every seller of that mark
 
 | Works with a marketplace key | Needs the store's own key |
 | :--- | :--- |
-| `getCapabilities`, `search`, `compare`, `getAlternatives`, `quote`, `interpret`, `draftCartFromIntent`, `getCartDraft`, `createCheckoutIntent`, `getCheckoutIntent`, `confirmCheckoutIntent`, `cancelCheckoutIntent` | `getProductContext`, `checkFit`, `createCartDraft`, `applyCartDraft`, `getCartInsights`, the shopper's own data, `getOrderStatus`, `getStorePolicies`, `getUsage` |
+| `getCapabilities`, `search`, `compare`, `getAlternatives`, `quote`, `interpret`, `draftCartFromIntent`, `getCartDraft`, `createCheckoutIntent`, `getCheckoutIntent`, `confirmCheckoutIntent`, `cancelCheckoutIntent` | `getProductContext`, `checkFit`, `createCartDraft`, `applyCartDraft`, `getCartInsights`, the shopper's own data, `getOrderStatus`, `requestReturn`, standing instructions, `getStorePolicies`, `getUsage` |
 
 What changes with a marketplace key:
 
 - **Discovery.** `search`, `compare` and `getAlternatives` read every active seller of the marketplace. Each result names its seller in `merchant_store_id` and `merchant_name`, prices are in the marketplace's own currency, and `search` reports `sellers_matched`. A product that is not sold on the marketplace answers `404` in `compare` and `getAlternatives`.
-- **Quote.** `quote` returns what the marketplace checkout will charge: each line, a `sellers` breakdown with each seller's merchandise total and shipping, marketplace-wide promotions in `discount.amount`, and the `grand_total`. Tax is not added (`tax.status: 'not_charged'`). A line may name its seller with `merchant_store_id`; a variant not sold on the marketplace is flagged `not_available_on_this_marketplace`, and one sold by a different seller than named is flagged `not_sold_by_that_seller`. `shipping_selections` chooses a carrier option a seller offered in an earlier quote.
+- **Quote.** `quote` returns what the marketplace checkout will charge: each line, a `sellers` breakdown with each seller's merchandise total and shipping, marketplace-wide promotions in `discount.amount`, and the `grand_total`. Tax is not added (`tax.status: 'not_charged'`, with `amount: 0`): the marketplace checkout charges no tax, so `grand_total` is exactly the amount the shopper pays. A line may name its seller with `merchant_store_id`; a variant not sold on the marketplace is flagged `not_available_on_this_marketplace`, and one sold by a different seller than named is flagged `not_sold_by_that_seller`. `shipping_selections` chooses a carrier option a seller offered in an earlier quote.
 - **Hosted helpers.** `interpret` and `draftCartFromIntent` are paid from the marketplace operator's own Agent Compute credits, never a seller's. With a secret key they answer `403 helpers_unavailable` when the operator has not switched hosted helpers on, and `402 insufficient_credits` when the operator's credits are exhausted; a publishable key receives `403 helpers_unavailable` whatever the reason, as on a single store. A draft from `draftCartFromIntent` holds only that marketplace's items, each naming its seller, and is priced with the marketplace quote; `getCartDraft` with the same key re-quotes it, and its items go straight into `createCheckoutIntent`.
 - **Checkout intents.** An intent records each seller's lines in `sellers`. Only token confirmation is available. Stock is held when the shopper confirms, for the payment window. Confirming requires `contact.email` and `contact.name`, and a shopper credential, when sent, is recorded on the purchase. Confirmation places one marketplace order across the sellers and returns a single payment: the storefront confirms `payment.client_secret` with the payment provider's own card form. Once paid, each seller receives their own order, marked as placed through a shopping assistant.
 
@@ -138,7 +138,7 @@ const { data: quote } = await marketplace.agent.quote({
         ],
         "merchandise_total": 38.5,
         "shipping": {
-          "amount": 1650,
+          "amount": 16.5,
           "pricing": "seller_rate",
           "fulfilled_by": "seller",
           "is_free": false,
@@ -155,14 +155,14 @@ const { data: quote } = await marketplace.agent.quote({
     },
     "shipping": {
       "status": "quoted",
-      "amount": 1650
+      "amount": 16.5
     },
     "tax": {
       "status": "not_charged",
       "amount": 0,
       "prices_include_tax": false
     },
-    "grand_total": 1847.5,
+    "grand_total": 214,
     "total_is_final": true,
     "unavailable_count": 0,
     "currency": "USD",
@@ -195,7 +195,7 @@ const { data: quote } = await marketplace.agent.quote({
       "field": "sellers"
     }
   ],
-  "computed_at": "2026-09-30T17:39:04.715Z",
+  "computed_at": "2026-10-01T10:35:30.149Z",
   "currency": "USD",
   "environment": "sandbox"
 }
@@ -221,18 +221,18 @@ const { data: placed } = await marketplace.agent.confirmCheckoutIntent({
 {
   "data": {
     "intent": {
-      "id": "b506f2f9-a2d3-42be-aa8c-2519200719b2",
+      "id": "ce8a37d6-a6ac-4ee7-b4c7-5be06064a622",
       "status": "confirmed",
       "confirmation_mode": "token",
-      "order_group_id": "7b397721-1a0d-4668-a318-5d82674ef145",
-      "total": 1847.5,
+      "order_group_id": "cf386d23-4727-4e8c-9823-3d51e5cce103",
+      "total": 214,
       "currency": "USD",
-      "confirmed_at": "2026-09-30T17:39:14.727+00:00"
+      "confirmed_at": "2026-10-01T10:35:37.354+00:00"
     },
     "order_group": {
-      "id": "7b397721-1a0d-4668-a318-5d82674ef145",
-      "group_number": "MKT-2026-000086",
-      "total_amount": 1847.5,
+      "id": "cf386d23-4727-4e8c-9823-3d51e5cce103",
+      "group_number": "MKT-2026-000100",
+      "total_amount": 214,
       "currency": "USD",
       "payment_status": "pending",
       "sellers": [
@@ -243,7 +243,7 @@ const { data: placed } = await marketplace.agent.confirmCheckoutIntent({
         },
         {
           "merchant_store_id": "086e8d7f-b84d-41bc-8acd-3f5740ea61dc",
-          "shipping_amount": 1650,
+          "shipping_amount": 16.5,
           "fulfilled_by": "seller"
         }
       ]
@@ -251,13 +251,13 @@ const { data: placed } = await marketplace.agent.confirmCheckoutIntent({
     "payment": {
       "provider": "stripe",
       "next_step": "Confirm the payment in the browser with client_secret using the payment provider's own card form.",
-      "client_secret": "pi_3ULRTMDxNG9Imxmb1KDbjI79_secret_XXXXXXXXXXXXXXXXXXXXXXXXX",
-      "payment_intent_id": "pi_3ULRTMDxNG9Imxmb1KDbjI79",
-      "amount": 1847.5,
+      "client_secret": "pi_3ULhKxDxNG9Imxmb0eVmfKAH_secret_XXXXX",
+      "payment_intent_id": "pi_3ULhKxDxNG9Imxmb0eVmfKAH",
+      "amount": 214,
       "currency": "USD"
     }
   },
-  "computed_at": "2026-09-30T17:39:16.915Z",
+  "computed_at": "2026-10-01T10:35:40.036Z",
   "currency": "USD",
   "environment": "sandbox"
 }
@@ -641,26 +641,26 @@ const inStock = data.variants!.filter((v) => v.in_stock);
       "zones": [
         {
           "name": "USA",
-          "fee": 1500,
-          "free_threshold": 100000
+          "fee": 15,
+          "free_threshold": 100
         },
         {
           "name": "United Kingdom",
-          "fee": 2500,
-          "free_threshold": 100000
+          "fee": 12,
+          "free_threshold": 100
         },
         {
           "name": "Kenya",
-          "fee": 250,
-          "free_threshold": 10000
+          "fee": 25,
+          "free_threshold": 150
         }
       ],
       "distance_tiers": [
         {
           "name": "Within Nairobi",
-          "fee": 100,
+          "fee": 5,
           "max_distance_meters": 50000,
-          "free_threshold": 100000
+          "free_threshold": 100
         }
       ],
       "note": "The exact fee for an address comes from POST /v1/agent/quote."
@@ -678,7 +678,7 @@ const inStock = data.variants!.filter((v) => v.in_stock);
       "field": "variants.resolved_price"
     }
   ],
-  "computed_at": "2026-09-28T21:53:27.388Z",
+  "computed_at": "2026-10-01T10:31:54.545Z",
   "currency": "EUR",
   "environment": "sandbox"
 }
@@ -935,18 +935,18 @@ const { data: quote } = await client.agent.quote({
     },
     "shipping": {
       "status": "quoted",
-      "amount": 1500,
-      "description": "USA",
-      "free_threshold": 100000,
-      "is_free": false
+      "amount": 0,
+      "description": "Free delivery: the order qualifies",
+      "free_threshold": 100,
+      "is_free": true
     },
     "tax": {
       "status": "quoted",
-      "amount": 223.58,
+      "amount": 16.68,
       "source": "fallback",
       "prices_include_tax": true
     },
-    "grand_total": 1620.95,
+    "grand_total": 120.95,
     "total_is_final": true,
     "unavailable_count": 0,
     "currency": "EUR",
@@ -988,7 +988,7 @@ const { data: quote } = await client.agent.quote({
       "field": "tax_amount"
     }
   ],
-  "computed_at": "2026-09-28T21:53:38.925Z",
+  "computed_at": "2026-10-01T10:31:57.369Z",
   "currency": "EUR",
   "environment": "sandbox"
 }
@@ -1373,9 +1373,9 @@ const { data } = await client.agent.getCartInsights({
     "price_changes": [],
     "promotion": null,
     "free_shipping": {
-      "threshold": 100000,
+      "threshold": 100,
       "qualifies": false,
-      "gap": 99952
+      "gap": 52
     },
     "free_shipping_status": "quoted",
     "complementary": [],
@@ -1405,7 +1405,7 @@ const { data } = await client.agent.getCartInsights({
       "field": "tax_amount"
     }
   ],
-  "computed_at": "2026-09-28T21:53:49.480Z",
+  "computed_at": "2026-10-01T10:31:59.845Z",
   "currency": "EUR",
   "environment": "sandbox"
 }
@@ -1413,7 +1413,7 @@ const { data } = await client.agent.getCartInsights({
 
 ## The shopper's own data
 
-These tools read only the shopper's own records, identified by their credential. `getShopperContext` and `getReorderSuggestions` read the shopper's order history for personalisation, so they also require the shopper's consent; without it they return `403 consent_required`. This consent is separate from email marketing consent.
+These tools read or act on only the shopper's own records, identified by their credential. `getShopperContext` and `getReorderSuggestions` read the shopper's order history for personalisation, and [standing instructions](#standing-instructions) act on the shopper's behalf over time, so they also require the shopper's consent; without it they return `403 consent_required`. This consent is separate from email marketing consent.
 
 ### `getConsent`
 
@@ -1586,7 +1586,7 @@ The status of one of the shopper's own orders: order and payment status, trackin
 
 ```typescript
 const { data } = await client.agent.getOrderStatus({
-  id: '74a3221b-a5dc-4e56-9b9e-2d0c55611bd5',
+  id: 'e9b398b5-40d9-476d-bae6-efc401861190',
   xAuthToken: shopperToken,
 });
 ```
@@ -1594,22 +1594,22 @@ const { data } = await client.agent.getOrderStatus({
 ```json Response
 {
   "data": {
-    "order_id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
-    "order_number": "ORD-1790632457762",
+    "order_id": "e9b398b5-40d9-476d-bae6-efc401861190",
+    "order_number": "ORD-1790850732602",
     "status": "pending",
     "payment_status": "pending",
-    "total": 1548,
+    "total": 63,
     "tracking_number": null,
     "estimated_delivery": null,
     "shipped_at": null,
     "delivered_at": null,
-    "placed_at": "2026-09-28T21:54:20.218758+00:00",
+    "placed_at": "2026-10-01T10:32:13.156715+00:00",
     "placed_through_agent": true,
     "returns": {
       "eligible": true,
       "reason": null,
       "window_days": 10,
-      "closes_at": "2026-10-08T21:54:20.218Z",
+      "closes_at": "2026-10-11T10:32:13.156Z",
       "days_remaining": 10
     },
     "allowed_actions": [
@@ -1621,7 +1621,7 @@ const { data } = await client.agent.getOrderStatus({
   "evidence": [
     {
       "source": "orders",
-      "id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+      "id": "e9b398b5-40d9-476d-bae6-efc401861190",
       "field": "order_status"
     },
     {
@@ -1630,11 +1630,75 @@ const { data } = await client.agent.getOrderStatus({
       "field": "closes_at"
     }
   ],
-  "computed_at": "2026-09-28T21:54:25.824Z",
-  "currency": null,
+  "computed_at": "2026-10-01T10:32:15.254Z",
+  "currency": "EUR",
   "environment": "sandbox"
 }
 ```
+
+### `requestReturn`
+
+Lodges a return for one of the shopper's own orders — the action `getOrderStatus` lists as `request_return` while the order is inside the store's return window. Omit `items` to return every line in full, or name lines with `order_item_id` and a `quantity` (and optionally a `condition`). `reason_code` is one of `damaged`, `defective`, `wrong_item`, `not_as_described`, `wrong_size`, `no_longer_needed`, `arrived_late` or `other`; `other` also needs `reason_description`. `return_type` is `full_refund` (the default), `partial_refund`, `exchange` or `store_credit`.
+
+The return arrives as `pending`: the store reviews it and decides the refund, and the shopper is emailed that it was received. It is the same return a shopper lodges through [Returns](/sdk/api-reference/classes/ReturnsService), so it appears in the store's returns queue like any other.
+
+```typescript
+const { data } = await client.agent.requestReturn({
+  id: '36f0b9c2-8c86-4034-bef7-82dfe4744ff5',
+  requestBody: { reason_code: 'wrong_size', return_type: 'store_credit' },
+  xAuthToken: shopperToken,
+});
+```
+
+```json Response
+{
+  "data": {
+    "id": "df26fae0-6566-4d87-97d4-1902c20b758f",
+    "return_number": "RET-20261001-fb1716",
+    "order_id": "36f0b9c2-8c86-4034-bef7-82dfe4744ff5",
+    "channel": "online",
+    "status": "pending",
+    "return_type": "store_credit",
+    "reason_code": "wrong_size",
+    "reason_description": null,
+    "total_return_amount": 48,
+    "refund_amount": 0,
+    "refund_method": null,
+    "created_at": "2026-10-01T11:25:17.785759+00:00",
+    "processed_at": null,
+    "credit_offer": {
+      "status": "none",
+      "amount": null
+    },
+    "items": [
+      {
+        "id": "cf7eec28-8406-42a1-945b-bf374c89230f",
+        "order_item_id": "d6a0866a-322a-428b-925d-35081f37ed39",
+        "product_name": "Galactic Zip Hoodie",
+        "quantity": 1,
+        "unit_price": 48,
+        "return_amount": 48,
+        "condition": "sellable",
+        "status": "pending",
+        "rejection_reason": null,
+        "media": []
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "source": "returns",
+      "operation": "POST /v1/returns",
+      "id": "df26fae0-6566-4d87-97d4-1902c20b758f"
+    }
+  ],
+  "computed_at": "2026-10-01T11:25:18.445Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+A return the store's rules do not allow — an order outside its return window, for example — is refused with the reason in `error.message`. An order that is not the shopper's own answers `404`.
 
 ## Checkout intents
 
@@ -1669,13 +1733,13 @@ const { data: intent } = await client.agent.createCheckoutIntent({
 ```json Response
 {
   "data": {
-    "id": "0ff91bd6-aa86-4ef6-8242-fe8644bca1bb",
+    "id": "a3a10e58-c5e2-406d-b054-0b8d782e9300",
     "status": "pending_confirmation",
     "confirmation_mode": "token",
-    "expires_at": "2026-09-28T22:24:09.629+00:00",
+    "expires_at": "2026-10-01T11:02:09.366+00:00",
     "order_id": null,
     "customer_id": null,
-    "total": 1548,
+    "total": 63,
     "currency": "EUR",
     "items": [
       {
@@ -1685,7 +1749,7 @@ const { data: intent } = await client.agent.createCheckoutIntent({
     ],
     "quote": {
       "tax": {
-        "amount": 213.52,
+        "amount": 8.69,
         "source": "fallback",
         "status": "quoted",
         "prices_include_tax": true
@@ -1713,14 +1777,14 @@ const { data: intent } = await client.agent.createCheckoutIntent({
         "promotion": null
       },
       "shipping": {
-        "amount": 1500,
+        "amount": 15,
         "status": "quoted",
         "is_free": false,
         "description": "USA",
-        "free_threshold": 100000
+        "free_threshold": 100
       },
       "subtotal": 48,
-      "grand_total": 1548,
+      "grand_total": 63,
       "total_is_final": true,
       "shipping_address": {
         "city": "New York",
@@ -1732,10 +1796,10 @@ const { data: intent } = await client.agent.createCheckoutIntent({
       },
       "unavailable_count": 0
     },
-    "created_at": "2026-09-28T21:54:09.713316+00:00",
+    "created_at": "2026-10-01T10:32:09.391151+00:00",
     "confirmed_at": null,
     "cancelled_at": null,
-    "confirmation_token": "HnYBO4omfk1-CXT0gqUhNfo02aHMI2-shiJSRl-MFSo",
+    "confirmation_token": "cfDyJ73g3bVzFaMN9tu4IqQ0Tpb2LpUkpvVGUgL7NTU",
     "confirmation_url": null
   },
   "evidence": [
@@ -1766,7 +1830,7 @@ const { data: intent } = await client.agent.createCheckoutIntent({
       "field": "reservations"
     }
   ],
-  "computed_at": "2026-09-28T21:54:09.790Z",
+  "computed_at": "2026-10-01T10:32:09.426Z",
   "currency": "EUR",
   "environment": "sandbox"
 }
@@ -1792,18 +1856,42 @@ const { data: intent } = await client.agent.createCheckoutIntent({
 
 ```json
 {
-  "id": "4cf0636f-00d5-4382-b3a3-171818215740",
+  "id": "feaac8ae-a869-4e11-af9b-3e2b421a28bd",
   "status": "pending_confirmation",
   "confirmation_mode": "hosted",
-  "expires_at": "2026-09-29T12:54:27.299+00:00",
-  "total": 1548,
+  "expires_at": "2026-10-01T11:10:19.728+00:00",
+  "total": 63,
   "currency": "EUR",
-  "confirmation_token": "sfWxDWJP7nmUWRS5I2HL7a6ngq5BIU8rDQthvQQuMZ4",
-  "confirmation_url": "https://gc.tybritelabs.com/confirm/4cf0636f-00d5-4382-b3a3-171818215740#t=sfWxDWJP7nmUWRS5I2HL7a6ngq5BIU8rDQthvQQuMZ4"
+  "confirmation_token": "f6LsUEiaekbq0VESW3YNtESlXokh2UhptmHccKrFSgI",
+  "confirmation_url": "https://gc.tybritelabs.com/confirm/feaac8ae-a869-4e11-af9b-3e2b421a28bd#t=f6LsUEiaekbq0VESW3YNtESlXokh2UhptmHccKrFSgI"
 }
 ```
 
 The `data` above is shortened to the fields that differ by mode; `items` and `quote` are as in the token-mode response.
+
+An intent holds stock, and a publishable key can be read from any storefront, so intents created with a publishable key are bounded:
+
+| Limit | Guest | Signed-in shopper |
+| :--- | :--- | :--- |
+| New intents per hour, per address | 60 | 60 |
+| Intents waiting for confirmation at once | 5 per address | 5 per shopper |
+| Units of one item in one intent | 10 | 25 |
+| Share of an item's stock held by waiting intents | Guests together, at most half | — |
+
+Past a limit the intent is refused with `409 hold_limit_reached` and the limit in `details.limit`, or, for the hourly limit, `429 rate_limited` with a `Retry-After` header. A secret key — the store's own server — is bound only by its plan.
+
+```json
+{
+  "error": {
+    "code": "hold_limit_reached",
+    "message": "A checkout intent can hold at most 10 units of one item",
+    "details": {
+      "limit": 10,
+      "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a"
+    }
+  }
+}
+```
 
 ### `getCheckoutIntent`
 
@@ -1816,12 +1904,12 @@ const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
 ```json Response
 {
   "data": {
-    "id": "0ff91bd6-aa86-4ef6-8242-fe8644bca1bb",
+    "id": "a3a10e58-c5e2-406d-b054-0b8d782e9300",
     "status": "pending_confirmation",
     "confirmation_mode": "token",
-    "expires_at": "2026-09-28T22:24:09.629+00:00",
+    "expires_at": "2026-10-01T11:02:09.366+00:00",
     "order_id": null,
-    "total": 1548,
+    "total": 63,
     "currency": "EUR",
     "items": [
       {
@@ -1831,7 +1919,7 @@ const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
     ],
     "quote": {
       "tax": {
-        "amount": 213.52,
+        "amount": 8.69,
         "source": "fallback",
         "status": "quoted",
         "prices_include_tax": true
@@ -1859,29 +1947,29 @@ const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
         "promotion": null
       },
       "shipping": {
-        "amount": 1500,
+        "amount": 15,
         "status": "quoted",
         "is_free": false,
         "description": "USA",
-        "free_threshold": 100000
+        "free_threshold": 100
       },
       "subtotal": 48,
-      "grand_total": 1548,
+      "grand_total": 63,
       "total_is_final": true,
       "unavailable_count": 0
     },
-    "created_at": "2026-09-28T21:54:09.713316+00:00",
+    "created_at": "2026-10-01T10:32:09.391151+00:00",
     "confirmed_at": null,
     "cancelled_at": null
   },
   "evidence": [
     {
       "source": "agent",
-      "id": "0ff91bd6-aa86-4ef6-8242-fe8644bca1bb",
+      "id": "a3a10e58-c5e2-406d-b054-0b8d782e9300",
       "field": "checkout_intent"
     }
   ],
-  "computed_at": "2026-09-28T21:54:10.618Z",
+  "computed_at": "2026-10-01T10:32:10.900Z",
   "currency": "EUR",
   "environment": "sandbox"
 }
@@ -1910,13 +1998,13 @@ const { data } = await client.agent.confirmCheckoutIntent({
 {
   "data": {
     "intent": {
-      "id": "0ff91bd6-aa86-4ef6-8242-fe8644bca1bb",
+      "id": "a3a10e58-c5e2-406d-b054-0b8d782e9300",
       "status": "confirmed",
       "confirmation_mode": "token",
-      "expires_at": "2026-09-28T22:24:09.629+00:00",
-      "order_id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+      "expires_at": "2026-10-01T11:02:09.366+00:00",
+      "order_id": "e9b398b5-40d9-476d-bae6-efc401861190",
       "customer_id": null,
-      "total": 1548,
+      "total": 63,
       "currency": "EUR",
       "items": [
         {
@@ -1926,7 +2014,7 @@ const { data } = await client.agent.confirmCheckoutIntent({
       ],
       "quote": {
         "tax": {
-          "amount": 213.52,
+          "amount": 8.69,
           "source": "fallback",
           "status": "quoted",
           "prices_include_tax": true
@@ -1954,14 +2042,14 @@ const { data } = await client.agent.confirmCheckoutIntent({
           "promotion": null
         },
         "shipping": {
-          "amount": 1500,
+          "amount": 15,
           "status": "quoted",
           "is_free": false,
           "description": "USA",
-          "free_threshold": 100000
+          "free_threshold": 100
         },
         "subtotal": 48,
-        "grand_total": 1548,
+        "grand_total": 63,
         "total_is_final": true,
         "shipping_address": {
           "city": "New York",
@@ -1973,14 +2061,14 @@ const { data } = await client.agent.confirmCheckoutIntent({
         },
         "unavailable_count": 0
       },
-      "created_at": "2026-09-28T21:54:09.713316+00:00",
-      "confirmed_at": "2026-09-28T21:54:17.256+00:00",
+      "created_at": "2026-10-01T10:32:09.391151+00:00",
+      "confirmed_at": "2026-10-01T10:32:12.476+00:00",
       "cancelled_at": null
     },
     "order": {
-      "id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
-      "order_number": "ORD-1790632457762",
-      "total_amount": 1548,
+      "id": "e9b398b5-40d9-476d-bae6-efc401861190",
+      "order_number": "ORD-1790850732602",
+      "total_amount": 63,
       "currency": "EUR",
       "payment_status": "pending",
       "order_status": "pending"
@@ -1988,8 +2076,8 @@ const { data } = await client.agent.confirmCheckoutIntent({
     "payment": {
       "next_step": "POST /v1/payments/initialize",
       "initialize_body": {
-        "order_id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
-        "amount": 1548,
+        "order_id": "e9b398b5-40d9-476d-bae6-efc401861190",
+        "amount": 63,
         "currency": "EUR",
         "email": "john.doe@example.com"
       },
@@ -2015,11 +2103,11 @@ const { data } = await client.agent.confirmCheckoutIntent({
     {
       "source": "orders",
       "operation": "order create",
-      "id": "74a3221b-a5dc-4e56-9b9e-2d0c55611bd5",
+      "id": "e9b398b5-40d9-476d-bae6-efc401861190",
       "field": "total_amount"
     }
   ],
-  "computed_at": "2026-09-28T21:54:23.191Z",
+  "computed_at": "2026-10-01T10:32:13.845Z",
   "currency": "EUR",
   "environment": "sandbox"
 }
@@ -2036,12 +2124,12 @@ const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
 ```json Response
 {
   "data": {
-    "id": "56f13df1-c566-4c5b-83ab-618e0cc47a50",
+    "id": "9ddda3a3-a19d-4176-be35-e697392b564c",
     "status": "cancelled",
     "confirmation_mode": "token",
-    "expires_at": "2026-09-28T22:24:32.905+00:00",
+    "expires_at": "2026-10-01T11:02:16.925+00:00",
     "order_id": null,
-    "total": 1524.95,
+    "total": 39.95,
     "currency": "EUR",
     "items": [
       {
@@ -2051,7 +2139,7 @@ const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
     ],
     "quote": {
       "tax": {
-        "amount": 210.34,
+        "amount": 5.51,
         "source": "fallback",
         "status": "quoted",
         "prices_include_tax": true
@@ -2079,25 +2167,25 @@ const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
         "promotion": null
       },
       "shipping": {
-        "amount": 1500,
+        "amount": 15,
         "status": "quoted",
         "is_free": false,
         "description": "USA",
-        "free_threshold": 100000
+        "free_threshold": 100
       },
       "subtotal": 24.95,
-      "grand_total": 1524.95,
+      "grand_total": 39.95,
       "total_is_final": true,
       "unavailable_count": 0
     },
-    "created_at": "2026-09-28T21:54:32.986631+00:00",
+    "created_at": "2026-10-01T10:32:16.943272+00:00",
     "confirmed_at": null,
-    "cancelled_at": "2026-09-28T21:54:33.89+00:00"
+    "cancelled_at": "2026-10-01T10:32:17.767+00:00"
   },
   "evidence": [
     {
       "source": "agent",
-      "id": "56f13df1-c566-4c5b-83ab-618e0cc47a50",
+      "id": "9ddda3a3-a19d-4176-be35-e697392b564c",
       "field": "status"
     },
     {
@@ -2105,7 +2193,225 @@ const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
       "field": "stock hold released"
     }
   ],
-  "computed_at": "2026-09-28T21:54:34.447Z",
+  "computed_at": "2026-10-01T10:32:18.124Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+## Standing instructions
+
+A standing instruction (a mandate) is a purchase the shopper asks for in advance and confirms later: reorder an item on a schedule, or buy it when it comes back in stock or drops to a price. Each is bounded on every side, and none of them pays for anything by itself.
+
+| Kind | Fires when | How often |
+| :--- | :--- | :--- |
+| `reorder` | Every `interval_days` (7–365), counted from creation. | Up to `max_triggers` times (1–12). |
+| `back_in_stock` | The item is available again at or below `max_unit_price`. | Once. |
+| `price_drop` | The item's price falls to `max_unit_price` or below. | Once. |
+
+Every kind fires only when the item is available at or below `max_unit_price` per unit and the store can price shipping and tax for the stored address. `quantity` is 1–10. An instruction expires after `expires_in_days` (at most 365, default 180), and a shopper can keep at most 10 with one store.
+
+When the condition holds, Galactic Core prepares a hosted checkout intent for the shopper at the price it found, sends the [`agent.mandate.triggered`](#webhook-events) webhook event with the intent's `confirmation_url`, and emails the shopper that link under the store's own name. The prepared intent stays open for 48 hours and holds no stock; the shopper confirms on the store's page, and nothing is paid until they do. If the shopper withdraws personalisation consent, their instructions pause (`status: 'paused'`, `status_reason: 'consent_revoked'`).
+
+Standing instructions need the shopper's credential and their personalisation consent.
+
+### `createMandate`
+
+```typescript
+const { data } = await client.agent.createMandate({
+  requestBody: {
+    kind: 'reorder',
+    variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a',
+    quantity: 2,
+    max_unit_price: 53,
+    interval_days: 30,
+    max_triggers: 6,
+    shipping_address: {
+      name: 'John Doe', line1: '350 Fifth Avenue', city: 'New York',
+      state: 'NY', postal_code: '10118', country: 'US',
+    },
+  },
+  xAuthToken: shopperToken,
+});
+```
+
+```json Response
+{
+  "data": {
+    "id": "15629aa5-301f-4be2-8e87-e93e01f6c05f",
+    "kind": "reorder",
+    "status": "active",
+    "status_reason": null,
+    "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+    "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+    "quantity": 2,
+    "max_unit_price": 53,
+    "currency": "EUR",
+    "interval_days": 30,
+    "max_triggers": 6,
+    "trigger_count": 0,
+    "shipping_address": {
+      "city": "New York",
+      "name": "John Doe",
+      "line1": "350 Fifth Avenue",
+      "state": "NY",
+      "country": "US",
+      "postal_code": "10118"
+    },
+    "next_check_at": "2026-10-31T11:25:06.898103+00:00",
+    "last_triggered_at": null,
+    "last_intent_id": null,
+    "expires_at": "2027-03-30T11:25:06.864+00:00",
+    "created_at": "2026-10-01T11:25:06.898103+00:00"
+  },
+  "evidence": [
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+      "field": "resolved_price"
+    },
+    {
+      "source": "promotions",
+      "operation": "POST /v1/promotions/calculate-best",
+      "field": "discount"
+    },
+    {
+      "source": "shipping",
+      "operation": "shipping quote",
+      "field": "fee"
+    },
+    {
+      "source": "tax",
+      "operation": "POST /v1/tax/preview",
+      "field": "tax_amount"
+    },
+    {
+      "source": "agent",
+      "id": "15629aa5-301f-4be2-8e87-e93e01f6c05f",
+      "field": "mandate"
+    }
+  ],
+  "computed_at": "2026-10-01T11:25:06.929Z",
+  "currency": "EUR",
+  "environment": "sandbox"
+}
+```
+
+`max_unit_price` is in the store's currency, recorded in `currency`. `interval_days` is required for `reorder` and not allowed for the other kinds. `shipping_address` needs `line1` (or `latitude` and `longitude`) and `country`. A bound that is not met is refused with `400`:
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "A reorder needs interval_days from 7 to 365"
+  }
+}
+```
+
+An eleventh instruction is refused with `409 mandate_limit`, and an address the store does not deliver to with `409 shipping_not_deliverable`.
+
+### `listMandates`
+
+The shopper's standing instructions with this store, newest first, in every status: `active`, `paused`, `cancelled`, `completed` or `expired`. `last_intent_id` is the checkout intent prepared the last time one fired.
+
+```typescript
+const { data } = await client.agent.listMandates({ xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": {
+    "mandates": [
+      {
+        "id": "15629aa5-301f-4be2-8e87-e93e01f6c05f",
+        "kind": "reorder",
+        "status": "active",
+        "status_reason": null,
+        "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+        "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+        "quantity": 2,
+        "max_unit_price": 53,
+        "currency": "EUR",
+        "interval_days": 30,
+        "max_triggers": 6,
+        "trigger_count": 0,
+        "shipping_address": {
+          "city": "New York",
+          "name": "John Doe",
+          "line1": "350 Fifth Avenue",
+          "state": "NY",
+          "country": "US",
+          "postal_code": "10118"
+        },
+        "next_check_at": "2026-10-31T11:25:06.898103+00:00",
+        "last_triggered_at": null,
+        "last_intent_id": null,
+        "expires_at": "2027-03-30T11:25:06.864+00:00",
+        "created_at": "2026-10-01T11:25:06.898103+00:00"
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "source": "agent",
+      "field": "mandates"
+    }
+  ],
+  "computed_at": "2026-10-01T11:25:07.476Z",
+  "currency": null,
+  "environment": "sandbox"
+}
+```
+
+### `cancelMandate`
+
+Cancels one of the shopper's standing instructions. A checkout it already prepared is unaffected and expires unless the shopper confirms it. Cancelling one that is no longer active answers `409`.
+
+```typescript
+const { data } = await client.agent.cancelMandate({
+  id: '15629aa5-301f-4be2-8e87-e93e01f6c05f',
+  xAuthToken: shopperToken,
+});
+```
+
+```json Response
+{
+  "data": {
+    "id": "15629aa5-301f-4be2-8e87-e93e01f6c05f",
+    "kind": "reorder",
+    "status": "cancelled",
+    "status_reason": "cancelled_by_shopper",
+    "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+    "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+    "quantity": 2,
+    "max_unit_price": 53,
+    "currency": "EUR",
+    "interval_days": 30,
+    "max_triggers": 6,
+    "trigger_count": 0,
+    "shipping_address": {
+      "city": "New York",
+      "name": "John Doe",
+      "line1": "350 Fifth Avenue",
+      "state": "NY",
+      "country": "US",
+      "postal_code": "10118"
+    },
+    "next_check_at": "2026-10-31T11:25:06.898103+00:00",
+    "last_triggered_at": null,
+    "last_intent_id": null,
+    "expires_at": "2027-03-30T11:25:06.864+00:00",
+    "created_at": "2026-10-01T11:25:06.898103+00:00"
+  },
+  "evidence": [
+    {
+      "source": "agent",
+      "id": "15629aa5-301f-4be2-8e87-e93e01f6c05f",
+      "field": "status"
+    }
+  ],
+  "computed_at": "2026-10-01T11:25:08.030Z",
   "currency": "EUR",
   "environment": "sandbox"
 }
@@ -2167,26 +2473,26 @@ const { data } = await client.agent.getStorePolicies();
       "zones": [
         {
           "name": "USA",
-          "fee": 1500,
-          "free_threshold": 100000
+          "fee": 15,
+          "free_threshold": 100
         },
         {
           "name": "United Kingdom",
-          "fee": 2500,
-          "free_threshold": 100000
+          "fee": 12,
+          "free_threshold": 100
         },
         {
           "name": "Kenya",
-          "fee": 250,
-          "free_threshold": 10000
+          "fee": 25,
+          "free_threshold": 150
         }
       ],
       "distance_tiers": [
         {
           "name": "Within Nairobi",
-          "fee": 100,
+          "fee": 5,
           "max_distance_meters": 50000,
-          "free_threshold": 100000
+          "free_threshold": 100
         }
       ],
       "everywhere_else": null
@@ -2256,7 +2562,7 @@ const { data } = await client.agent.getStorePolicies();
       "field": "data"
     }
   ],
-  "computed_at": "2026-09-28T21:53:51.241Z",
+  "computed_at": "2026-10-01T10:32:01.009Z",
   "currency": "EUR",
   "environment": "sandbox"
 }
@@ -2325,13 +2631,14 @@ The hosted helpers carry an additional rate limit of 60 calls a minute per clien
 
 ### Webhook events
 
-A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receive three events for checkout intents:
+A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receive four events for checkout intents and standing instructions:
 
 | Event | Fired when |
 | :--- | :--- |
 | `agent.checkout_intent.created` | An assistant created an intent. Carries `id`, `total`, `currency`, `items`, `expires_at`, `customer_id` and `agent_client_ref`. |
 | `agent.checkout_intent.confirmed` | The shopper confirmed; the order now exists. Carries `id`, `order_id`, `order_number`, `total`, `currency`, `customer_id` and `agent_client_ref`. |
 | `agent.checkout_intent.expired` | An intent lapsed unconfirmed and its stock was released. Carries `id`, `total`, `currency`, `expired_at` and `agent_client_ref`. |
+| `agent.mandate.triggered` | A shopper's standing instruction found its condition met and a checkout intent was prepared for the shopper to confirm. Carries `mandate_id`, `kind`, `checkout_intent_id`, `confirmation_url`, `variant_id`, `quantity`, `unit_price`, `total`, `currency`, `customer_id`, `trigger` (which firing this is) and `expires_at`. The prepared intent also raises `agent.checkout_intent.created`. |
 
 `feature.status_changed` fires with `feature: "agent_hosted_helpers"` when the hosted helpers become `available` or `unavailable`, and `store.updated` lists `agent_assistant_name` or `agent_assistant_logo_url` in `changed_fields` when the merchant renames the assistant or changes its logo.
 
@@ -2342,14 +2649,14 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | Code | Meaning |
 | :--- | :--- |
 | `200` | Success. |
-| `201` | A cart draft or checkout intent was created. |
-| `400` | Invalid body or parameter — for example `compare` with fewer than two products, or a `limit` out of range. |
+| `201` | A cart draft, checkout intent, return or standing instruction was created. |
+| `400` | Invalid body or parameter — for example `compare` with fewer than two products, a `limit` out of range, or a standing instruction outside its bounds. |
 | `401` | Invalid or missing API key; a shopper tool called without a shopper credential; or an intent created for a signed-in shopper confirmed without their credential. |
 | `402` | `insufficient_credits` — a hosted helper was called with a secret key and no Agent Compute credits available (a publishable key receives `403 helpers_unavailable`). |
 | `403` | `helpers_unavailable`, `consent_required`, `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
 | `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
-| `409` | `quote_changed`, `intent_not_pending`, `items_unavailable`, `shipping_not_deliverable`, `quote_incomplete`, or an `Idempotency-Key` reused with a different basket. |
-| `429` | Rate limit exceeded. |
+| `409` | `quote_changed`, `intent_not_pending`, `items_unavailable`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |
+| `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. |
 
 ```json
 {

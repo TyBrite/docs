@@ -158,13 +158,14 @@ fiscal reporting, loyalty — subscribes to both families.
 
 ### Agent checkouts
 
-A checkout an AI shopping assistant prepared through the [Agent API](/sdk/api-reference/classes/AgentService).
+A checkout an AI shopping assistant prepared through the [Agent API](/sdk/api-reference/classes/AgentService), or one a shopper's standing instruction prepared.
 
 | Event | Fired when |
 | :--- | :--- |
 | `agent.checkout_intent.created` | An assistant created a checkout intent: the price is frozen and the stock held |
 | `agent.checkout_intent.confirmed` | The shopper confirmed the intent and the order now exists. Carries `order_id` |
 | `agent.checkout_intent.expired` | An intent lapsed unconfirmed and its stock was released |
+| `agent.mandate.triggered` | A shopper's standing instruction found its condition met and a checkout intent was prepared for them. Carries `confirmation_url`, the link the shopper confirms it at |
 
 An order placed from a confirmed intent carries `source_channel: "agent"` on `order.created`, with `agent_client_ref` naming the API key or connected application that created the intent; an order placed directly through `POST /v1/orders` carries `source_channel: "storefront"`.
 

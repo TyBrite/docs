@@ -349,7 +349,7 @@ store belongs to an operated platform that URL carries the platform's own host â
 [Publish your own catalog](/ingestion#publish-your-own-catalog-outbound-feed).
 
 ```typescript
-const feed = await server.ingestion.getStoreCatalogFeedJson({
+const feed = await server.feeds.getStoreCatalogFeedJson({
   store: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61', // store id or short store code
 });
 ```
@@ -397,7 +397,7 @@ const feed = await server.ingestion.getStoreCatalogFeedJson({
   `subcategory`, `brand`, and `sale_price` are nullable: the first product has `subcategory: null`
   and a `sale_price` of 129, being on sale, while the second has `sale_price: null` and is not. The
   feed shape matches what the ingestion endpoints accept, which makes a store-to-store sync a direct
-  pull-and-ingest with no field mapping. `server.ingestion.getStoreCatalogFeedXml({ store })` returns
+  pull-and-ingest with no field mapping. `server.feeds.getStoreCatalogFeedXml({ store })` returns
   the same data as an XML document. A feed protected with a token takes it as
   `{ store, token: 'YOUR_FEED_TOKEN' }`; a wrong or missing token, or a store that has not opted in,
   returns `404`.

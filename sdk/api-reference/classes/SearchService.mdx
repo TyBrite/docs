@@ -242,7 +242,7 @@ results.forEach((r) => {
 
 ## Response Codes
 
-Both methods accept **publishable** and **secret** keys. `searchProducts` is `GET`; `semanticSearch` is `POST` (read-only).
+All three methods accept **publishable** and **secret** keys. `searchProducts` and `autocompleteSearch` are `GET`; `semanticSearch` is `POST` (read-only).
 
 | Code | Meaning |
 | :--- | :--- |
@@ -250,4 +250,4 @@ Both methods accept **publishable** and **secret** keys. `searchProducts` is `GE
 | `400` | Missing `query`/`q` parameter, invalid `limit`, or malformed request body. |
 | `401` | Invalid or missing API key. |
 | `429` | Rate limit exceeded. |
-| `500` | Internal server error or upstream embedding-service failure (semantic search only). |
+| `500` | Internal server error, from any of the three methods. For `semanticSearch` it also means the query could not be converted for meaning-based matching. |

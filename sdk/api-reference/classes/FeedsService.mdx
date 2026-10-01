@@ -1,0 +1,255 @@
+---
+title: "Feeds"
+description: "Reference for the FeedsService class in the Tybrite SDK: a store's public catalog feeds, its llms.txt files for AI assistants, and the agent.json descriptor that tells an assistant how to connect."
+---
+
+The `FeedsService` class (accessed via `client.feeds`) reads what a store publishes about itself at
+stable public addresses: its catalog as JSON or XML, a summary and a full catalog in the llms.txt
+format for AI assistants, and `agent.json`, which tells an AI assistant how to shop the store through
+the API.
+
+<Note>
+  **No API key is required** for any of these methods. Each reads a public file under
+  `/v1/feeds/{store}/…`, where `{store}` is the store's id or its short store code. A store either
+  publishes a file or answers `404`.
+</Note>
+
+| Method | Address | Published |
+| :--- | :--- | :--- |
+| `getStoreCatalogFeedJson` | `/v1/feeds/{store}/products.json` | When the merchant opts in, optionally behind a token. |
+| `getStoreCatalogFeedXml` | `/v1/feeds/{store}/products.xml` | Same as the JSON feed. |
+| `getStoreLlmsTxt` | `/v1/feeds/{store}/llms.txt` | By default, except for a wholesale store. |
+| `getStoreLlmsFullTxt` | `/v1/feeds/{store}/llms-full.txt` | Same as `llms.txt`. |
+| `getStoreAgentDescriptor` | `/v1/feeds/{store}/agent.json` | By default, except for a wholesale store. |
+
+---
+
+## Catalog feeds
+
+A store's catalog feed exposes its products as a stable, public URL, so another store, a partner, or a
+script can pull them. The feed has the shape the [ingestion](/sdk/api-reference/classes/IngestionService)
+endpoints accept, so a store-to-store sync is a direct pull-and-ingest with no field mapping. The
+merchant opts in from the admin under **Catalog Sync → "Publish my catalog"**, optionally protecting the
+feed with a token. Only storefront-safe fields are exposed — never cost or margin.
+
+### `getStoreCatalogFeedJson`
+
+Returns a store's published catalog as JSON.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `store` | `string` | Yes | The store's id or its short store code. |
+| `token` | `string` | — | Required only if the store protected its feed with a token. |
+
+```typescript
+const feed = await client.feeds.getStoreCatalogFeedJson({
+  store: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61',
+});
+```
+
+```json Response
+{
+  "products": [
+    {
+      "sku": "ELEC-ACTIONCAM-01-de4a",
+      "name": "4K Action Camera",
+      "description": "Waterproof 4K action camera with image stabilization and dual screens.",
+      "category": "Cameras & Photography",
+      "subcategory": null,
+      "brand": "Pulsewave",
+      "image": "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400",
+      "media": [],
+      "price": 149,
+      "sale_price": 129,
+      "stock": 148,
+      "seo_title": "4K Action Camera Waterproof Image Stabilization",
+      "seo_description": "Waterproof 4K action camera with dual screens and advanced image stabilization for adventure sports.",
+      "seo_keywords": ["4k action camera", "waterproof camera", "image stabilization", "dual screen"]
+    },
+    {
+      "sku": "API-CHARGER-01-afbf",
+      "name": "65W USB-C GaN Charger",
+      "description": "Compact 65W USB-C GaN wall charger with foldable prongs.",
+      "category": "Accessories & Cables",
+      "subcategory": "Charging & Power",
+      "brand": "Pulsewave",
+      "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=400",
+      "media": [],
+      "price": 39.99,
+      "sale_price": null,
+      "stock": 69,
+      "seo_title": "65W USB-C GaN Charger Compact Fast Charging",
+      "seo_description": "Compact 65W USB-C GaN wall charger with foldable prongs for fast, portable charging.",
+      "seo_keywords": ["65w usb-c charger", "gan charger"]
+    }
+  ]
+}
+```
+
+**`FeedProduct` fields** (the ingestion input shape, plus media and published specifications):
+
+| Field | Description |
+| :--- | :--- |
+| `sku`, `name`, `description`, `category` | Core product fields. |
+| `subcategory` | Subcategory name, or `null` when the product has none. |
+| `brand` | Brand, or `null`. |
+| `image` | A single primary image URL, for simple consumers. |
+| `media` | The full product-level media gallery. |
+| `variant_name` | Variant label, or `null`. |
+| `product_group` | Present on multi-variant products so a consumer can regroup variants; `null` otherwise. |
+| `price` | Selling price. |
+| `sale_price` | Sale price, or `null` when not on sale. |
+| `stock` | On-hand quantity. |
+| `seo_title`, `seo_description`, `seo_keywords` | SEO fields, when present. |
+| `specifications` | Published specifications as a flat key/value object, when present. |
+
+### `getStoreCatalogFeedXml`
+
+The XML form of the same feed, with the same opt-in and token rules. Returns the catalog as an XML
+string.
+
+```typescript
+const xml = await client.feeds.getStoreCatalogFeedXml({
+  store: 'ef7b07d3-424b-4b03-b1d4-30a2d2073b61',
+});
+// xml is a string you can serve or re-parse.
+```
+
+**Catalog feed response codes:** `200` (the catalog), `404` (no public feed — not opted in, or a wrong
+or missing token), `429` (rate limit exceeded).
+
+---
+
+## Files for AI assistants
+
+### `getStoreLlmsTxt`
+
+Returns a store's summary for AI assistants as Markdown, in the llms.txt format: the store's name,
+description, website and product count, the categories and subcategories it sells with product counts,
+and its featured products and collections, each linked to the storefront. A closing section for AI
+agents links the full catalog, the Agent API's tool list and store policies, and, where the store
+publishes one, its `agent.json`. The file carries only what the storefront already shows and follows
+catalog changes.
+
+The file is published by default. A wholesale store publishes it once the merchant turns it on, and any
+merchant can turn it off from **Settings → Agentic Commerce**. A store on a trial or with a lapsed
+subscription returns `404`. There is no token: the file is either public or not published.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `store` | `string` | Yes | The store's id or its short store code. |
+
+```typescript
+const summary = await client.feeds.getStoreLlmsTxt({ store: 'GTS001' });
+// summary is a Markdown string:
+// # Galactic Test Store
+//
+// Website: https://gc.tybritelabs.com
+// Products: 54
+//
+// ## What this store sells
+// - Men's Clothing (7)
+//   - Graphic Tees (3)
+```
+
+AI assistants look for `/llms.txt` at the root of a site, so a storefront typically forwards its own
+`/llms.txt` and `/llms-full.txt` to these two addresses.
+
+### `getStoreLlmsFullTxt`
+
+The complete form of the same file: every product the storefront lists, with its storefront link,
+category, brand and description, and one line per variant giving its SKU, price, any previous price and
+whether it is in stock. Same publishing rules as `getStoreLlmsTxt`.
+
+```typescript
+const catalog = await client.feeds.getStoreLlmsFullTxt({ store: 'GTS001' });
+// ### [4K Action Camera](https://demo-store.tybritelabs.com/products/4k-action-camera-fbc60-de4aeb12)
+//
+// Category: Cameras & Photography › Action Cameras
+// Brand: Pulsewave
+//
+// - Standard — SKU ELEC-ACTIONCAM-01-de4a — 129.00 USD (was 149.00 USD) — in stock
+```
+
+**llms.txt response codes:** `200` (the Markdown file), `404` (the store does not publish one), `429`
+(rate limit exceeded).
+
+### `getStoreAgentDescriptor`
+
+Returns `agent.json`, a small JSON document that tells an AI assistant how to shop the store: the API's
+base address, a publishable key to call it with, where the tool list and the OpenAPI specification are,
+the store's feeds, and that every checkout is confirmed by the shopper. An assistant that has found the
+store needs nothing else to start calling the [Agent API](/sdk/api-reference/classes/AgentService).
+
+The key in `api.publishable_key` is a production publishable key dedicated to assistants, separate from
+the keys the merchant uses elsewhere, so it can be switched off on its own. Like any publishable key it
+reads and prepares; it never places an order or takes payment without the shopper.
+
+The descriptor is published by default. A wholesale store's stays off until the merchant turns it on,
+and the merchant can turn it off from **Settings → Agentic Commerce**, which also deactivates its key.
+A storefront serves it at `/.well-known/agentic-commerce.json` by forwarding that path to this address,
+as it forwards `/llms.txt`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `store` | `string` | Yes | The store's id or its short store code. |
+
+```typescript
+const descriptor = await client.feeds.getStoreAgentDescriptor({ store: 'GAL001' });
+
+const assistant = new Tybrite({
+  apiKey: descriptor.api!.publishable_key!,
+  BASE: descriptor.api!.base_url!,
+});
+```
+
+```json Response
+{
+  "version": 1,
+  "store": {
+    "name": "Galactic Core Store",
+    "website": "https://tybritelabs.com",
+    "currency": "EUR",
+    "assistant": null
+  },
+  "api": {
+    "base_url": "https://api.tybritelabs.com",
+    "publishable_key": "tybrite_pk_live_YOUR_API_KEY",
+    "authentication": "Send the key as \"Authorization: Bearer <key>\".",
+    "capabilities": "https://api.tybritelabs.com/v1/agent/capabilities",
+    "openapi": "https://docs.tybritelabs.com/openapi.yaml"
+  },
+  "feeds": {
+    "llms_txt": "https://api.tybritelabs.com/v1/feeds/GAL001/llms.txt",
+    "llms_full_txt": "https://api.tybritelabs.com/v1/feeds/GAL001/llms-full.txt",
+    "products_json": null
+  },
+  "checkout": {
+    "human_confirmation_required": true,
+    "intents": "https://api.tybritelabs.com/v1/agent/checkout-intents"
+  }
+}
+```
+
+| Field | Description |
+| :--- | :--- |
+| `store` | The store's name, website and default currency. `assistant` carries the name and logo the merchant gave their shopping assistant (`name`, `logo_url`), or `null` when neither is set. |
+| `api.base_url` | The address to call the API at. For a store served under an agency's own API domain, this is that domain. |
+| `api.publishable_key` | The key an assistant sends as `Authorization: Bearer <key>`. |
+| `api.capabilities` | The Agent API's tool manifest. |
+| `api.openapi` | The OpenAPI specification. |
+| `feeds` | The store's `llms.txt` and `llms-full.txt`, and its JSON catalog feed when that is public without a token (`null` otherwise). |
+| `checkout.human_confirmation_required` | Always `true`: an order is placed only once the shopper confirms a checkout intent. |
+| `checkout.intents` | Where checkout intents are created. |
+
+The response is cached for five minutes.
+
+**Descriptor response codes:** `200` (the descriptor), `403` (the store is on a trial or its plan has
+lapsed), `404` (the store does not publish a descriptor, or does not exist), `429` (rate limit
+exceeded).

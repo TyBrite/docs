@@ -149,7 +149,7 @@ await client.webhooks.createWebhookEndpoint({
 | Customers | `customer.created`, `customer.updated`, `customer.deleted` |
 | Inventory | `product.created`, `product.updated`, `product.stock_low`, `product.out_of_stock` |
 | Cart & shopping intent | `cart.created`, `cart.updated`, `cart.abandoned`, `checkout.abandoned`, `wishlist.added` |
-| Agent checkouts | `agent.checkout_intent.created`, `agent.checkout_intent.confirmed`, `agent.checkout_intent.expired` — a checkout intent an AI shopping assistant created, the shopper's confirmation (the order now exists), and one that lapsed unconfirmed. `order.created` carries `source_channel` (`storefront` or `agent`) |
+| Agent checkouts | `agent.checkout_intent.created`, `agent.checkout_intent.confirmed`, `agent.checkout_intent.expired`, `agent.mandate.triggered` — a checkout intent an AI shopping assistant created, the shopper's confirmation (the order now exists), one that lapsed unconfirmed, and a checkout prepared when a shopper's standing instruction found its condition met (carrying `confirmation_url`). `order.created` carries `source_channel` (`storefront` or `agent`) |
 | Gift Cards | `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired` |
 | Promotions | `promotion.applied`, `promotion.created`, `promotion.activated`, `promotion.deactivated` |
 | Pricing | `pricing_rule.created`, `pricing_rule.activated`, `pricing_rule.updated`, `pricing_rule.deactivated` |

@@ -85,7 +85,7 @@ info:
     - Full read/write access
     - ⚠️ Never expose in client-side code
     - **Required for:**
-      - All write operations (POST, PUT, PATCH, DELETE)
+      - Write operations other than the shopper's own actions listed under publishable keys
       - Authentication endpoints (register, login, logout, etc.)
       - Payment verification (`POST /v1/payments/verify`)
       - AI recommendations (`POST /v1/recommendations`)
@@ -95,7 +95,7 @@ info:
     **Publishable Keys** (Client-Safe)
     - Production: `tybrite_pk_live_*`
     - Sandbox: `tybrite_pk_test_*`
-    - Reads, plus the writes a shopper makes on their own behalf (cart, wishlist, reviews, events)
+    - Catalogue reads, plus the actions a shopper takes for themselves (cart, wishlist, reviews, storefront events, and the Agent API's quotes, cart drafts and checkout intents)
     - ✅ Safe for client-side use
     - **Allowed for:**
       - Product browsing
@@ -104,17 +104,19 @@ info:
       - CMS content retrieval
       - Pricing queries
       - Shipping calculations
-      - Cart viewing (read-only)
+      - Cart and wishlist
+      - Reviews and storefront events
+      - Agent API quotes, cart drafts and checkout intents
       
     ### Key Type Enforcement
       
-    Attempting to use a publishable key for write operations or restricted endpoints will return:
+    Attempting to use a publishable key for any other write operation or a restricted endpoint returns:
     ```json
     {
       "error": {
         "code": "forbidden",
-        "message": "This operation requires a secret key. Publishable keys have read-only access.",
-        "hint": "Use a secret key (tybrite_sk_*) for write operations"
+        "message": "This operation requires a secret key. Publishable keys cover catalogue reads and the actions a shopper takes for themselves.",
+        "hint": "Call this from your server with a secret key (tybrite_sk_*)"
       }
     }
     ```
@@ -773,6 +775,20 @@ tags:
 
       **Scheduled sync:** merchants can also register a feed URL in their dashboard for Galactic
       Core to pull and sync on a schedule; a `feed.sync.completed` webhook fires after each run.
+  - name: Feeds
+    description: |
+      A store's public, read-only feeds, served **without an API key** so that search engines,
+      marketplaces, other commerce systems and AI assistants can read them directly.
+
+      - `products.json` / `products.xml` — the full catalogue, for catalogue sync. Published when
+        the merchant turns on **Publish my catalog**; an optional feed token can be required.
+      - `llms.txt` — a Markdown summary of the store for AI assistants: who it is, what it sells,
+        its policies and where to go next.
+      - `llms-full.txt` — the complete catalogue in the same Markdown format.
+
+      `{store}` is the store's code (as in `GAL001`) or its id. Every feed carries only what the
+      storefront already shows — never cost, margin or supplier data — and only production data.
+      Feeds are cached at the edge and refresh when the catalogue changes.
   - name: Webhooks
     description: |
       Outbound webhook management for merchant integrators.
@@ -4853,6 +4869,7 @@ paths:
         - `estimated_delivery`: Estimated delivery date/time
         - `shipped_at`: Timestamp when order was shipped
         - `delivered_at`: Timestamp when order was delivered
+        - `shipping_metadata`: Fulfilment details such as a purchased label's carrier and tracking (replaces the stored object)
 
         **Status transitions:**
         - `payment_status`: `pending` → `paid` or `failed`; `failed` → `paid`. A `paid` order
@@ -4978,6 +4995,19 @@ paths:
                     type: string
                   example:
                     - 8f2c1a9b-4d7e-4f10-9a3b-2c5e7f1d0a44
+                shipping_metadata:
+                  type:
+                    - object
+                    - 'null'
+                  additionalProperties: true
+                  description: Fulfilment details to store on the order, such as the carrier, service, label URL and tracking details of a purchased shipping label. The object replaces the order's stored `shipping_metadata` in full rather than being merged into it, so include any existing keys that should be kept.
+                  example:
+                    fee: 5.99
+                    tier_name: Local (within 10 km)
+                    carrier: UPS
+                    service: Ground
+                    label_url: https://example.com/labels/1Z999AA10123456784.pdf
+                    tracking_number: 1Z999AA10123456784
             examples:
               mark_as_paid:
                 summary: Mark order as paid
@@ -5324,7 +5354,7 @@ paths:
 
         **Key Type Support:**
         - ✅ Secret keys (full access)
-        - ✅ Publishable keys (read-only)
+        - ✅ Publishable keys
       parameters:
         - name: fields
           in: query
@@ -5571,10 +5601,6 @@ paths:
                   format: uuid
                   description: Optional order ID to link payment to an order
                   example: 880e8400-e29b-41d4-a716-446655440003
-                idempotency_key:
-                  type: string
-                  description: Optional idempotency key to prevent duplicate payments
-                  example: pay-2026-02-10-abc123
                 metadata:
                   type: object
                   additionalProperties:
@@ -10227,19 +10253,19 @@ paths:
                     ships_anywhere: false
                     zones:
                       - name: USA
-                        fee: 1500
-                        free_threshold: 100000
+                        fee: 15
+                        free_threshold: 100
                       - name: United Kingdom
-                        fee: 2500
-                        free_threshold: 100000
+                        fee: 12
+                        free_threshold: 100
                       - name: Kenya
-                        fee: 250
-                        free_threshold: 10000
+                        fee: 25
+                        free_threshold: 150
                     distance_tiers:
                       - name: Within Nairobi
-                        fee: 100
+                        fee: 5
                         max_distance_meters: 50000
-                        free_threshold: 100000
+                        free_threshold: 100
                     note: The exact fee for an address comes from POST /v1/agent/quote.
                   returns:
                     accepted: true
@@ -10267,7 +10293,7 @@ paths:
                     field: delivery_zones
                   - source: store
                     field: returns_window_days
-                computed_at: '2026-09-28T21:53:27.388Z'
+                computed_at: '2026-10-01T10:31:54.545Z'
                 currency: EUR
                 environment: sandbox
         '400':
@@ -11103,8 +11129,10 @@ paths:
         **With a marketplace operator key** the basket may span several sellers of that marketplace. The quote
         is the marketplace checkout's own pricing: each line at the marketplace's price, each seller's
         merchandise total and shipping in `sellers`, marketplace-wide promotions in `discount.amount`, and the
-        `grand_total` the checkout charges. Tax is not added (`tax.status: not_charged`). A line may name its
-        seller with `merchant_store_id`; a variant not sold on that marketplace is flagged
+        `grand_total` the checkout charges. Tax is not added (`tax.status: not_charged`, `amount: 0`): the
+        marketplace checkout charges no tax, so `grand_total` is exactly the amount the shopper pays and the
+        quote can be final. A line may name its seller with `merchant_store_id`; a variant not sold on that
+        marketplace is flagged
         `not_available_on_this_marketplace`, and one sold by a different seller than named
         `not_sold_by_that_seller`. `shipping_selections` chooses a carrier option a seller offered in an earlier
         quote.
@@ -11377,6 +11405,7 @@ paths:
                         type: object
                         properties:
                           status:
+                            description: '`not_charged` is returned with a marketplace key: the marketplace checkout adds no tax, so `amount` is 0 and `grand_total` is the amount charged.'
                             type: string
                             enum:
                               - quoted
@@ -11483,16 +11512,16 @@ paths:
                         promotion: null
                       shipping:
                         status: quoted
-                        amount: 1500
-                        description: USA
-                        free_threshold: 100000
-                        is_free: false
+                        amount: 0
+                        description: 'Free delivery: the order qualifies'
+                        free_threshold: 100
+                        is_free: true
                       tax:
                         status: quoted
-                        amount: 223.58
+                        amount: 16.68
                         source: fallback
                         prices_include_tax: true
-                      grand_total: 1620.95
+                      grand_total: 120.95
                       total_is_final: true
                       unavailable_count: 0
                       currency: EUR
@@ -11521,7 +11550,7 @@ paths:
                       - source: tax
                         operation: POST /v1/tax/preview
                         field: tax_amount
-                    computed_at: '2026-09-28T21:53:38.925Z'
+                    computed_at: '2026-10-01T10:31:57.369Z'
                     currency: EUR
                     environment: sandbox
                 marketplace:
@@ -11577,7 +11606,7 @@ paths:
                             - 82c56d38-4ca0-4f6a-a87b-b1b8563b73e8
                           merchandise_total: 38.5
                           shipping:
-                            amount: 1650
+                            amount: 16.5
                             pricing: seller_rate
                             fulfilled_by: seller
                             is_free: false
@@ -11591,12 +11620,12 @@ paths:
                         promotion: null
                       shipping:
                         status: quoted
-                        amount: 1650
+                        amount: 16.5
                       tax:
                         status: not_charged
                         amount: 0
                         prices_include_tax: false
-                      grand_total: 1847.5
+                      grand_total: 214
                       total_is_final: true
                       unavailable_count: 0
                       currency: USD
@@ -11620,7 +11649,7 @@ paths:
                       - source: marketplace
                         operation: POST /v1/cart/checkout/quote
                         field: sellers
-                    computed_at: '2026-09-30T17:39:04.715Z'
+                    computed_at: '2026-10-01T10:35:30.149Z'
                     currency: USD
                     environment: sandbox
         '400':
@@ -13548,14 +13577,14 @@ paths:
               example:
                 data:
                   source: draft
-                  draft_id: b45506d9-6f01-4ac5-aaf7-7fc3a19e8863
+                  draft_id: 852d4cb9-b121-46e5-aa41-ad34a3c3310a
                   unavailable: []
                   price_changes: []
                   promotion: null
                   free_shipping:
-                    threshold: 100000
+                    threshold: 100
                     qualifies: false
-                    gap: 99952
+                    gap: 52
                   free_shipping_status: quoted
                   complementary: []
                   complementary_basis: unavailable
@@ -13574,7 +13603,7 @@ paths:
                   - source: tax
                     operation: POST /v1/tax/preview
                     field: tax_amount
-                computed_at: '2026-09-28T21:53:49.480Z'
+                computed_at: '2026-10-01T10:31:59.845Z'
                 currency: EUR
                 environment: sandbox
         '400':
@@ -14597,34 +14626,34 @@ paths:
                       - sandbox
               example:
                 data:
-                  order_id: 74a3221b-a5dc-4e56-9b9e-2d0c55611bd5
-                  order_number: ORD-1790632457762
+                  order_id: e9b398b5-40d9-476d-bae6-efc401861190
+                  order_number: ORD-1790850732602
                   status: pending
                   payment_status: pending
-                  total: 1548
+                  total: 63
                   tracking_number: null
                   estimated_delivery: null
                   shipped_at: null
                   delivered_at: null
-                  placed_at: '2026-09-28T21:54:20.218758+00:00'
+                  placed_at: '2026-10-01T10:32:13.156715+00:00'
                   placed_through_agent: true
                   returns:
                     eligible: true
                     reason: null
                     window_days: 10
-                    closes_at: '2026-10-08T21:54:20.218Z'
+                    closes_at: '2026-10-11T10:32:13.156Z'
                     days_remaining: 10
                   allowed_actions:
                     - action: complete_payment
                 evidence:
                   - source: orders
-                    id: 74a3221b-a5dc-4e56-9b9e-2d0c55611bd5
+                    id: e9b398b5-40d9-476d-bae6-efc401861190
                     field: order_status
                   - source: returns
                     operation: GET /v1/returns/eligibility
                     field: closes_at
-                computed_at: '2026-09-28T21:54:25.824Z'
-                currency: null
+                computed_at: '2026-10-01T10:32:15.254Z'
+                currency: EUR
                 environment: sandbox
         '400':
           description: The request is invalid
@@ -14696,6 +14725,886 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/agent/orders/{id}/returns:
+    post:
+      operationId: requestReturn
+      tags:
+        - Agent
+      summary: Request a return for an order
+      description: |-
+        Lodges a return for one of the shopper's own orders — the action `getOrderStatus` lists as `request_return`
+        while the order is inside the store's return window. Omit `items` to return every line in full, or name
+        lines with `order_item_id` and a `quantity`. The store reviews the return and decides the refund; the shopper
+        is emailed that it was received. Requires the shopper's credential.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The order.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason_code
+              properties:
+                reason_code:
+                  type: string
+                  enum:
+                    - damaged
+                    - defective
+                    - wrong_item
+                    - not_as_described
+                    - wrong_size
+                    - no_longer_needed
+                    - arrived_late
+                    - other
+                reason_description:
+                  type: string
+                  description: Required when `reason_code` is `other`.
+                return_type:
+                  type: string
+                  enum:
+                    - full_refund
+                    - partial_refund
+                    - exchange
+                    - store_credit
+                  description: Defaults to `full_refund`.
+                items:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required:
+                      - order_item_id
+                    properties:
+                      order_item_id:
+                        type: string
+                        format: uuid
+                      quantity:
+                        type: integer
+                        minimum: 1
+                      condition:
+                        type: string
+                        enum:
+                          - sellable
+                          - damaged
+                          - defective
+                          - expired
+            example:
+              reason_code: wrong_size
+              return_type: store_credit
+      responses:
+        '201':
+          description: The return was lodged
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type:
+                      - string
+                      - 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  id: df26fae0-6566-4d87-97d4-1902c20b758f
+                  return_number: RET-20261001-fb1716
+                  order_id: 36f0b9c2-8c86-4034-bef7-82dfe4744ff5
+                  channel: online
+                  status: pending
+                  return_type: store_credit
+                  reason_code: wrong_size
+                  reason_description: null
+                  total_return_amount: 48
+                  refund_amount: 0
+                  refund_method: null
+                  created_at: '2026-10-01T11:25:17.785759+00:00'
+                  processed_at: null
+                  credit_offer:
+                    status: none
+                    amount: null
+                  items:
+                    - id: cf7eec28-8406-42a1-945b-bf374c89230f
+                      order_item_id: d6a0866a-322a-428b-925d-35081f37ed39
+                      product_name: Galactic Zip Hoodie
+                      quantity: 1
+                      unit_price: 48
+                      return_amount: 48
+                      condition: sellable
+                      status: pending
+                      rejection_reason: null
+                      media: []
+                evidence:
+                  - source: returns
+                    operation: POST /v1/returns
+                    id: df26fae0-6566-4d87-97d4-1902c20b758f
+                computed_at: '2026-10-01T11:25:18.445Z'
+                currency: EUR
+                environment: sandbox
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/me/mandates:
+    get:
+      operationId: listMandates
+      tags:
+        - Agent
+      summary: List the shopper's standing instructions
+      description: |-
+        The shopper's standing instructions with this store, newest first. Requires the shopper's credential and
+        personalization consent.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+      responses:
+        '200':
+          description: The standing instructions
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      mandates:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            kind:
+                              type: string
+                              enum:
+                                - reorder
+                                - price_drop
+                                - back_in_stock
+                            status:
+                              type: string
+                              enum:
+                                - active
+                                - paused
+                                - cancelled
+                                - completed
+                                - expired
+                            status_reason:
+                              type:
+                                - string
+                                - 'null'
+                              description: 'Why it is no longer active: `cancelled_by_shopper`, `consent_revoked`, `fulfilled` or `expired`.'
+                            product_id:
+                              type: string
+                              format: uuid
+                            variant_id:
+                              type: string
+                              format: uuid
+                            quantity:
+                              type: integer
+                            max_unit_price:
+                              type: number
+                            currency:
+                              type: string
+                            interval_days:
+                              type:
+                                - integer
+                                - 'null'
+                            max_triggers:
+                              type: integer
+                            trigger_count:
+                              type: integer
+                            shipping_address:
+                              type: object
+                            next_check_at:
+                              type: string
+                              format: date-time
+                            last_triggered_at:
+                              type:
+                                - string
+                                - 'null'
+                              format: date-time
+                            last_intent_id:
+                              type:
+                                - string
+                                - 'null'
+                              format: uuid
+                              description: The checkout intent prepared the last time it fired.
+                            expires_at:
+                              type: string
+                              format: date-time
+                            created_at:
+                              type: string
+                              format: date-time
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type:
+                      - string
+                      - 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  mandates:
+                    - id: 15629aa5-301f-4be2-8e87-e93e01f6c05f
+                      kind: reorder
+                      status: active
+                      status_reason: null
+                      product_id: 289533e8-f5b6-4d4f-bb23-2127875feb70
+                      variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
+                      quantity: 2
+                      max_unit_price: 53
+                      currency: EUR
+                      interval_days: 30
+                      max_triggers: 6
+                      trigger_count: 0
+                      shipping_address:
+                        city: New York
+                        name: John Doe
+                        line1: 350 Fifth Avenue
+                        state: NY
+                        country: US
+                        postal_code: '10118'
+                      next_check_at: '2026-10-31T11:25:06.898103+00:00'
+                      last_triggered_at: null
+                      last_intent_id: null
+                      expires_at: '2027-03-30T11:25:06.864+00:00'
+                      created_at: '2026-10-01T11:25:06.898103+00:00'
+                evidence:
+                  - source: agent
+                    field: mandates
+                computed_at: '2026-10-01T11:25:07.476Z'
+                currency: null
+                environment: sandbox
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Personalization consent has not been granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: consent_required
+                  message: The shopper has not granted personalisation. Ask them to, then call POST /v1/agent/me/consent.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: createMandate
+      tags:
+        - Agent
+      summary: Create a standing instruction
+      description: |-
+        Leaves a standing instruction for the shopper, bounded on every side: reorder an item every `interval_days`
+        (7–365, at most 12 times), or watch for it to come back in stock (`back_in_stock`) or to reach a price (`price_drop`) —
+        always at or below `max_unit_price` per unit. When the condition holds, Galactic Core prepares a hosted checkout
+        intent for the shopper, sends the `agent.mandate.triggered` webhook event with its confirmation link, and emails the
+        shopper that link under the store's own name. The shopper confirms; nothing is paid without them, and a prepared
+        checkout stays open for 48 hours. Requires the shopper's credential and personalization consent. A shopper can keep
+        at most 10 with one store; a mandate pauses if consent is withdrawn.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - kind
+                - variant_id
+                - max_unit_price
+                - shipping_address
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - reorder
+                    - price_drop
+                    - back_in_stock
+                variant_id:
+                  type: string
+                  format: uuid
+                quantity:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  description: Defaults to 1.
+                max_unit_price:
+                  type: number
+                  exclusiveMinimum: 0
+                  description: The most the shopper will pay per unit, in the store's currency.
+                interval_days:
+                  type: integer
+                  minimum: 7
+                  maximum: 365
+                  description: Required for `reorder`; not allowed otherwise.
+                max_triggers:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+                  description: '`reorder` only: how many times it may fire. Defaults to 1.'
+                expires_in_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+                  description: Defaults to 180.
+                shipping_address:
+                  type: object
+                  description: 'Where to deliver: `line1` (or `latitude`/`longitude`) and `country` are required.'
+                  properties:
+                    name:
+                      type: string
+                    line1:
+                      type: string
+                    line2:
+                      type: string
+                    city:
+                      type: string
+                    state:
+                      type: string
+                    postal_code:
+                      type: string
+                    country:
+                      type: string
+            example:
+              kind: reorder
+              variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
+              quantity: 2
+              max_unit_price: 53
+              interval_days: 30
+              max_triggers: 6
+              shipping_address:
+                name: John Doe
+                line1: 350 Fifth Avenue
+                city: New York
+                state: NY
+                postal_code: '10118'
+                country: US
+      responses:
+        '201':
+          description: The standing instruction was created
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum:
+                          - reorder
+                          - price_drop
+                          - back_in_stock
+                      status:
+                        type: string
+                        enum:
+                          - active
+                          - paused
+                          - cancelled
+                          - completed
+                          - expired
+                      status_reason:
+                        type:
+                          - string
+                          - 'null'
+                        description: 'Why it is no longer active: `cancelled_by_shopper`, `consent_revoked`, `fulfilled` or `expired`.'
+                      product_id:
+                        type: string
+                        format: uuid
+                      variant_id:
+                        type: string
+                        format: uuid
+                      quantity:
+                        type: integer
+                      max_unit_price:
+                        type: number
+                      currency:
+                        type: string
+                      interval_days:
+                        type:
+                          - integer
+                          - 'null'
+                      max_triggers:
+                        type: integer
+                      trigger_count:
+                        type: integer
+                      shipping_address:
+                        type: object
+                      next_check_at:
+                        type: string
+                        format: date-time
+                      last_triggered_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      last_intent_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                        description: The checkout intent prepared the last time it fired.
+                      expires_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type:
+                      - string
+                      - 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  id: 15629aa5-301f-4be2-8e87-e93e01f6c05f
+                  kind: reorder
+                  status: active
+                  status_reason: null
+                  product_id: 289533e8-f5b6-4d4f-bb23-2127875feb70
+                  variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
+                  quantity: 2
+                  max_unit_price: 53
+                  currency: EUR
+                  interval_days: 30
+                  max_triggers: 6
+                  trigger_count: 0
+                  shipping_address:
+                    city: New York
+                    name: John Doe
+                    line1: 350 Fifth Avenue
+                    state: NY
+                    country: US
+                    postal_code: '10118'
+                  next_check_at: '2026-10-31T11:25:06.898103+00:00'
+                  last_triggered_at: null
+                  last_intent_id: null
+                  expires_at: '2027-03-30T11:25:06.864+00:00'
+                  created_at: '2026-10-01T11:25:06.898103+00:00'
+                evidence:
+                  - source: pricing
+                    operation: GET /v1/prices/products/{id}
+                    id: fbe89cdf-90a3-4050-a43b-e4c42302484a
+                    field: resolved_price
+                  - source: promotions
+                    operation: POST /v1/promotions/calculate-best
+                    field: discount
+                  - source: shipping
+                    operation: shipping quote
+                    field: fee
+                  - source: tax
+                    operation: POST /v1/tax/preview
+                    field: tax_amount
+                  - source: agent
+                    id: 15629aa5-301f-4be2-8e87-e93e01f6c05f
+                    field: mandate
+                computed_at: '2026-10-01T11:25:06.929Z'
+                currency: EUR
+                environment: sandbox
+        '400':
+          description: A bound was not met
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_request
+                  message: A reorder needs interval_days from 7 to 365
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Personalization consent has not been granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: consent_required
+                  message: The shopper has not granted personalisation. Ask them to, then call POST /v1/agent/me/consent.
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: '`mandate_limit` (10 already) or `shipping_not_deliverable`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+                      details:
+                        type:
+                          - object
+                          - string
+                          - array
+              example:
+                error:
+                  code: mandate_limit
+                  message: A shopper can keep at most 10 standing instructions with this store
+                  details:
+                    limit: 10
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/me/mandates/{id}/cancel:
+    post:
+      operationId: cancelMandate
+      tags:
+        - Agent
+      summary: Cancel a standing instruction
+      description: |-
+        Cancels one of the shopper's standing instructions. A checkout it already prepared is unaffected and expires
+        unless the shopper confirms it. Requires the shopper's credential.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The standing instruction.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+      responses:
+        '200':
+          description: Cancelled
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum:
+                          - reorder
+                          - price_drop
+                          - back_in_stock
+                      status:
+                        type: string
+                        enum:
+                          - active
+                          - paused
+                          - cancelled
+                          - completed
+                          - expired
+                      status_reason:
+                        type:
+                          - string
+                          - 'null'
+                        description: 'Why it is no longer active: `cancelled_by_shopper`, `consent_revoked`, `fulfilled` or `expired`.'
+                      product_id:
+                        type: string
+                        format: uuid
+                      variant_id:
+                        type: string
+                        format: uuid
+                      quantity:
+                        type: integer
+                      max_unit_price:
+                        type: number
+                      currency:
+                        type: string
+                      interval_days:
+                        type:
+                          - integer
+                          - 'null'
+                      max_triggers:
+                        type: integer
+                      trigger_count:
+                        type: integer
+                      shipping_address:
+                        type: object
+                      next_check_at:
+                        type: string
+                        format: date-time
+                      last_triggered_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      last_intent_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                        description: The checkout intent prepared the last time it fired.
+                      expires_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type:
+                      - string
+                      - 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  id: 15629aa5-301f-4be2-8e87-e93e01f6c05f
+                  kind: reorder
+                  status: cancelled
+                  status_reason: cancelled_by_shopper
+                  product_id: 289533e8-f5b6-4d4f-bb23-2127875feb70
+                  variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
+                  quantity: 2
+                  max_unit_price: 53
+                  currency: EUR
+                  interval_days: 30
+                  max_triggers: 6
+                  trigger_count: 0
+                  shipping_address:
+                    city: New York
+                    name: John Doe
+                    line1: 350 Fifth Avenue
+                    state: NY
+                    country: US
+                    postal_code: '10118'
+                  next_check_at: '2026-10-31T11:25:06.898103+00:00'
+                  last_triggered_at: null
+                  last_intent_id: null
+                  expires_at: '2027-03-30T11:25:06.864+00:00'
+                  created_at: '2026-10-01T11:25:06.898103+00:00'
+                evidence:
+                  - source: agent
+                    id: 15629aa5-301f-4be2-8e87-e93e01f6c05f
+                    field: status
+                computed_at: '2026-10-01T11:25:08.030Z'
+                currency: EUR
+                environment: sandbox
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: Not active (already cancelled, completed or expired)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+                      details:
+                        type:
+                          - object
+                          - string
+                          - array
+              example:
+                error:
+                  code: mandate_not_active
+                  message: This standing instruction is cancelled
+                  details:
+                    status: cancelled
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/agent/checkout-intents:
     post:
       operationId: createCheckoutIntent
@@ -14733,6 +15642,12 @@ paths:
         Only `token` confirmation is available (`hosted` answers `400`). A line not sold on that marketplace is
         refused with `409 items_unavailable`, and nothing is created. Stock is held from confirmation, for the
         payment window, rather than from creation. Shopper credentials are sent at confirmation.
+        **Limits on a publishable key.** An intent holds stock, so a publishable key — which anyone can read from a
+        storefront — is bounded: 60 new intents an hour from one address, 5 waiting for confirmation at once per
+        address (per shopper when a shopper credential is sent), 10 units of one item per intent for a guest and 25
+        for a signed-in shopper, and guests together may hold at most half of an item's stock. Past a limit the
+        answer is `409 hold_limit_reached` with `details.limit`, or `429 rate_limited` with `Retry-After`. A secret key
+        (the store's own server) is bound only by its plan.
       security:
         - BearerAuth: []
       parameters:
@@ -15474,20 +16389,20 @@ paths:
                   summary: A store key
                   value:
                     data:
-                      id: 0ff91bd6-aa86-4ef6-8242-fe8644bca1bb
+                      id: a3a10e58-c5e2-406d-b054-0b8d782e9300
                       status: pending_confirmation
                       confirmation_mode: token
-                      expires_at: '2026-09-28T22:24:09.629+00:00'
+                      expires_at: '2026-10-01T11:02:09.366+00:00'
                       order_id: null
                       customer_id: null
-                      total: 1548
+                      total: 63
                       currency: EUR
                       items:
                         - quantity: 1
                           variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
                       quote:
                         tax:
-                          amount: 213.52
+                          amount: 8.69
                           source: fallback
                           status: quoted
                           prices_include_tax: true
@@ -15510,13 +16425,13 @@ paths:
                           amount: 0
                           promotion: null
                         shipping:
-                          amount: 1500
+                          amount: 15
                           status: quoted
                           is_free: false
                           description: USA
-                          free_threshold: 100000
+                          free_threshold: 100
                         subtotal: 48
-                        grand_total: 1548
+                        grand_total: 63
                         total_is_final: true
                         shipping_address:
                           city: New York
@@ -15526,10 +16441,10 @@ paths:
                           country: US
                           postal_code: '10118'
                         unavailable_count: 0
-                      created_at: '2026-09-28T21:54:09.713316+00:00'
+                      created_at: '2026-10-01T10:32:09.391151+00:00'
                       confirmed_at: null
                       cancelled_at: null
-                      confirmation_token: HnYBO4omfk1-CXT0gqUhNfo02aHMI2-shiJSRl-MFSo
+                      confirmation_token: cfDyJ73g3bVzFaMN9tu4IqQ0Tpb2LpUkpvVGUgL7NTU
                       confirmation_url: null
                     evidence:
                       - source: pricing
@@ -15548,21 +16463,21 @@ paths:
                       - source: orders
                         operation: POST /v1/checkout/reserve
                         field: reservations
-                    computed_at: '2026-09-28T21:54:09.790Z'
+                    computed_at: '2026-10-01T10:32:09.426Z'
                     currency: EUR
                     environment: sandbox
                 marketplace:
                   summary: 'A marketplace operator key: a basket from two sellers'
                   value:
                     data:
-                      id: b506f2f9-a2d3-42be-aa8c-2519200719b2
+                      id: ce8a37d6-a6ac-4ee7-b4c7-5be06064a622
                       status: pending_confirmation
                       confirmation_mode: token
-                      expires_at: '2026-09-30T18:09:08.987+00:00'
+                      expires_at: '2026-10-01T11:05:33.107+00:00'
                       order_id: null
                       order_group_id: null
                       customer_id: null
-                      total: 1847.5
+                      total: 214
                       currency: USD
                       items:
                         - quantity: 1
@@ -15592,7 +16507,7 @@ paths:
                               variant_id: 82c56d38-4ca0-4f6a-a87b-b1b8563b73e8
                           shipping:
                             rates: []
-                            amount: 1650
+                            amount: 16.5
                             is_free: false
                             pricing: seller_rate
                             description: USA
@@ -15651,7 +16566,7 @@ paths:
                             merchant_store_id: ef7b07d3-424b-4b03-b1d4-30a2d2073b61
                           - shipping:
                               rates: []
-                              amount: 1650
+                              amount: 16.5
                               is_free: false
                               pricing: seller_rate
                               description: USA
@@ -15668,10 +16583,10 @@ paths:
                           amount: 0
                           promotion: null
                         shipping:
-                          amount: 1650
+                          amount: 16.5
                           status: quoted
                         subtotal: 197.5
-                        grand_total: 1847.5
+                        grand_total: 214
                         marketplace: true
                         total_is_final: true
                         shipping_address:
@@ -15685,10 +16600,10 @@ paths:
                           postal_code: '10118'
                         unavailable_count: 0
                         shipping_selections: []
-                      created_at: '2026-09-30T17:39:09.029007+00:00'
+                      created_at: '2026-10-01T10:35:33.129918+00:00'
                       confirmed_at: null
                       cancelled_at: null
-                      confirmation_token: rbxhnQ4Kr-ioUkkDtk7qtjaUbLAK-HkVbYDksZx4ZTo
+                      confirmation_token: JYERF3qaQ0r1ffCalDGd1g02fbhPMicuFyB7jouoHzA
                       confirmation_url: null
                     evidence:
                       - source: marketplace
@@ -15700,7 +16615,7 @@ paths:
                       - source: marketplace
                         operation: POST /v1/cart/checkout/quote
                         field: sellers
-                    computed_at: '2026-09-30T17:39:09.049Z'
+                    computed_at: '2026-10-01T10:35:33.140Z'
                     currency: USD
                     environment: sandbox
         '400':
@@ -16128,19 +17043,19 @@ paths:
                       - sandbox
               example:
                 data:
-                  id: 0ff91bd6-aa86-4ef6-8242-fe8644bca1bb
+                  id: a3a10e58-c5e2-406d-b054-0b8d782e9300
                   status: pending_confirmation
                   confirmation_mode: token
-                  expires_at: '2026-09-28T22:24:09.629+00:00'
+                  expires_at: '2026-10-01T11:02:09.366+00:00'
                   order_id: null
-                  total: 1548
+                  total: 63
                   currency: EUR
                   items:
                     - quantity: 1
                       variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
                   quote:
                     tax:
-                      amount: 213.52
+                      amount: 8.69
                       source: fallback
                       status: quoted
                       prices_include_tax: true
@@ -16163,23 +17078,23 @@ paths:
                       amount: 0
                       promotion: null
                     shipping:
-                      amount: 1500
+                      amount: 15
                       status: quoted
                       is_free: false
                       description: USA
-                      free_threshold: 100000
+                      free_threshold: 100
                     subtotal: 48
-                    grand_total: 1548
+                    grand_total: 63
                     total_is_final: true
                     unavailable_count: 0
-                  created_at: '2026-09-28T21:54:09.713316+00:00'
+                  created_at: '2026-10-01T10:32:09.391151+00:00'
                   confirmed_at: null
                   cancelled_at: null
                 evidence:
                   - source: agent
-                    id: 0ff91bd6-aa86-4ef6-8242-fe8644bca1bb
+                    id: a3a10e58-c5e2-406d-b054-0b8d782e9300
                     field: checkout_intent
-                computed_at: '2026-09-28T21:54:10.618Z'
+                computed_at: '2026-10-01T10:32:10.900Z'
                 currency: EUR
                 environment: sandbox
         '400':
@@ -16727,20 +17642,20 @@ paths:
                   value:
                     data:
                       intent:
-                        id: 0ff91bd6-aa86-4ef6-8242-fe8644bca1bb
+                        id: a3a10e58-c5e2-406d-b054-0b8d782e9300
                         status: confirmed
                         confirmation_mode: token
-                        expires_at: '2026-09-28T22:24:09.629+00:00'
-                        order_id: 74a3221b-a5dc-4e56-9b9e-2d0c55611bd5
+                        expires_at: '2026-10-01T11:02:09.366+00:00'
+                        order_id: e9b398b5-40d9-476d-bae6-efc401861190
                         customer_id: null
-                        total: 1548
+                        total: 63
                         currency: EUR
                         items:
                           - quantity: 1
                             variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
                         quote:
                           tax:
-                            amount: 213.52
+                            amount: 8.69
                             source: fallback
                             status: quoted
                             prices_include_tax: true
@@ -16763,13 +17678,13 @@ paths:
                             amount: 0
                             promotion: null
                           shipping:
-                            amount: 1500
+                            amount: 15
                             status: quoted
                             is_free: false
                             description: USA
-                            free_threshold: 100000
+                            free_threshold: 100
                           subtotal: 48
-                          grand_total: 1548
+                          grand_total: 63
                           total_is_final: true
                           shipping_address:
                             city: New York
@@ -16779,21 +17694,21 @@ paths:
                             country: US
                             postal_code: '10118'
                           unavailable_count: 0
-                        created_at: '2026-09-28T21:54:09.713316+00:00'
-                        confirmed_at: '2026-09-28T21:54:17.256+00:00'
+                        created_at: '2026-10-01T10:32:09.391151+00:00'
+                        confirmed_at: '2026-10-01T10:32:12.476+00:00'
                         cancelled_at: null
                       order:
-                        id: 74a3221b-a5dc-4e56-9b9e-2d0c55611bd5
-                        order_number: ORD-1790632457762
-                        total_amount: 1548
+                        id: e9b398b5-40d9-476d-bae6-efc401861190
+                        order_number: ORD-1790850732602
+                        total_amount: 63
                         currency: EUR
                         payment_status: pending
                         order_status: pending
                       payment:
                         next_step: POST /v1/payments/initialize
                         initialize_body:
-                          order_id: 74a3221b-a5dc-4e56-9b9e-2d0c55611bd5
-                          amount: 1548
+                          order_id: e9b398b5-40d9-476d-bae6-efc401861190
+                          amount: 63
                           currency: EUR
                           email: john.doe@example.com
                         methods:
@@ -16833,12 +17748,12 @@ paths:
                         field: tax_amount
                       - source: orders
                         operation: order create
-                        id: 74a3221b-a5dc-4e56-9b9e-2d0c55611bd5
+                        id: e9b398b5-40d9-476d-bae6-efc401861190
                         field: total_amount
                       - source: payments
                         operation: GET /v1/payments/methods
                         field: methods
-                    computed_at: '2026-09-28T21:54:23.191Z'
+                    computed_at: '2026-10-01T10:32:13.845Z'
                     currency: EUR
                     environment: sandbox
                 marketplace:
@@ -16846,14 +17761,14 @@ paths:
                   value:
                     data:
                       intent:
-                        id: b506f2f9-a2d3-42be-aa8c-2519200719b2
+                        id: ce8a37d6-a6ac-4ee7-b4c7-5be06064a622
                         status: confirmed
                         confirmation_mode: token
-                        expires_at: '2026-09-30T18:09:08.987+00:00'
+                        expires_at: '2026-10-01T11:05:33.107+00:00'
                         order_id: null
-                        order_group_id: 7b397721-1a0d-4668-a318-5d82674ef145
+                        order_group_id: cf386d23-4727-4e8c-9823-3d51e5cce103
                         customer_id: null
-                        total: 1847.5
+                        total: 214
                         currency: USD
                         items:
                           - quantity: 1
@@ -16883,7 +17798,7 @@ paths:
                                 variant_id: 82c56d38-4ca0-4f6a-a87b-b1b8563b73e8
                             shipping:
                               rates: []
-                              amount: 1650
+                              amount: 16.5
                               is_free: false
                               pricing: seller_rate
                               description: USA
@@ -16942,7 +17857,7 @@ paths:
                               merchant_store_id: ef7b07d3-424b-4b03-b1d4-30a2d2073b61
                             - shipping:
                                 rates: []
-                                amount: 1650
+                                amount: 16.5
                                 is_free: false
                                 pricing: seller_rate
                                 description: USA
@@ -16959,10 +17874,10 @@ paths:
                             amount: 0
                             promotion: null
                           shipping:
-                            amount: 1650
+                            amount: 16.5
                             status: quoted
                           subtotal: 197.5
-                          grand_total: 1847.5
+                          grand_total: 214
                           marketplace: true
                           total_is_final: true
                           shipping_address:
@@ -16976,13 +17891,13 @@ paths:
                             postal_code: '10118'
                           unavailable_count: 0
                           shipping_selections: []
-                        created_at: '2026-09-30T17:39:09.029007+00:00'
-                        confirmed_at: '2026-09-30T17:39:14.727+00:00'
+                        created_at: '2026-10-01T10:35:33.129918+00:00'
+                        confirmed_at: '2026-10-01T10:35:37.354+00:00'
                         cancelled_at: null
                       order_group:
-                        id: 7b397721-1a0d-4668-a318-5d82674ef145
-                        group_number: MKT-2026-000086
-                        total_amount: 1847.5
+                        id: cf386d23-4727-4e8c-9823-3d51e5cce103
+                        group_number: MKT-2026-000100
+                        total_amount: 214
                         currency: USD
                         payment_status: pending
                         sellers:
@@ -16990,14 +17905,14 @@ paths:
                             shipping_amount: 0
                             fulfilled_by: seller
                           - merchant_store_id: 086e8d7f-b84d-41bc-8acd-3f5740ea61dc
-                            shipping_amount: 1650
+                            shipping_amount: 16.5
                             fulfilled_by: seller
                       payment:
                         provider: stripe
                         next_step: Confirm the payment in the browser with client_secret using the payment provider's own card form.
-                        client_secret: pi_3ULRTMDxNG9Imxmb1KDbjI79_secret_XXXXXXXXXXXXXXXXXXXXXXXXX
-                        payment_intent_id: pi_3ULRTMDxNG9Imxmb1KDbjI79
-                        amount: 1847.5
+                        client_secret: pi_3ULhKxDxNG9Imxmb0eVmfKAH_secret_XXXXX
+                        payment_intent_id: pi_3ULhKxDxNG9Imxmb0eVmfKAH
+                        amount: 214
                         currency: USD
                     evidence:
                       - source: marketplace
@@ -17011,9 +17926,9 @@ paths:
                         field: sellers
                       - source: marketplace
                         operation: POST /v1/cart/checkout
-                        id: 7b397721-1a0d-4668-a318-5d82674ef145
+                        id: cf386d23-4727-4e8c-9823-3d51e5cce103
                         field: total_amount
-                    computed_at: '2026-09-30T17:39:16.915Z'
+                    computed_at: '2026-10-01T10:35:40.036Z'
                     currency: USD
                     environment: sandbox
         '400':
@@ -17148,40 +18063,42 @@ paths:
                   message: The price changed since the checkout was prepared. Show the shopper the new quote and create a new intent.
                   details:
                     changes:
-                      - 'grand total: 1549 → 1548'
+                      - 'unit price of fbe89cdf-90a3-4050-a43b-e4c42302484a: 49 → 48'
+                      - 'grand total: 64 → 63'
                     quote:
-                      tax:
-                        amount: 213.52
-                        source: fallback
-                        status: quoted
-                        prices_include_tax: true
                       lines:
-                        - sku: FEED-HOODIE-GRY-M
-                          name: Galactic Zip Hoodie
-                          stock: 25
-                          quantity: 1
-                          available: true
-                          line_total: 48
-                          list_price: 48
+                        - variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
                           product_id: 289533e8-f5b6-4d4f-bb23-2127875feb70
-                          unit_price: 48
-                          variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
+                          name: Galactic Zip Hoodie
                           variant_name: Grey / M
+                          sku: FEED-HOODIE-GRY-M
+                          quantity: 1
+                          unit_price: 48
+                          list_price: 48
+                          line_total: 48
                           category_name: Wearables
+                          available: true
+                          stock: 25
                           unavailable_reason: null
-                      currency: EUR
+                      subtotal: 48
                       discount:
                         amount: 0
                         promotion: null
                       shipping:
-                        amount: 1500
                         status: quoted
-                        is_free: false
+                        amount: 15
                         description: USA
-                        free_threshold: 100000
-                      subtotal: 48
-                      grand_total: 1548
+                        free_threshold: 100
+                        is_free: false
+                      tax:
+                        status: quoted
+                        amount: 8.69
+                        source: fallback
+                        prices_include_tax: true
+                      grand_total: 63
                       total_is_final: true
+                      unavailable_count: 0
+                      currency: EUR
                       shipping_address:
                         city: New York
                         name: John Doe
@@ -17189,7 +18106,6 @@ paths:
                         state: NY
                         country: US
                         postal_code: '10118'
-                      unavailable_count: 0
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -17535,19 +18451,19 @@ paths:
                       - sandbox
               example:
                 data:
-                  id: 56f13df1-c566-4c5b-83ab-618e0cc47a50
+                  id: 9ddda3a3-a19d-4176-be35-e697392b564c
                   status: cancelled
                   confirmation_mode: token
-                  expires_at: '2026-09-28T22:24:32.905+00:00'
+                  expires_at: '2026-10-01T11:02:16.925+00:00'
                   order_id: null
-                  total: 1524.95
+                  total: 39.95
                   currency: EUR
                   items:
                     - quantity: 1
                       variant_id: 06cf8d3e-da82-4d6f-896f-d756f80c592f
                   quote:
                     tax:
-                      amount: 210.34
+                      amount: 5.51
                       source: fallback
                       status: quoted
                       prices_include_tax: true
@@ -17570,25 +18486,25 @@ paths:
                       amount: 0
                       promotion: null
                     shipping:
-                      amount: 1500
+                      amount: 15
                       status: quoted
                       is_free: false
                       description: USA
-                      free_threshold: 100000
+                      free_threshold: 100
                     subtotal: 24.95
-                    grand_total: 1524.95
+                    grand_total: 39.95
                     total_is_final: true
                     unavailable_count: 0
-                  created_at: '2026-09-28T21:54:32.986631+00:00'
+                  created_at: '2026-10-01T10:32:16.943272+00:00'
                   confirmed_at: null
-                  cancelled_at: '2026-09-28T21:54:33.89+00:00'
+                  cancelled_at: '2026-10-01T10:32:17.767+00:00'
                 evidence:
                   - source: agent
-                    id: 56f13df1-c566-4c5b-83ab-618e0cc47a50
+                    id: 9ddda3a3-a19d-4176-be35-e697392b564c
                     field: status
                   - source: orders
                     field: stock hold released
-                computed_at: '2026-09-28T21:54:34.447Z'
+                computed_at: '2026-10-01T10:32:18.124Z'
                 currency: EUR
                 environment: sandbox
         '400':
@@ -17814,19 +18730,19 @@ paths:
                     currency: EUR
                     zones:
                       - name: USA
-                        fee: 1500
-                        free_threshold: 100000
+                        fee: 15
+                        free_threshold: 100
                       - name: United Kingdom
-                        fee: 2500
-                        free_threshold: 100000
+                        fee: 12
+                        free_threshold: 100
                       - name: Kenya
-                        fee: 250
-                        free_threshold: 10000
+                        fee: 25
+                        free_threshold: 150
                     distance_tiers:
                       - name: Within Nairobi
-                        fee: 100
+                        fee: 5
                         max_distance_meters: 50000
-                        free_threshold: 100000
+                        free_threshold: 100
                     everywhere_else: null
                   returns:
                     accepted: true
@@ -17863,7 +18779,7 @@ paths:
                   - source: returns
                     operation: GET /v1/returns/reasons
                     field: data
-                computed_at: '2026-09-28T21:53:51.241Z'
+                computed_at: '2026-10-01T10:32:01.009Z'
                 currency: EUR
                 environment: sandbox
         '401':
@@ -18325,6 +19241,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '429':
           $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/auth/register:
     post:
       operationId: register
@@ -28262,7 +29180,9 @@ paths:
                     **Agent checkouts:** `agent.checkout_intent.created`,
                     `agent.checkout_intent.confirmed`, `agent.checkout_intent.expired` — a checkout
                     an assistant prepared through the Agent API, the shopper's confirmation of it
-                    (the order now exists), and one that lapsed unconfirmed.
+                    (the order now exists), and one that lapsed unconfirmed. `agent.mandate.triggered`
+                    — a shopper's standing instruction found its condition met and a checkout was
+                    prepared; the payload carries `confirmation_url` for the shopper to confirm it.
 
                     **Customer lifecycle:** `customer.created`, `customer.updated`, `customer.deleted`
 
@@ -29412,7 +30332,7 @@ paths:
     get:
       operationId: getStoreCatalogFeedJson
       tags:
-        - Ingestion
+        - Feeds
       summary: Public catalog feed (JSON)
       description: |
         Returns a store's catalog as a public JSON feed — **no API key required**. This is the
@@ -29492,7 +30412,7 @@ paths:
     get:
       operationId: getStoreCatalogFeedXml
       tags:
-        - Ingestion
+        - Feeds
       summary: Public catalog feed (XML)
       description: |
         XML form of the public catalog feed. See the JSON variant for the opt-in and token rules.
@@ -29543,7 +30463,7 @@ paths:
     get:
       operationId: getStoreLlmsTxt
       tags:
-        - Ingestion
+        - Feeds
       summary: Store summary for AI assistants (llms.txt)
       description: |
         A Markdown summary of the store in the llms.txt format: its name, description, website and
@@ -29592,7 +30512,7 @@ paths:
     get:
       operationId: getStoreLlmsFullTxt
       tags:
-        - Ingestion
+        - Feeds
       summary: Full catalog for AI assistants (llms-full.txt)
       description: |
         The complete form of the store's llms.txt: every product the storefront lists, with its
@@ -29630,6 +30550,105 @@ paths:
                 - Standard — SKU ELEC-ACTIONCAM-01-de4a — 129.00 USD (was 149.00 USD) — in stock
         '404':
           description: The store does not publish an llms.txt.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+  /v1/feeds/{store}/agent.json:
+    get:
+      operationId: getStoreAgentDescriptor
+      tags:
+        - Feeds
+      summary: How an AI assistant connects to a store (agent.json)
+      description: |-
+        A small JSON document that tells an AI assistant how to shop the store: the API's base address, a publishable key to
+        call it with, where the tool list and the OpenAPI specification are, the store's feeds, and that every checkout is
+        confirmed by the shopper. **No API key is required to read it.** The key it carries is a production publishable key
+        dedicated to assistants, so the merchant can switch it off on its own.
+
+        Published by default; a wholesale store's stays off until the merchant turns it on, and turning it off deactivates
+        the key. A storefront serves it at `/.well-known/agentic-commerce.json` by forwarding that path here. `{store}` is the
+        store's code or id.
+      security: []
+      parameters:
+        - name: store
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The store's id or short store code.
+      responses:
+        '200':
+          description: The descriptor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                  store:
+                    type: object
+                  api:
+                    type: object
+                    properties:
+                      base_url:
+                        type: string
+                      publishable_key:
+                        type: string
+                      authentication:
+                        type: string
+                      capabilities:
+                        type: string
+                      openapi:
+                        type: string
+                  feeds:
+                    type: object
+                  checkout:
+                    type: object
+                    properties:
+                      human_confirmation_required:
+                        type: boolean
+                      intents:
+                        type: string
+              example:
+                version: 1
+                store:
+                  name: Galactic Core Store
+                  website: https://tybritelabs.com
+                  currency: EUR
+                  assistant: null
+                api:
+                  base_url: https://api.tybritelabs.com
+                  publishable_key: tybrite_pk_live_YOUR_API_KEY
+                  authentication: 'Send the key as "Authorization: Bearer <key>".'
+                  capabilities: https://api.tybritelabs.com/v1/agent/capabilities
+                  openapi: https://docs.tybritelabs.com/openapi.yaml
+                feeds:
+                  llms_txt: https://api.tybritelabs.com/v1/feeds/GAL001/llms.txt
+                  llms_full_txt: https://api.tybritelabs.com/v1/feeds/GAL001/llms-full.txt
+                  products_json: null
+                checkout:
+                  human_confirmation_required: true
+                  intents: https://api.tybritelabs.com/v1/agent/checkout-intents
+        '403':
+          description: The store is on a trial or its plan has lapsed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: feed_not_available_on_trial
+                  message: This is available on paid plans.
+        '404':
+          description: The store does not publish a descriptor, or does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: This store does not publish a descriptor for AI assistants
         '429':
           $ref: '#/components/responses/RateLimitError'
   /v1/marketplace/info:
@@ -30738,20 +31757,22 @@ components:
         - Format: `tybrite_sk_live_*` (production) or `tybrite_sk_test_*` (sandbox)
         - Full read/write access to all endpoints
         - ⚠️ NEVER expose in client-side code or public repositories
-        - Required for: write operations, authentication, payment verification, AI recommendations
+        - Required for: every write a shopper does not make for themselves, authentication, payment verification, AI recommendations
             
         **Publishable Keys (Client-Safe):**
         - Format: `tybrite_pk_live_*` (production) or `tybrite_pk_test_*` (sandbox)
-        - Read-only access (GET requests only, plus POST semantic search)
+        - Catalogue reads, plus the actions a shopper takes for themselves
         - ✅ Safe for client-side JavaScript, mobile apps, and public code
-        - Allowed for: browsing products, search, CMS content, pricing queries
+        - Allowed for: browsing products, search, CMS content, pricing queries, cart and wishlist,
+          reviews, storefront events, and the Agent API's quotes, cart drafts and checkout intents
             
         **Endpoint-Specific Requirements:**
         - **Authentication endpoints** (`/v1/auth/*`): Secret key required
         - **Payment verification** (`POST /v1/payments/verify`): Secret key required
         - **AI Recommendations** (`POST /v1/recommendations`): Secret key required
         - **Semantic Search** (`POST /v1/search`): Both key types allowed (read-only operation)
-        - **All write operations**: Secret key required
+        - **Shopper actions** (cart, wishlist, reviews, storefront events, Agent API quotes, cart drafts and checkout intents): Both key types allowed
+        - **All other write operations**: Secret key required
         - **All read operations**: Both key types allowed
             
         Using a publishable key for restricted operations returns 403 Forbidden.
@@ -35130,7 +36151,7 @@ components:
           type: string
           description: |
             Publishable key. Safe to use client-side (browser/mobile).
-            Use it for read-only catalog and cart operations.
+            Use it for catalogue reads and the actions a shopper takes for themselves, such as cart and wishlist.
           example: tybrite_pk_live_...
         signing_secret:
           type:
@@ -35530,6 +36551,7 @@ components:
         id:
           type: string
           format: uuid
+          example: 4a5b6c7d-8e9f-0123-4567-89abcdef0123
         custom_fields:
           type: array
           description: |
@@ -35537,7 +36559,12 @@ components:
             exist, so render the array rather than reading fixed keys.
           items:
             $ref: '#/components/schemas/CustomFieldValue'
-          example: 4a5b6c7d-8e9f-0123-4567-89abcdef0123
+          example:
+            - field_name: rma_number
+              field_label: RMA number
+              field_type: text
+              unit_type: null
+              value: RMA-2026-0412
         return_number:
           type: string
           description: Human-readable reference for the return.
@@ -36963,7 +37990,7 @@ components:
           example:
             error:
               code: forbidden
-              message: This operation requires a secret key. Publishable keys have read-only access.
+              message: This operation requires a secret key. Publishable keys cover catalogue reads and the actions a shopper takes for themselves.
     RateLimitError:
       description: 'Too many requests. Two distinct `429` codes: `rate_limited` (an abuse throttle — too many requests too fast; carries an `X-RateLimit-Scope: abuse` header and is NOT counted against your monthly quota) and `quota_exceeded` (your plan''s monthly request allowance is reached).'
       headers:

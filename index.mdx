@@ -76,7 +76,7 @@ rules from a store's own data as drafts a human approves, and refuses actions it
 ## What you can build
 
 {/* api-counts:start */}
-The API spans **32 services across 190 operations**, grouped by the job they do. A typical storefront
+The API spans **33 services across 195 operations**, grouped by the job they do. A typical storefront
 calls a handful of them.
 {/* api-counts:end */}
 
@@ -216,13 +216,11 @@ on automated and AI-driven actions are in [Guardrails](/how-gc-works/guardrails)
   </Card>
 </CardGroup>
 
-Other language SDKs (Python, Go, Rust) and React storefront components are on the roadmap.
-
 ## Authentication at a glance
 
 Galactic Core uses two key types — a full overview is in [Authentication](/authentication):
 
-- **Publishable keys** (`tybrite_pk_*`) — read-only, safe in the browser (catalog, search, cart writes).
+- **Publishable keys** (`tybrite_pk_*`) — safe in the browser; catalogue reads plus the actions a shopper takes for themselves (cart and wishlist, reviews, storefront events, and Agent API quotes, cart drafts and checkout intents).
 - **Secret keys** (`tybrite_sk_*`) — full read/write, server-side only (orders, payments, customer data).
 
 Shopper-specific actions add a **customer session** (a GC-issued token, or your own

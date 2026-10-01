@@ -84,7 +84,7 @@ Which methods are retried depends on whether repeating the request could create 
 The Tybrite API uses two parallel authentication mechanisms. Most endpoints need only the API key, but customer-scoped operations require **both** a publishable API key (to identify your store) and a customer session token (to identify the shopper).
 
 1. **API key** (`Authorization` header) — authenticates your application
-   - Publishable keys (`tybrite_pk_*`) — safe for browsers; read-only for sensitive data
+   - Publishable keys (`tybrite_pk_*`) — safe for browsers; catalogue reads plus the shopper's own actions, such as cart, wishlist, reviews and Agent API checkout intents
    - Secret keys (`tybrite_sk_*`) — server-side only; full read/write access
 
 2. **Customer session token** (`xAuthToken` parameter) — authenticates an end customer

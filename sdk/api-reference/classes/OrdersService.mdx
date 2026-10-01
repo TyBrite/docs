@@ -456,6 +456,27 @@ The full updated order is returned at the top level:
 }
 ```
 
+Besides the two statuses, the body accepts `notes`, `tracking_number`, `estimated_delivery`, `shipped_at`, `delivered_at`, `payment_reference` (checked against the store's payment method when marking an order paid), `reservation_ids` (stock already held for the shopper, committed rather than decremented again), and `shipping_metadata` — fulfilment details such as a purchased label's carrier, service, label URL and tracking. `shipping_metadata` replaces the order's stored object in full rather than being merged into it, so include any existing keys that should be kept:
+
+```typescript
+await client.orders.updateOrder({
+  id: 'order-uuid-here',
+  idempotencyKey: `label-${orderId}`,
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: '...',
+  requestBody: {
+    shipping_metadata: {
+      fee: 5.99,
+      tier_name: 'Local (within 10 km)',
+      carrier: 'UPS',
+      service: 'Ground',
+      label_url: 'https://example.com/labels/1Z999AA10123456784.pdf',
+      tracking_number: '1Z999AA10123456784',
+    },
+  },
+});
+```
+
 Status changes follow a fixed set of transitions:
 
 *   **`payment_status`** moves from `pending` to `paid` or `failed`, and from `failed` to `paid`. A `paid` order does not move back. `refunded` is set by processing a refund, not by `updateOrder`.

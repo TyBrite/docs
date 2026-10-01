@@ -1,6 +1,6 @@
 ---
 title: "Build a Shopping Agent"
-description: "An AI shopping assistant end to end — register the tools, search, read a product, compare, price a basket, draft a cart, and hand a checkout intent to the shopper to confirm before payment."
+description: "An AI shopping assistant end to end — find the store, register the tools, search, read a product, compare, price a basket, draft a cart, hand a checkout intent to the shopper to confirm before payment, lodge returns and keep standing instructions."
 ---
 
 A shopping assistant helps a shopper find and buy from one store: a chat widget on the storefront, a
@@ -24,6 +24,50 @@ const storefront = new Tybrite({ apiKey: 'tybrite_pk_live_YOUR_API_KEY' });
 Every tool returns the same envelope: the result in `data`, and `evidence` naming the operation and
 field each figure was read from, alongside `computed_at`, `currency` and `environment`. The envelope is
 shown in full once, in step 2, and elided after that.
+
+## Finding a store
+
+An assistant that has not been configured for a store finds what it needs in the store's `agent.json`.
+A storefront serves it at `/.well-known/agentic-commerce.json`, and the store's `llms.txt` links to it;
+both forward to `/v1/feeds/{store}/agent.json`, which `client.feeds.getStoreAgentDescriptor` reads with
+no key. The descriptor carries the API's address, a publishable key dedicated to assistants, the tool
+manifest and OpenAPI links, and `checkout.human_confirmation_required: true`.
+
+```typescript
+const directory = new Tybrite();
+const descriptor = await directory.feeds.getStoreAgentDescriptor({ store: 'GAL001' });
+
+const storefront = new Tybrite({
+  apiKey: descriptor.api!.publishable_key!,
+  BASE: descriptor.api!.base_url!,
+});
+```
+
+```json Response
+{
+  "version": 1,
+  "store": { "name": "Galactic Core Store", "website": "https://tybritelabs.com", "currency": "EUR", "assistant": null },
+  "api": {
+    "base_url": "https://api.tybritelabs.com",
+    "publishable_key": "tybrite_pk_live_YOUR_API_KEY",
+    "authentication": "Send the key as \"Authorization: Bearer <key>\".",
+    "capabilities": "https://api.tybritelabs.com/v1/agent/capabilities",
+    "openapi": "https://docs.tybritelabs.com/openapi.yaml"
+  },
+  "feeds": {
+    "llms_txt": "https://api.tybritelabs.com/v1/feeds/GAL001/llms.txt",
+    "llms_full_txt": "https://api.tybritelabs.com/v1/feeds/GAL001/llms-full.txt",
+    "products_json": null
+  },
+  "checkout": {
+    "human_confirmation_required": true,
+    "intents": "https://api.tybritelabs.com/v1/agent/checkout-intents"
+  }
+}
+```
+
+A store that does not publish a descriptor answers `404`, and one on a trial answers `403`. The
+[Feeds reference](/sdk/api-reference/classes/FeedsService#getstoreagentdescriptor) documents each field.
 
 ## 1. Registering the tools
 
@@ -154,8 +198,8 @@ const { data } = await storefront.agent.getProductContext({
       "currency": "EUR",
       "ships_anywhere": false,
       "zones": [
-        { "name": "USA", "fee": 1500, "free_threshold": 100000 },
-        { "name": "United Kingdom", "fee": 2500, "free_threshold": 100000 }
+        { "name": "USA", "fee": 15, "free_threshold": 100 },
+        { "name": "United Kingdom", "fee": 12, "free_threshold": 100 }
       ],
       "note": "The exact fee for an address comes from POST /v1/agent/quote."
     },
@@ -260,9 +304,9 @@ const { data: quote } = await storefront.agent.quote({
     ],
     "subtotal": 120.95,
     "discount": { "amount": 0, "promotion": null },
-    "shipping": { "status": "quoted", "amount": 1500, "description": "USA", "free_threshold": 100000, "is_free": false },
-    "tax": { "status": "quoted", "amount": 223.58, "source": "fallback", "prices_include_tax": true },
-    "grand_total": 1620.95,
+    "shipping": { "status": "quoted", "amount": 0, "description": "Free delivery: the order qualifies", "free_threshold": 100, "is_free": true },
+    "tax": { "status": "quoted", "amount": 16.68, "source": "fallback", "prices_include_tax": true },
+    "grand_total": 120.95,
     "total_is_final": true,
     "unavailable_count": 0,
     "currency": "EUR"
@@ -277,7 +321,9 @@ const { data: quote } = await storefront.agent.quote({
 ```
 
 This store's prices include tax, so `tax.amount` is the share of the total that is tax and is not added
-to it: the grand total is the subtotal, less the discount, plus shipping.
+to it: the grand total is the subtotal, less the discount, plus shipping. The subtotal of 120.95 is over
+the USA zone's free-delivery threshold of 100, so shipping is free and the grand total equals the
+subtotal.
 
 ## 6. Keeping a cart draft
 
@@ -304,19 +350,19 @@ const { data: current } = await storefront.agent.getCartDraft({ id: data.draft!.
 {
   "data": {
     "draft": {
-      "id": "2610b923-3c48-4703-a29a-ed257e8ff52e",
+      "id": "7f13983f-5429-4f63-9acb-217161b93556",
       "items": [
         { "quantity": 2, "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a" },
         { "quantity": 1, "variant_id": "06cf8d3e-da82-4d6f-896f-d756f80c592f" }
       ],
       "source": "items",
-      "expires_at": "2026-09-30T10:58:34.153+00:00",
+      "expires_at": "2026-10-02T10:40:14+00:00",
       "applied_at": null,
-      "created_at": "2026-09-29T10:58:34.185382+00:00"
+      "created_at": "2026-10-01T10:40:14.03964+00:00"
     },
     "quote": {
       "subtotal": 120.95,
-      "grand_total": 1620.95,
+      "grand_total": 120.95,
       "total_is_final": true,
       "currency": "EUR"
     }
@@ -361,7 +407,7 @@ const { data: intent } = await storefront.agent.createCheckoutIntent({
     "expires_at": "2026-09-29T11:28:36.849+00:00",
     "order_id": null,
     "customer_id": null,
-    "total": 1620.95,
+    "total": 120.95,
     "currency": "EUR",
     "items": [
       { "quantity": 2, "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a" },
@@ -370,9 +416,9 @@ const { data: intent } = await storefront.agent.createCheckoutIntent({
     "quote": {
       "subtotal": 120.95,
       "discount": { "amount": 0, "promotion": null },
-      "shipping": { "amount": 1500, "status": "quoted", "is_free": false, "description": "USA", "free_threshold": 100000 },
-      "tax": { "amount": 223.58, "source": "fallback", "status": "quoted", "prices_include_tax": true },
-      "grand_total": 1620.95,
+      "shipping": { "amount": 0, "status": "quoted", "is_free": true, "description": "Free delivery: the order qualifies", "free_threshold": 100 },
+      "tax": { "amount": 16.68, "source": "fallback", "status": "quoted", "prices_include_tax": true },
+      "grand_total": 120.95,
       "total_is_final": true
     },
     "created_at": "2026-09-29T10:58:36.88197+00:00",
@@ -389,6 +435,36 @@ const { data: intent } = await storefront.agent.createCheckoutIntent({
 An intent is refused, with the current quote in `error.details`, when a line cannot be bought
 (`409 items_unavailable`), the store does not deliver to the address (`409 shipping_not_deliverable`),
 or shipping or tax cannot be priced for it (`409 quote_incomplete`).
+
+### Limits on a publishable key
+
+An intent holds stock, and a publishable key is readable from any storefront, so intents created with
+one are bounded:
+
+| Limit | Guest | Signed-in shopper |
+| :--- | :--- | :--- |
+| New intents per hour, per address | 60 | 60 |
+| Intents waiting for confirmation at once | 5 per address | 5 per shopper |
+| Units of one item in one intent | 10 | 25 |
+| Share of an item's stock held by waiting intents | Guests together, at most half | — |
+
+Past a limit the answer is `409 hold_limit_reached` with the limit in `details.limit`, or
+`429 rate_limited` with a `Retry-After` header for the hourly limit. An assistant that meets either can
+tell the shopper the quantity it can hold, or wait. A secret key, on the store's own server, is bound
+only by its plan.
+
+```json Response (409)
+{
+  "error": {
+    "code": "hold_limit_reached",
+    "message": "A checkout intent can hold at most 10 units of one item",
+    "details": {
+      "limit": 10,
+      "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a"
+    }
+  }
+}
+```
 
 ### Confirming on the store's page
 
@@ -410,7 +486,7 @@ const { data: intent } = await storefront.agent.createCheckoutIntent({
 });
 
 // Send intent.confirmation_url to the shopper, e.g.
-// 'https://gc.tybritelabs.com/confirm/4cf0636f-00d5-4382-b3a3-171818215740#t=sfWxDWJP…'
+// 'https://gc.tybritelabs.com/confirm/feaac8ae-a869-4e11-af9b-3e2b421a28bd#t=f6LsUEia…'
 ```
 
 A replay with the same `idempotencyKey` returns `confirmation_url: null`, as it does the token, so the
@@ -438,14 +514,14 @@ const { data: confirmed } = await storefront.agent.confirmCheckoutIntent({
       "id": "fcb74784-a3a3-499b-98a9-27bb640e6d07",
       "status": "confirmed",
       "order_id": "b73d71da-9c73-46b3-872e-257f395c5538",
-      "total": 1620.95,
+      "total": 120.95,
       "currency": "EUR",
       "confirmed_at": "2026-09-29T10:58:39.427+00:00"
     },
     "order": {
       "id": "b73d71da-9c73-46b3-872e-257f395c5538",
       "order_number": "ORD-1790679519588",
-      "total_amount": 1620.95,
+      "total_amount": 120.95,
       "currency": "EUR",
       "payment_status": "pending",
       "order_status": "pending"
@@ -454,7 +530,7 @@ const { data: confirmed } = await storefront.agent.confirmCheckoutIntent({
       "next_step": "POST /v1/payments/initialize",
       "initialize_body": {
         "order_id": "b73d71da-9c73-46b3-872e-257f395c5538",
-        "amount": 1620.95,
+        "amount": 120.95,
         "currency": "EUR",
         "email": "john.doe@example.com"
       },
@@ -664,10 +740,158 @@ is made, so an assistant can leave the helpers out of its tool list and fall bac
 own model. A server holding the secret key reads the balance, the recharge state and the month's helper
 spend with `getUsage`.
 
+## Returns
+
+`getOrderStatus` lists `request_return` in `allowed_actions` while an order is inside the store's
+return window, with the date the window closes. `requestReturn` lodges it with the shopper's credential:
+the whole order when `items` is omitted, or named lines and quantities.
+
+```typescript
+const { data: status } = await storefront.agent.getOrderStatus({
+  id: '36f0b9c2-8c86-4034-bef7-82dfe4744ff5',
+  xExternalAuth: shopperAssertion,
+});
+
+if (status.allowed_actions?.some((a) => a.action === 'request_return')) {
+  const { data: ret } = await storefront.agent.requestReturn({
+    id: '36f0b9c2-8c86-4034-bef7-82dfe4744ff5',
+    requestBody: { reason_code: 'wrong_size', return_type: 'store_credit' },
+    xExternalAuth: shopperAssertion,
+  });
+}
+```
+
+```json Response
+{
+  "data": {
+    "id": "df26fae0-6566-4d87-97d4-1902c20b758f",
+    "return_number": "RET-20261001-fb1716",
+    "order_id": "36f0b9c2-8c86-4034-bef7-82dfe4744ff5",
+    "status": "pending",
+    "return_type": "store_credit",
+    "reason_code": "wrong_size",
+    "total_return_amount": 48,
+    "refund_amount": 0,
+    "created_at": "2026-10-01T11:25:17.785759+00:00",
+    "items": [
+      {
+        "order_item_id": "d6a0866a-322a-428b-925d-35081f37ed39",
+        "product_name": "Galactic Zip Hoodie",
+        "quantity": 1,
+        "return_amount": 48,
+        "status": "pending"
+      }
+    ]
+  }
+}
+```
+
+The return is `pending` until the store reviews it and decides the refund; the shopper is emailed that
+it was received, and the return appears in the store's returns queue like any other.
+
+## Standing instructions
+
+A shopper can ask the assistant to reorder something on a schedule, or to buy it when it is back in
+stock or reaches a price. The assistant records that as a standing instruction (`kind` of `reorder`,
+`back_in_stock` or `price_drop`), always with a maximum unit price. It needs the shopper's credential and
+their personalisation consent from `setConsent`.
+
+```typescript
+const { data: mandate } = await storefront.agent.createMandate({
+  requestBody: {
+    kind: 'reorder',
+    variant_id: 'fbe89cdf-90a3-4050-a43b-e4c42302484a',
+    quantity: 2,
+    max_unit_price: 53,
+    interval_days: 30,
+    max_triggers: 6,
+    shipping_address: address,
+  },
+  xExternalAuth: shopperAssertion,
+});
+```
+
+```json Response
+{
+  "data": {
+    "id": "15629aa5-301f-4be2-8e87-e93e01f6c05f",
+    "kind": "reorder",
+    "status": "active",
+    "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+    "quantity": 2,
+    "max_unit_price": 53,
+    "currency": "EUR",
+    "interval_days": 30,
+    "max_triggers": 6,
+    "trigger_count": 0,
+    "next_check_at": "2026-10-31T11:25:06.898103+00:00",
+    "last_intent_id": null,
+    "expires_at": "2027-03-30T11:25:06.864+00:00"
+  }
+}
+```
+
+The bounds are fixed: `quantity` 1–10, `interval_days` 7–365 for a reorder, `max_triggers` up to 12 for
+a reorder and 1 for the other kinds, an expiry of at most 365 days (180 by default), and 10 instructions
+per shopper per store. The first check of this reorder is due 30 days after creation, in
+`next_check_at`.
+
+When the condition holds — the item available at or below `max_unit_price`, and shipping and tax priced
+for the stored address — Galactic Core prepares a hosted checkout intent at the price it found. The
+shopper receives the confirmation link by email under the store's own name, and the store's webhook
+endpoints receive `agent.mandate.triggered` with the same `confirmation_url` and the intent's id. The
+link stays open for 48 hours; the shopper confirms and pays on the store's page, and nothing is bought
+until they do. `listMandates` shows each instruction's status and the last intent it prepared, and
+`cancelMandate` stops one. Withdrawing consent pauses every instruction the shopper has with the store.
+
+## Agent commerce protocols
+
+Several published protocols describe how an AI agent checks out with a merchant. Galactic Core
+implements its own API and does not accept those protocols' wire formats. The tables below map their
+concepts onto Galactic Core's for a developer adapting an integration written against one of them.
+
+The **Agentic Commerce Protocol** (ACP), published by OpenAI and Stripe, has the agent create and update
+a checkout session on the merchant, render it to the buyer, and complete it with payment data. The
+**Universal Commerce Protocol** (UCP), co-developed by Google with retailers and payment companies,
+defines checkout operations of the same shape, a business profile at `/.well-known/ucp`, and a
+`continue_url` that hands the buyer to the business's own page when the checkout needs them.
+
+| Concept | ACP | UCP | Galactic Core |
+| :--- | :--- | :--- | :--- |
+| Finding the merchant's API | — | Business profile at `/.well-known/ucp` | `agent.json`, served at `/.well-known/agentic-commerce.json` |
+| Start a checkout | `POST /checkout_sessions` | Create Checkout | `createCheckoutIntent` — prices the basket for the address, freezes the price, holds the stock for 30 minutes |
+| Change the basket or address | `POST /checkout_sessions/{id}` | Update Checkout | No update: iterate with `quote` or a cart draft, then create an intent for the final basket |
+| Read the checkout | `GET /checkout_sessions/{id}` | Get Checkout | `getCheckoutIntent` |
+| Ready to buy | `ready_for_payment` | `ready_for_complete` | `total_is_final: true` on the quote, and `pending_confirmation` on the intent |
+| Finish | `POST /checkout_sessions/{id}/complete`, with payment data | Complete Checkout | `confirmCheckoutIntent` with the shopper's credential or contact details; the order is placed with payment pending and paid through the store's payment provider |
+| Hand the buyer to the merchant's page | — | `continue_url`, with `requires_escalation` | `confirmation_mode: 'hosted'` and `confirmation_url` |
+| Abandon | `POST /checkout_sessions/{id}/cancel` | Cancel Checkout | `cancelCheckoutIntent`, or expiry after 30 minutes |
+| Finished states | `completed`, `canceled` | `completed`, `canceled` | `confirmed` or `completed`; `cancelled`, `expired` |
+
+The **Agent Payments Protocol** (AP2), from Google, records a user's authorisation as signed mandates.
+Its current specification defines a Checkout Mandate and a Payment Mandate, each either *open* —
+the user's constraints, for an agent to act on later — or *closed* — authorisation of one finalised
+checkout or one amount. Earlier releases describe the same flow as an Intent Mandate, a Cart Mandate
+and a Payment Mandate.
+
+| AP2 | Galactic Core |
+| :--- | :--- |
+| Open Checkout Mandate (earlier: Intent Mandate) — the user's constraints, set in advance | A standing instruction: the item, a quantity, a maximum unit price, a schedule or condition, and an expiry |
+| Closed Checkout Mandate (earlier: Cart Mandate) — authorisation of one finalised checkout | The shopper confirming a checkout intent's frozen quote, on the store's page or through `confirmCheckoutIntent` |
+| Payment Mandate — authorisation against a payment instrument | No equivalent record. Galactic Core holds no payment credential; after confirmation the shopper pays through the store's own payment provider |
+
+AP2 mandates are cryptographically signed credentials that travel between the parties. Galactic Core's
+are server-side records: a standing instruction is created with the shopper's credential and consent,
+and an intent is confirmed with its single-use token. In every case the shopper confirms the final
+checkout; no standing instruction places an order by itself.
+
 ## What's next
 
 - The [Agent reference](/sdk/api-reference/classes/AgentService) documents the shopper-scoped tools —
-  consent, personal context, reorder suggestions, wishlist insights and order status.
+  consent, personal context, reorder suggestions, wishlist insights, order status, returns and standing
+  instructions.
+- The [Feeds reference](/sdk/api-reference/classes/FeedsService) documents `agent.json` and the
+  store's llms.txt files.
 - [Storefront checkout](/workflows/storefront-checkout) covers the same purchase built directly on the
   catalog, cart and order services.
 - [Webhooks & automation](/workflows/webhooks-automation) handles `order.created` and the checkout

@@ -309,14 +309,30 @@ Every response shares one envelope: the result in `data`, and an `evidence` arra
 field each figure was read from, so an assistant can cite a number and a reviewer can trace it. Most tools
 need only a publishable key.
 
+### Finding a store
+
+A store publishes `agent.json` at `/v1/feeds/{store}/agent.json`: the API's base address, a production
+publishable key dedicated to assistants, links to the tool manifest and the OpenAPI specification, the
+store's feeds, and `checkout.human_confirmation_required: true`. No key is needed to read it. A
+storefront serves the same document at `/.well-known/agentic-commerce.json` by forwarding that path, and
+the store's [`llms.txt`](/sdk/api-reference/classes/FeedsService#getstorellmstxt) links to it, so an
+assistant that reads either can start calling the Agent API without being configured for the store in
+advance.
+
+The descriptor is published by default, except by a wholesale store, which publishes it once the
+merchant turns it on. The merchant controls it from **Settings → Agentic Commerce**, and turning it off
+also deactivates its key. A store on a trial does not publish one. The
+[Feeds reference](/sdk/api-reference/classes/FeedsService#getstoreagentdescriptor) shows the document.
+
 ### The tools
 
 | Group | Tools |
 | :--- | :--- |
 | **Discovery** | A manifest of every tool with the JSON Schema of its request and response; constraint search (price, category, attributes, stock) where each result lists which constraints it met; a product dossier with each variant's live stock and price, specifications, review summary, shipping and return window; side-by-side comparison with specifications aligned; a fit check that separates constraints met, missed, and unknown because the attribute is not published; alternatives by similarity, price, stock or matching specification. |
 | **Cart and decision** | A quote giving the landed total of a basket — promotion, shipping and tax for the address, priced in the same order as an order; cart drafts kept apart from the shopper's live cart, re-quoted on every read and added to the live cart on request; insights on a cart such as price changes, the gap to free shipping and complementary items. |
-| **The shopper's own data** | Order status with the next allowed actions, and wishlist availability and price drops. Personal context from the shopper's own orders — sizes, price band, reorder suggestions — is read only after the shopper grants consent, which is separate from email marketing consent. |
+| **The shopper's own data** | Order status with the next allowed actions, a return lodged for one of the shopper's own orders, and wishlist availability and price drops. Personal context from the shopper's own orders — sizes, price band, reorder suggestions — and standing instructions are available only after the shopper grants consent, which is separate from email marketing consent. |
 | **Checkout intents** | Create, read, confirm and cancel — described below. |
+| **Standing instructions** | Create, list and cancel a shopper's instruction to reorder on a schedule or buy when an item is back in stock or reaches a price — described below. |
 | **Store** | Return policy and reasons, shipping regions and base fees, accepted payment methods and currencies. |
 
 A specification the merchant has not published is reported as absent, never inferred, and a basket line
@@ -362,11 +378,43 @@ payment proceeds through the store's normal payment flow. The token is stored on
 and a wrong one reveals nothing about the intent. An intent left unconfirmed expires and releases its
 stock; one the shopper declines can be cancelled at once.
 
+### Limits on a publishable key
+
+A checkout intent holds stock, and a publishable key can be read from any storefront, so intents
+created with one are bounded: 60 new intents an hour from one address, 5 waiting for confirmation at
+once per address (per shopper when a shopper credential is sent), 10 units of one item per intent for
+a guest and 25 for a signed-in shopper, and guests together may hold at most half of an item's stock.
+Past a limit the intent is refused with `409 hold_limit_reached` and the limit in `details.limit`, or
+`429 rate_limited` with `Retry-After`. A secret key, used from the store's own server, is bound only by
+its plan.
+
+### Returns
+
+`getOrderStatus` lists `request_return` among an order's allowed actions while the order is inside the
+store's return window, and `requestReturn` lodges it for the shopper — the whole order, or chosen lines
+and quantities, with a reason. The return arrives in the store's returns queue as pending, exactly as
+one lodged from the storefront would; the store reviews it and decides the refund, and the shopper is
+emailed that it was received.
+
+### Standing instructions
+
+A shopper can leave an instruction for later: reorder an item every so many days, or buy it when it is
+back in stock or reaches a price. Every instruction carries a maximum unit price, a quantity of at most
+10 and an expiry of at most a year; a reorder runs every 7 to 365 days, at most 12 times, and the other
+two fire once. A shopper can keep 10 with one store.
+
+When an instruction's condition holds, Galactic Core prepares a checkout intent at the price it found
+and sends the shopper a link to the store's confirmation page, by email under the store's own name and
+in the `agent.mandate.triggered` webhook event. The link stays open for 48 hours. The shopper confirms
+and pays on that page; nothing is bought without them. Instructions need the shopper's credential and
+personalisation consent, and withdrawing consent pauses them.
+
 ### Events and attribution
 
 Checkout intents emit three [webhook events](/webhooks): `agent.checkout_intent.created` when an assistant
 prepares one, `agent.checkout_intent.confirmed` when the shopper confirms and the order exists, and
-`agent.checkout_intent.expired` when one lapses unconfirmed. An order placed from a confirmed intent is
+`agent.checkout_intent.expired` when one lapses unconfirmed. A standing instruction that fires emits
+`agent.mandate.triggered`, carrying the `confirmation_url` the shopper confirms at. An order placed from a confirmed intent is
 recorded as an agent order: its `order.created` event carries `source_channel: "agent"` (an order placed
 directly through `POST /v1/orders` carries `"storefront"`) and `agent_client_ref`, which identifies the API key or the connected application
 that created the intent.
