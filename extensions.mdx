@@ -37,7 +37,7 @@ An automation runs **after the fact**, off a real store event, and never blocks 
 
 ### Custom providers
 
-A custom provider — one you build and connect yourself — implements one of these **eight named interfaces**, and when selected is dispatched at that subsystem's seam in place of the built-in path. (Advertising and Accounting sync are also provider-backed, but Galactic Core builds and runs those for you — see the note below the table — so they are not in this build-your-own set.)
+A custom provider — one you build and connect yourself — implements one of these **nine named interfaces**, and when selected is dispatched at that subsystem's seam in place of the built-in path. (Advertising and Accounting sync are also provider-backed, but Galactic Core builds and runs those for you — see the note below the table — so they are not in this build-your-own set.)
 
 | Interface | Replaces / augments | Cardinality |
 | :--- | :--- | :--- |
@@ -49,6 +49,7 @@ A custom provider — one you build and connect yourself — implements one of t
 | `MarketingProvider` | Marketing segments / campaigns / flows | One active per store |
 | `SalesChannelProvider` | An outbound sales channel | Several can be active at once |
 | `AuthProvider` | Verifying a shopper's sign-in against your own identity provider | One active per store |
+| `SocialPublisher` | Publishing posts to a social network through your own app | Several can be connected at once |
 
 <Note>
   For **single-active** interfaces (Email, SMS, Tax, Marketing, Auth) selecting a custom provider **replaces** the built-in for that capability. **Shipping** adds a rate source next to the native ones; **Sales channels** are fully multi-active; **Payments** route per transaction, so your custom method runs alongside the native processors.
@@ -243,6 +244,7 @@ Each interface operation receives an `input` (with an `operation` discriminator 
 | `PaymentProvider` | `{ operation: 'initialize', provider, amount, currency, email, phone, country, order_id, reference, metadata, success_url, cancel_url, callback_url }` / `{ operation: 'verify', provider, reference }` — `currency` is resolved and validated server-side, and you must charge in the one you are given. | `initialize → { redirect_url?, status? }`; `verify → { status: 'paid' \| 'failed' \| ..., reference? }` — amount and status revalidated by the platform. Either operation may instead return `{ unsupported_provider: true }` — see below. |
 | `TaxProvider` | `{ operation: 'resolve', currency, ship_to: { line1, line2, city, region, country, postal_code }, lines: [{ number, quantity, amount, item_code, category_name, description }], mode: 'quote' \| 'commit' }` — each line's `amount` is its total (unit price × quantity), `item_code` identifies the variant or product, and `mode` is `commit` only when the order is being paid as it is created. | `{ tax_amount: number, breakdown? }` — otherwise the platform falls back to your manual/native tax path. |
 | `AuthProvider` | `{ operation: 'verifyToken', token, store_id, environment }` — the raw identity-provider token a shopper presented | `{ ok: true, external_id, email? }` if the token is valid, else `{ ok: false, error? }`. `external_id` resolves to the customer; a non-`ok` result or an unreachable endpoint leaves the request signed-out. |
+| `SocialPublisher` | `{ operation: 'listDestinations' }` · `{ operation: 'rules', destination }` · `{ operation: 'publish', destination, caption, title?, media: [{ url, kind, alt? }], link?, options, idempotency_key }` · `{ operation: 'insights', destination, provider_post_ids }` · and, for an extension that runs its own authorization, `{ operation: 'connect', redirect_uri, state }` — return the user to `redirect_uri` with `state` unchanged. | `listDestinations → { destinations: [{ external_id, display_name, avatar_url?, meta?: { rules? } }] }`; `rules → { rules: { max_images, max_videos, carousel, caption_max, title_max?, link_supported, text_only, media_only, image_mime_types?, video_mime_types?, max_image_bytes?, max_video_bytes?, max_video_seconds?, preferred_ratios?, platform_daily_cap? } }`; `publish → { ok: true, provider_post_id, permalink?, pending? }` or `{ ok: false, permanent?, reconnect? }`; `insights → { metrics: [{ provider_post_id, views?, reach?, likes?, comments?, shares?, saves?, clicks? }] }`; `connect → { consent_url }`. Every post is checked against your declared rules before `publish` is called; an answer of the wrong shape fails the post. |
 | `order.validate` | `{ operation: 'validate', customer_id, customer_email, customer_name, subtotal, tax_amount, shipping_amount, discount_amount, total_amount, currency, payment_method, item_count, shipping_address, billing_address }` — the order as the platform resolved it, not as the client sent it | `{ allow: boolean, reason?, annotations? }` — `allow: false` rejects the order with `422`. |
 | `SubscriptionBillingProvider` | `{ operation: 'createSubscription', plan, period, amount_cents, currency, subscriber_email, return_url, cancel_url, kind, reference }` / `{ operation: 'getSubscription' \| 'cancelSubscription', subscription_id }` — `amount_cents` is resolved from the operator's price catalogue, never sent by the client. | `createSubscription → { subscription_id, status, redirect_url, provider, provider_reference? }` — `redirect_url` is required; without one the subscription is treated as not created. `getSubscription → { subscription_id, status, next_billing_at?, provider }`; `cancelSubscription → { subscription_id, status, provider }`. Returning `{ error }` from any operation reports a billing failure. |
 
@@ -296,6 +298,46 @@ Each interface operation receives an `input` (with an `operation` discriminator 
 </Note>
 
 ---
+
+### A social publisher
+
+A `SocialPublisher` endpoint keeps the network's credentials itself and answers four operations. This
+one posts to a Discord channel webhook it holds; the caption, media, schedule and the publish-time
+checks are handled before `publish` is ever called.
+
+```ts
+app.post('/gc/social', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Verify X-Signature exactly as in the example above, then:
+  const input = JSON.parse(req.body.toString());
+  const RULES = { max_images: 4, max_videos: 0, carousel: true, caption_max: 2000,
+                  link_supported: true, text_only: true, media_only: false };
+
+  switch (input.operation) {
+    case 'listDestinations':
+      return res.json({ destinations: [{ external_id: 'announcements', display_name: 'Announcements',
+                                         meta: { rules: RULES } }] });
+    case 'rules':
+      return res.json({ rules: RULES });
+    case 'publish': {
+      const content = [input.caption, input.link].filter(Boolean).join('\n\n');
+      const r = await fetch(`${process.env.DISCORD_WEBHOOK_URL}?wait=true`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content, allowed_mentions: { parse: [] },
+          embeds: input.media.filter((m) => m.kind === 'image').map((m) => ({ image: { url: m.url } })) }),
+      });
+      if (r.status === 401 || r.status === 404) return res.json({ ok: false, reconnect: true });
+      if (!r.ok) return res.json({ ok: false, permanent: r.status < 500 && r.status !== 429 });
+      const msg = await r.json();
+      return res.json({ ok: true, provider_post_id: msg.id });
+    }
+    case 'insights':
+      return res.json({ metrics: [] });
+  }
+});
+```
+
+`reconnect: true` tells the merchant to reconnect the account; `permanent: true` fails the post
+without retrying; any other failure is retried.
 
 ## Billing your own merchants
 

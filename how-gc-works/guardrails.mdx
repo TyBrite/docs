@@ -99,6 +99,22 @@ And **a change that spends nothing is never measured against a spending limit**:
 is the safe direction, and a cap that blocked it would keep a losing campaign running precisely
 because the store was near its limit.
 
+## A social post is checked against the store when it is published, not when it was written
+
+A post can be drafted days before it goes out, and a price, an offer or a product's stock can change in
+between. So the check runs at publish time, on every post whoever composed it: the subject still exists
+and is live, a price in the caption equals the current price, an offer's percentage equals the offer's,
+an out-of-stock product is posted only when the post is about its return. The same checkpoint enforces
+a per-account daily limit below each network's own, a per-store daily limit, and no automated repeat
+of a subject to the same account within a week, and it holds personal details and prohibited claims.
+A held post waits for the merchant with the reason.
+
+Workflows that post may be woken by store events, which is where volume could run away. Three limits
+apply at once: events inside a quiet period fold into one run, at most three unreviewed social drafts
+exist per store, and the per-account daily limit caps what any number of runs can publish. A network
+that refuses several posts in a day pauses the store's posting until the merchant has looked, and the
+platform can pause a single network for every store during that network's incident.
+
 ## Cost coverage before any pricing action
 
 Any automated action that affects price first checks that the store's cost data is complete enough to

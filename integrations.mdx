@@ -196,14 +196,51 @@ duplicated between systems.
 
 **Reference:** [Authentication](/authentication)
 
+## Social publishing
+
+Posts about a store's products, offers, collections, reviews and content are composed, scheduled and
+published to the social accounts the merchant connects — by the merchant, with the assistant, or by a
+workflow. Captions are written from the store's own records, one per network within that network's
+limits, and every link back to the storefront carries campaign tags, so the visits and orders a post
+brings are attributed to it.
+
+Bluesky, Mastodon, Telegram channels and Discord channels connect with the merchant's own credentials
+or bot, with no platform review involved.
+
+Every post passes the same checks immediately before it goes out, whoever composed it:
+
+- **It is still true.** The product, offer or page it describes still exists and is live, a price in
+  the caption is the current price, and an offer's discount matches the offer.
+- **It is within the posting limits.** A per-account daily limit the merchant sets, below each
+  network's own; a per-store daily limit; and no automated repeat of the same subject to the same
+  account within a week.
+- **It carries nothing a network refuses.** Shoppers' personal details and medical or guaranteed-result
+  claims are held for the merchant; a product in a sensitive category is held when a workflow, rather
+  than the merchant, posted it.
+
+Anything held waits for the merchant with the reason, rather than being dropped.
+
+How much happens without a person is chosen per network: **Manual**, **Assisted** (drafts wait for
+approval — the default), **Autopilot with review** (scheduled, with a window to edit or cancel), or
+**Autonomous** (published within a monthly spending limit). A workflow may start from a store event —
+a new product, an offer going live, a published blog post — under three limits that apply together: a
+quiet period that folds a burst of events into one run, at most three unreviewed social drafts per
+store, and the per-account daily limit. A bulk import arrives as one event, so it makes one post, not
+one per product.
+
+**Bring your own:** the `SocialPublisher` interface publishes through an app you operate — your own
+platform approval, your own credentials — while the checks above still run first.
+
+**Reference:** [Custom Extensions](/extensions)
+
 ## Connecting something that is not listed
 
 Every capability above is an interface, not a fixed list. An integration the platform does not carry
 natively is added as an extension: it registers against the same interface the built-in providers use,
 receives the same events, and appears in the same places in the merchant's settings.
 
-That applies to all eleven interfaces — payments, subscription billing, advertising, catalog channels,
-shipping, accounting, marketing, email, SMS, tax and identity. An extension runs as a hosted function
+That applies to all twelve interfaces — payments, subscription billing, advertising, catalog channels,
+shipping, accounting, marketing, email, SMS, tax, identity and social publishing. An extension runs as a hosted function
 or points at an endpoint you already operate.
 
 <Card title="Custom Extensions" icon="puzzle-piece" href="/extensions">
