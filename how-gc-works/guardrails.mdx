@@ -115,6 +115,17 @@ exist per store, and the per-account daily limit caps what any number of runs ca
 that refuses several posts in a day pauses the store's posting until the merchant has looked, and the
 platform can pause a single network for every store during that network's incident.
 
+## Extension code is checked before it serves a customer
+
+A merchant's extension can sit on a checkout path, so a saved change does not reach production on its
+own. The live version is replaced only when the saved version passes the [publish
+checklist](/extensions#publishing): a successful test of that exact version, a response in the shape
+its interface requires, connected credentials, a time limit, no critical or high finding from the
+static scan, allowed `https://` destinations, and — for an endpoint the merchant runs — a live
+confirmation that it refuses a request with a forged signature. Code the AI Extension Builder writes
+meets the same checklist, and so does code written after reading a third-party documentation page,
+whose text is treated as data rather than as instructions.
+
 ## Cost coverage before any pricing action
 
 Any automated action that affects price first checks that the store's cost data is complete enough to

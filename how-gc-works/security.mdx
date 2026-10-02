@@ -130,6 +130,13 @@ treats that code as untrusted and bounds what it can reach and how long it can r
     ceiling. A function that repeatedly fails is disabled automatically, and one that is slow or errors on a
     checkout path is bypassed rather than allowed to block a sale.
   </Step>
+  <Step title="Only a checked version serves production">
+    Saving an extension changes a draft. The version that serves customers is replaced only by publishing,
+    which tests the exact saved version, scans it, checks every address it names, and probes a remote
+    endpoint to confirm it refuses a request with a forged signature. The database enforces this for every
+    writer, so a production extension cannot be switched on, or have its live code changed, any other way.
+    See [Publishing](/extensions#publishing).
+  </Step>
   <Step title="What a function returns is not taken on trust">
     A returned payment status, tax figure, or shipping amount is revalidated against the platform's own
     authoritative data before it affects an order. A custom provider cannot mark an order paid, discount a

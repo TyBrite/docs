@@ -514,8 +514,9 @@ the code as text — it does not run it — and separates what it finds into two
 **Corrected automatically.** A fault with a single correct answer is repaired in place, because the
 exposure grows for as long as it stands. A provider key written directly into source is replaced with a
 placeholder, and a request addressed to an unencrypted `http://` endpoint is moved to `https://`. Each
-change keeps a before-and-after you can read and undo, and the stored before-image has the credential
-stripped out of it, so the record of the fix does not preserve the thing it removed. A redacted key
+change is recorded with a before-and-after, and the stored before-image has the credential stripped out
+of it, so the record of the fix does not preserve the thing it removed. A correction is made to the
+saved version; on a live extension it reaches production when that version is published. A redacted key
 means the handler will now fail to authenticate rather than continue running on an exposed
 credential — connect it under Integrations and read it by name.
 
@@ -534,6 +535,46 @@ managed by an agency, the agency decides whether its merchants are scanned.
   logic. It is a floor under the obvious mistakes, not a substitute for reviewing what an extension
   does with the data it touches.
 </Note>
+
+### Publishing
+
+A production extension has two versions: the one you saved and the one that is live. Saving changes
+only the saved version. The live version keeps serving checkouts, events, and callbacks until the saved
+version passes the publish checklist, at which point it becomes the live version in one step. A
+sandbox extension has no separate live version and runs as saved.
+
+The checklist is computed by the platform against the exact saved version, identified by a hash of
+everything that executes: the code or recipe, the endpoint, the connected credentials, the time limit,
+and the failure behaviour. Any later change produces a different version, which needs its own test
+before it can be published.
+
+| Check | Passes when |
+| :--- | :--- |
+| Tested | A test run of this exact version succeeded within the last 7 days |
+| Response shape | For a custom provider, that test's response has the shape its interface requires (see [Provider contracts](#provider-contracts)) |
+| Credentials | Every credential the code reads with `ctx.secrets.get` is connected and still exists |
+| Time limit and failure behaviour | `timeout_ms` is set; a payment, billing, or sign-in extension fails closed |
+| Limits | The source is within 64 KB and the plan has extension runs available |
+| Static scan | No critical or high finding from [Code review](#code-review): no key in source, no credential logged or returned, credentials read with `await ctx.secrets.get`, no code built at run time, no plain `http://` |
+| Outside addresses | Every address written into the code or recipe is `https://` and passes the egress check; the hosts are listed so you can confirm they are the ones you intended |
+| Remote endpoint | The endpoint is `https://` on an allowed host, a signing secret is set, and the endpoint **refuses a request signed with the wrong key** |
+
+The last check is made live. The platform sends your endpoint a request in the normal dispatch format
+whose `X-Signature` is computed with a key that is not yours, and it passes only when the endpoint
+answers with a `4xx` other than `429`. An endpoint that accepts it would act on a request anyone could
+send.
+
+A critical or high finding always blocks publishing; medium findings are listed as suggestions and do
+not. A hosted version's code is deployed only after every check has passed, under a name of its own,
+so a failed attempt never replaces the code that is live. A production extension cannot be switched on
+until a version has been published, and while it is live its type, trigger, provider role, and
+environment cannot change without turning it off first. These rules are enforced by the database for
+every writer, not only by the Extensions page.
+
+The same checklist applies to extensions written by the [AI Extension Builder](/ai-builder) and the
+in-app assistant. Text the builder reads while writing, such as a provider's documentation page, is
+treated as data rather than as instructions; the checklist and the outbound request filter are what
+stand between generated code and production either way.
 
 ---
 
@@ -622,8 +663,8 @@ place, reading what your store already has connected.
 It can additionally **run what it wrote and read the outcome** — the status, the error, and the log
 lines the code produced — and repair it from that rather than handing you something that has never
 executed. A test runs against your real runtime with your connected credentials, so an integration
-that calls an outside service genuinely calls it. Whatever it writes stays switched off until you
-enable it, so nothing runs on a real event in the meantime.
+that calls an outside service genuinely calls it. Whatever it writes is saved switched off and
+unpublished, so nothing runs on a real event until it passes the [publish checklist](#publishing).
 
 ## Choosing your approach
 
