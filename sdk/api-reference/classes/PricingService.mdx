@@ -6,7 +6,7 @@ description: "Reference for the PricingService class in the Tybrite SDK."
 The `PricingService` class (accessed via `client.pricing`) provides high-performance price calculations. It acts as a single source of truth, enriching product data with real-time regional discounts, segment/volume pricing rules, and multi-currency conversion.
 
 <Note>
-  **Customer-specific prices need the shopper's own credential.** Pricing rules that target a customer segment, a customer tier or first-time buyers apply when a call carries `customerId` together with that shopper's `xAuthToken` (a session token) or `xExternalAuth` (a bring-your-own-auth assertion) resolving to the same customer. The segment and tier are then read from the customer's record, and the response is private to that shopper. A `customerId` without a matching credential returns the public price rather than an error.
+  **Customer-specific prices need the shopper's own credential.** Pricing rules that target a customer segment, a customer tier or first-time buyers apply when a call carries `customerId` together with that shopper's `xAuthToken` (a session token), `xExternalAuth` (a bring-your-own-auth assertion) or `xIdpToken` (a token from the store's own identity provider) resolving to the same customer. The segment and tier are then read from the customer's record, and the response is private to that shopper. A `customerId` without a matching credential returns the public price rather than an error.
 </Note>
 
 ## Integration Highlights
@@ -110,7 +110,7 @@ A signed-in shopper's price, with any segment, tier or first-purchase rule appli
 const pricing = await client.pricing.getProductPrice({
   id: '2b6a066a-25df-4238-9e90-50a4400fc21e',
   customerId: session.user.id,
-  xAuthToken: session.access_token, // or xExternalAuth: signedAssertion
+  xAuthToken: session.access_token, // or xExternalAuth: signedAssertion, or xIdpToken: idpToken
 });
 // Same shape as above; resolved_price reflects the rules that match this customer.
 ```
