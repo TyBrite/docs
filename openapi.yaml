@@ -4053,8 +4053,9 @@ paths:
                       example: US
                 items:
                   type: array
-                  description: Order line items (at least one required)
+                  description: Order line items (at least one, at most 100)
                   minItems: 1
+                  maxItems: 100
                   items:
                     type: object
                     description: Provide **`variant_id` OR `product_id`** (at least one). Prefer `variant_id` — it is the exact variant (SKU) the shopper chose, so pass the same `variant_id` you put in the cart straight through to the order. If you send only `product_id`, the order is placed against the product's **default** variant — convenient for single-variant products, but for a product with multiple variants it may not be the one the shopper selected. When both are sent, `variant_id` wins (and `product_id` is resolved from it).
@@ -7733,9 +7734,22 @@ paths:
         and `502 shipping_unavailable` when shipping cannot be priced right now.
 
         Requires the marketplace operator key.
+
+        Send an `Idempotency-Key` header to make a retry safe: a repeat of the same request with the
+        same key returns the purchase the first attempt created (`200`, the same `order_group_id` and
+        PaymentIntent) instead of creating a second order, holding stock twice or raising a second
+        charge. Keys are unique per marketplace and environment.
       security:
         - BearerAuth: []
       parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 255
+          example: checkout-7f3c2a91-4d1e
+          description: A unique key for this checkout attempt. Repeating the request with the same key and the same body returns the original result with `200`; the same key with a different body is refused with `409 idempotency_conflict`.
         - name: x-auth-token
           in: header
           required: false
@@ -7882,6 +7896,15 @@ paths:
                   promotion_id: 8a7b6c5d-1234-5678-9abc-def012345678
                   gift_card_code: GC-XXXX-YYYY
       responses:
+        '200':
+          description: A repeat of an earlier checkout with the same `Idempotency-Key` and body. The body is the original checkout's result, with the same `order_group_id` and `payment_intent_id`.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceCheckoutResponse'
         '201':
           description: The multi-merchant order was created and is awaiting payment.
           headers:
@@ -7941,7 +7964,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
-          description: The marketplace has not finished connecting its payment account, so it cannot take payment yet (`provider_not_live`).
+          description: The marketplace has not finished connecting its payment account, so it cannot take payment yet (`provider_not_live`); or the `Idempotency-Key` was already used with a different body (`idempotency_conflict`), names a checkout still being processed (`idempotency_in_progress`), or names a checkout that did not complete (`idempotency_failed` — retry with a new key).
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'

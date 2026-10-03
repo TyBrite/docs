@@ -132,6 +132,7 @@ const shopperSession = session.access_token; // from client.authentication.login
 
 const order = await client.marketplace.marketplaceCheckout({
   xAuthToken: shopperSession,   // omit for a guest checkout
+  idempotencyKey: checkoutAttemptId, // e.g. crypto.randomUUID(), made once when the shopper presses Pay
   requestBody: {
     items: [
       { product_id: 'p1', variant_id: 'v1', merchant_store_id: 'merchant-a-uuid', quantity: 1 },
@@ -200,6 +201,12 @@ const { error } = await stripe.confirmPayment({
 | `discounts` | `array?` | Optional per-merchant discounts. Each entry: `{ merchant_store_id, promotion_id?, gift_card_code? }`. Applies a merchant's own promotion/gift card to that merchant's portion of the basket. Marketplace-wide operator promotions apply automatically and are **not** passed here. |
 | `wallet_amount` | `number?` | Optional. Spend up to this much of the signed-in shopper's marketplace wallet. Must be positive; capped by the balance and by the payment provider's minimum charge. |
 | `use_wallet` | `boolean?` | Optional. Spend as much of the signed-in shopper's wallet as the checkout allows. |
+
+**Retrying safely (`idempotencyKey`)**
+
+| Parameter | Header | Notes |
+| :--- | :--- | :--- |
+| `idempotencyKey` | `Idempotency-Key` | Optional. A unique key for this checkout attempt, such as a UUID generated when the shopper presses Pay. A repeat of the same request with the same key returns the purchase the first attempt created — `200`, the same `order_group_id` and payment — instead of creating a second order, holding stock twice or raising a second charge. The same key with a different body answers `409 idempotency_conflict`; a key whose checkout is still being processed answers `409 idempotency_in_progress`; a key whose checkout did not complete answers `409 idempotency_failed`, and the retry needs a new key. Keys are unique per marketplace and environment. |
 
 **Shopper credential (optional, at most one)**
 
