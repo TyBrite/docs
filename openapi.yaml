@@ -31831,6 +31831,249 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/sandbox/stock:
+    get:
+      operationId: listSandboxStockLevels
+      tags:
+        - Sandbox
+      summary: List sandbox stock levels
+      description: |
+        Lists the sandbox stock levels set for your store, each with the variant's live stock beside
+        it. A variant with no level reads live stock with a test key.
+
+        **Requires a secret test key** (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The sandbox stock levels, most recently changed first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stock_levels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SandboxStockLevel'
+              example:
+                stock_levels:
+                  - variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                    product_id: f7e24571-1fa9-4264-9ca4-298de2336a35
+                    name: The Multi-managed Snowboard
+                    variant_name: Default
+                    sku: sku-managed-1
+                    stock: 0
+                    live_stock: 80
+                    updated_at: '2026-10-03T23:14:17.072238+00:00'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: setSandboxStockLevels
+      tags:
+        - Sandbox
+      summary: Set sandbox stock levels
+      description: |
+        Sets a sandbox-only stock level for one or more variants, so you can exercise low-stock and
+        sold-out behaviour without touching the merchant's real inventory.
+
+        A sandbox order never lowers live stock. For a variant with a level, a test key reads the level
+        in place of live stock everywhere stock appears — product reads, priced products, shoppable
+        posts and lookbooks, cart and wishlist stock checks, and checkout reservations — and a paid
+        sandbox order takes its quantity from the level. A level of `0` makes the variant sold out for
+        test keys: adding it to a cart or reserving it is refused. Setting a level again replaces it.
+
+        Send one level as `{ variant_id, stock }`, or up to 100 as `items`. Every variant must belong to
+        your store. A live key, and the merchant's own admin, keep reading live stock throughout.
+
+        Levels are removed with `DELETE`, and by `POST /v1/sandbox/reset`.
+
+        **Requires a secret test key** (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                variant_id:
+                  type: string
+                  format: uuid
+                  description: The variant to set a level for, when setting one.
+                stock:
+                  type: integer
+                  minimum: 0
+                  maximum: 1000000
+                  description: The level, when setting one.
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  description: Several levels at once, in place of `variant_id` and `stock`.
+                  items:
+                    type: object
+                    required:
+                      - variant_id
+                      - stock
+                    properties:
+                      variant_id:
+                        type: string
+                        format: uuid
+                      stock:
+                        type: integer
+                        minimum: 0
+                        maximum: 1000000
+            example:
+              items:
+                - variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                  stock: 0
+      responses:
+        '200':
+          description: The levels as set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stock_levels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SandboxStockLevel'
+              example:
+                stock_levels:
+                  - variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                    product_id: f7e24571-1fa9-4264-9ca4-298de2336a35
+                    name: The Multi-managed Snowboard
+                    variant_name: Default
+                    sku: sku-managed-1
+                    stock: 0
+                    live_stock: 80
+                    updated_at: '2026-10-03T23:14:17.072238+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: A variant does not belong to your store.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: Variant 00000000-0000-4000-8000-000000000000 does not belong to this store
+                  hint: Use a variant id from GET /v1/products for this store.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      operationId: clearSandboxStockLevels
+      tags:
+        - Sandbox
+      summary: Remove every sandbox stock level
+      description: |
+        Removes every sandbox stock level for your store. Each variant reads live stock again with a
+        test key.
+
+        **Requires a secret test key** (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Levels removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  removed:
+                    type: integer
+              example:
+                success: true
+                message: 2 sandbox stock levels removed
+                removed: 2
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/sandbox/stock/{variant_id}:
+    delete:
+      operationId: deleteSandboxStockLevel
+      tags:
+        - Sandbox
+      summary: Remove one sandbox stock level
+      description: |
+        Removes the sandbox stock level for one variant, which then reads live stock again with a test
+        key.
+
+        **Requires a secret test key** (`tybrite_sk_test_*`).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: variant_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Level removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  removed:
+                    type: integer
+              example:
+                success: true
+                message: Sandbox stock level removed; the variant reads live stock again
+                removed: 1
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: No sandbox stock level is set for that variant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: No sandbox stock level is set for that variant
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
 components:
   securitySchemes:
     BearerAuth:
@@ -38077,6 +38320,45 @@ components:
           type: string
           enum:
             - sandbox
+    SandboxStockLevel:
+      type: object
+      description: |
+        A sandbox-only stock level for one variant. A test key reads it in place of the variant's live
+        stock, and sandbox orders take from it. A live key never sees it.
+      properties:
+        variant_id:
+          type: string
+          format: uuid
+        product_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        name:
+          type:
+            - string
+            - 'null'
+          description: The product name.
+        variant_name:
+          type:
+            - string
+            - 'null'
+        sku:
+          type:
+            - string
+            - 'null'
+        stock:
+          type: integer
+          minimum: 0
+          description: The sandbox level a test key reads.
+        live_stock:
+          type:
+            - integer
+            - 'null'
+          description: The variant's live stock, which the level stands in for and never changes.
+        updated_at:
+          type: string
+          format: date-time
   responses:
     BadRequestError:
       description: Invalid request - malformed data or missing required fields

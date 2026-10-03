@@ -56,12 +56,12 @@ environments — a test key reads the merchant's *real* catalog, so you can buil
 storefront against actual products. It just gets no production *transactional* data tied to those
 reads: a test key sees only the orders, customers, and carts created in sandbox.
 
-**Stock levels are read-only to a test key.** A sandbox order goes through the full order lifecycle —
-it is created, marked paid, and settles any stock it reserved at checkout — and reports success as a
-live order does, but it never lowers the merchant's real stock count. Reservations made with a test
-key count only against other sandbox reservations, so sandbox checkouts never hold back stock from
-real customers. A product's availability in sandbox therefore always reflects the merchant's live
-stock.
+**A test key never changes the merchant's stock.** A sandbox order goes through the full order
+lifecycle — it is created, marked paid, and settles any stock it reserved at checkout — and reports
+success as a live order does, but it never lowers the merchant's real stock count. Reservations made
+with a test key count only against other sandbox reservations, so sandbox checkouts never hold back
+stock from real customers. By default a test key reads the merchant's live stock; a
+[sandbox stock level](#sandbox-stock-levels) gives a variant a sandbox-only count instead.
 
 <Warning>
   When you initialize a payment with a test key, the underlying payment provider is **forced into test
@@ -124,6 +124,26 @@ const result = await client.sandbox.advanceSandboxTime({ requestBody: { advance_
 
 The response's `not_shifted` explains what is intentionally left alone. To test promotion or
 gift-card expiry, seed one with a near-future end date using the endpoints below.
+
+### Sandbox stock levels
+
+`POST /v1/sandbox/stock` gives a variant a sandbox-only stock count, so low-stock and sold-out
+behaviour can be tested without touching the merchant's inventory. A test key reads the level in
+place of live stock wherever stock appears — product and priced-product reads, shoppable posts and
+lookbooks, cart and wishlist stock checks, and checkout reservations — and paid sandbox orders take
+from it. A level of `0` makes the variant sold out for test keys.
+
+```typescript
+await client.sandbox.setSandboxStockLevels({
+  requestBody: { variant_id: '86eb90c5-48ea-41b0-a82e-069b1b170f1e', stock: 1 },
+});
+// The first sandbox checkout for this variant succeeds; the next is refused as out of stock.
+```
+
+`GET /v1/sandbox/stock` lists the levels beside each variant's live count, `DELETE
+/v1/sandbox/stock/{variant_id}` returns one variant to live stock, and `DELETE /v1/sandbox/stock`
+or a [sandbox reset](#sandbox-reset) removes them all. Live keys and the merchant's admin always
+read live stock.
 
 ### Webhook replay
 

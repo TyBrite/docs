@@ -1,6 +1,6 @@
 ---
 title: "Sandbox"
-description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, webhook replay, and seeding discount instruments, pricing rules and B2B buyer accounts in the sandbox environment."
+description: "Reference for the SandboxService class in the Tybrite SDK — reset, time-travel, webhook replay, sandbox stock levels, and seeding discount instruments, pricing rules and B2B buyer accounts in the sandbox environment."
 ---
 
 The `SandboxService` class (accessed via `client.sandbox`) is developer tooling for the
@@ -12,6 +12,10 @@ run can start from a known state.
 Promotions, gift cards, and campaigns are normally created by the merchant in their admin, which
 always writes production data. The seed methods are how those instruments come to exist in your
 sandbox, so a sandbox order can carry a discount.
+
+A sandbox order never lowers the merchant's live stock. Sandbox stock levels give a variant a
+sandbox-only count instead, which test keys read and sandbox orders take from, so low-stock and
+sold-out behaviour can be exercised.
 
 <Note>
   Every Sandbox method requires a **secret test key** (`tybrite_sk_test_*`). Publishable keys and
@@ -256,17 +260,113 @@ const { pricing_rule } = await client.sandbox.seedSandboxPricingRule({
 `applies_to` to `category`, `product` or `collection` and pass the matching ids in `target_ids` — a
 scoped rule with no targets matches nothing and is refused.
 
+### `setSandboxStockLevels`
+
+Set a sandbox-only stock level for one or more variants. For a variant with a level, a test key
+reads the level in place of live stock everywhere stock appears — product reads, priced products,
+shoppable posts and lookbooks, cart and wishlist stock checks, and checkout reservations — and a
+paid sandbox order takes its quantity from the level. A level of `0` makes the variant sold out for
+test keys, so adding it to a cart or reserving it is refused. Setting a level again replaces it.
+
+Send one level as `{ variant_id, stock }`, or up to 100 as `items`. Every variant must belong to
+your store. Live keys, and the merchant's own admin, keep reading live stock.
+
+```typescript
+const { stock_levels } = await client.sandbox.setSandboxStockLevels({
+  requestBody: { items: [{ variant_id: '86eb90c5-48ea-41b0-a82e-069b1b170f1e', stock: 0 }] }
+});
+```
+
+```json Response
+{
+  "stock_levels": [
+    {
+      "variant_id": "86eb90c5-48ea-41b0-a82e-069b1b170f1e",
+      "product_id": "f7e24571-1fa9-4264-9ca4-298de2336a35",
+      "name": "The Multi-managed Snowboard",
+      "variant_name": "Default",
+      "sku": "sku-managed-1",
+      "stock": 0,
+      "live_stock": 80,
+      "updated_at": "2026-10-03T23:14:17.072238+00:00"
+    }
+  ]
+}
+```
+
+A paid sandbox order for more than the level still records, takes the level to `0`, and reports
+the shortfall in `post_processing_warnings` with the `stock_reduction` stage, as a live order does.
+
+### `listSandboxStockLevels`
+
+List the sandbox stock levels set for your store, most recently changed first, each beside the
+variant's live stock.
+
+```typescript
+const { stock_levels } = await client.sandbox.listSandboxStockLevels();
+```
+
+```json Response
+{
+  "stock_levels": [
+    {
+      "variant_id": "86eb90c5-48ea-41b0-a82e-069b1b170f1e",
+      "product_id": "f7e24571-1fa9-4264-9ca4-298de2336a35",
+      "name": "The Multi-managed Snowboard",
+      "variant_name": "Default",
+      "sku": "sku-managed-1",
+      "stock": 0,
+      "live_stock": 80,
+      "updated_at": "2026-10-03T23:14:17.072238+00:00"
+    }
+  ]
+}
+```
+
+### `deleteSandboxStockLevel`
+
+Remove the sandbox stock level for one variant, which then reads live stock again with a test key.
+Returns `404` when no level is set for that variant.
+
+```typescript
+await client.sandbox.deleteSandboxStockLevel({ variantId: '86eb90c5-48ea-41b0-a82e-069b1b170f1e' });
+```
+
+```json Response
+{
+  "success": true,
+  "message": "Sandbox stock level removed; the variant reads live stock again",
+  "removed": 1
+}
+```
+
+### `clearSandboxStockLevels`
+
+Remove every sandbox stock level for your store. `resetSandbox` also removes them.
+
+```typescript
+const { removed } = await client.sandbox.clearSandboxStockLevels();
+```
+
+```json Response
+{
+  "success": true,
+  "message": "2 sandbox stock levels removed",
+  "removed": 2
+}
+```
+
 ## Response Codes
 
 | Code | Meaning |
 | :--- | :--- |
 | `204` | Reset succeeded (no body). |
 | `201` | A sandbox promotion, gift card, campaign, B2B buyer account, or pricing rule was created. |
-| `200` | Time-travel / replay succeeded (summary returned). |
-| `400` | Invalid request — `advance_days` out of 1–3650, neither `event_id` nor `type`, an unknown promotion `type` or campaign `discount_type`, a non-positive value, or a `start_date` in the past. |
+| `200` | Time-travel / replay succeeded (summary returned), or sandbox stock levels were set, listed or removed. |
+| `400` | Invalid request — `advance_days` out of 1–3650, neither `event_id` nor `type`, an unknown promotion `type` or campaign `discount_type`, a non-positive value, a `start_date` in the past, or a stock level that is not a whole number from 0 to 1,000,000. |
 | `401` | Missing or invalid API key. |
 | `403` | Not a secret **test** key — Sandbox tools require `tybrite_sk_test_*`. |
-| `404` | No matching sandbox webhook event to replay, or no sandbox customer with that id. |
+| `404` | No matching sandbox webhook event to replay, no sandbox customer with that id, a variant that does not belong to your store, or no stock level set for that variant. |
 | `409` | That sandbox customer already has a B2B buyer account. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |
