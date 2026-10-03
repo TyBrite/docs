@@ -56,6 +56,13 @@ environments — a test key reads the merchant's *real* catalog, so you can buil
 storefront against actual products. It just gets no production *transactional* data tied to those
 reads: a test key sees only the orders, customers, and carts created in sandbox.
 
+**Stock levels are read-only to a test key.** A sandbox order goes through the full order lifecycle —
+it is created, marked paid, and settles any stock it reserved at checkout — and reports success as a
+live order does, but it never lowers the merchant's real stock count. Reservations made with a test
+key count only against other sandbox reservations, so sandbox checkouts never hold back stock from
+real customers. A product's availability in sandbox therefore always reflects the merchant's live
+stock.
+
 <Warning>
   When you initialize a payment with a test key, the underlying payment provider is **forced into test
   mode automatically** — regardless of the store's live payment settings. A sandbox checkout can never
