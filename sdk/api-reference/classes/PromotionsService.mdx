@@ -21,7 +21,7 @@ The `PromotionsService` class (accessed via `client.promotions`) handles active 
 
 ### `listPromotions`
 
-Retrieve a list of promotions based on their lifecycle status. This is useful for building a "Deals" or "Coupons" page on your storefront.
+Retrieve the promotions running on the storefront today. This is useful for building a "Deals" or "Coupons" page. Only live promotions are returned: `status` defaults to `active`, and any other accepted value returns an empty list.
 
 ```typescript
 const { promotions, pagination } = await client.promotions.listPromotions({
@@ -380,7 +380,7 @@ A marketplace key may read and calculate a single merchant's promotions this way
 
 ## Response Codes
 
-Every method here accepts both **publishable** and **secret** keys, and `calculatePromotionDiscount` / `calculateBestPromotion` return `200` (they compute a result, they don't create a resource). Marketplace keys may call `getPromotion`, `calculatePromotionDiscount`, and `calculateBestPromotion` (each with `storeId`) but not `listPromotions`. The `status` query parameter is validated against a strict enum.
+Every method here accepts both **publishable** and **secret** keys, and `calculatePromotionDiscount` / `calculateBestPromotion` return `200` (they compute a result, they don't create a resource). Marketplace keys may call `getPromotion`, `calculatePromotionDiscount`, and `calculateBestPromotion` (each with `storeId`) but not `listPromotions`. The `status` query parameter is validated against a strict enum. A promotion that is not live (a draft, a paused promotion, or one not yet started) is not returned by `listPromotions`, and `getPromotion` answers `404` for it.
 
 | Code | Meaning |
 | :--- | :--- |
@@ -388,6 +388,6 @@ Every method here accepts both **publishable** and **secret** keys, and `calcula
 | `400` | Invalid `status` enum (must be one of `active`, `inactive`, `scheduled`, `expired`), a malformed query parameter, a calculation request with a missing/invalid `cart` (each line needs `product_id`, `quantity`, `price`), or a marketplace call missing `store_id`. |
 | `401` | Invalid or missing API key. |
 | `403` | A marketplace key tried to list promotions, or write. Use `getPromotion` / the calculate methods with `store_id` instead. |
-| `404` | Promotion not found (`getPromotion` and `calculatePromotionDiscount`). `listPromotions` returns `200` with an empty array; `calculateBestPromotion` returns `200` with `promotion: null` when nothing matches. |
+| `404` | Promotion not found (`getPromotion` and `calculatePromotionDiscount`), or not live (`getPromotion`). `listPromotions` returns `200` with an empty array; `calculateBestPromotion` returns `200` with `promotion: null` when nothing matches. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |
