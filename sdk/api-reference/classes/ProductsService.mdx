@@ -114,7 +114,8 @@ const { products } = await personalized.products.listProducts({
 Pass `b2b: true` together with a wholesale buyer's session token and each product is priced against
 that buyer's own agreement rather than at the shelf price, with the page narrowed to the range they
 are allowed to order from. A request without a buyer credential — or from a customer who is not a
-wholesale buyer on this store — returns the ordinary retail page, so it never fails the request.
+wholesale buyer on this store — returns the store's standard listing at list prices and the full range,
+unnarrowed. The request is not refused.
 
 Each priced row carries `moq`, the smallest quantity that may be ordered, and `price_source`, which
 says which arrangement set the price: `assigned` for a list assigned to that buyer, `group` for
