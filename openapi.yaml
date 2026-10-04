@@ -1329,25 +1329,52 @@ paths:
                           display_name: Stripe
                           type: redirect
                     shipping:
+                      configured: true
+                      delivers: true
+                      delivers_everywhere: true
+                      offers_pickup: true
                       zones:
-                        total: 4
+                        total: 3
                         list:
+                          - name: Lower 48 states
+                            type: zone
+                            coverage: region
+                            countries:
+                              - US
+                            delivery_fee: 12.99
+                            free_threshold: 200
                           - name: Local (within 10 km)
                             type: distance_tier
+                            coverage: distance
+                            countries: []
                             delivery_fee: 5.99
                             free_threshold: 75
                           - name: Metro (10–50 km)
                             type: distance_tier
+                            coverage: distance
+                            countries: []
                             delivery_fee: 9.99
                             free_threshold: 150
-                          - name: Regional (50–500 km)
-                            type: distance_tier
-                            delivery_fee: 14.99
-                            free_threshold: 250
-                          - name: National (500 km+)
-                            type: distance_tier
-                            delivery_fee: 24.99
-                            free_threshold: 400
+                      everywhere_else:
+                        refuse: false
+                        delivery_fee: 29.99
+                        free_delivery_threshold: null
+                      pickup_locations:
+                        - id: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+                          name: Brooklyn store
+                          address:
+                            line1: 145 Atlantic Avenue
+                            city: Brooklyn
+                            state: NY
+                            postal_code: '11201'
+                            country: US
+                          latitude: 40.6907
+                          longitude: -73.9956
+                          hours: Mon–Sat 10:00–19:00
+                          pickup_fee: 0
+                          minimum_order: null
+                          ready_text: Ready in 2 hours
+                          instructions: Collect from the counter at the back of the store.
                       has_free_shipping_threshold: true
                     cms:
                       posts:
@@ -32412,6 +32439,86 @@ components:
         version:
           type: string
           example: 1.0.0
+    PickupLocation:
+      type: object
+      description: A store location where shoppers can collect an order instead of having it delivered.
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+          description: The location's id. Pass it as `pickup_location_id` on `POST /v1/orders`.
+        name:
+          type: string
+          example: Brooklyn store
+        address:
+          type:
+            - object
+            - 'null'
+          description: The location's street address.
+          properties:
+            line1:
+              type: string
+              example: 145 Atlantic Avenue
+            line2:
+              type:
+                - string
+                - 'null'
+            city:
+              type: string
+              example: Brooklyn
+            state:
+              type: string
+              example: NY
+            postal_code:
+              type: string
+              example: '11201'
+            country:
+              type: string
+              example: US
+        latitude:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: 40.6907
+        longitude:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: -73.9956
+        hours:
+          type:
+            - string
+            - 'null'
+          example: Mon–Sat 10:00–19:00
+          description: Opening hours, as the store wrote them.
+        pickup_fee:
+          type: number
+          format: float
+          minimum: 0
+          example: 0
+          description: The charge for collecting here, in the store's currency.
+        minimum_order:
+          type:
+            - number
+            - 'null'
+          format: float
+          example: null
+          description: The smallest order total accepted for pickup here, or null when there is none.
+        ready_text:
+          type:
+            - string
+            - 'null'
+          example: Ready in 2 hours
+          description: When an order is usually ready to collect, as the store wrote it.
+        instructions:
+          type:
+            - string
+            - 'null'
+          example: Collect from the counter at the back of the store.
+          description: What the shopper does on arrival.
     StoreContact:
       type: object
       description: How a shopper reaches the store. `email` and `phone` fall back to the store's own contact details when the merchant has not set dedicated support ones.
@@ -32969,8 +33076,41 @@ components:
                       - stk_push
         shipping:
           type: object
-          description: Shipping configuration (optional, included when requested)
+          description: 'How the store delivers and where it offers pickup (optional, included when requested). The flags summarise the rates below: a store with no zones, distance rates or "everywhere else" choice charges nothing for delivery through these rates, so it is `configured: false` and still `delivers`. Exact prices for an address come from `POST /v1/shipping/calculate`.'
           properties:
+            configured:
+              type: boolean
+              description: True when the store has any delivery zone, distance rate, or "everywhere else" choice.
+            delivers:
+              type: boolean
+              description: True when the store delivers to at least some addresses.
+            delivers_everywhere:
+              type: boolean
+              description: True when an address outside every zone and distance rate is still delivered to — at the "everywhere else" rate, or for nothing when the store has no rates at all.
+            offers_pickup:
+              type: boolean
+              description: True when at least one active location offers in-store pickup.
+            everywhere_else:
+              type:
+                - object
+                - 'null'
+              description: The rate for any address outside the zones and distance rates. Null when the store has not set one. When `refuse` is true the store does not deliver outside its zones and distance rates, and both amounts are null.
+              properties:
+                refuse:
+                  type: boolean
+                delivery_fee:
+                  type:
+                    - number
+                    - 'null'
+                free_delivery_threshold:
+                  type:
+                    - number
+                    - 'null'
+            pickup_locations:
+              type: array
+              description: The store's locations that offer pickup, primary location first. Empty when the store does not offer pickup.
+              items:
+                $ref: '#/components/schemas/PickupLocation'
             zones:
               type: object
               properties:
@@ -32979,7 +33119,7 @@ components:
                   description: Number of shipping rules — the combined count of custom delivery zones and distance-based pricing tiers (equals `list.length`).
                 list:
                   type: array
-                  description: Both custom polygon delivery zones and distance-based pricing tiers, each tagged with its `type`.
+                  description: The store's active delivery zones and distance-based pricing tiers, each tagged with its `type`.
                   items:
                     type: object
                     properties:
@@ -32990,7 +33130,19 @@ components:
                         enum:
                           - zone
                           - distance_tier
-                        description: '`zone` = a custom polygon delivery zone; `distance_tier` = a distance-based pricing tier.'
+                        description: '`zone` = a delivery zone; `distance_tier` = a distance-based pricing tier.'
+                      coverage:
+                        type: string
+                        enum:
+                          - area
+                          - region
+                          - distance
+                        description: '`area` = a zone drawn on a map; `region` = a zone covering whole countries or postcode prefixes; `distance` = a distance tier.'
+                      countries:
+                        type: array
+                        items:
+                          type: string
+                        description: The ISO country codes a `region` zone covers. Empty for other entries.
                       delivery_fee:
                         type: number
                       free_threshold:
@@ -32999,6 +33151,7 @@ components:
                           - 'null'
             has_free_shipping_threshold:
               type: boolean
+              description: True when any zone, distance rate or the "everywhere else" rate is free above an order amount.
         cms:
           type: object
           description: CMS content overview (optional, included when requested)
@@ -36518,86 +36671,6 @@ components:
           example:
             - '112'
             - '113'
-    PickupLocation:
-      type: object
-      description: A store location where shoppers can collect an order instead of having it delivered.
-      properties:
-        id:
-          type: string
-          format: uuid
-          example: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
-          description: The location's id. Pass it as `pickup_location_id` on `POST /v1/orders`.
-        name:
-          type: string
-          example: Brooklyn store
-        address:
-          type:
-            - object
-            - 'null'
-          description: The location's street address.
-          properties:
-            line1:
-              type: string
-              example: 145 Atlantic Avenue
-            line2:
-              type:
-                - string
-                - 'null'
-            city:
-              type: string
-              example: Brooklyn
-            state:
-              type: string
-              example: NY
-            postal_code:
-              type: string
-              example: '11201'
-            country:
-              type: string
-              example: US
-        latitude:
-          type:
-            - number
-            - 'null'
-          format: double
-          example: 40.6907
-        longitude:
-          type:
-            - number
-            - 'null'
-          format: double
-          example: -73.9956
-        hours:
-          type:
-            - string
-            - 'null'
-          example: Mon–Sat 10:00–19:00
-          description: Opening hours, as the store wrote them.
-        pickup_fee:
-          type: number
-          format: float
-          minimum: 0
-          example: 0
-          description: The charge for collecting here, in the store's currency.
-        minimum_order:
-          type:
-            - number
-            - 'null'
-          format: float
-          example: null
-          description: The smallest order total accepted for pickup here, or null when there is none.
-        ready_text:
-          type:
-            - string
-            - 'null'
-          example: Ready in 2 hours
-          description: When an order is usually ready to collect, as the store wrote it.
-        instructions:
-          type:
-            - string
-            - 'null'
-          example: Collect from the counter at the back of the store.
-          description: What the shopper does on arrival.
     ShippingBasketItem:
       type: object
       description: One line of the basket, by variant.

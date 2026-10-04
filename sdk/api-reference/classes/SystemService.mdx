@@ -127,7 +127,7 @@ const freshData = await client.system.getStoreInfo({ cache: false });
 | `pricing` | Dynamic pricing flags and customer tier configurations. |
 | `promotions` | Active discounts and campaign summaries. |
 | `payments` | Merchant's active payment providers and methods. |
-| `shipping` | Delivery zones and fee thresholds. |
+| `shipping` | Whether and where the store delivers, its rates and free-delivery thresholds, and its pickup locations. |
 | `cms` | Number of published posts and lookbooks. |
 | `features` | Platform capability flags (AI, Currency, etc.). |
 | `custom_fields` | Extra fields the merchant has added to their own records, grouped by what they describe. |
@@ -229,6 +229,55 @@ document is currently published, so footer links can be decided without a furthe
 
 Addresses, registration and tax numbers, custom entries and each document's text are available
 from the [Store service](/sdk/api-reference/classes/StoreService).
+
+#### Shipping
+
+The `shipping` section describes how the store gets an order to a shopper, without pricing a particular
+address. `delivers` is true when the store delivers anywhere, and `delivers_everywhere` when an address
+outside every zone and distance rate is still delivered to — at the `everywhere_else` rate, or for
+nothing when the store has set no rates at all (`configured: false`). A store that delivers everywhere
+at one flat rate has an empty `zones.list` and an `everywhere_else` rate. When `everywhere_else.refuse`
+is true the store delivers only inside its zones and distance rates.
+
+Each entry in `zones.list` has a `coverage`: `area` for a zone drawn on a map, `region` for a zone
+covering whole countries or postcode prefixes (listed in `countries`), and `distance` for a distance
+rate. `pickup_locations` lists where an order can be collected, with each location's pickup fee and
+minimum order. The price for a specific address and basket comes from
+[`calculateShipping`](/sdk/api-reference/classes/ShippingService#calculateshipping).
+
+```json Response
+{
+  "shipping": {
+    "configured": true,
+    "delivers": true,
+    "delivers_everywhere": true,
+    "offers_pickup": true,
+    "zones": {
+      "total": 2,
+      "list": [
+        { "name": "Lower 48 states", "type": "zone", "coverage": "region", "countries": ["US"], "delivery_fee": 12.99, "free_threshold": 200 },
+        { "name": "Local (within 10 km)", "type": "distance_tier", "coverage": "distance", "countries": [], "delivery_fee": 5.99, "free_threshold": 75 }
+      ]
+    },
+    "everywhere_else": { "refuse": false, "delivery_fee": 29.99, "free_delivery_threshold": null },
+    "pickup_locations": [
+      {
+        "id": "3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f",
+        "name": "Brooklyn store",
+        "address": { "line1": "145 Atlantic Avenue", "city": "Brooklyn", "state": "NY", "postal_code": "11201", "country": "US" },
+        "latitude": 40.6907,
+        "longitude": -73.9956,
+        "hours": "Mon–Sat 10:00–19:00",
+        "pickup_fee": 0,
+        "minimum_order": null,
+        "ready_text": "Ready in 2 hours",
+        "instructions": "Collect from the counter at the back of the store."
+      }
+    ],
+    "has_free_shipping_threshold": true
+  }
+}
+```
 
 #### Category and subcategory counts
 
