@@ -198,9 +198,9 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
 
 *   **`202 Accepted` under heavy load.** Some deployments defer order writes during a sustained order surge to keep the storefront responsive — the order is accepted and created a moment later rather than synchronously. On those deployments, and only while under that load, `createOrder` returns **`202`** with `{ status: 'accepted', idempotency_key, message }` and **no order in the body**. Treat it as success-in-progress: fetch the order once it exists by replaying `createOrder` with the same `Idempotency-Key` (which returns `200` with the order), or by polling `getOrder` if you have the id. Below that load — and on deployments that do not defer writes — creation is synchronous and returns `201` as above. A client that cannot handle a `202` (does not poll) should only be used against deployments where deferral is off.
 
-*   **Required body fields**: `customer_email`, `customer_name`, `billing_address`, `shipping_address`, `subtotal`, `total_amount`, `payment_method`, and a non-empty `items` array of at most 100 lines (more answers `400`). Each item must include **`variant_id` or `product_id`** (at least one).
+*   **Required body fields**: `customer_email`, `customer_name`, `billing_address`, `shipping_address` (except on a pickup order), `subtotal`, `total_amount`, `payment_method`, and a non-empty `items` array of at most 100 lines (more answers `400`). Each item must include **`variant_id` or `product_id`** (at least one).
 *   **`variant_id` vs `product_id` per item** — prefer **`variant_id`** (the exact variant the shopper chose; pass the same one you put in the cart straight through). If you send only `product_id`, the order is placed against the product's **default** variant — fine for single-variant products, but for a multi-variant product it may not be the one the shopper selected. Sending both is fine: `variant_id` wins and `product_id` is resolved from it. See [Products and variants — which ID to send where](/concepts#products-and-variants-which-id-to-send-where) for the full picture.
-*   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `shipping_rate_id` + `shipping_rate_source` (a carrier option from `calculateShipping`), `shipping_parcel` (required with `shipping_rate_source: custom`), `shipping_address_from`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement). On a `pending` order the reservation ids are kept with the order: they are committed when the order is marked paid and released when it is cancelled or its payment fails. Only holds on the order's own items are committed, and at most 100 ids are accepted.
+*   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `shipping_rate_id` + `shipping_rate_source` (a carrier option from `calculateShipping`), `shipping_option_id` (a delivery or pickup option from `calculateShipping`), `fulfillment_method` + `pickup_location_id` (collection at one of the store's locations), `shipping_parcel` (required with `shipping_rate_source: custom`), `shipping_address_from`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement). On a `pending` order the reservation ids are kept with the order: they are committed when the order is marked paid and released when it is cancelled or its payment fails. Only holds on the order's own items are committed, and at most 100 ids are accepted.
 *   **`currency`** — the ISO 4217 code the order is priced in. Defaults to the store's default storefront currency. Set it when you present prices in a currency the shopper picked, so the order is recorded in the currency they actually paid in.
 *   **`order_number`** — your own order reference. Galactic Core generates one when you omit it; pass your own to keep numbering aligned with a system you already run.
 *   **Attribution (optional)**: pass `attribution` to record where the sale came from, so it is credited to the right traffic source in the merchant's reports: `{ session_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, referrer }`, plus `content_id` + `content_type` to close the loop on a shopper who arrived from a blog post or lookbook. `utm_term` and `utm_content` carry the paid keyword and the creative, so a merchant can compare one ad variant against another rather than only one source against another. The same fields are also accepted at the top level of the body if you already send them that way. Promotions are recorded from the server-validated result rather than what you pass, so the record always reflects the discount the shopper actually received.
@@ -210,6 +210,9 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
     *   Otherwise, when the store has delivery rates and the destination is known (`shipping_latitude` + `shipping_longitude`, or a `shipping_address` that can be located), the amount must equal the store's charge for that address, with free-delivery thresholds measured against the line totals after `discount_amount`; a mismatch returns `400 price_mismatch`, and a destination the store does not deliver to returns `400 shipping_not_deliverable`.
     *   A store with no delivery rates accepts the amount sent, as does an order whose destination cannot be located; such an order is recorded as not checked.
     *   When shipping cannot be checked because the service is unreachable, the order is not created and the response is `502 shipping_unavailable`.
+*   **Delivery options and pickup**: `calculateShipping` returns `options[]` — the store's delivery options and pickup locations. Pass the chosen option's `id` as `shipping_option_id`.
+    *   **Delivery** (`fulfillment_method: 'delivery'`, the default): `place` is standard delivery, priced as above; a named option (`opt:<id>`, such as Express) must be one the order qualifies for, at its own fee for the address and basket. An option the order does not qualify for returns `400 shipping_option_unavailable`; an amount that differs from its fee returns `400 price_mismatch`.
+    *   **Pickup** (`fulfillment_method: 'pickup'`): send the location's `id` as `pickup_location_id`, or omit it to use the store's primary pickup location. `shipping_address` is not needed — the location's address is stored as the order's shipping address, with `type: 'pickup'` — and tax is calculated at the location. `shipping_amount` must equal the location's pickup fee, or the order is refused with `400 price_mismatch`. A location that is not one of the store's pickup locations, or an order below the location's minimum, returns `400 pickup_unavailable`.
 *   **Store credit**: pass `apply_store_credit: true` (optionally with `store_credit_amount` to cap it) to spend the customer's redeemable store-credit balance against this order. Requires a `customer_id`. The amount actually applied — capped at the order total and the available balance — is returned as `store_credit_applied`.
 *   **Ad conversion tracking (optional)**: if the shopper arrived from a paid ad, pass the click id — **`gclid`** (Google) and/or **`fbclid`** (Meta / Facebook & Instagram) — and their privacy-consent state as **`ad_consent: { ad_user_data, ad_personalization, jurisdiction }`** (each consent value `'granted' | 'denied' | 'unspecified'`; `jurisdiction` is the shopper's region, e.g. `EEA`/`UK`/`CH`/`US`). On a paid order this lets the merchant's advertising get credit for the sale on each platform. Galactic Core records the consent state with the order and only reports the conversion to the ad platform where the shopper's consent and region allow it — so always forward the true captured values (never guess). The Meta conversion is sent server-side and de-duplicated against the storefront's Meta Pixel using the order id, so it counts even when the browser blocks the Pixel. A storefront should wire this alongside a consent banner for EEA, UK, and Swiss visitors. The click id is also kept on the order itself, so the merchant's own reports can attribute revenue and profit to the ad that earned it rather than reading it back from the ad platform.
 *   Missing a required field returns `400` with a message naming the field.
@@ -243,6 +246,29 @@ const order = result.order;
 // result.post_processing_warnings is undefined OR present with details
 ```
 
+A pickup order names the location and the option instead of a shipping address:
+
+```typescript
+const pickup = await client.orders.createOrder({
+  idempotencyKey: `order-${Date.now()}-def456`,
+  xTimestamp: Math.floor(Date.now() / 1000),
+  xSignature: hmacSignature,
+  requestBody: {
+    customer_email: 'john.doe@example.com',
+    customer_name: 'John Doe',
+    billing_address: { street: '350 Fifth Avenue', city: 'New York', state: 'NY', zip: '10118', country: 'US' },
+    fulfillment_method: 'pickup',
+    pickup_location_id: '3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f',
+    shipping_option_id: 'pickup:3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f',
+    shipping_amount: 0, // the location's pickup fee
+    subtotal: 598,
+    total_amount: 651.08,
+    payment_method: 'card',
+    items: [{ variant_id: 'variant-uuid', quantity: 2, unit_price: 299, total_price: 598 }]
+  }
+});
+```
+
 ```json Response
 {
   "order": {
@@ -262,6 +288,10 @@ const order = result.order;
     "shipping_amount": 5.99,
     "discount_amount": 0,
     "total_amount": 657.07,
+    "fulfillment_method": "delivery",
+    "pickup_location_id": null,
+    "fulfillment_location_id": null,
+    "shipping_option_id": "place",
     "payment_method": "card",
     "payment_status": "paid",
     "order_status": "pending",
@@ -367,6 +397,8 @@ moved. These cover the stretch between payment and dispatch (preparation, checks
 shopper otherwise hears nothing about, so an order-status page reads as a timeline rather than a
 single status word. Oldest first. Internal notes are never included.
 
+How the order is received is on the order itself: `fulfillment_method` is `delivery` or `pickup`; `pickup_location_id` names the collection location on a pickup order; `fulfillment_location_id` is the store location the order is fulfilled from (the pickup location, or the location deliveries leave from when the store delivers from its nearest location); and `shipping_option_id` is the option the order was placed with. On a pickup order `shipping_address` is the location's address, with `type: 'pickup'`. `shipping_metadata.shipping_source` records what the shipping charge was checked against — `zone_tier`, `fallback`, `pickup`, `shippo`, `custom`, `not_configured` or `unverified` — and `shipping_metadata.shipping_rule` the rule that priced it (`zone`, `distance`, `fallback` or `pickup`).
+
 ```typescript
 for (const note of order.status_notes ?? []) {
   console.log(note.created_at, note.to_status, note.body);
@@ -394,6 +426,11 @@ for (const note of order.status_notes ?? []) {
   "shipping_amount": 5.99,
   "discount_amount": 0,
   "total_amount": 657.07,
+  "fulfillment_method": "delivery",
+  "pickup_location_id": null,
+  "fulfillment_location_id": null,
+  "shipping_option_id": "place",
+  "shipping_metadata": { "shipping_source": "zone_tier", "shipping_rule": "distance" },
   "payment_method": "card",
   "payment_status": "paid",
   "order_status": "pending",
@@ -516,7 +553,7 @@ Transitioning an order to the **paid** state automatically triggers:
 | `400` | All | Invalid request — bad pagination/filter value, missing `total_amount` / `payment_method` / `items`, an item with neither `variant_id` nor `product_id`, or invalid tax/subtotal for a tax-exclusive store. |
 | `401` | All | Invalid API key, or invalid / expired HMAC signature. |
 | `403` | Read & write | Publishable key used on an order endpoint. Orders are secret-key only. |
-| `400` | `POST /v1/orders` | `price_mismatch` (a price, tax, shipping or total that does not match the server's figure), `shipping_rate_invalid` (a carrier option that cannot be used), `shipping_not_deliverable` (the store does not deliver to the address). |
+| `400` | `POST /v1/orders` | `price_mismatch` (a price, tax, shipping or total that does not match the server's figure), `shipping_rate_invalid` (a carrier option that cannot be used), `shipping_not_deliverable` (the store does not deliver to the address), `shipping_option_unavailable` (the chosen delivery option does not apply to the order), `pickup_unavailable` (the store does not offer pickup at the location, or the order is below its minimum). |
 | `404` | `GET /v1/orders/{id}`, `PATCH`, `POST` | Order not found, or a `product_id` referenced in `items` not found. |
 | `409` | `POST /v1/orders` | Idempotency key reused with a different payload, or an order-number collision between two orders created in the same instant — retry the request. |
 | `409` | `PATCH /v1/orders/{id}` | `invalid_transition` — the status change is not allowed from the order's current state. `order_changed` — another update changed the order first. The order is left as it was. |

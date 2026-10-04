@@ -3,26 +3,32 @@ title: "Shipping & Logistics"
 description: "Reference for the ShippingService class in the Tybrite SDK."
 ---
 
-The `ShippingService` class (accessed via `client.shipping`) prices delivery for an address, lists a store's delivery rates, returns live carrier options, and tracks parcels.
+The `ShippingService` class (accessed via `client.shipping`) prices delivery for an address, lists a store's delivery rates and pickup locations, returns live carrier options, and tracks parcels.
 
 ## How an address is priced
 
 A store's delivery rates are its delivery zones, its distance rates and its "everywhere else" rate. An address is priced by:
 
-1. **The first zone that contains it** — lowest `priority` first, then the zone created first.
+1. **The first zone that contains it** — lowest `priority` first, then the zone created first. A zone is either an area drawn on a map (`match_kind: area`) or a set of countries, optionally narrowed to postcode prefixes (`match_kind: region`).
 2. **Otherwise, the distance rate whose range contains its distance from the store.** A range includes its `min_distance_meters` and stops just before its `max_distance_meters`, so `0–10 km` and `10–50 km` share the 10 km point without overlapping.
-3. **Otherwise, the "everywhere else" rate.** When the store has zones or distance rates but no "everywhere else" rate, an address outside them is not delivered to, and `calculateShipping` answers `400 shipping_not_deliverable`.
+3. **Otherwise, the "everywhere else" rate.** When the store has zones or distance rates but no "everywhere else" rate, or has chosen not to deliver outside them (`everywhere_else.refuse`), an address outside them is not delivered to. `calculateShipping` then returns only the store's pickup options, or answers `400 shipping_not_deliverable` when the store offers no pickup.
 
 A matched rate is free when the order reaches its free-delivery threshold. A store with no delivery rates at all charges nothing through them (`applied_rule: none`, `configured: false`). Every amount is in the store's own currency, returned as `currency`.
+
+## Delivery options and pickup
+
+A matched rate is the order's **standard delivery** option. The store can add named options to the same rate — Express, Next day — each with its own fee, estimate and conditions such as an order-total range or a parcel weight range. A store can also offer **pickup** at any of its locations, each with its own pickup fee, an optional minimum order, and a note on when orders are ready.
+
+The store can set rules for product categories: a surcharge per order or per item, delivery only to nearby addresses (the store's map zones and distance rates, not its country-wide zones or "everywhere else" rate), or collection only. These rules, and options that depend on parcel weight, apply when the basket's lines are sent to `calculateShipping` as `items`.
 
 ## Methods
 
 ### `getShippingZones`
 
-Retrieve the store's delivery rates: active distance rates, active delivery zones, and the "everywhere else" rate. Useful for showing delivery coverage or likely costs early in the shopping journey.
+Retrieve the store's delivery rates and pickup locations: active distance rates, active delivery zones, the "everywhere else" rate, and the locations where shoppers can collect an order. Useful for showing delivery coverage, likely costs, or a "collect in store" option early in the shopping journey.
 
 ```typescript
-const { currency, pricing_tiers, delivery_zones, everywhere_else } = await client.shipping.getShippingZones();
+const { currency, pricing_tiers, delivery_zones, everywhere_else, pickup_locations } = await client.shipping.getShippingZones();
 ```
 
 ```json Response
@@ -32,18 +38,34 @@ const { currency, pricing_tiers, delivery_zones, everywhere_else } = await clien
     { "tier_name": "Local (within 10 km)", "min_distance_meters": 0, "max_distance_meters": 10000, "delivery_fee": 5.99, "free_delivery_threshold": 75, "is_active": true, "priority": 1 },
     { "tier_name": "Metro (10–50 km)", "min_distance_meters": 10000, "max_distance_meters": 50000, "delivery_fee": 9.99, "free_delivery_threshold": 150, "is_active": true, "priority": 2 }
   ],
-  "delivery_zones": [],
-  "everywhere_else": { "delivery_fee": 29.99, "free_delivery_threshold": null }
+  "delivery_zones": [
+    { "zone_name": "Lower 48 states", "delivery_fee": 12.99, "free_delivery_threshold": 200, "is_active": true, "priority": 1, "color": "#3B82F6", "match_kind": "region", "countries": ["US"], "postcodes": [] }
+  ],
+  "everywhere_else": { "refuse": false, "delivery_fee": 29.99, "free_delivery_threshold": null },
+  "pickup_locations": [
+    {
+      "id": "3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f",
+      "name": "Brooklyn store",
+      "address": { "line1": "145 Atlantic Avenue", "city": "Brooklyn", "state": "NY", "postal_code": "11201", "country": "US" },
+      "latitude": 40.6907,
+      "longitude": -73.9956,
+      "hours": "Mon–Sat 10:00–19:00",
+      "pickup_fee": 0,
+      "minimum_order": null,
+      "ready_text": "Ready in 2 hours",
+      "instructions": "Collect from the counter at the back of the store."
+    }
+  ]
 }
 ```
 
-`everywhere_else` is `null` when the store has none. The response is cached for up to 60 seconds and carries an ETag; `calculateShipping` and order creation always read the current rates.
+`everywhere_else` is `null` when the store has none. When `refuse` is `true`, the store does not deliver outside its zones and distance rates, and both amounts are `null`. A `region` zone covers the addresses in its `countries`; when `postcodes` is not empty, only postcodes beginning with one of those prefixes. `pickup_locations` lists the primary location first and is empty when the store does not offer pickup. The response is cached for up to 60 seconds and carries an ETag; `calculateShipping` and order creation always read the current rates.
 
 ---
 
 ### `calculateShipping`
 
-Calculate the delivery charge for an address and order total.
+Calculate the ways a shopper can receive an order — the store's delivery options and pickup locations — priced for their address and basket.
 
 <CodeGroup>
 
@@ -68,6 +90,21 @@ const shipping = await client.shipping.calculateShipping({
 });
 ```
 
+```typescript With Basket Lines
+// Country, postcode and the basket's lines let country-wide zones, weight-based
+// options and the store's category rules apply.
+const shipping = await client.shipping.calculateShipping({
+  requestBody: {
+    latitude: 40.6782,
+    longitude: -73.9442,
+    country_code: "US",
+    postal_code: "11225",
+    order_total: 50,
+    items: [{ variant_id: "15ca5a86-4b1b-47c3-8762-a1aa43941565", quantity: 2 }]
+  }
+});
+```
+
 </CodeGroup>
 
 ```json Response
@@ -83,7 +120,34 @@ const shipping = await client.shipping.calculateShipping({
   "reason": "Metro (10–50 km)",
   "applied_rule": "distance",
   "rate_source": "tier",
-  "coordinates": { "latitude": 40.6782, "longitude": -73.9442 }
+  "coordinates": { "latitude": 40.6782, "longitude": -73.9442, "country_code": "US", "postal_code": "11225" },
+  "deliverable": true,
+  "restriction": "none",
+  "options": [
+    { "id": "place", "method": "delivery", "name": "Standard delivery", "fee": 9.99, "currency": "USD", "is_free": false, "estimate": null, "available": true, "free_threshold": 150 },
+    { "id": "opt:9a1f3c2e-5b7d-4e8a-a2c4-6d8e0f1a3b5c", "method": "delivery", "name": "Express", "fee": 19.99, "currency": "USD", "is_free": false, "estimate": "Next business day", "available": true },
+    {
+      "id": "pickup:3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f",
+      "method": "pickup",
+      "name": "Pickup at Brooklyn store",
+      "fee": 0,
+      "currency": "USD",
+      "is_free": true,
+      "estimate": "Ready in 2 hours",
+      "available": true,
+      "location": {
+        "id": "3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f",
+        "name": "Brooklyn store",
+        "address": { "line1": "145 Atlantic Avenue", "city": "Brooklyn", "state": "NY", "postal_code": "11201", "country": "US" },
+        "latitude": 40.6907,
+        "longitude": -73.9956,
+        "hours": "Mon–Sat 10:00–19:00",
+        "instructions": "Collect from the counter at the back of the store.",
+        "distance_meters": 3412.57
+      }
+    }
+  ],
+  "fulfilled_from": null
 }
 ```
 
@@ -93,11 +157,23 @@ const shipping = await client.shipping.calculateShipping({
   the matched rate's free-delivery threshold.
 </Note>
 
+**Request Fields:**
+
+| Field | Description |
+| :--- | :--- |
+| `latitude` / `longitude` | The shopper's location. Send these, or `place_name`. |
+| `place_name` | An address or place, resolved to a location. |
+| `country_code` | Optional ISO 3166-1 alpha-2 country code. Matches country-wide zones; takes precedence over the country found from the location. |
+| `postal_code` | Optional postcode, at most 16 characters. Matches zones narrowed to postcode prefixes; takes precedence over the postcode found from the location. |
+| `order_total` | The merchandise after discounts, before tax and shipping. Defaults to `0`. |
+| `items` | Optional basket lines, `{ variant_id, quantity }`, at most 500. With them, weight-based options and the store's category rules apply. |
+| `address_to` / `address_from` / `parcel` | For live carrier options (below). |
+
 **Response Fields:**
 
 | Field | Description |
 | :--- | :--- |
-| `fee` | The delivery charge, in `currency`. `null` only on a carrier-options-only request. |
+| `fee` | The standard delivery charge (the `place` option's fee), in `currency`. `null` on a carrier-options-only request, and when the store does not deliver to the address but offers pickup. |
 | `currency` | The currency of `fee` and `free_threshold` — the store's own. |
 | `applied_rule` | Which rate priced the address: `zone`, `distance`, `fallback` (the "everywhere else" rate) or `none` (no delivery rates, or a carrier-options-only request). |
 | `rate_source` | Which source produced the result: `zone`, `tier`, `fallback`, `shippo`, `custom` or `none`. |
@@ -106,7 +182,59 @@ const shipping = await client.shipping.calculateShipping({
 | `configured` | Whether the store has any delivery rates. |
 | `zone_name` / `tier_name` | The zone or distance rate that priced the address, when one did. |
 | `distance_meters` | Distance from the store to the address, when it was measured. |
-| `coordinates` | The resolved location, including when you sent a `place_name`. |
+| `coordinates` | The resolved location, including when you sent a `place_name`, with the country and postcode used to match zones when known. |
+| `deliverable` | `false` when the store does not deliver to the address — because it is outside the delivery area, or an item in the basket can only be collected — and only pickup options are returned. |
+| `restriction` | A limit from the store's category rules: `none`, `local_only` (map zones and distance rates only) or `pickup_only` (collection only). |
+| `options` | Every way the shopper can receive the order: the delivery options first, then the pickup locations, nearest first. Each carries `id`, `method` (`delivery` or `pickup`), `name`, `fee`, `currency`, `is_free`, `estimate`, `available`, and where they apply `free_threshold`, `minimum_order` and, for pickup, `location`. |
+| `fulfilled_from` | When the store delivers from whichever of its locations is nearest the shopper, that location (`id`, `name`, `distance_meters`); distance rates are measured from it. Otherwise `null`. |
+
+Option ids take three forms: `place` is the standard delivery option, `opt:<id>` is a named option the store added to the same rate, and `pickup:<location id>` is collection at that location. An option with `available: false` does not apply to this basket — usually a pickup location whose `minimum_order` the order has not reached — and cannot be ordered with.
+
+To order with an option, pass its `id` as `shipping_option_id` on `createOrder`, with `shipping_amount` equal to its `fee`. For a pickup option, also send `fulfillment_method: 'pickup'` and the location's `id` as `pickup_location_id`; the order then needs no shipping address.
+
+When the store does not deliver to the address but offers pickup, the response is `200` with `deliverable: false`, `fee: null`, `applied_rule: none` and only the pickup options:
+
+```json Response
+{
+  "fee": null,
+  "currency": "USD",
+  "zone_name": null,
+  "tier_name": null,
+  "distance_meters": null,
+  "is_free": false,
+  "free_threshold": null,
+  "configured": true,
+  "reason": "This address is outside the delivery area",
+  "applied_rule": "none",
+  "coordinates": { "latitude": 41.8781, "longitude": -87.6298 },
+  "rate_source": "none",
+  "deliverable": false,
+  "restriction": "none",
+  "options": [
+    {
+      "id": "pickup:3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f",
+      "method": "pickup",
+      "name": "Pickup at Brooklyn store",
+      "fee": 0,
+      "currency": "USD",
+      "is_free": true,
+      "estimate": "Ready in 2 hours",
+      "available": true,
+      "location": {
+        "id": "3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f",
+        "name": "Brooklyn store",
+        "address": { "line1": "145 Atlantic Avenue", "city": "Brooklyn", "state": "NY", "postal_code": "11201", "country": "US" },
+        "latitude": 40.6907,
+        "longitude": -73.9956,
+        "hours": "Mon–Sat 10:00–19:00",
+        "instructions": "Collect from the counter at the back of the store.",
+        "distance_meters": 1146320.4
+      }
+    }
+  ],
+  "fulfilled_from": null
+}
+```
 
 ### Live carrier rates (multi-carrier)
 
@@ -191,7 +319,7 @@ All three methods accept **publishable** and **secret** keys. `calculateShipping
 | Code | Meaning |
 | :--- | :--- |
 | `200` | Charge calculated and returned. |
-| `400` | `invalid_request` (a location outside -90..90 / -180..180, an `order_total` that is not a number of zero or more, or no location at all), `geocoding_failed` (a `place_name` could not be found), `shipping_not_deliverable` (the store does not deliver to the location), or `provider_not_configured` (a carrier-options-only request to a store with no carrier connected). |
+| `400` | `invalid_request` (a location outside -90..90 / -180..180, an `order_total` that is not a number of zero or more, a `country_code` that is not two letters, a `postal_code` longer than 16 characters, malformed `items`, or no location at all), `geocoding_failed` (a `place_name` could not be found), `shipping_not_deliverable` (the store neither delivers to the location nor offers pickup), or `provider_not_configured` (a carrier-options-only request to a store with no carrier connected). |
 | `401` | Invalid or missing API key. |
 | `403` | Forbidden (e.g., key disabled or store suspended). |
 | `429` | Rate limit exceeded. |

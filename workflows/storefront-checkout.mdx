@@ -213,29 +213,71 @@ const merged = await storefront.cartWishlist.mergeCart({
 ## 5. Quoting shipping
 
 Delivery is quoted for the shopper's address before the order is totalled. Read-only, publishable
-key. The amount returned here is the one the order endpoint validates against, so it is the amount
-the total is built from.
+key. The quote lists every way the shopper can receive the order — the store's delivery options and
+any pickup locations — and the fee of the option they choose is the amount the order endpoint
+validates against, so it is the amount the total is built from.
+
+Sending the country, the postcode and the cart's lines lets every rule the store has set apply:
+zones defined by country or postcode, options that depend on the parcel's weight, and rules for
+particular product categories.
 
 ```typescript
 const quote = await storefront.shipping.calculateShipping({
-  requestBody: { latitude: 40.6782, longitude: -73.9442, order_total: 598 },
+  requestBody: {
+    latitude: 40.6782, longitude: -73.9442,
+    country_code: 'US', postal_code: '11225',
+    order_total: 598,
+    items: [{ variant_id: '15ca5a86-4b1b-47c3-8762-a1aa43941565', quantity: 2 }],
+  },
 });
 ```
 
 ```json Response
 {
   "fee": 5.99,
+  "currency": "USD",
   "zone_name": null,
   "tier_name": "Local (within 10 km)",
   "distance_meters": 8548,
   "is_free": false,
+  "applied_rule": "distance",
   "rate_source": "tier",
-  "coordinates": { "latitude": 40.6782, "longitude": -73.9442 }
+  "coordinates": { "latitude": 40.6782, "longitude": -73.9442, "country_code": "US", "postal_code": "11225" },
+  "deliverable": true,
+  "restriction": "none",
+  "options": [
+    { "id": "place", "method": "delivery", "name": "Standard delivery", "fee": 5.99, "currency": "USD", "is_free": false, "estimate": null, "available": true, "free_threshold": 750 },
+    { "id": "opt:9a1f3c2e-5b7d-4e8a-a2c4-6d8e0f1a3b5c", "method": "delivery", "name": "Express", "fee": 14.99, "currency": "USD", "is_free": false, "estimate": "Next business day", "available": true },
+    {
+      "id": "pickup:3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f", "method": "pickup", "name": "Pickup at Brooklyn store",
+      "fee": 0, "currency": "USD", "is_free": true, "estimate": "Ready in 2 hours", "available": true,
+      "location": {
+        "id": "3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f", "name": "Brooklyn store",
+        "address": { "line1": "145 Atlantic Avenue", "city": "Brooklyn", "state": "NY", "postal_code": "11201", "country": "US" },
+        "hours": "Mon–Sat 10:00–19:00", "instructions": "Collect from the counter at the back of the store.",
+        "distance_meters": 3412.57
+      }
+    }
+  ],
+  "fulfilled_from": null
 }
 ```
 
-When you place the order, pass `shipping_latitude` + `shipping_longitude` so the server re-resolves
-this fee and validates `shipping_amount` against it.
+The checkout shows each entry in `options` with its `name`, `fee` and `estimate`, grouping pickup
+options (`method: "pickup"`) as a choice beside delivery. An option with `available: false` does not
+apply to this cart yet — usually a pickup location whose `minimum_order` the cart has not reached —
+and is shown as unavailable rather than offered. When the store does not deliver to the address but
+offers pickup, the quote is still `200`, with `deliverable: false`, `fee: null` and the pickup options
+only; a store that offers neither answers `400 shipping_not_deliverable`.
+
+The chosen option travels into the order:
+
+- **Delivery** — `shipping_option_id` is the option's `id` (`place` for standard delivery) and
+  `shipping_amount` is its `fee`. Pass `shipping_latitude` + `shipping_longitude` as well, so the
+  server prices the same address and validates `shipping_amount` against it.
+- **Pickup** — `fulfillment_method: 'pickup'`, `pickup_location_id` is the option's `location.id`,
+  `shipping_option_id` is its `id`, and `shipping_amount` is its `fee`. No shipping address is needed:
+  the location's address is recorded on the order, and tax is calculated there.
 
 ### With multi-carrier shipping (Shippo)
 
@@ -331,7 +373,8 @@ const orderData = {
     { product_id: '0186665f-f0a1-4c79-976a-919b5b1c2daa', variant_id: 'e98631a9-7852-4fe8-8efe-988935d5922a', quantity: 2, unit_price: 299, total_price: 598 },
   ],
   subtotal: 598,
-  shipping_amount: 5.99,
+  shipping_option_id: 'place', // the option chosen from the quote in step 5
+  shipping_amount: 5.99,       // that option's fee
   discount_amount: 0,
   // With automatic tax enabled, omit tax_amount — Galactic Core calculates it for the
   // shipping destination. total_amount must be the FINAL tax-inclusive total

@@ -2029,7 +2029,8 @@ paths:
             for that line, so the shelf price applies).
 
             A request without a buyer credential, or from a customer who is not a wholesale buyer on
-            this store, returns the ordinary retail page — this never fails the request.
+            this store, returns the store's standard listing — list prices and the full range,
+            unnarrowed. The request is not refused.
 
             Responses on this path are not cached, because they are specific to one buyer. Ordinary
             retail reads are unaffected.
@@ -3943,6 +3944,13 @@ paths:
             amount must equal the store's charge for that address, free-delivery thresholds measured
             against the line totals after `discount_amount` → otherwise **`400 price_mismatch`**. A
             destination the store does not deliver to → **`400 shipping_not_deliverable`**.
+          - With a named delivery option (`shipping_option_id` of the form `opt:<id>`), the amount must
+            equal that option's fee for the address and basket → otherwise **`400 price_mismatch`**. An
+            option the order does not qualify for → **`400 shipping_option_unavailable`**.
+          - On a pickup order (`fulfillment_method: pickup`), the amount must equal the location's pickup
+            fee → otherwise **`400 price_mismatch`**. A location that is not one of the store's pickup
+            locations, or an order below its minimum → **`400 pickup_unavailable`**. Tax is calculated
+            at the pickup location.
           - A store with no delivery rates (it ships through its own arrangements) accepts the amount
             sent; so does an order whose destination cannot be located. Such an order is recorded as
             not checked.
@@ -3989,7 +3997,6 @@ paths:
                 - customer_email
                 - customer_name
                 - billing_address
-                - shipping_address
                 - subtotal
                 - total_amount
                 - payment_method
@@ -4034,7 +4041,7 @@ paths:
                       example: US
                 shipping_address:
                   type: object
-                  description: Shipping address. Required.
+                  description: 'Shipping address. Required for a delivery order. On a pickup order it is not needed: the collection location''s address is stored as the order''s shipping address, with `type: pickup`.'
                   properties:
                     street:
                       type: string
@@ -4366,6 +4373,24 @@ paths:
                     mass_unit:
                       type: string
                       example: lb
+                fulfillment_method:
+                  type: string
+                  enum:
+                    - delivery
+                    - pickup
+                  default: delivery
+                  description: 'How the shopper receives the order: delivered to `shipping_address`, or collected at one of the store''s locations.'
+                  example: delivery
+                pickup_location_id:
+                  type: string
+                  format: uuid
+                  description: The location to collect from, on a pickup order — a location `id` from `pickup_locations` (`GET /v1/shipping/zones`) or from a pickup option's `location` (`POST /v1/shipping/calculate`). When omitted on a pickup order, the store's primary pickup location is used.
+                  example: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+                shipping_option_id:
+                  type: string
+                  maxLength: 60
+                  description: The `id` of the option the shopper chose from `options[]` in `POST /v1/shipping/calculate` — `place` for standard delivery, `opt:<id>` for a named delivery option such as Express, or `pickup:<location id>` on a pickup order. `shipping_amount` must equal that option's fee for this order.
+                  example: opt:9a1f3c2e-5b7d-4e8a-a2c4-6d8e0f1a3b5c
                 shipping_address_from:
                   type: object
                   description: The ship-from address the option was quoted with, when one was sent to `POST /v1/shipping/calculate` as `address_from`.
@@ -4483,6 +4508,8 @@ paths:
               shipping_amount: 5.99
               discount_amount: 0
               total_amount: 2004.99
+              fulfillment_method: delivery
+              shipping_option_id: place
               shipping_metadata:
                 fee: 5.99
                 tier_name: Local (within 10 km)
@@ -4567,6 +4594,10 @@ paths:
                   order_status: pending
                   payment_status: pending
                   total_amount: 2520
+                  fulfillment_method: delivery
+                  pickup_location_id: null
+                  fulfillment_location_id: null
+                  shipping_option_id: place
                   items:
                     - product_id: 715b8c10-eb11-4289-8c0e-2966e78cf9a5
                       product_name: Apple MacBook Pro
@@ -4658,6 +4689,18 @@ paths:
                     error:
                       code: shipping_not_deliverable
                       message: This store does not deliver to the shipping address.
+                shipping_option_unavailable:
+                  summary: The chosen delivery option does not apply to this order
+                  value:
+                    error:
+                      code: shipping_option_unavailable
+                      message: That shipping option is not available for this order. Get fresh shipping options and choose again.
+                pickup_unavailable:
+                  summary: The store does not offer pickup at the location, or the order is below its minimum
+                  value:
+                    error:
+                      code: pickup_unavailable
+                      message: This store does not offer pickup at that location.
                 shipping_mismatch:
                   summary: shipping_amount differs from the store's charge for the address
                   value:
@@ -4787,6 +4830,7 @@ paths:
             - `shipped_at`, `delivered_at`
             - `created_at`, `updated_at`
             - `shipping_metadata`
+            - `fulfillment_method`, `pickup_location_id`, `fulfillment_location_id`, `shipping_option_id`
             - `items`
           example: order_number,order_status,total_amount
       responses:
@@ -25396,18 +25440,26 @@ paths:
         - Shipping
       summary: Get shipping zones and pricing tiers
       description: |-
-        The store's delivery rates: its active distance-based pricing tiers, its active delivery zones,
-        and its "everywhere else" rate.
+        The store's delivery rates and pickup locations: its active distance-based pricing tiers, its
+        active delivery zones, its "everywhere else" rate, and the locations where shoppers can collect
+        an order.
 
         **How an address is priced** (see `POST /v1/shipping/calculate`):
-        1. The first zone that contains it — lowest `priority` first, then the zone created first.
+        1. The first zone that contains it — lowest `priority` first, then the zone created first. An
+           `area` zone contains the addresses inside the area drawn on its map; a `region` zone contains
+           the addresses in one of its `countries`, narrowed to `postcodes` that start with one of the
+           listed prefixes when it has any.
         2. Otherwise, the tier whose range contains its distance from the store. A range includes its
            `min_distance_meters` and stops just before its `max_distance_meters`.
-        3. Otherwise, `everywhere_else`. When that is null and the store has zones or tiers, an address
-           outside them is not delivered to.
+        3. Otherwise, `everywhere_else`. When it is null, or `refuse` is true, and the store has zones or
+           tiers, an address outside them is not delivered to.
 
         Every amount is in `currency`. A store with no tiers, zones or `everywhere_else` rate charges
         nothing for delivery through these rates.
+
+        **Pickup:** each entry in `pickup_locations` is a location where an order can be collected
+        instead of delivered, with its own `pickup_fee` and, when set, a `minimum_order`. The store's
+        primary location is listed first.
 
         **Caching:** the response is cached for up to 60 seconds and carries an ETag (send
         `If-None-Match` for a `304`). Changes to the store's rates appear here within that window;
@@ -25443,16 +25495,27 @@ paths:
                     type:
                       - object
                       - 'null'
-                    description: The rate for any address outside the zones and tiers. Null when the store has none.
+                    description: The rate for any address outside the zones and tiers. Null when the store has not set one. When `refuse` is true the store has chosen not to deliver outside its zones and distance rates, and both amounts are null.
                     properties:
+                      refuse:
+                        type: boolean
+                        description: True when the store does not deliver to addresses outside its zones and distance rates.
+                        example: false
                       delivery_fee:
-                        type: number
+                        type:
+                          - number
+                          - 'null'
                         example: 29.99
                       free_delivery_threshold:
                         type:
                           - number
                           - 'null'
                         example: null
+                  pickup_locations:
+                    type: array
+                    description: The store's locations that offer pickup, primary location first. Empty when the store does not offer pickup.
+                    items:
+                      $ref: '#/components/schemas/PickupLocation'
               example:
                 currency: USD
                 pricing_tiers:
@@ -25477,10 +25540,37 @@ paths:
                     free_delivery_threshold: 250
                     is_active: true
                     priority: 3
-                delivery_zones: []
+                delivery_zones:
+                  - zone_name: Lower 48 states
+                    delivery_fee: 12.99
+                    free_delivery_threshold: 200
+                    is_active: true
+                    priority: 1
+                    color: '#3B82F6'
+                    match_kind: region
+                    countries:
+                      - US
+                    postcodes: []
                 everywhere_else:
+                  refuse: false
                   delivery_fee: 29.99
                   free_delivery_threshold: null
+                pickup_locations:
+                  - id: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+                    name: Brooklyn store
+                    address:
+                      line1: 145 Atlantic Avenue
+                      city: Brooklyn
+                      state: NY
+                      postal_code: '11201'
+                      country: US
+                    latitude: 40.6907
+                    longitude: -73.9956
+                    hours: Mon–Sat 10:00–19:00
+                    pickup_fee: 0
+                    minimum_order: null
+                    ready_text: Ready in 2 hours
+                    instructions: Collect from the counter at the back of the store.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -25496,19 +25586,42 @@ paths:
         - Shipping
       summary: Calculate shipping fee
       description: |-
-        The store's delivery charge for a shopper's location and order total, plus carrier options when
-        a destination address and parcel are sent.
+        The ways a shopper can receive an order — the store's delivery options and pickup locations —
+        priced for their location and basket, plus carrier options when a destination address and parcel
+        are sent.
 
-        **Location:** `latitude` + `longitude`, or a `place_name` (geocoded). With neither, `address_to`
-        + `parcel` returns carrier options only, with `fee` null.
+        **Location:** `latitude` + `longitude`, or a `place_name` (geocoded). `country_code` and
+        `postal_code` may accompany either; they match zones defined by country and postcode, and a value
+        sent here takes precedence over the one found by geocoding. With no location, `address_to` +
+        `parcel` returns carrier options only, with `fee` null.
 
-        **Pricing:** the first zone containing the location; otherwise the distance tier matching its
-        distance from the store (a range includes its start and stops just before its end); otherwise
-        the store's "everywhere else" rate. A matched rate is free when `order_total` — the merchandise
-        after discounts, before tax and shipping — reaches its free-delivery threshold. A store with no
-        rates at all charges nothing (`applied_rule: none`). When the store has zones or tiers but none
-        covers the location and it has no "everywhere else" rate, the answer is
-        `400 shipping_not_deliverable`.
+        **Basket:** `order_total` is the merchandise after discounts, before tax and shipping; free-delivery
+        thresholds and minimum orders are measured against it. `items` lists the basket's variants and
+        quantities. It is optional, and is what lets the store apply rates that depend on the parcel's
+        weight and rules it sets for particular product categories — a surcharge, delivery only to nearby
+        addresses (`restriction: local_only`), or collection only (`restriction: pickup_only`).
+
+        **Pricing:** the first zone containing the location — a zone drawn on a map, or a zone covering
+        whole countries or postcode prefixes; otherwise the distance tier matching its distance from the
+        store (a range includes its start and stops just before its end); otherwise the store's
+        "everywhere else" rate. A matched rate is free when `order_total` reaches its free-delivery
+        threshold. A store with no rates at all charges nothing (`applied_rule: none`).
+
+        **Options:** `options[]` lists everything the shopper can choose between. The first delivery
+        option, `id: place`, is the matched rate itself ("Standard delivery"); its fee is also returned as
+        `fee`. The store may add named options to the same rate — Express, Next day — with ids of the form
+        `opt:<id>`, each with its own fee and estimate. Pickup options (`method: pickup`, ids of the form
+        `pickup:<location id>`) follow, nearest first when the location is known. An option with
+        `available: false` exists but does not apply to this basket yet, usually because `order_total` is
+        below its `minimum_order`. To order with an option, pass its `id` as `shipping_option_id` on
+        `POST /v1/orders`.
+
+        **No delivery to the address:** when the store does not deliver there but does offer pickup, the
+        response is `200` with `deliverable: false`, `fee: null` and only the pickup options. When it offers
+        neither, the answer is `400 shipping_not_deliverable`.
+
+        **Multiple locations:** when the store delivers from whichever of its locations is nearest the
+        shopper, `fulfilled_from` names that location, and distance tiers are measured from it.
 
         **Carrier options** (`rates[]`) come from the store's connected carrier account and its custom
         shipping extension. To order with one, pass its `rate_id` and `source` on `POST /v1/orders` as
@@ -25536,6 +25649,17 @@ paths:
                   latitude: 40.6782
                   longitude: -73.9442
                   order_total: 100
+              with_basket:
+                summary: Brooklyn shopper, ZIP code and basket lines (weight and category rules apply)
+                value:
+                  latitude: 40.6782
+                  longitude: -73.9442
+                  country_code: US
+                  postal_code: '11225'
+                  order_total: 50
+                  items:
+                    - variant_id: 15ca5a86-4b1b-47c3-8762-a1aa43941565
+                      quantity: 2
               carrier_options_only:
                 summary: Carrier options for an address and parcel, no location
                 value:
@@ -25565,7 +25689,7 @@ paths:
                 $ref: '#/components/schemas/DeliveryFeeCalculation'
               examples:
                 distance_based:
-                  summary: Distance-based pricing (Brooklyn → Local tier $5.99)
+                  summary: Distance-based pricing with an express option and pickup (Brooklyn → Local tier $5.99)
                   value:
                     fee: 5.99
                     currency: USD
@@ -25580,7 +25704,95 @@ paths:
                     coordinates:
                       latitude: 40.6782
                       longitude: -73.9442
+                      country_code: US
+                      postal_code: '11225'
                     rate_source: tier
+                    deliverable: true
+                    restriction: none
+                    options:
+                      - id: place
+                        method: delivery
+                        name: Standard delivery
+                        fee: 5.99
+                        currency: USD
+                        is_free: false
+                        estimate: null
+                        available: true
+                        free_threshold: 75
+                      - id: opt:9a1f3c2e-5b7d-4e8a-a2c4-6d8e0f1a3b5c
+                        method: delivery
+                        name: Express
+                        fee: 14.99
+                        currency: USD
+                        is_free: false
+                        estimate: Next business day
+                        available: true
+                      - id: pickup:3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+                        method: pickup
+                        name: Pickup at Brooklyn store
+                        fee: 0
+                        currency: USD
+                        is_free: true
+                        estimate: Ready in 2 hours
+                        available: true
+                        location:
+                          id: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+                          name: Brooklyn store
+                          address:
+                            line1: 145 Atlantic Avenue
+                            city: Brooklyn
+                            state: NY
+                            postal_code: '11201'
+                            country: US
+                          latitude: 40.6907
+                          longitude: -73.9956
+                          hours: Mon–Sat 10:00–19:00
+                          instructions: Collect from the counter at the back of the store.
+                          distance_meters: 3412.57
+                    fulfilled_from: null
+                pickup_only:
+                  summary: The store does not deliver to the address, but the shopper can collect
+                  value:
+                    fee: null
+                    currency: USD
+                    zone_name: null
+                    tier_name: null
+                    distance_meters: null
+                    is_free: false
+                    free_threshold: null
+                    configured: true
+                    reason: This address is outside the delivery area
+                    applied_rule: none
+                    coordinates:
+                      latitude: 41.8781
+                      longitude: -87.6298
+                    rate_source: none
+                    deliverable: false
+                    restriction: none
+                    options:
+                      - id: pickup:3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+                        method: pickup
+                        name: Pickup at Brooklyn store
+                        fee: 0
+                        currency: USD
+                        is_free: true
+                        estimate: Ready in 2 hours
+                        available: true
+                        location:
+                          id: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+                          name: Brooklyn store
+                          address:
+                            line1: 145 Atlantic Avenue
+                            city: Brooklyn
+                            state: NY
+                            postal_code: '11201'
+                            country: US
+                          latitude: 40.6907
+                          longitude: -73.9956
+                          hours: Mon–Sat 10:00–19:00
+                          instructions: Collect from the counter at the back of the store.
+                          distance_meters: 1146320.4
+                    fulfilled_from: null
                 free_delivery:
                   summary: Free delivery (order over the free-shipping threshold)
                   value:
@@ -25598,6 +25810,19 @@ paths:
                       latitude: 40.6782
                       longitude: -73.9442
                     rate_source: tier
+                    deliverable: true
+                    restriction: none
+                    options:
+                      - id: place
+                        method: delivery
+                        name: Standard delivery
+                        fee: 0
+                        currency: USD
+                        is_free: true
+                        estimate: null
+                        available: true
+                        free_threshold: 75
+                    fulfilled_from: null
                 everywhere_else:
                   summary: Outside every zone and tier (the store's "everywhere else" rate)
                   value:
@@ -25615,6 +25840,18 @@ paths:
                       latitude: 34.0522
                       longitude: -118.2437
                     rate_source: fallback
+                    deliverable: true
+                    restriction: none
+                    options:
+                      - id: place
+                        method: delivery
+                        name: Standard delivery
+                        fee: 29.99
+                        currency: USD
+                        is_free: false
+                        estimate: null
+                        available: true
+                    fulfilled_from: null
                 no_rates:
                   summary: The store has no delivery rates
                   value:
@@ -25632,8 +25869,20 @@ paths:
                       latitude: 40.6782
                       longitude: -73.9442
                     rate_source: none
+                    deliverable: true
+                    restriction: none
+                    options:
+                      - id: place
+                        method: delivery
+                        name: Delivery
+                        fee: 0
+                        currency: USD
+                        is_free: true
+                        estimate: null
+                        available: true
+                    fulfilled_from: null
         '400':
-          description: 'The request is invalid (`invalid_request`: a location outside -90..90 / -180..180, an `order_total` that is not a number of zero or more, or no location at all), a `place_name` could not be found (`geocoding_failed`), the store does not deliver to the location (`shipping_not_deliverable`), or a carrier-options-only request was sent to a store with no carrier connected (`provider_not_configured`).'
+          description: 'The request is invalid (`invalid_request`: a location outside -90..90 / -180..180, an `order_total` that is not a number of zero or more, a `country_code` that is not two letters, a `postal_code` longer than 16 characters, `items` that is not an array of at most 500 lines each with a `variant_id` and a positive `quantity`, or no location at all), a `place_name` could not be found (`geocoding_failed`), the store neither delivers to the location nor offers pickup (`shipping_not_deliverable`), or a carrier-options-only request was sent to a store with no carrier connected (`provider_not_configured`).'
           content:
             application/json:
               schema:
@@ -33851,6 +34100,38 @@ components:
         country:
           type: string
           example: US
+    OrderShippingAddress:
+      description: 'Where the order goes. On a pickup order it is the collection location''s address, with `type: pickup`, the location''s `name` and `location_id`, and the address in `line1` / `line2` / `city` / `state` / `postal_code` / `country`.'
+      allOf:
+        - $ref: '#/components/schemas/Address'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - pickup
+              description: Present, as `pickup`, only on a pickup order.
+            name:
+              type: string
+              example: Brooklyn store
+            location_id:
+              type: string
+              format: uuid
+              example: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+            line1:
+              type:
+                - string
+                - 'null'
+              example: 145 Atlantic Avenue
+            line2:
+              type:
+                - string
+                - 'null'
+            postal_code:
+              type:
+                - string
+                - 'null'
+              example: '11201'
     OrderItem:
       type: object
       properties:
@@ -34024,7 +34305,34 @@ components:
         billing_address:
           $ref: '#/components/schemas/Address'
         shipping_address:
-          $ref: '#/components/schemas/Address'
+          $ref: '#/components/schemas/OrderShippingAddress'
+        fulfillment_method:
+          type: string
+          enum:
+            - delivery
+            - pickup
+          example: delivery
+          description: Whether the order is delivered to the shopper or collected at one of the store's locations.
+        pickup_location_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          example: null
+          description: The location the shopper collects from, on a pickup order. Null on a delivery order.
+        fulfillment_location_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          example: 7b2e9c41-0d3f-4a58-b6e1-2f4a6c8e0b13
+          description: 'The store location the order is fulfilled from: the pickup location on a pickup order, or the location deliveries leave from when the store delivers from its nearest location. Null when the store does not route orders between locations.'
+        shipping_option_id:
+          type:
+            - string
+            - 'null'
+          example: place
+          description: The shipping option the order was placed with, as returned by `POST /v1/shipping/calculate` (`place`, `opt:<id>` or `pickup:<location id>`). Null when none was named.
         items:
           type: array
           items:
@@ -34078,8 +34386,39 @@ components:
           type:
             - object
             - 'null'
-          description: Complete shipping calculation details for audit trail
+          description: How the shipping charge was arrived at. `shipping_source` and `shipping_rule` are recorded by the server when the order is created; the other fields are the details the storefront sent with the order.
           properties:
+            shipping_source:
+              type: string
+              enum:
+                - shippo
+                - custom
+                - zone_tier
+                - fallback
+                - pickup
+                - not_configured
+                - unverified
+              example: zone_tier
+              description: |-
+                What `shipping_amount` was checked against:
+                - shippo: a carrier option from the store's connected carrier account
+                - custom: a carrier option from the store's custom shipping extension
+                - zone_tier: the store's delivery zone or distance rate for the address
+                - fallback: the store's "everywhere else" rate
+                - pickup: the pickup fee of the collection location
+                - not_configured: the store has no delivery rates and the order carries no shipping charge
+                - unverified: the amount could not be checked (the store has no delivery rates but a charge
+                  was sent, or the destination could not be located); the order was accepted as sent
+            shipping_rule:
+              type: string
+              enum:
+                - zone
+                - distance
+                - fallback
+                - none
+                - pickup
+              example: distance
+              description: The rule that priced the order, when it was priced from the store's own rates or a pickup location. Absent for carrier options and unchecked amounts.
             fee:
               type: number
               format: float
@@ -34117,8 +34456,9 @@ components:
               enum:
                 - zone
                 - distance
-                - default
-              description: Which pricing system was applied
+                - fallback
+                - none
+              description: Which of the store's rates priced the address, as returned by `POST /v1/shipping/calculate`.
               example: distance
     PaymentMethod:
       type: object
@@ -36119,7 +36459,7 @@ components:
           description: Tier priority (lower number = higher priority)
     DeliveryZone:
       type: object
-      description: Custom polygon delivery zone with specific pricing
+      description: 'A delivery zone with its own fee. A zone covers either an area drawn on a map (`match_kind: area`) or whole countries, optionally narrowed to postcode prefixes (`match_kind: region`).'
       properties:
         zone_name:
           type: string
@@ -36150,6 +36490,129 @@ components:
           pattern: ^#[0-9A-Fa-f]{6}$
           example: '#3B82F6'
           description: Hex color code for map visualization
+        match_kind:
+          type: string
+          enum:
+            - area
+            - region
+          example: region
+          description: |-
+            How the zone decides whether it covers an address:
+            - area: the address lies inside the area drawn on the zone's map
+            - region: the address is in one of `countries` and, when `postcodes` is not empty, its postcode
+              starts with one of the listed prefixes (compared without spaces, ignoring case)
+        countries:
+          type: array
+          description: ISO 3166-1 alpha-2 country codes a `region` zone covers. Empty for an `area` zone.
+          items:
+            type: string
+            example: US
+          example:
+            - US
+        postcodes:
+          type: array
+          description: Postcode prefixes a `region` zone is narrowed to. Empty means every postcode in its countries.
+          items:
+            type: string
+            example: '112'
+          example:
+            - '112'
+            - '113'
+    PickupLocation:
+      type: object
+      description: A store location where shoppers can collect an order instead of having it delivered.
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+          description: The location's id. Pass it as `pickup_location_id` on `POST /v1/orders`.
+        name:
+          type: string
+          example: Brooklyn store
+        address:
+          type:
+            - object
+            - 'null'
+          description: The location's street address.
+          properties:
+            line1:
+              type: string
+              example: 145 Atlantic Avenue
+            line2:
+              type:
+                - string
+                - 'null'
+            city:
+              type: string
+              example: Brooklyn
+            state:
+              type: string
+              example: NY
+            postal_code:
+              type: string
+              example: '11201'
+            country:
+              type: string
+              example: US
+        latitude:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: 40.6907
+        longitude:
+          type:
+            - number
+            - 'null'
+          format: double
+          example: -73.9956
+        hours:
+          type:
+            - string
+            - 'null'
+          example: Mon–Sat 10:00–19:00
+          description: Opening hours, as the store wrote them.
+        pickup_fee:
+          type: number
+          format: float
+          minimum: 0
+          example: 0
+          description: The charge for collecting here, in the store's currency.
+        minimum_order:
+          type:
+            - number
+            - 'null'
+          format: float
+          example: null
+          description: The smallest order total accepted for pickup here, or null when there is none.
+        ready_text:
+          type:
+            - string
+            - 'null'
+          example: Ready in 2 hours
+          description: When an order is usually ready to collect, as the store wrote it.
+        instructions:
+          type:
+            - string
+            - 'null'
+          example: Collect from the counter at the back of the store.
+          description: What the shopper does on arrival.
+    ShippingBasketItem:
+      type: object
+      description: One line of the basket, by variant.
+      required:
+        - variant_id
+      properties:
+        variant_id:
+          type: string
+          format: uuid
+          example: 15ca5a86-4b1b-47c3-8762-a1aa43941565
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+          example: 2
     ShippingAddressInput:
       type: object
       description: A shipping address for live carrier rating. Supplied alongside a parcel to ALSO get live carrier rates from a connected carrier account (returned as `rates[]`).
@@ -36212,14 +36675,30 @@ components:
           minimum: -90
           maximum: 90
           description: Customer's GPS latitude
-          example: -1.106583
+          example: 40.6782
         longitude:
           type: number
           format: double
           minimum: -180
           maximum: 180
           description: Customer's GPS longitude
-          example: 37.013954
+          example: -73.9442
+        country_code:
+          type: string
+          pattern: ^[A-Za-z]{2}$
+          description: ISO 3166-1 alpha-2 country code of the destination. Matches zones defined by country; a value sent here takes precedence over the one found from the location.
+          example: US
+        postal_code:
+          type: string
+          maxLength: 16
+          description: Postcode of the destination. Matches zones narrowed to postcode prefixes; a value sent here takes precedence over the one found from the location.
+          example: '11225'
+        items:
+          type: array
+          maxItems: 500
+          description: The basket's lines. Optional; with it, the store's weight-based rates and its rules for product categories (surcharges, local-only delivery, collection only) apply. A rate that depends on weight applies only when every line's variant has a weight.
+          items:
+            $ref: '#/components/schemas/ShippingBasketItem'
         order_total:
           type: number
           format: float
@@ -36244,9 +36723,20 @@ components:
           example: SoHo, New York, USA
         country_code:
           type: string
-          pattern: ^[A-Z]{2}$
-          description: Optional ISO 3166-1 alpha-2 country code (improves geocoding accuracy)
-          example: KE
+          pattern: ^[A-Za-z]{2}$
+          description: ISO 3166-1 alpha-2 country code of the destination. Narrows the geocoding search and matches zones defined by country; it takes precedence over the country found by geocoding.
+          example: US
+        postal_code:
+          type: string
+          maxLength: 16
+          description: Postcode of the destination. Matches zones narrowed to postcode prefixes; it takes precedence over the postcode found by geocoding.
+          example: '10012'
+        items:
+          type: array
+          maxItems: 500
+          description: The basket's lines. Optional; with it, the store's weight-based rates and its rules for product categories (surcharges, local-only delivery, collection only) apply.
+          items:
+            $ref: '#/components/schemas/ShippingBasketItem'
         order_total:
           type: number
           format: float
@@ -36278,9 +36768,123 @@ components:
         - $ref: '#/components/schemas/ShippingCalculationByCoordinates'
         - $ref: '#/components/schemas/ShippingCalculationByPlace'
         - $ref: '#/components/schemas/ShippingCalculationByCarrierAddress'
+    ShippingOption:
+      type: object
+      description: One way a shopper can receive the order — a delivery option or a pickup location — priced for the destination and basket.
+      required:
+        - id
+        - method
+        - name
+        - fee
+        - currency
+        - is_free
+        - estimate
+        - available
+      properties:
+        id:
+          type: string
+          example: place
+          description: The option's id, passed as `shipping_option_id` on `POST /v1/orders`. `place` is the store's standard rate for the address; `opt:<id>` is a further named option on the same rate (Express, Next day); `pickup:<location id>` is collection at a location.
+        method:
+          type: string
+          enum:
+            - delivery
+            - pickup
+          example: delivery
+        name:
+          type: string
+          example: Standard delivery
+          description: The name to show the shopper.
+        fee:
+          type: number
+          format: float
+          minimum: 0
+          example: 5.99
+          description: The charge for this option, in `currency`, after any free-delivery threshold and surcharge.
+        currency:
+          type: string
+          example: USD
+        is_free:
+          type: boolean
+          example: false
+          description: True when `fee` is 0.
+        estimate:
+          type:
+            - string
+            - 'null'
+          example: Next business day
+          description: When the shopper can expect the order — a delivery estimate, or when a pickup order is ready — as the store wrote it. Null when the store has not given one.
+        available:
+          type: boolean
+          example: true
+          description: False when the option exists but does not apply to this basket — a pickup location whose `minimum_order` is above `order_total`. An unavailable option cannot be ordered with.
+        free_threshold:
+          type:
+            - number
+            - 'null'
+          format: float
+          example: 75
+          description: The order total from which this option is free. Absent when it has none.
+        minimum_order:
+          type:
+            - number
+            - 'null'
+          format: float
+          example: 25
+          description: For a pickup option, the smallest order total it accepts. Absent when there is none.
+        location:
+          type: object
+          description: For a pickup option, the location to collect from. Fields the store has not filled in are omitted.
+          properties:
+            id:
+              type: string
+              format: uuid
+              example: 3d5c7a10-8b2e-4f61-9c4d-1a2b3c4d5e6f
+            name:
+              type: string
+              example: Brooklyn store
+            address:
+              type: object
+              properties:
+                line1:
+                  type: string
+                  example: 145 Atlantic Avenue
+                line2:
+                  type: string
+                city:
+                  type: string
+                  example: Brooklyn
+                state:
+                  type: string
+                  example: NY
+                postal_code:
+                  type: string
+                  example: '11201'
+                country:
+                  type: string
+                  example: US
+            latitude:
+              type: number
+              format: double
+              example: 40.6907
+            longitude:
+              type: number
+              format: double
+              example: -73.9956
+            hours:
+              type: string
+              example: Mon–Sat 10:00–19:00
+            instructions:
+              type: string
+              example: Collect from the counter at the back of the store.
+            distance_meters:
+              type: number
+              format: float
+              example: 3412.57
+              description: Distance from the shopper's location, when the location was sent.
     DeliveryFeeCalculation:
       type: object
-      description: 'The store''s delivery charge for a location and order total. An address is priced by the first zone that contains it, otherwise by the distance rate for its distance from the store, otherwise by the store''s "everywhere else" rate. A store with no delivery rates at all charges nothing (`applied_rule: none`). A store whose rates do not reach the address answers `400 shipping_not_deliverable` instead.'
+      description: 'The store''s delivery charge for a location and order total. An address is priced by the first zone that contains it, otherwise by the distance rate for its distance from the store, otherwise by the store''s "everywhere else" rate. A store with no delivery rates at all charges nothing (`applied_rule: none`). `options` lists every delivery option and pickup location the shopper can choose between. When the store does not deliver to the address but offers pickup, `deliverable` is false, `fee` is null and `options` holds the pickup locations only; when it offers neither, the answer is `400 shipping_not_deliverable` instead.'
       properties:
         fee:
           type:
@@ -36289,7 +36893,7 @@ components:
           format: float
           minimum: 0
           example: 5.99
-          description: The delivery charge, in `currency`. Null only on a carrier-options-only request (no location was sent).
+          description: 'The standard delivery charge (the `place` option''s fee), in `currency`. Null on a carrier-options-only request (no location was sent) and when the store does not deliver to the address but offers pickup (`deliverable: false`).'
         currency:
           type:
             - string
@@ -36351,7 +36955,7 @@ components:
             - none: the store has no delivery rates (fee 0), or a carrier-options-only request
         coordinates:
           type: object
-          description: The address's coordinates (geocoded when a place_name was sent).
+          description: The address's coordinates (geocoded when a place_name was sent), with the country and postcode used to match zones when known.
           properties:
             latitude:
               type: number
@@ -36361,6 +36965,56 @@ components:
               type: number
               format: double
               example: -73.9855
+            country_code:
+              type:
+                - string
+                - 'null'
+              example: US
+            postal_code:
+              type:
+                - string
+                - 'null'
+              example: '10036'
+        deliverable:
+          type: boolean
+          example: true
+          description: Whether the store delivers to the address. False when only pickup is offered for it — because the address is outside the store's delivery area, or because an item in the basket can only be collected.
+        restriction:
+          type: string
+          enum:
+            - none
+            - local_only
+            - pickup_only
+          example: none
+          description: |-
+            A limit the basket's items place on how the order can be received, from the store's rules for
+            product categories:
+            - none: no limit
+            - local_only: delivered only within the store's map zones and distance tiers, not to country or
+              postcode zones or the "everywhere else" rate
+            - pickup_only: collection only; no delivery option is offered
+        options:
+          type: array
+          description: 'Every way the shopper can receive the order: the delivery options first (`place`, then any named options), then the pickup locations, nearest first when the location is known. Absent on a carrier-options-only request.'
+          items:
+            $ref: '#/components/schemas/ShippingOption'
+        fulfilled_from:
+          type:
+            - object
+            - 'null'
+          description: When the store delivers from whichever of its locations is nearest the shopper, the location this order would leave from; distance tiers are measured from it. Null otherwise.
+          properties:
+            id:
+              type: string
+              format: uuid
+              example: 7b2e9c41-0d3f-4a58-b6e1-2f4a6c8e0b13
+            name:
+              type: string
+              example: Manhattan warehouse
+            distance_meters:
+              type: number
+              format: float
+              example: 5120.4
         rate_source:
           type: string
           enum:
