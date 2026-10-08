@@ -37,6 +37,8 @@ const { categories, pagination } = await client.taxonomy.listCategories({
 console.log(`Has more categories: ${pagination.has_more}`);
 ```
 
+Each category carries `base_category`: the standard category it behaves like. It equals the category's own name for a standard category; for a category created for a particular marketplace or reseller it names the closest standard category, so it is the reliable key for choosing a storefront style or product-detail layout.
+
 ```json Response
 {
   "categories": [
@@ -46,6 +48,7 @@ console.log(`Has more categories: ${pagination.has_more}`);
       "slug": "audio-headphones",
       "description": "Speakers, headphones and audio accessories",
       "active": true,
+      "base_category": "Audio & Headphones",
       "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80",
       "created_at": "2026-06-19T20:07:35.277495+00:00",
       "updated_at": "2026-06-20T10:11:03.932255+00:00"
@@ -77,6 +80,7 @@ console.log(`Category URL: /c/${category.slug}`);
   "slug": "accessories-cables",
   "description": "Cables, adapters and everyday accessories",
   "active": true,
+  "base_category": "Accessories & Cables",
   "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&q=80",
   "created_at": "2026-06-19T20:07:35.277495+00:00",
   "updated_at": "2026-06-20T10:11:03.932255+00:00"

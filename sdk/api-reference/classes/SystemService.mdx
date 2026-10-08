@@ -288,6 +288,7 @@ reports two product counts, and they answer different questions:
 | :--- | :--- |
 | `product_count` | Products filed **directly** against that node. |
 | `product_count_including_descendants` | Products under that node at **any depth**, including those filed against nested subcategories. |
+| `base_category` (categories only) | The standard category the entry behaves like — its own name for a standard category, the closest standard category for one created for a particular marketplace or reseller. |
 
 The two differ wherever a merchant files products against subcategories rather than the category
 itself: a category holding nothing directly reports `product_count: 0` while the branch beneath it
@@ -310,6 +311,7 @@ direct children, so a client renders breadcrumbs and the nested tree without fur
             "id": "0a4c2c19-16a6-4b1e-9d0e-4d8f1a6b2c37",
             "name": "Accessories & Cables",
             "image": null,
+            "base_category": "Accessories & Cables",
             "product_count": 3,
             "product_count_including_descendants": 5
           },
@@ -317,6 +319,7 @@ direct children, so a client renders breadcrumbs and the nested tree without fur
             "id": "7c1f9b84-2d63-4a70-8f52-1b9e6c0a4d81",
             "name": "Audio & Headphones",
             "image": null,
+            "base_category": "Audio & Headphones",
             "product_count": 2,
             "product_count_including_descendants": 4
           }
