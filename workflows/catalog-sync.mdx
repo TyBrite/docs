@@ -180,7 +180,7 @@ Three signing headers are required, on the same scheme as orders and payments: a
 where retrying with the same key returns the original result rather than re-importing; an
 `X-Timestamp` in unix seconds, within 5 minutes of server time; and an `X-Signature`, the base64
 HMAC-SHA256 of `` `${timestamp}.${body}` `` signed with the store's signing secret from Integrations →
-API Keys.
+API keys.
 
 ```typescript
 import { createHmac } from 'crypto';
@@ -339,7 +339,7 @@ alone by design. Either side can be reassigned per source and per field.
 
 ## 4. Publishing the catalog back out
 
-The inverse direction. Opting in under admin → Catalog Sync → "Publish my catalog" makes the catalog
+The inverse direction. Opting in under admin → Integrations → Catalog sync → "Publish my catalog" makes the catalog
 readable at a stable public URL with no key required, so any system can pull it — another store's
 scheduled sync, a partner integration, a script. Only storefront-safe fields are exposed, never cost
 or margin.
