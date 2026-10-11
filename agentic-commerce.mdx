@@ -1,6 +1,6 @@
 ---
 title: "Agentic Commerce"
-description: "Your in-app assistant prepares gift cards, promotions, pricing rules and search merchandising from your store's own data for you to approve, and any AI shopping assistant can search, price and hand off a checkout on your store through the Agent API."
+description: "Your in-app assistant prepares gift cards, promotions, pricing rules, marketing campaigns and search merchandising from your store's own data for you to approve, and any AI shopping assistant can search, price and hand off a checkout on your store through the Agent API."
 ---
 
 # Agentic Commerce
@@ -14,6 +14,11 @@ Agentic commerce has a shopper side as well: the [Agent API](#shopping-assistant
 AI shopping assistant search a store, price a basket and hand a checkout to the shopper, described at the
 end of this page.
 
+When a request names something the assistant cannot make exactly, it says so first and tells you which
+mechanism it chose, or asks. A request for a sale or a discount that does not say how gets one short
+question — a markdown, which shoppers see as the lower price everywhere, or a promotion applied at
+checkout? An explicit request such as "20% off my graphic tees" is acted on directly.
+
 Anything that moves money arrives as a **draft you approve** — a gift card, a promotion, a pricing
 rule — and is inert until you do. The organisational actions, which are reversible, happen directly:
 creating a subcategory, enabling a category, tagging a product, grouping products into a collection.
@@ -25,6 +30,7 @@ creating a subcategory, enabling a category, tagging a product, grouping product
 | **Issue a gift card** | Prepared as a draft. Nothing is sent to the customer until you approve. |
 | **Create a promotion** | Prepared as a draft, in one of the four promotion types. Live once you approve. |
 | **Create a dynamic-pricing rule** | Prepared as a draft, targeting a category, product, collection, or customer segment. Takes effect once you approve. Available on plans that include dynamic pricing. |
+| **Create a marketing campaign** | Prepared as a draft campaign: a name, a percentage or fixed discount off the whole order, where it is valid (online, in store or both), a start and end date, and a budget the discount stops at once spent. The start is today in your store's timezone unless you name another day, and there is always an end date — 14 days when none is given. It is announced only on channels your store has connected (email and SMS through your marketing provider, social through your connected accounts); any other channel is left off and named. Approving it gives exactly the campaign the Campaigns form would have saved, and you send its announcement from there. A campaign's discount cannot be limited to particular products, so when you name products the assistant says so and offers a markdown on them as well. |
 | **Fix a search that is not working** | Prepared as a draft rule that shows particular products first for a given search, pushes them down, or nudges them up. It reads which searches shoppers run, how often, and how those searches convert, so it can point at a busy search that converts well below your usual rate. A rule only reorders products the search already found — it can never surface something the shopper's words did not match. Takes effect once you approve. Once your storefront reports which result a shopper clicked, each rule also shows how many shoppers clicked what it features and how many of those went on to add to a cart. |
 | **Organise your catalogue** | Reviews your categories and subcategories and tidies them: creates a subcategory (nesting it under the right parent rather than adding a redundant one), moves a subcategory to where it belongs, re-files a mis-categorised product, and enables categories that match what you sell. |
 | **Tag products** | Sets merchandising tags. |
@@ -56,7 +62,7 @@ Every draft is decided on **Suggestions**, near the top of the sidebar beside Da
 only when something is waiting, with a count beside it, and it is available on every plan.
 
 Three tabs — **Waiting for you**, **Approved** and **Rejected** — each filterable by type: gift cards,
-promotions, pricing rules, search rules, wholesale quotes and credit limits. Every entry shows what is
+promotions, pricing rules, campaigns, search rules, wholesale quotes and credit limits. Every entry shows what is
 being proposed, the reasoning behind it, when it was prepared and when it expires.
 
 Approving a gift card is the moment it issues and the customer is notified; approving a promotion or a rule
@@ -134,8 +140,9 @@ are noticed.
 A workflow observes the same approval boundary as a conversation. Reversible merchandising runs
 unattended: rotating a collection to current best sellers, retiring members that stopped selling,
 tagging what sells. Anything touching money prepares a draft and waits — promotions and clearances,
-gift cards for customers who pass a spending threshold in a window, and markdown pricing rules over
-stock that stopped moving.
+gift cards for customers who pass a spending threshold in a window, markdown pricing rules over
+stock that stopped moving, and a marketing campaign when trade drops off against the period before —
+announced only on the channels the store has connected.
 
 Search merchandising works the same way on a schedule. A workflow keeps watching which searches
 convert badly and drafts a rule when one is worth fixing, so it follows whichever search is failing
