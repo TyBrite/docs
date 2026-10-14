@@ -10,7 +10,7 @@ The tools fall into three kinds:
 | Kind | Methods | Cost |
 | :--- | :--- | :--- |
 | **Deterministic tools** | Everything except the two below. Structured input, structured output, read from the store's own data. | The same as any storefront request, counted against the plan's normal request allowance. |
-| **Hosted helpers** | `interpret`, `draftCartFromIntent` | Run a language model and are paid for with the store's **Agent Compute credits**. Optional. |
+| **Hosted helpers** | `interpret`, `draftCartFromIntent` | Run a language model and are paid for with the store's **AI credits**. Optional. |
 | **Checkout intents** | `createCheckoutIntent`, `confirmCheckoutIntent`, `getCheckoutIntent`, `cancelCheckoutIntent` | Deterministic. An assistant creates the intent; the shopper confirms it. |
 
 An assistant built on your own model uses only the deterministic tools and never touches the credit balance. The hosted helpers exist for integrations without a model of their own, or that would rather not spend one on turning a sentence into search filters.
@@ -57,7 +57,7 @@ What changes with a marketplace key:
 
 - **Discovery.** `search`, `compare` and `getAlternatives` read every active seller of the marketplace. Each result names its seller in `merchant_store_id` and `merchant_name`, prices are in the marketplace's own currency, and `search` reports `sellers_matched`. A product that is not sold on the marketplace answers `404` in `compare` and `getAlternatives`.
 - **Quote.** `quote` returns what the marketplace checkout will charge: each line, a `sellers` breakdown with each seller's merchandise total and shipping, marketplace-wide promotions in `discount.amount`, and the `grand_total`. Tax is not added (`tax.status: 'not_charged'`, with `amount: 0`): the marketplace checkout charges no tax, so `grand_total` is exactly the amount the shopper pays. A line may name its seller with `merchant_store_id`; a variant not sold on the marketplace is flagged `not_available_on_this_marketplace`, and one sold by a different seller than named is flagged `not_sold_by_that_seller`. `shipping_selections` chooses a carrier option a seller offered in an earlier quote.
-- **Hosted helpers.** `interpret` and `draftCartFromIntent` are paid from the marketplace operator's own Agent Compute credits, never a seller's. With a secret key they answer `403 helpers_unavailable` when the operator has not switched hosted helpers on, and `402 insufficient_credits` when the operator's credits are exhausted; a publishable key receives `403 helpers_unavailable` whatever the reason, as on a single store. A draft from `draftCartFromIntent` holds only that marketplace's items, each naming its seller, and is priced with the marketplace quote; `getCartDraft` with the same key re-quotes it, and its items go straight into `createCheckoutIntent`.
+- **Hosted helpers.** `interpret` and `draftCartFromIntent` are paid from the marketplace operator's own AI credits, never a seller's. With a secret key they answer `403 helpers_unavailable` when the operator has not switched hosted helpers on, and `402 insufficient_credits` when the operator's credits are exhausted; a publishable key receives `403 helpers_unavailable` whatever the reason, as on a single store. A draft from `draftCartFromIntent` holds only that marketplace's items, each naming its seller, and is priced with the marketplace quote; `getCartDraft` with the same key re-quotes it, and its items go straight into `createCheckoutIntent`.
 - **Checkout intents.** An intent records each seller's lines in `sellers`. Only token confirmation is available. Stock is held when the shopper confirms, for the payment window. Confirming requires `contact.email` and `contact.name`, and a shopper credential, when sent, is recorded on the purchase. Confirmation places one marketplace order across the sellers and returns a single payment: the storefront confirms `payment.client_secret` with the payment provider's own card form. Once paid, each seller receives their own order, marked as placed through a shopping assistant.
 
 ```typescript
@@ -501,7 +501,7 @@ for (const r of data.results!) {
 
 A hosted helper. It turns a request in plain language into the exact constraint object `search` accepts, and lists in `unresolved` the parts it could not map to a constraint — a recipient, an occasion — so the assistant can ask a follow-up question or carry them into its own reply.
 
-It debits the store's Agent Compute credits at the true cost of the call and reports the amount in `usage`. A call that fails keeps no credits. `query` is required, up to 500 characters.
+It debits the store's AI credits at the true cost of the call and reports the amount in `usage`. A call that fails keeps no credits. `query` is required, up to 500 characters.
 
 ```typescript
 const { data } = await client.agent.interpret({
@@ -1088,7 +1088,7 @@ const draftId = data.draft!.id;
 
 A hosted helper. An intent such as "a birthday gift for a runner, under 80" and an optional `budget` become a priced, stock-checked draft. The request is turned into constraints, the catalogue is searched for in-stock products, and a model chooses from those results only, by variant — it never supplies a price. Every amount in the draft comes from the quote, and `over_budget` reports whether the quoted total exceeds the budget. `selections` gives the reason for each choice.
 
-It debits the store's Agent Compute credits for both model steps; `usage` reports the total. A request that no in-stock product matches returns `404`.
+It debits the store's AI credits for both model steps; `usage` reports the total. A request that no in-stock product matches returns `404`.
 
 ```typescript
 const { data } = await client.agent.draftCartFromIntent({
@@ -2572,7 +2572,7 @@ const { data } = await client.agent.getStorePolicies();
 
 ### `getUsage`
 
-The store's Agent Compute credit balance, the state of its automatic recharge and of its hosted helpers, and this month's hosted-helper spend by tool, with production and sandbox shown separately. Requires a secret key, so call it from your server.
+The store's AI credit balance, the state of its automatic recharge and of its hosted helpers, and this month's hosted-helper spend by tool, with production and sandbox shown separately. Requires a secret key, so call it from your server.
 
 ```typescript
 const server = new Tybrite({ apiKey: 'tybrite_sk_live_...' });
@@ -2623,9 +2623,9 @@ const { data } = await server.agent.getUsage();
 }
 ```
 
-### Agent Compute credits
+### AI credits
 
-The hosted helpers are paid for from the store's **Agent Compute credit** balance, which the merchant funds. The shopper never pays for them. Each call is debited at its true cost, reported in `usage.credits_debited`; a call that fails keeps no credits.
+The hosted helpers are paid for from the store's **AI credit** balance, which the merchant funds. The shopper never pays for them. Each call is debited at its true cost, reported in `usage.credits_debited`; a call that fails keeps no credits.
 
 Hosted helpers are off until the merchant turns them on, which requires automatic recharge with a monthly limit, so the balance does not run out mid-conversation. When the helpers cannot run, a publishable key receives `403 helpers_unavailable` with no reason, whatever the cause, so no store reads publicly as switched off or out of credits. A secret key receives the reason: `403 helpers_unavailable` with `details.reason` (`disabled`, `paused` or `unavailable`), or `402 insufficient_credits`. Every deterministic tool keeps working — an assistant can fall back to building constraints itself and calling `search`. Calls made with a test key run the model too and debit the same balance; `getUsage` reports that spend separately.
 
@@ -2654,7 +2654,7 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | `201` | A cart draft, checkout intent, return or standing instruction was created. |
 | `400` | Invalid body or parameter — for example `compare` with fewer than two products, a `limit` out of range, or a standing instruction outside its bounds. |
 | `401` | Invalid or missing API key; a shopper tool called without a shopper credential; or an intent created for a signed-in shopper confirmed without their credential. |
-| `402` | `insufficient_credits` — a hosted helper was called with a secret key and no Agent Compute credits available (a publishable key receives `403 helpers_unavailable`). |
+| `402` | `insufficient_credits` — a hosted helper was called with a secret key and no AI credits available (a publishable key receives `403 helpers_unavailable`). |
 | `403` | `helpers_unavailable`, `consent_required`, `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
 | `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
 | `409` | `quote_changed`, `intent_not_pending`, `items_unavailable`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |

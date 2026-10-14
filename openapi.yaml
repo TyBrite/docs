@@ -519,7 +519,7 @@ tags:
       Every response carries `evidence` naming the operation each figure was read from, so an agent can
       cite its source rather than restate a number. Most tools are deterministic and cost what any
       storefront read costs. Two, `interpret` and `draftCartFromIntent`, run a model on the store's
-      behalf and debit its Agent Compute credits; the rest never do.
+      behalf and debit its AI credits; the rest never do.
 
       **Key type behavior:** a publishable key is enough for every tool except `GET /v1/agent/usage`,
       which needs a secret key. Tools that act on a shopper's own data also need exactly one shopper
@@ -533,7 +533,7 @@ tags:
       marketplace checkout's own pricing, broken down per seller; and a confirmed checkout intent places
       one marketplace order with a single payment, after which each seller receives their own order. The
       The hosted helpers (`interpret`, `draftCartFromIntent`) are paid from the marketplace operator's own
-      Agent Compute credits, never a seller's, and a helper's draft holds only that marketplace's items. The
+      AI credits, never a seller's, and a helper's draft holds only that marketplace's items. The
       tools that act on one store's data (product details, fit, adding a draft to a live cart, cart
       insights, the shopper's own context, store policies, usage) need that store's key and answer `403` to
       a marketplace key.
@@ -9240,7 +9240,7 @@ paths:
         The tool manifest for this store. Each entry names a tool, its HTTP operation, a JSON Schema for its
         request and for its response `data`, the credential it needs, and its cost class: `deterministic` tools
         read store data and cost what any storefront read costs; `hosted_helper` tools run a model and debit the
-        store's Agent Compute credits.
+        store's AI credits.
 
         `hosted_helpers_available` says whether the two hosted helpers can be called right now. When it is
         false, calling one with a publishable key returns `403 helpers_unavailable`, the same answer whatever
@@ -9890,11 +9890,11 @@ paths:
         A hosted helper: natural language in, the exact constraint object `POST /v1/agent/search` accepts out,
         plus `unresolved` — the parts of the request it could not map to a constraint.
 
-        It runs a model and debits the store's Agent Compute credits at the true cost of the call; `usage`
+        It runs a model and debits the store's AI credits at the true cost of the call; `usage`
         reports what was debited. A failed call keeps no credits. It is limited to 60 calls a minute per client
         and 1,000 an hour per key, in addition to the standard limits.
 
-        **With a marketplace operator key** the call is paid from the marketplace operator's own Agent Compute
+        **With a marketplace operator key** the call is paid from the marketplace operator's own AI
         credits, never a seller's. A secret key receives the reason a call is refused: `403 helpers_unavailable`
         with `details.reason` when the operator has not switched hosted helpers on, `402 insufficient_credits`
         when the operator's credits are exhausted. A publishable key receives `403 helpers_unavailable` whatever
@@ -9996,7 +9996,7 @@ paths:
                     properties:
                       credits_debited:
                         type: number
-                        description: Agent Compute credits debited, in US dollars.
+                        description: AI credits debited, in US dollars.
                       model_class:
                         type:
                           - string
@@ -10061,7 +10061,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
-          description: The store has no Agent Compute credits available. Returned to a secret key only; a publishable key receives `403 helpers_unavailable` instead.
+          description: The store has no AI credits available. Returned to a secret key only; a publishable key receives `403 helpers_unavailable` instead.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -10091,7 +10091,7 @@ paths:
               example:
                 error:
                   code: insufficient_credits
-                  message: This store has no Agent Compute credits available. The deterministic tools remain available.
+                  message: This store has no AI credits available. The deterministic tools remain available.
         '403':
           description: Hosted helpers are unavailable. To a publishable key this is the one answer for every reason and carries no `details`. A secret key receives `details.reason` (`disabled`, `paused` or `unavailable`), and `402 insufficient_credits` when the store is out of credits.
           headers:
@@ -12211,11 +12211,11 @@ paths:
         price. Every amount in the draft comes from the quote. `over_budget` reports whether the quoted total
         exceeds the budget.
 
-        It debits the store's Agent Compute credits for both model steps; `usage` reports the total.
+        It debits the store's AI credits for both model steps; `usage` reports the total.
 
         **With a marketplace operator key** the candidates come only from that marketplace's sellers, each
         selection names its seller (`merchant_store_id`), and the draft is priced with the marketplace quote
-        (`quote.sellers`). Both model steps are paid from the marketplace operator's own Agent Compute credits,
+        (`quote.sellers`). Both model steps are paid from the marketplace operator's own AI credits,
         never a seller's, and are refused on the same terms as `POST /v1/agent/interpret`. The draft is read back with
         `GET /v1/agent/cart-drafts/{id}` using the same key and turned into an order with
         `POST /v1/agent/checkout-intents`.
@@ -12571,7 +12571,7 @@ paths:
                     properties:
                       credits_debited:
                         type: number
-                        description: Agent Compute credits debited, in US dollars.
+                        description: AI credits debited, in US dollars.
                       model_class:
                         type:
                           - string
@@ -12687,7 +12687,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
-          description: The store has no Agent Compute credits available. Returned to a secret key only; a publishable key receives `403 helpers_unavailable` instead.
+          description: The store has no AI credits available. Returned to a secret key only; a publishable key receives `403 helpers_unavailable` instead.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -12717,7 +12717,7 @@ paths:
               example:
                 error:
                   code: insufficient_credits
-                  message: This store has no Agent Compute credits available. The deterministic tools remain available.
+                  message: This store has no AI credits available. The deterministic tools remain available.
         '403':
           description: Hosted helpers are unavailable. To a publishable key this is the one answer for every reason and carries no `details`. A secret key receives `details.reason` (`disabled`, `paused` or `unavailable`), and `402 insufficient_credits` when the store is out of credits.
           headers:
@@ -18897,9 +18897,9 @@ paths:
       operationId: getUsage
       tags:
         - Agent
-      summary: Get Agent Compute usage
+      summary: Get AI credit usage
       description: |-
-        The store's Agent Compute credit balance, the state of its automatic recharge and of its hosted helpers,
+        The store's AI credit balance, the state of its automatic recharge and of its hosted helpers,
         and this month's hosted-helper spend by tool and environment. Requires a secret key.
       security:
         - BearerAuth: []

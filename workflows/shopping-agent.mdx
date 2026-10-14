@@ -651,7 +651,7 @@ model that turns a shopper's sentence into those calls can come from either side
 ### Your own model
 
 The assistant runs on your model and calls the tools from step 1 as functions. The tools cost what any
-storefront request costs, counted against the plan's normal request allowance; no Agent Compute credits
+storefront request costs, counted against the plan's normal request allowance; no AI credits
 are involved. A tool loop registers the manifest entries and executes each call the model makes:
 
 ```typescript
@@ -676,7 +676,7 @@ for each one.
 
 ### Hosted helpers
 
-Two tools run a model on the store's side and are paid for from the store's **Agent Compute credits**:
+Two tools run a model on the store's side and are paid for from the store's **AI credits**:
 
 - `interpret` turns a request in plain language into the constraint object `search` accepts, and lists
   any part it could not map in `unresolved`.
@@ -735,7 +735,7 @@ A secret key — the store's own server — receives the reason:
 | Status | `error.code` | When |
 | :--- | :--- | :--- |
 | `403` | `helpers_unavailable` | `details.reason` is `disabled` (not turned on), `paused`, or `unavailable`. |
-| `402` | `insufficient_credits` | The store has no Agent Compute credits available. |
+| `402` | `insufficient_credits` | The store has no AI credits available. |
 
 `hosted_helpers_available` in the manifest from step 1 reports whether the helpers can run before a call
 is made, so an assistant can leave the helpers out of its tool list and fall back to its
