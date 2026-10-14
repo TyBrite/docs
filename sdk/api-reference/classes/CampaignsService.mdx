@@ -45,7 +45,8 @@ console.log(`Running online: ${online.length}`);
       "time_zone": "UTC",
       "apply_to_days": null,
       "image": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop.png",
-      "image_mobile": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop-mobile.png"
+      "image_mobile": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop-mobile.png",
+      "video": null
     },
     {
       "id": "7b2bfca8-c601-4866-9b29-fbd59f37f9f4",
@@ -63,7 +64,8 @@ console.log(`Running online: ${online.length}`);
       "time_zone": "Europe/London",
       "apply_to_days": ["friday", "saturday"],
       "image": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/7b2bfca8-c601-4866-9b29-fbd59f37f9f4/late-night.png",
-      "image_mobile": null
+      "image_mobile": null,
+      "video": null
     }
   ]
 }
@@ -98,13 +100,14 @@ console.log(`${campaign.name}: ${campaign.discount_value}% off`);
   "time_zone": "UTC",
   "apply_to_days": null,
   "image": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop.png",
-  "image_mobile": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop-mobile.png"
+  "image_mobile": "https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop-mobile.png",
+  "video": null
 }
 ```
 
 ## Banners
 
-`image` is the desktop banner and `image_mobile` the phone crop. Render `image_mobile` on small screens and fall back to `image` everywhere else — a desktop banner scaled down to a phone loses its subject, which is why the two are separate fields rather than one.
+`image` is the desktop banner and `image_mobile` the phone crop. Render `image_mobile` on small screens and fall back to `image` everywhere else — a desktop banner scaled down to a phone loses its subject, which is why the two are separate fields rather than one. `video` is an optional short video (MP4) for the same banner, `null` when none is set; `image` stays its poster and the fallback, so a storefront can play `video` where it supports it and show `image` otherwise.
 
 Either can be null. A campaign with no banner at all is normal: the merchant may be running it as a plain discount, and a storefront should render the name and the offer without one.
 

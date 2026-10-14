@@ -1248,6 +1248,7 @@ paths:
                             display_priority: 0
                             image: https://cdn.example.com/collections/featured-desktop.jpg
                             image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
+                            video: null
                           - id: e9810818-5051-4b74-a53b-2ff843b4f435
                             name: New Arrivals
                             slug: new-arrivals
@@ -1256,6 +1257,7 @@ paths:
                             display_priority: 1
                             image: null
                             image_mobile: null
+                            video: null
                       taxonomy:
                         categories:
                           total: 23
@@ -1457,6 +1459,7 @@ paths:
                             display_priority: 0
                             image: https://cdn.example.com/collections/featured-desktop.jpg
                             image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
+                            video: null
                           - id: e9810818-5051-4b74-a53b-2ff843b4f435
                             name: New Arrivals
                             slug: new-arrivals
@@ -1465,6 +1468,7 @@ paths:
                             display_priority: 1
                             image: null
                             image_mobile: null
+                            video: null
                       taxonomy:
                         categories:
                           total: 23
@@ -3169,6 +3173,7 @@ paths:
                     display_priority: 0
                     image: https://cdn.example.com/collections/featured-desktop.jpg
                     image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
+                    video: null
                     created_at: '2026-06-19T19:59:58.711993+00:00'
                     updated_at: '2026-06-19T19:59:58.711993+00:00'
                   - id: e9810818-5051-4b74-a53b-2ff843b4f435
@@ -3181,6 +3186,7 @@ paths:
                     display_priority: 1
                     image: null
                     image_mobile: null
+                    video: null
                     created_at: '2026-06-19T19:59:58.711993+00:00'
                     updated_at: '2026-06-19T20:26:59.123524+00:00'
                   - id: 8e02fcb5-3079-4902-8e69-6485790b740b
@@ -3193,6 +3199,7 @@ paths:
                     display_priority: 2
                     image: null
                     image_mobile: null
+                    video: null
                     created_at: '2026-06-19T19:59:58.711993+00:00'
                     updated_at: '2026-06-19T20:26:59.123524+00:00'
                 pagination:
@@ -3253,6 +3260,7 @@ paths:
                 display_priority: 0
                 image: https://cdn.example.com/collections/featured-desktop.jpg
                 image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
+                video: null
                 rules:
                   type: manual
                 created_at: '2026-06-19T19:59:58.711993+00:00'
@@ -21358,7 +21366,7 @@ paths:
               
             **Allowed Fields:**
             - `id`, `name`, `type`, `display_type`, `value`, `min_purchase`
-            - `start_date`, `end_date`, `status`, `conditions`, `image`, `image_mobile`
+            - `start_date`, `end_date`, `status`, `conditions`, `image`, `image_mobile`, `video`
             - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
             - `has_time_restrictions`, `start_time`, `end_time`, `time_zone`, `apply_to_days`
             - `created_at`, `updated_at`
@@ -21410,6 +21418,7 @@ paths:
                     id: df290d89-0400-4b2c-aa56-11fcc486150c
                     image: https://cdn.example.com/promotions/spring-sale.jpg
                     image_mobile: https://cdn.example.com/promotions/spring-sale-mobile.jpg
+                    video: null
                   - type: fixed
                     display_type: Fixed amount off
                     name: $20 Off Orders Over $200
@@ -21531,7 +21540,7 @@ paths:
 
             **Allowed Fields:**
             - `id`, `name`, `type`, `display_type`, `value`, `min_purchase`
-            - `start_date`, `end_date`, `status`, `conditions`, `image`, `image_mobile`
+            - `start_date`, `end_date`, `status`, `conditions`, `image`, `image_mobile`, `video`
             - `bundle_products`, `bogo_required_products`, `bogo_free_products`, `free_products`
             - `has_time_restrictions`, `start_time`, `end_time`, `time_zone`, `apply_to_days`
             - `created_at`, `updated_at`
@@ -21566,6 +21575,7 @@ paths:
                 id: df290d89-0400-4b2c-aa56-11fcc486150c
                 image: https://cdn.example.com/promotions/spring-sale.jpg
                 image_mobile: https://cdn.example.com/promotions/spring-sale-mobile.jpg
+                video: null
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -21841,6 +21851,7 @@ paths:
                     apply_to_days: null
                     image: https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop.png
                     image_mobile: null
+                    video: null
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '429':
@@ -21893,6 +21904,7 @@ paths:
                 apply_to_days: null
                 image: https://cdn.tybritelabs.com/stores/086e8d7f-b84d-41bc-8acd-3f5740ea61dc/campaigns/3f1c8a4e-9d2b-4c17-8f5a-2b6d1e7c9a04/autumn-drop.png
                 image_mobile: null
+                video: null
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -21949,7 +21961,7 @@ paths:
             Comma-separated list of fields to include in the response.
 
             **Allowed Fields:**
-            - `id`, `title`, `slug`, `excerpt`, `featured_image`
+            - `id`, `title`, `slug`, `excerpt`, `featured_image`, `video`
             - `category_id`, `category_name`, `category_slug`, `category_icon`
             - `author_name`, `author_avatar`, `status`, `published_at`
             - `view_count`, `product_count`, `seo_title`, `seo_description`
@@ -21993,6 +22005,7 @@ paths:
                     slug: best-tech-gifts-2026
                     excerpt: Our editors pick the standout gadgets worth gifting this year — from noise-cancelling headphones to smart wearables.
                     featured_image: https://images.unsplash.com/photo-1513708927688-890fe41dfddc?w=1200&q=80
+                    video: null
                     category_name: Buying Guides
                     category_slug: buying-guides
                     status: published
@@ -22004,6 +22017,7 @@ paths:
                     slug: perfect-home-office
                     excerpt: A practical guide to the desk setup that keeps you focused all day.
                     featured_image: https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80
+                    video: null
                     category_name: Buying Guides
                     category_slug: buying-guides
                     status: published
@@ -22047,7 +22061,7 @@ paths:
             Comma-separated list of fields to include in the response.
               
             **Allowed Fields:**
-            - `id`, `title`, `slug`, `excerpt`, `content`, `featured_image`
+            - `id`, `title`, `slug`, `excerpt`, `content`, `featured_image`, `video`
             - `category_id`, `category_name`, `category_slug`, `category_icon`
             - `author_name`, `author_avatar`, `status`, `published_at`
             - `view_count`, `product_count`, `seo_title`, `seo_description`
@@ -22105,6 +22119,7 @@ paths:
                 slug: best-tech-gifts-2026
                 excerpt: Our editors pick the standout gadgets worth gifting this year — from noise-cancelling headphones to smart wearables.
                 featured_image: https://images.unsplash.com/photo-1513708927688-890fe41dfddc?w=1200&q=80
+                video: null
                 category_name: Buying Guides
                 status: published
                 published_at: '2026-06-18T11:00:52.880415+00:00'
@@ -22206,6 +22221,12 @@ paths:
                           type:
                             - string
                             - 'null'
+                        video:
+                          type:
+                            - string
+                            - 'null'
+                          format: uri
+                          description: Optional cover video; `featured_image` stays the poster and the fallback.
                         published_at:
                           type:
                             - string
@@ -22223,6 +22244,7 @@ paths:
                     slug: best-tech-gifts-2026
                     excerpt: The devices worth giving this year.
                     featured_image: https://cdn.tybritelabs.com/posts/gifts-2026.jpg
+                    video: null
                     published_at: '2026-06-20T09:00:00Z'
                     reads_per_day: 3.4286
                 window_days: 7
@@ -22304,6 +22326,12 @@ paths:
                           type:
                             - string
                             - 'null'
+                        video:
+                          type:
+                            - string
+                            - 'null'
+                          format: uri
+                          description: Optional cover video; `featured_image` stays the poster and the fallback.
                         published_at:
                           type:
                             - string
@@ -22329,6 +22357,7 @@ paths:
                     slug: building-the-perfect-professional-tech-ecosystem
                     excerpt: Discover how the right combination of devices can transform your productivity.
                     featured_image: https://cdn.tybritelabs.com/posts/ecosystem.jpg
+                    video: null
                     published_at: '2026-01-11T12:58:50Z'
                     score: 0.4839
                     reason: Closely related subject
@@ -22373,7 +22402,7 @@ paths:
             Comma-separated list of fields to include in the response.
 
             **Allowed Fields:**
-            - `id`, `title`, `slug`, `description`, `featured_image`
+            - `id`, `title`, `slug`, `description`, `featured_image`, `video`
             - `status`, `published_at`, `created_at`, `updated_at`
 
             The gallery (`images`, with its shoppable hotspots) and `collection_id` are returned by
@@ -22414,6 +22443,7 @@ paths:
                     slug: workspace-essentials
                     description: A shoppable edit of desk upgrades for a calmer, more productive day.
                     featured_image: https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80
+                    video: null
                     published_at: '2026-06-19T11:00:52.880415+00:00'
                     created_at: '2026-06-20T11:00:52.880415+00:00'
                 pagination:
@@ -22452,7 +22482,7 @@ paths:
             Comma-separated list of fields to include in the response.
               
             **Allowed Fields:**
-            - `id`, `title`, `slug`, `description`, `featured_image`
+            - `id`, `title`, `slug`, `description`, `featured_image`, `video`
             - `collection_id`, `published_at`, `created_at`, `images`
           example: title,description,images
         - name: visitor_id
@@ -22507,6 +22537,7 @@ paths:
                 slug: workspace-essentials
                 description: A shoppable edit of desk upgrades for a calmer, more productive day.
                 featured_image: https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80
+                video: null
                 collection_id: null
                 published_at: '2026-06-19T11:00:52.880415+00:00'
                 images:
@@ -32892,6 +32923,12 @@ components:
                           - string
                           - 'null'
                         format: uri
+                      video:
+                        type:
+                          - string
+                          - 'null'
+                        format: uri
+                        description: Optional URL of a short video for this banner (MP4, H.264 with AAC audio). Null when none is set. `image` stays the poster and the fallback, so a storefront that shows only images keeps working unchanged.
                       image_mobile:
                         type:
                           - string
@@ -34140,6 +34177,12 @@ components:
           description: |
             URL of the collection banner image (desktop, and the fallback used on all
             viewports when no mobile image is set).
+        video:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Optional URL of a short video for this banner (MP4, H.264 with AAC audio). Null when none is set. `image` stays the poster and the fallback, so a storefront that shows only images keeps working unchanged.
         image_mobile:
           type:
             - string
@@ -35856,6 +35899,12 @@ components:
             - 'null'
           format: uri
           description: URL of the promotion banner image. This is the default banner — used on desktop and as the fallback whenever `image_mobile` is not set.
+        video:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Optional URL of a short video for this banner (MP4, H.264 with AAC audio). Null when none is set. `image` stays the poster and the fallback, so a storefront that shows only images keeps working unchanged.
         image_mobile:
           type:
             - string
@@ -36106,6 +36155,12 @@ components:
             - string
             - 'null'
           description: Banner artwork for the campaign. Null when the merchant has not set one.
+        video:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Optional URL of a short video for this banner (MP4, H.264 with AAC audio). Null when none is set. `image` stays the poster and the fallback, so a storefront that shows only images keeps working unchanged.
         image_mobile:
           type:
             - string
@@ -36129,6 +36184,12 @@ components:
           type: string
         featured_image:
           type: string
+        video:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Optional URL of a short video for this banner (MP4, H.264 with AAC audio). Null when none is set. `featured_image` stays the poster and the fallback, so a storefront that shows only images keeps working unchanged.
         category_id:
           type: string
           format: uuid
@@ -36281,6 +36342,12 @@ components:
                       - string
                       - 'null'
                     format: uri
+                  video:
+                    type:
+                      - string
+                      - 'null'
+                    format: uri
+                    description: Optional URL of a short video for this banner (MP4, H.264 with AAC audio). Null when none is set. `featured_image` stays the poster and the fallback, so a storefront that shows only images keeps working unchanged.
             required:
               - embed_id
     Lookbook:
@@ -36297,6 +36364,12 @@ components:
           type: string
         featured_image:
           type: string
+        video:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: Optional URL of a short video for this banner (MP4, H.264 with AAC audio). Null when none is set. `featured_image` stays the poster and the fallback, so a storefront that shows only images keeps working unchanged.
         status:
           type: string
           enum:
