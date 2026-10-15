@@ -22045,7 +22045,7 @@ paths:
       tags:
         - CMS
       summary: Get blog post by slug
-      description: Retrieve a single published blog post by its URL slug, including full `content` and any linked products (for shoppable posts). Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published post matches the slug.
+      description: Retrieve a single published blog post by its URL slug, including full `content` and any linked products (for shoppable posts). `content` is an Editor.js document (`time`, `version`, `blocks`), or `null` for a post with no body; the block types and rendering rules are described on the `PostContent` schema. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published post matches the slug.
       security:
         - BearerAuth: []
       parameters:
@@ -22120,6 +22120,41 @@ paths:
                 title: The Best Tech Gifts for 2026
                 slug: best-tech-gifts-2026
                 excerpt: Our editors pick the standout gadgets worth gifting this year — from noise-cancelling headphones to smart wearables.
+                content:
+                  time: 1781780452880
+                  version: 2.30.8
+                  blocks:
+                    - id: Hk3j9sLq2a
+                      type: header
+                      data:
+                        text: Headphones
+                        level: 2
+                    - id: Pw8x1mTe5c
+                      type: paragraph
+                      data:
+                        text: The <b>Sony WH-1000XM4</b> remains the benchmark for noise cancelling.
+                    - id: Lr2n7vQd4b
+                      type: list
+                      data:
+                        style: unordered
+                        items:
+                          - content: 30-hour battery
+                            items: []
+                            meta: {}
+                          - content: Folds flat
+                            items: []
+                            meta: {}
+                    - id: Dm5k0zXy9e
+                      type: delimiter
+                      data: {}
+                    - id: Pe4t6uBn1f
+                      type: productEmbed
+                      data:
+                        productId: 7d425c0a-50e7-4e39-af79-6f7945f9dfa8
+                        productName: Sony WH-1000XM4
+                        productImage: https://cdn.example.com/products/sony-wh1000xm4.jpg
+                        productPrice: 349.99
+                        displayType: card
                 featured_image: https://images.unsplash.com/photo-1513708927688-890fe41dfddc?w=1200&q=80
                 video: null
                 category_name: Buying Guides
@@ -36332,6 +36367,271 @@ components:
           description: |
             Phone-sized banner. Null when only the desktop banner is set — fall back to `image` there,
             rather than cropping it.
+    PostBlockTextData:
+      type: object
+      description: '`paragraph` block.'
+      properties:
+        text:
+          type: string
+          description: Inline HTML.
+    PostBlockHeaderData:
+      type: object
+      description: '`header` block.'
+      properties:
+        text:
+          type: string
+          description: Inline HTML.
+        level:
+          type: integer
+          minimum: 1
+          maximum: 4
+    PostBlockListData:
+      type: object
+      description: '`list` block.'
+      properties:
+        style:
+          type: string
+          enum:
+            - ordered
+            - unordered
+        items:
+          type: array
+          description: Plain strings (older posts) or objects with `content` (inline HTML), `items` (a nested list of the same shape) and `meta`.
+          items:
+            oneOf:
+              - type: string
+              - type: object
+                properties:
+                  content:
+                    type: string
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  meta:
+                    type: object
+                    additionalProperties: true
+    PostBlockQuoteData:
+      type: object
+      description: '`quote` block.'
+      properties:
+        text:
+          type: string
+          description: Inline HTML.
+        caption:
+          type: string
+          description: Inline HTML. May be empty.
+        alignment:
+          type: string
+          example: left
+    PostBlockTableData:
+      type: object
+      description: '`table` block.'
+      properties:
+        withHeadings:
+          type: boolean
+          description: When true, the first row is a header row.
+        content:
+          type: array
+          description: Rows of cells; each cell is inline HTML.
+          items:
+            type: array
+            items:
+              type: string
+    PostBlockWarningData:
+      type: object
+      description: '`warning` block.'
+      properties:
+        title:
+          type: string
+        message:
+          type: string
+          description: Inline HTML.
+    PostBlockImageData:
+      type: object
+      description: '`image` block.'
+      properties:
+        url:
+          type: string
+          format: uri
+        caption:
+          type: string
+        alt:
+          type: string
+        size:
+          type: string
+          enum:
+            - small
+            - medium
+            - large
+            - full
+          description: Display width as a share of the column, from one third (`small`) to the full width.
+    PostBlockGalleryData:
+      type: object
+      description: '`gallery` block.'
+      properties:
+        layout:
+          type: string
+          enum:
+            - 2-col
+            - 3-col
+            - 4-col
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+                format: uri
+              caption:
+                type: string
+              alt:
+                type: string
+    PostBlockVideoData:
+      type: object
+      description: '`video` block.'
+      properties:
+        url:
+          type: string
+          format: uri
+        caption:
+          type: string
+        type:
+          type: string
+          enum:
+            - upload
+            - embed
+          description: '`upload` is a video file for a `video` element; `embed` is a player URL for an `iframe`.'
+        embedCode:
+          type: string
+    PostBlockEmbedData:
+      type: object
+      description: '`embed` block (YouTube, Vimeo, Instagram or X/Twitter).'
+      properties:
+        service:
+          type: string
+          example: youtube
+        source:
+          type: string
+          format: uri
+          description: The URL the author pasted.
+        embed:
+          type: string
+          format: uri
+          description: The player URL for an `iframe`.
+        width:
+          type: integer
+        height:
+          type: integer
+        caption:
+          type: string
+    PostBlockProductEmbedData:
+      type: object
+      description: '`productEmbed` block.'
+      properties:
+        productId:
+          type: string
+          format: uuid
+        productName:
+          type: string
+        productImage:
+          type:
+            - string
+            - 'null'
+          format: uri
+        productPrice:
+          type: number
+        displayType:
+          type: string
+          enum:
+            - card
+            - inline
+            - minimal
+    PostContentBlock:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Identifier of the block within the document. Present on blocks written by the post editor and used as the `block_id` of a product embedded beside it.
+        type:
+          type: string
+          description: Block type. See `PostContent` for the types and their `data` fields.
+          example: paragraph
+        data:
+          description: Block payload, shaped by `type`. Fields not listed for a type are ignored; a block without `data` is treated as empty.
+          anyOf:
+            - $ref: '#/components/schemas/PostBlockTextData'
+            - $ref: '#/components/schemas/PostBlockHeaderData'
+            - $ref: '#/components/schemas/PostBlockListData'
+            - $ref: '#/components/schemas/PostBlockQuoteData'
+            - $ref: '#/components/schemas/PostBlockTableData'
+            - $ref: '#/components/schemas/PostBlockWarningData'
+            - $ref: '#/components/schemas/PostBlockImageData'
+            - $ref: '#/components/schemas/PostBlockGalleryData'
+            - $ref: '#/components/schemas/PostBlockVideoData'
+            - $ref: '#/components/schemas/PostBlockEmbedData'
+            - $ref: '#/components/schemas/PostBlockProductEmbedData'
+            - type: object
+              additionalProperties: true
+      required:
+        - type
+        - data
+      example:
+        id: a1b2c3d4e5
+        type: paragraph
+        data:
+          text: Our editors tested forty gadgets so you do not have to.
+    PostContent:
+      type: object
+      description: |
+        The article body in Editor.js output format (https://editorjs.io). `blocks` is an ordered list; render it top to bottom.
+
+        **Block types**
+
+        | `type` | `data` fields |
+        |---|---|
+        | `paragraph` | `text` (inline HTML) |
+        | `header` | `text` (inline HTML), `level` (1 to 4). Headings are typed `header`, not `heading`. |
+        | `list` | `style` (`ordered` or `unordered`), `items` |
+        | `quote` | `text`, `caption` (inline HTML), `alignment` |
+        | `delimiter` | none (`{}`) |
+        | `table` | `content` (rows of cells, each cell inline HTML), `withHeadings` |
+        | `warning` | `title`, `message` (inline HTML) |
+        | `image` | `url`, `caption`, `alt`, `size` (`small`, `medium`, `large` or `full`) |
+        | `gallery` | `images` (each `url`, `caption`, `alt`), `layout` (`2-col`, `3-col` or `4-col`) |
+        | `video` | `url`, `caption`, `type` (`upload` for a video file, `embed` for an embeddable player URL), `embedCode` |
+        | `embed` | `service`, `source`, `embed` (player URL), `width`, `height`, `caption` |
+        | `productEmbed` | `productId`, `productName`, `productImage`, `productPrice`, `displayType` (`card`, `inline` or `minimal`) |
+
+        **Rendering rules**
+
+        - A renderer skips any block whose `type` it does not recognise; new block types can appear
+          without a change to the API version.
+        - `list.items` holds plain strings in older posts and `{ content, items, meta }` objects in
+          current ones, where `content` is inline HTML and `items` nests a sub-list. Both forms occur and
+          both must be handled.
+        - Inline HTML is limited to `<b>`, `<i>`, `<u>`, `<a href>`, `<mark>`, `<code>` and `<br>`.
+          The API returns stored content as written and does not sanitise it on read, so a storefront
+          sanitises inline HTML to that list before inserting it into a page, and accepts only `http`,
+          `https` and `mailto` URLs in `href`.
+        - A `productEmbed` block carries the product as it was when the author placed it. The current
+          price, stock and `variant_id` of the same product are in the post's `products` array, matched
+          on `product_id` (equal to the block's `productId`).
+      properties:
+        time:
+          type: integer
+          description: When the document was last saved in the editor, in milliseconds since the epoch.
+          example: 1781780452880
+        version:
+          type: string
+          description: Editor.js version that produced the document.
+          example: 2.30.8
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostContentBlock'
     Post:
       type: object
       properties:
@@ -36345,7 +36645,10 @@ components:
         excerpt:
           type: string
         content:
-          type: string
+          description: The article body, or `null` for a post with no body. See `PostContent`.
+          oneOf:
+            - $ref: '#/components/schemas/PostContent'
+            - type: 'null'
         featured_image:
           type: string
         video:
@@ -36398,7 +36701,7 @@ components:
             `created_at`.
         products:
           type: array
-          description: Products embedded in the post body, in the order the author placed them. `block_id` ties an embed to the content block it belongs beside, and `display_type` is how the author chose to show it. Each entry arrives with the product already resolved, and an embed whose product is no longer available is omitted, so a post can return fewer products than were authored.
+          description: Products embedded in the post body, in the order the author placed them. Match an entry to a `productEmbed` block in `content` on `product_id` (the block's `productId`). `block_id` is the `id` of the content block an embed is anchored to and is `null` for embeds placed in the post editor. `display_type` is how the author chose to show it. Each entry arrives with the product already resolved, and an embed whose product is no longer available is omitted, so a post can return fewer products than were authored.
           items:
             type: object
             properties:
@@ -36410,7 +36713,7 @@ components:
                 type:
                   - string
                   - 'null'
-                description: The content block this embed sits with, when the author anchored it to one.
+                description: The `id` of the content block this embed is anchored to. `null` when it is not anchored to a block, which is the case for embeds placed in the post editor.
               display_type:
                 type:
                   - string
@@ -36539,7 +36842,7 @@ components:
           enum:
             - published
             - draft
-          description: Publication status. Only `published` lookbooks are returned by the public API.
+          description: Publication status. Only `published` lookbooks are returned by the public API. Returned by the list; the single-lookbook response omits it.
         collection_id:
           type:
             - string

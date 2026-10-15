@@ -292,7 +292,7 @@ const { posts } = await storefront.cms.listPosts({ limit: 10 });
 // → { posts: [{ id, title: 'The Best Tech Gifts for 2026', slug: 'best-tech-gifts-2026', product_count: 2 }], pagination: {...} }
 
 const post = await storefront.cms.getPost({ slug: 'best-tech-gifts-2026' });
-// → { id, title, content: { blocks: [...] }, products: [{ product_id, name }] }
+// → { id, title, content: { time, version, blocks: [{ id, type, data }] }, products: [{ product_id, name }] }
 
 const { lookbooks } = await storefront.cms.listLookbooks({ limit: 10 });
 // → { lookbooks: [{ id, title: 'Workspace Essentials', slug: 'workspace-essentials', status: 'published' }] }

@@ -77,9 +77,39 @@ products for shoppable posts (each entry in the `products` array carries the pro
 
 An embedded product also carries **`variant_id`** — pass that to `client.cartWishlist.addToCart`,
 which is keyed by variant rather than product, so a shoppable post can add to a basket without a
-second call. `embed_id` identifies the placement rather than the product, and `block_id` ties an embed
-to the content block it sits beside. An embed whose product is no longer available is omitted, so a
-post can return fewer products than were authored.
+second call. `embed_id` identifies the placement rather than the product. A `productEmbed` block in
+`content` is matched to its entry on `product_id`, which equals the block's `productId`; `block_id` is the
+`id` of the content block an embed is anchored to and is `null` for embeds placed in the post editor. An
+embed whose product is no longer available is omitted, so a post can return fewer products than were
+authored.
+
+`content` is an [Editor.js](https://editorjs.io) document: `{ time, version, blocks }`, or `null` for a
+post with no body. Each block is `{ id, type, data }`, and the fields in `data` depend on `type`.
+
+| `type` | `data` fields |
+|---|---|
+| `paragraph` | `text` (inline HTML) |
+| `header` | `text` (inline HTML), `level` (1 to 4) |
+| `list` | `style` (`ordered` or `unordered`), `items` |
+| `quote` | `text`, `caption` (inline HTML), `alignment` |
+| `delimiter` | none |
+| `table` | `content` (rows of cells, each inline HTML), `withHeadings` |
+| `warning` | `title`, `message` (inline HTML) |
+| `image` | `url`, `caption`, `alt`, `size` (`small`, `medium`, `large`, `full`) |
+| `gallery` | `images` (each `url`, `caption`, `alt`), `layout` (`2-col`, `3-col`, `4-col`) |
+| `video` | `url`, `caption`, `type` (`upload` or `embed`), `embedCode` |
+| `embed` | `service`, `source`, `embed`, `width`, `height`, `caption` |
+| `productEmbed` | `productId`, `productName`, `productImage`, `productPrice`, `displayType` (`card`, `inline`, `minimal`) |
+
+Headings are typed `header`. In a `list`, `items` holds plain strings in older posts and
+`{ content, items, meta }` objects in current ones, where `content` is inline HTML and `items` nests a
+sub-list; both forms occur. A renderer skips any block whose `type` it does not recognise, because new
+block types can be added without a change to the API version.
+
+Inline HTML is limited to `<b>`, `<i>`, `<u>`, `<a href>`, `<mark>`, `<code>` and `<br>`. Content is
+returned as stored and is not sanitised on read, so a storefront sanitises inline HTML to that list
+before inserting it into a page, and accepts only `http`, `https` and `mailto` URLs in `href`. The
+example below uses DOMPurify for that step.
 
 ```typescript
 const post = await client.cms.getPost({
@@ -89,8 +119,47 @@ const post = await client.cms.getPost({
   sessionId
 });
 
-// `content` is a structured block document ({ blocks: [...] })
-console.log(post.content.blocks);
+// Walk the blocks in order; `content` is null for a post with no body
+const clean = (html: string) =>
+  DOMPurify.sanitize(html ?? '', {
+    ALLOWED_TAGS: ['b', 'i', 'u', 'a', 'mark', 'code', 'br'],
+    ALLOWED_ATTR: ['href'],
+  });
+
+const listItems = (items: Array<string | { content: string; items?: any[] }>): string =>
+  items
+    .map((item) =>
+      typeof item === 'string'
+        ? `<li>${clean(item)}</li>`
+        : `<li>${clean(item.content)}${item.items?.length ? `<ul>${listItems(item.items)}</ul>` : ''}</li>`
+    )
+    .join('');
+
+const html = (post.content?.blocks ?? [])
+  .map((block) => {
+    const d: any = block.data;
+    switch (block.type) {
+      case 'paragraph':
+        return `<p>${clean(d.text)}</p>`;
+      case 'header': {
+        const level = Math.min(Math.max(d.level ?? 2, 1), 4);
+        return `<h${level}>${clean(d.text)}</h${level}>`;
+      }
+      case 'list': {
+        const tag = d.style === 'ordered' ? 'ol' : 'ul';
+        return `<${tag}>${listItems(d.items ?? [])}</${tag}>`;
+      }
+      case 'quote':
+        return `<blockquote>${clean(d.text)}${d.caption ? `<footer>${clean(d.caption)}</footer>` : ''}</blockquote>`;
+      case 'delimiter':
+        return '<hr>';
+      case 'image':
+        return `<img src="${d.url}" alt="${d.alt ?? ''}">`;
+      default:
+        return ''; // unrecognised block types are skipped
+    }
+  })
+  .join('\n');
 
 // Shoppable products embedded in the post
 post.products?.forEach(p => console.log(`Featured: ${p.name} ($${p.price})`));
@@ -103,16 +172,20 @@ post.products?.forEach(p => console.log(`Featured: ${p.name} ($${p.price})`));
   "created_at": "2026-01-11T12:14:53.804888+00:00",
   "updated_at": "2026-07-25T08:29:08.771524+00:00",
   "content": {
+    "time": 1781780452880,
+    "version": "2.30.8",
     "blocks": [
-      { "type": "heading", "level": 2, "text": "Top picks this season" },
-      { "type": "paragraph", "text": "Whether you are shopping for a commuter, a home-office hero, or a fitness fan, these are the gadgets our team keeps coming back to." },
-      { "type": "heading", "level": 3, "text": "For the music lover" },
-      { "type": "paragraph", "text": "The Sony WH-1000XM4 remains the reference for noise cancellation." }
+      { "id": "Hk3j9sLq2a", "type": "header", "data": { "text": "Top picks this season", "level": 2 } },
+      { "id": "Pw8x1mTe5c", "type": "paragraph", "data": { "text": "Whether you are shopping for a commuter, a home-office hero, or a fitness fan, these are the gadgets our team keeps coming back to." } },
+      { "id": "Lr2n7vQd4b", "type": "header", "data": { "text": "For the music lover", "level": 3 } },
+      { "id": "Dm5k0zXy9e", "type": "paragraph", "data": { "text": "The <b>Sony WH-1000XM4</b> remains the reference for noise cancellation." } },
+      { "id": "Pe4t6uBn1f", "type": "productEmbed", "data": { "productId": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", "productName": "Sony WH-1000XM4", "productImage": "https://cdn.example.com/products/sony-wh1000xm4.jpg", "productPrice": 349.99, "displayType": "card" } }
     ]
   },
   "products": [
     {
       "embed_id": "278c7e72-58b5-44c8-bf73-d8608daea80a",
+      "block_id": null,
       "display_type": "card",
       "position": 1,
       "product_id": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8",
