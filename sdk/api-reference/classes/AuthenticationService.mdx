@@ -44,7 +44,27 @@ Every customer-scoped operation across the SDK — on `client.customers`, `clien
 
 Create a new customer account. On success, returns **`201 Created`** along with session tokens so you can log the user in immediately.
 
-The email must be a real, deliverable address. Disposable and placeholder domains (`example.com`, `test.com`, known throwaway-mail providers, and similar) are rejected with `400 invalid_request`, so a sign-up form that submits a dummy address gets a validation error rather than a dead account.
+The email must be a real, deliverable address. Disposable and placeholder domains (`example.com`, `test.com`, known throwaway-mail providers, and similar) are rejected with `400 invalid_email`, so a sign-up form that submits a dummy address gets a validation error rather than a dead account.
+
+A password must be 8 to 72 characters long, counted as characters, and must not appear on the list of commonly used passwords, which is compared without regard to case. A password that breaks the rule is refused with `400 weak_password`; `details.rule` identifies the rule.
+
+| `details.rule` | Refused when |
+| --- | --- |
+| `too_short` | The password has fewer than 8 characters. |
+| `too_long` | The password has more than 72 characters. |
+| `common` | The password is on the list of commonly used passwords, for example `password123`. |
+
+```text
+{
+  "error": {
+    "code": "weak_password",
+    "message": "Password must be at least 8 characters.",
+    "details": { "rule": "too_short" }
+  }
+}
+```
+
+The password rule is evaluated before the email is looked up, so the refusal is identical whether or not the email already has an account, and no error code distinguishes the two. The other `400` codes are `invalid_request` for a missing `email` or `password` and `invalid_email` for a malformed, disposable or placeholder address. Past the attempt limits below, the call answers `429 rate_limited` with a `Retry-After` header.
 
 Pass `marketing_consent: true` when the sign-up form includes a marketing opt-in box and the customer checked it. It defaults to `false` (opt-in) — a customer is never subscribed to marketing without affirmative consent. The customer can change this later via `updateCustomer`.
 
@@ -205,7 +225,7 @@ await client.authentication.resetPassword({
 
 ### `updatePassword`
 
-Update the password for the currently authenticated user. Returns **`200 OK`**.
+Update the password for the currently authenticated user. Returns **`200 OK`**. The new password follows the [password rule](#register) that applies to `register`; a password that breaks it is refused with `400 weak_password` and a `details.rule` of `too_short`, `too_long` or `common`.
 
 <Warning>
   `xAuthToken` is **mandatory** here and must be the customer's **own** session JWT (the `access_token` returned from `login` / `verifyOtp` / `register`). Server keys cannot stand in — this endpoint mutates the customer's login credentials and requires per-customer authorization.
@@ -359,13 +379,13 @@ await client.authentication.logout();
 
 | Method | Success | Notable Errors |
 | --- | --- | --- |
-| `register` | **201 Created** | `400` validation, **`409 Conflict`** account already exists at this store |
+| `register` | **201 Created** | `400` `invalid_request`, `invalid_email` or `weak_password`; `429` `rate_limited`; **`409 Conflict`** account already exists at this store |
 | `login` | **200 OK** | `401` invalid credentials |
 | `logout` | **200 OK** | — |
 | `sendMagicLink` | **200 OK** | `400` invalid email |
 | `verifyOtp` | **200 OK** | `400` invalid/expired code |
 | `resetPassword` | **200 OK** | `400` invalid email |
-| `updatePassword` | **200 OK** | `401` missing or invalid `xAuthToken` |
+| `updatePassword` | **200 OK** | `400` `weak_password`; `401` missing or invalid `xAuthToken` |
 | `refreshToken` | **200 OK** | `401` invalid/revoked refresh token |
 | `getCurrentUser` | **200 OK** | `401` missing or invalid `xAuthToken` |
 

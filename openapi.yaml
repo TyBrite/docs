@@ -19358,7 +19358,12 @@ paths:
       description: |
         Create a new customer account with email and password.
         Returns user details and authentication tokens upon successful registration.
-        The email must be a real, deliverable address — disposable and example domains (e.g. `example.com`) are rejected with `400 invalid_request`.
+        The email must be a real, deliverable address — disposable and example domains (e.g. `example.com`) are rejected with `400 invalid_email`.
+
+        **Password rule:** a password must be 8 to 72 characters long (counted as characters, not bytes) and must not
+        be on the list of commonly used passwords, which is compared without regard to case. A password that breaks the rule
+        is refused with `400 weak_password` and `details.rule` set to `too_short`, `too_long` or `common`. The rule is
+        checked before the email is looked up, so the refusal is the same whether or not the email already has an account.
           
         **Multi-Store Support:**
         - If the email is already registered at another store, a new customer record
@@ -19400,7 +19405,8 @@ paths:
                 password:
                   type: string
                   minLength: 8
-                  description: Password (minimum 8 characters)
+                  maxLength: 72
+                  description: Password, 8 to 72 characters, not on the list of commonly used passwords.
                   example: SecurePassword123!
                 name:
                   type: string
@@ -19472,7 +19478,48 @@ paths:
                   expires_at: 1781966858
                 is_multi_store_customer: false
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: |
+            The request was refused. `code` is `invalid_request` when `email` or `password` is missing,
+            `invalid_email` when the address is malformed or uses a disposable or example domain, and
+            `weak_password` when the password breaks the password rule (`details.rule` is `too_short`, `too_long` or `common`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordPolicyError'
+              examples:
+                invalid_email:
+                  summary: Malformed address
+                  value:
+                    error:
+                      code: invalid_email
+                      message: Enter a valid email address.
+                too_short:
+                  summary: Password under 8 characters
+                  value:
+                    error:
+                      code: weak_password
+                      message: Password must be at least 8 characters.
+                      details:
+                        rule: too_short
+                too_long:
+                  summary: Password over 72 characters
+                  value:
+                    error:
+                      code: weak_password
+                      message: Password must be at most 72 characters.
+                      details:
+                        rule: too_long
+                common:
+                  summary: Password on the common-password list
+                  value:
+                    error:
+                      code: weak_password
+                      message: That password is too common. Choose a less predictable one.
+                      details:
+                        rule: common
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -19869,6 +19916,10 @@ paths:
       summary: Update password
       description: |
         Update user password (requires authentication).
+
+        The new password follows the same rule as registration: 8 to 72 characters, not on the list of commonly used
+        passwords. A password that breaks the rule is refused with `400 weak_password` and `details.rule` set to
+        `too_short`, `too_long` or `common`.
           
         **⚠️ SECRET KEY REQUIRED**
           
@@ -19911,6 +19962,8 @@ paths:
                 password:
                   type: string
                   minLength: 8
+                  maxLength: 72
+                  description: New password, 8 to 72 characters, not on the list of commonly used passwords.
       responses:
         '200':
           description: Password updated
@@ -19942,7 +19995,41 @@ paths:
                   id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
                   email: john.doe@tybritelabs.com
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: |
+            The request was refused. `code` is `invalid_request` when `password` is missing and
+            `weak_password` when the password breaks the password rule (`details.rule` is `too_short`, `too_long` or `common`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordPolicyError'
+              examples:
+                too_short:
+                  summary: Password under 8 characters
+                  value:
+                    error:
+                      code: weak_password
+                      message: Password must be at least 8 characters.
+                      details:
+                        rule: too_short
+                too_long:
+                  summary: Password over 72 characters
+                  value:
+                    error:
+                      code: weak_password
+                      message: Password must be at most 72 characters.
+                      details:
+                        rule: too_long
+                common:
+                  summary: Password on the common-password list
+                  value:
+                    error:
+                      code: weak_password
+                      message: That password is too common. Choose a less predictable one.
+                      details:
+                        rule: common
         '401':
           description: Invalid current password
         '403':
@@ -35710,6 +35797,48 @@ components:
           type: integer
         expires_at:
           type: integer
+    PasswordPolicyError:
+      type: object
+      description: |
+        Error body returned when a request is refused for its email address or password. `invalid_email`
+        refuses a malformed, disposable or example address. `weak_password` refuses a password that breaks
+        the password rule; `details.rule` names the rule. The body is the same whether or not the email
+        already has an account.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_request
+                - invalid_email
+                - weak_password
+              description: |
+                `invalid_request` when `email` or `password` is missing, `invalid_email` for an unusable address,
+                `weak_password` for a password that breaks the rule.
+            message:
+              type: string
+            details:
+              type: object
+              description: Present when `code` is `weak_password`.
+              required:
+                - rule
+              properties:
+                rule:
+                  type: string
+                  enum:
+                    - too_short
+                    - too_long
+                    - common
+                  description: |
+                    `too_short` is fewer than 8 characters, `too_long` is more than 72 characters, and `common`
+                    is a password found on the list of commonly used passwords (compared without regard to case).
     UnifiedCustomerProfile:
       type: object
       description: A shopper's unified profile across every merchant in the marketplace.
