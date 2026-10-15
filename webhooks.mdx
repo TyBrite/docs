@@ -243,6 +243,7 @@ A category that is switched off is filtered out of every catalog read, so it dis
 | `store.profile_updated` | The store's support contact details, addresses, legal identity or social profiles change. Carries `changed_fields`; the new values are read from `GET /v1/store/profile` |
 | `store.policy_published` | A legal document is published, or a new version of one is. Carries `slug`, `title`, `version`, `effective_date`, `published_at` and `external_url` |
 | `store.policy_unpublished` | A published document is taken down; `GET /v1/store/policies/{slug}` returns `404` from then on. Carries `slug`, `title`, `version` and `unpublished_at` |
+| `store.design_system_updated` | The store's design system changes, or is switched on or off. Carries `store_id`, `changed_fields` (any of `enabled`, `palette`, `typography`, `language`, `north_star`, `signature`, `accent_rule`, `imagery`, `layout`, `dos`, `donts`) and `updated_at`; the new values are read from `store.brand` in `GET /v1/store/info` |
 | `payment_provider.connected` | A payment provider is connected. Carries `provider` |
 | `shipping_provider.connected` | A shipping-rate provider is connected. Carries `provider` |
 | `channel.connected` | A sales channel (Google, Meta, Shopify, …) is connected. Carries `provider` |

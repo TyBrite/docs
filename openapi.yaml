@@ -1089,7 +1089,9 @@ paths:
           
         **Purpose:**
         This endpoint consolidates store metadata that would normally require 10+ separate API calls:
-        - Store basic info (name, currencies, timezone, the shopping assistant's name and logo)
+        - Store basic info (name, currencies, timezone, the shopping assistant's name and logo, and the
+          design system as `store.brand`, which is `null` when the store has none; the
+          `store.design_system_updated` webhook event signals that it changed)
         - Catalog overview (products, categories, collections, brands, specifications)
         - Pricing configuration (dynamic pricing, customer tiers, rules)
         - Active promotions (types, counts)
@@ -29666,6 +29668,10 @@ paths:
                     `GET /v1/store/policies/{slug}` now returns `404` — carries `slug`, `title`,
                     `version` and `unpublished_at`)
 
+                    **Design system:** `store.design_system_updated` (the store's design system
+                    changed, or was switched on or off — carries `store_id`, `changed_fields` and
+                    `updated_at`; read the new values from `store.brand` in `GET /v1/store/info`)
+
                     **Feature availability:** `feature.status_changed` — a capability's
                     `feature_status` in `GET /v1/store/info` changed, e.g. the store publishes its
                     first post and `cms` becomes `available`. Carries `feature`,
@@ -30078,6 +30084,7 @@ paths:
                     - store.profile_updated
                     - store.policy_published
                     - store.policy_unpublished
+                    - store.design_system_updated
                     - payment_provider.connected
                     - feature.status_changed
                     - product.deleted
@@ -32470,6 +32477,158 @@ components:
         version:
           type: string
           example: 1.0.0
+    StoreBrand:
+      type: object
+      description: The merchant's design system, as a storefront applies it to match the store's identity. Null when the store has no design system or has switched it off; it is never an empty object. Typography is the merchant's own description of a typeface and how it is used, not CSS. Subscribe to the `store.design_system_updated` webhook event to learn when it changes.
+      required:
+        - language
+        - north_star
+        - palette
+        - typography
+        - signature
+        - accent_rule
+        - imagery
+        - layout
+        - dos
+        - donts
+        - updated_at
+      properties:
+        language:
+          type:
+            - object
+            - 'null'
+          description: The named design language the store is built on, or null if none is set.
+          required:
+            - id
+            - name
+          properties:
+            id:
+              type: string
+              description: Identifier of the design language.
+            name:
+              type: string
+              description: Display name of the design language.
+        north_star:
+          type:
+            - string
+            - 'null'
+          description: The merchant's one-sentence statement of the brand's intent, or null if not set.
+        palette:
+          type: array
+          description: The brand colours, each with the role it plays.
+          items:
+            type: object
+            required:
+              - hex
+              - role
+              - name
+              - proportion
+            properties:
+              hex:
+                type: string
+                pattern: ^#[0-9A-Fa-f]{6}$
+                description: Colour as `#RRGGBB`.
+              role:
+                type: string
+                enum:
+                  - primary
+                  - secondary
+                  - accent
+                  - background
+                  - surface
+                  - text
+                  - muted
+                  - highlight
+                description: The part this colour plays in the layout.
+              name:
+                type:
+                  - string
+                  - 'null'
+                description: The merchant's name for the colour, or null if not set.
+              proportion:
+                type:
+                  - number
+                  - 'null'
+                description: Share of the overall design this colour should occupy, or null if not set.
+        typography:
+          type: object
+          description: The merchant's own descriptions of the typefaces and how they are used.
+          required:
+            - headings
+            - body
+          properties:
+            headings:
+              type:
+                - string
+                - 'null'
+              description: Heading typeface and its usage, or null if not set.
+            body:
+              type:
+                - string
+                - 'null'
+              description: Body typeface and its usage, or null if not set.
+        signature:
+          type: array
+          description: Distinctive elements that make the brand recognisable.
+          items:
+            type: string
+        accent_rule:
+          type:
+            - string
+            - 'null'
+          description: The merchant's rule for when and where the accent colour is used, or null if not set.
+        imagery:
+          type:
+            - string
+            - 'null'
+          description: Guidance on photography and illustration style, or null if not set.
+        layout:
+          type:
+            - string
+            - 'null'
+          description: Guidance on spacing, density and page structure, or null if not set.
+        dos:
+          type: array
+          description: Practices the merchant wants applied.
+          items:
+            type: string
+        donts:
+          type: array
+          description: Practices the merchant wants avoided.
+          items:
+            type: string
+        updated_at:
+          type: string
+          format: date-time
+          description: When the design system last changed.
+      example:
+        language:
+          id: editorial
+          name: Editorial
+        north_star: Quiet confidence, built to last.
+        palette:
+          - hex: '#1F3A5F'
+            role: primary
+            name: Harbour Blue
+            proportion: 0.5
+          - hex: '#F4EFE6'
+            role: background
+            name: Linen
+            proportion: 0.4
+        typography:
+          headings: A high-contrast serif in light weight, set large.
+          body: A neutral sans-serif at a comfortable reading size.
+        signature:
+          - Generous whitespace
+          - Thin rules between sections
+        accent_rule: Use the accent colour for one call to action per screen.
+        imagery: Natural light, uncluttered backgrounds.
+        layout: Wide margins and a single-column reading flow.
+        dos:
+          - Lead with the product photograph
+        donts:
+          - Stack more than two typefaces
+        updated_at: '2026-10-15T09:00:00Z'
     PickupLocation:
       type: object
       description: A store location where shoppers can collect an order instead of having it delivered.
@@ -32744,6 +32903,11 @@ components:
                 icon:
                   url: https://cdn.example.com/stores/acme/icon.png
                   usage_note: null
+            brand:
+              description: The merchant's design system, as a storefront applies it to match the store's identity. Null when the store has no design system or has switched it off; it is never an empty object. Subscribe to the `store.design_system_updated` webhook event to learn when it changes.
+              anyOf:
+                - $ref: '#/components/schemas/StoreBrand'
+                - type: 'null'
             shopping_assistant:
               type: object
               description: The name and logo the merchant has given their shopping assistant, for a storefront or an assistant shopping the store to present it the way the store does. Always present; each field is null when the merchant has not set it.

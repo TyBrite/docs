@@ -444,6 +444,8 @@ An endpoint subscribes to any of these, or to `["*"]` for everything:
   or social profiles changed; carries `changed_fields`), `store.policy_published` (a legal document or
   a new version of it was published; carries `slug`, `title`, `version`, `effective_date`),
   `store.policy_unpublished` (a document was taken down)
+- **Design system** — `store.design_system_updated` (the design system changed or was switched on or off;
+  carries `store_id`, `changed_fields`, `updated_at`; the new values are read from `store.brand` in `GET /v1/store/info`)
 - **Feature availability** — `feature.status_changed` (a capability crossed between `available`,
   `awaiting_data`, `not_in_plan`, and `unavailable`; carries `feature`, `status`, `previous_status`)
 - **Catalog sync & syndication** — `feed.sync.completed` (a scheduled inbound feed-pull finished —
