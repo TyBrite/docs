@@ -173,8 +173,9 @@ saved item back into the cart flow above.
 
 ## 3. Signing the shopper in
 
-Checkout needs a session for the shopper. Registration and login are `sk`-only endpoints, so they run
-on your server with the secret client.
+Checkout needs a session for the shopper. The account endpoints (`register`, `verifyRegistration`, `login`) are `sk`-only, so they run
+on your server with the secret client. A new shopper registers, confirms the emailed code with `verifyRegistration`, and receives the
+same `{ user, customer, session }` envelope.
 
 ```typescript
 // On your server
@@ -187,9 +188,9 @@ const { customer, session } = await server.authentication.login({
 ```json Response
 {
   "message": "Login successful",
-  "user": { "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b", "email": "john.doe@example.com", "email_confirmed": true },
+  "user": { "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b", "email": "john.doe@example.com", "email_confirmed": true, "email_verified": true, "has_password": true },
   "customer": { "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9", "name": "John Doe", "email": "john.doe@example.com", "tier": "bronze", "total_purchases": 0 },
-  "session": { "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature", "refresh_token": "5h2g7k9m1n3p...", "expires_in": 3600 }
+  "session": { "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature", "refresh_token": "gcsr_Zm9vYmFyYmF6cXV4...", "expires_in": 900, "expires_at": 1781959913, "token_type": "shopper" }
 }
 ```
 

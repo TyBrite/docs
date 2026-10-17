@@ -199,36 +199,45 @@ await storefront.customers.deleteAddress({ id: customerId, addressId: address.id
 ## Authentication lifecycle (server-side)
 
 ```typescript
-// Register (the sign-up half of the login flow)
-const created = await server.authentication.register({
+// Register (the sign-up half of the login flow): emails a code, returns no session
+await server.authentication.register({
   requestBody: { name: 'John Doe', email: 'john.doe@example.com', password: '••••••••' },
 });
-// → 201 { user: { id, email, email_confirmed: false }, customer: { id, tier: 'bronze' }, session: { access_token: 'eyJ...<redacted>.signature' } }
+// → 202 { status: 'verification_required', email: 'john.doe@example.com', expires_in: 900 }
+
+// Confirm the address with the emailed code: creates the account and its first session
+const created = await server.authentication.verifyRegistration({ requestBody: { email: 'john.doe@example.com', code: '123456' } });
+// → 201 { message, user: { id, email, email_confirmed: true, has_password: true }, customer: { id, tier: 'bronze' }, session: { access_token: 'eyJ...<redacted>.signature', refresh_token: 'gcsr_...', expires_in: 900, expires_at, token_type: 'shopper' } }
 
 // Who is this token? (hydrate "My Account")
 const me = await server.authentication.getCurrentUser({ xAuthToken: token });
 // → { user: { id: 'df648f68-...', email: 'john.doe@example.com' }, customer: { id: '15ecd58f-...', name: 'John Doe' } }
 
-// Rotate the session before it expires (~1h)
-const refreshed = await server.authentication.refreshToken({ requestBody: { refresh_token: '5h2g7k9m...' } });
-// → { message: 'Token refreshed successfully', session: { access_token: 'eyJ...<redacted>.signature', refresh_token: '...', expires_in: 3600, expires_at: 1782040572 } }
+// Rotate the session before it expires (15 minutes); each refresh token works once
+const refreshed = await server.authentication.refreshToken({ requestBody: { refresh_token: 'gcsr_...' } });
+// → { message: 'Token refreshed successfully', session: { access_token: 'eyJ...<redacted>.signature', refresh_token: 'gcsr_...', expires_in: 900, expires_at: 1782040572, token_type: 'shopper' } }
 
 // End the session
-await server.authentication.logout({ xAuthToken: token });
-// → { message: 'Logout successful' }
+await server.authentication.logout({ requestBody: { refresh_token: refreshed.session.refresh_token } });
+// → 204 (no body)
 ```
 
 ```typescript
-// Password reset (request a reset email → set a new password)
-await server.authentication.resetPassword({ requestBody: { email: 'john.doe@example.com' } });
-// → { message: 'Password reset email sent', email: 'john.doe@example.com' }
+// Password reset (request a reset email → set a new password with the emailed code)
+await server.authentication.forgotPassword({ requestBody: { email: 'john.doe@example.com' } });
+// → 202 { status: 'code_sent', expires_in: 900 }
 
-await server.authentication.updatePassword({ xAuthToken: token, requestBody: { password: '••••••••' } });
-// → { message: 'Password updated successfully', user: { id: 'df648f68-...', email: 'john.doe@example.com' } }
+await server.authentication.resetPassword({ requestBody: { email: 'john.doe@example.com', code: '123456', new_password: '••••••••' } });
+// → { message: 'Password reset', user: {...}, customer: {...}, session: {...} }
+
+await server.authentication.changePassword({ xAuthToken: token, requestBody: { current_password: '••••••••', new_password: '••••••••' } });
+// → { message: 'Password updated', user: { id: 'df648f68-...', email: 'john.doe@example.com', has_password: true }, session: {...} }
 
 // Passwordless: OTP verification signs the customer in (same envelope as login)
-const verified = await server.authentication.verifyOtp({ requestBody: { email: 'john.doe@example.com', token: '123456' } });
-// → { message: 'OTP verified successfully', user: {...}, customer: {...}, session: { access_token: 'eyJ...<redacted>.signature' } }
+await server.authentication.sendMagicLink({ requestBody: { email: 'john.doe@example.com' } });
+// → 202 { status: 'code_sent', expires_in: 900 }
+const verified = await server.authentication.verifyOtp({ requestBody: { email: 'john.doe@example.com', code: '123456' } });
+// → { message: 'Signed in', user: {...}, customer: {...}, session: { access_token: 'eyJ...<redacted>.signature' } }
 ```
 
 ## Orders, payments & stock

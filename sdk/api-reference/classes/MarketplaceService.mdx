@@ -33,7 +33,7 @@ A marketplace storefront usually wires up in this order:
 1. **Identify the marketplace** — `getMarketplaceInfo()` to get the name, logo, colors, and which capabilities are on.
 2. **Browse** — `client.products.listProducts()`, `client.taxonomy.listCategories()`, `client.search.searchProducts()` with the operator key for the aggregated catalog.
 3. **Shop a single merchant (optional)** — pass `storeId` to the reads above + `getMarketplaceInfo({ storeId })` for that merchant's shop page.
-4. **Sign the shopper in** — `client.authentication.register` / `login` (operator key) → you get a shopper session token.
+4. **Sign the shopper in** — `client.authentication.register` then `verifyRegistration`, or `login` (operator key) → you get a shopper session token.
 5. **Build a cart client-side** — collect line items, each tagged with its `merchant_store_id`.
 6. **Show the total** — `marketplaceCheckoutQuote()` with the cart and the delivery address returns each merchant's shipping line and the total, without reserving anything.
 7. **Check out** — `marketplaceCheckout()` → returns a `client_secret`; complete the payment with Stripe.js on the storefront.

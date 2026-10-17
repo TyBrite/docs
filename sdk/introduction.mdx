@@ -88,7 +88,8 @@ The Tybrite API uses two parallel authentication mechanisms. Most endpoints need
    - Secret keys (`tybrite_sk_*`) — server-side only; full read/write access
 
 2. **Customer session token** (`xAuthToken` parameter) — authenticates an end customer
-   - Obtained from `client.authentication.login`, `verifyOtp`, or `register`
+   - The store's sign-in token, the `access_token` of a session from `client.authentication.login`, `verifyOtp`, `verifyRegistration` or `resetPassword`
+   - Lasts 15 minutes; `refreshToken` returns a new pair
    - Required for customer-scoped operations (cart, wishlist, profile, gift cards, messaging)
    - The resolved customer **must** match the `customer_id` in the request, otherwise the API returns `403`
 
@@ -104,15 +105,16 @@ import { Tybrite } from '@tybrite-labs/sdk';
 // 1. Initialize with API key
 const client = new Tybrite({ apiKey: 'tybrite_pk_live_...' });
 
-// 2. Authenticate the customer (returns a session token)
-const { session } = await client.authentication.login({
-  requestBody: { email: 'jane@example.com', password: '...' }
+// 2. Authenticate the customer from your server (account endpoints take a secret key)
+const server = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+const { customer, session } = await server.authentication.login({
+  requestBody: { email: 'john.doe@example.com', password: '...' }
 });
 
 // 3. Use the session token for customer-scoped calls
 const cart = await client.cartWishlist.getCart({
-  customerId: session.customer.id,
-  xAuthToken: session.access_token,  // <-- customer JWT
+  customerId: customer!.id,
+  xAuthToken: session.access_token,  // <-- the store's sign-in token
 });
 
 // 4. Anonymous operations don't need xAuthToken

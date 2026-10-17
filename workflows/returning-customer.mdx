@@ -26,7 +26,7 @@ const { customer, session } = await server.authentication.login({
 ```json Response
 {
   "message": "Login successful",
-  "user": { "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b", "email": "john.doe@example.com", "email_confirmed": true },
+  "user": { "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b", "email": "john.doe@example.com", "email_confirmed": true, "email_verified": true, "has_password": true },
   "customer": {
     "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
     "name": "John Doe",
@@ -38,8 +38,10 @@ const { customer, session } = await server.authentication.login({
   },
   "session": {
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature",
-    "refresh_token": "5h2g7k9m1n3p...",
-    "expires_in": 3600
+    "refresh_token": "gcsr_Zm9vYmFyYmF6cXV4...",
+    "expires_in": 900,
+    "expires_at": 1781959913,
+    "token_type": "shopper"
   }
 }
 ```
@@ -47,7 +49,8 @@ const { customer, session } = await server.authentication.login({
 <Tip>
   For passwordless sign-in, `server.authentication.sendMagicLink(...)` and the OTP pair
   (`sendMagicLink` → `verifyOtp`) return the same `{ user, customer, session }` envelope.
-  `server.authentication.refreshToken(...)` renews an expiring token.
+  `server.authentication.refreshToken(...)` renews an expiring token: the access token lasts 15 minutes,
+  and each refresh token works once.
 </Tip>
 
 ## 2. Order history

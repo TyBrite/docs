@@ -1,0 +1,87 @@
+---
+title: "Account sign-up"
+description: "How shoppers create and confirm accounts and how sessions work."
+---
+
+A shopper account exists only after the shopper has proven control of the email address. `register` emails a code and a link and returns no session; `verifyRegistration` accepts the code or link, creates the account and returns the first session. Every account call is made from your server with a secret key (`tybrite_sk_*`).
+
+## The sign-up flow
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const server = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
+
+// 1. Start the account. The answer is the same for a new address and for an existing one.
+await server.authentication.register({
+  requestBody: {
+    email: 'john.doe@example.com',
+    password: 'securePassword123',
+    redirect_to: 'https://shop.example.com/account?link=register',
+  },
+});
+
+// 2. The shopper enters the emailed code, or follows the emailed link.
+const { user, customer, session } = await server.authentication.verifyRegistration({
+  requestBody: { email: 'john.doe@example.com', code: '123456' },
+});
+```
+
+```json Response
+{
+  "status": "verification_required",
+  "email": "john.doe@example.com",
+  "expires_in": 900
+}
+```
+
+`register` answers `202` with this body for every address. A new address receives a confirmation email; an address that already has an account receives an email saying so, with directions to sign in or reset the password. The response therefore does not reveal which addresses have accounts.
+
+## Confirmation by code or link
+
+The confirmation email carries a six-digit code and, when `redirect_to` is allowed, a link. The code is valid for 15 minutes and is accepted 5 times.
+
+`redirect_to` names the storefront page that receives the shopper from the email. The email appends `?link_token=<token>` to that URL, and the page sends the token to `verifyRegistration` on its own:
+
+```typescript
+const token = new URLSearchParams(window.location.search).get('link_token');
+// Sent to your server, which calls:
+await server.authentication.verifyRegistration({ requestBody: { link_token: token! } });
+```
+
+A `link_token` identifies the store, the address and the purpose, so no `email` accompanies it. It is single-use and shares its code's expiry and attempts. `redirect_to` is honoured only for a storefront origin the merchant has allowed in the dashboard; any other value is ignored and the email carries the code only.
+
+`resendRegistration` sends a new code and link and cancels the earlier ones. At most one email per address is sent every 60 seconds and five an hour.
+
+A refused `verifyRegistration` answers `400 invalid_code`, and `details.reason` is `expired`, `too_many_attempts` or `wrong`.
+
+## Accounts without a password
+
+`password` is optional on `register`. An account created without one signs in with an emailed code (`sendMagicLink`, then `verifyOtp`) and can set a password later with `changePassword`, which then omits `current_password`. Any account can also sign in by code, with or without a password, unless the merchant has switched the option off. `store.auth.passwordless` in the store information reports the setting; while it is `false`, `sendMagicLink` and `verifyOtp` answer `403 passwordless_disabled`.
+
+## Sessions
+
+Every sign-in method returns a session:
+
+```json Response
+{
+  "access_token": "eyJ...<redacted>.signature",
+  "refresh_token": "gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo",
+  "expires_in": 900,
+  "expires_at": 1781959913,
+  "token_type": "shopper"
+}
+```
+
+The `access_token` is the store's sign-in token. It lasts 15 minutes and is sent as `xAuthToken` on customer-scoped calls. Only the store and environment that issued it accept it; any other value, including an expired or revoked token, answers `401 invalid_token`.
+
+The `refresh_token` is valid for 30 days from its last use and works once. `refreshToken` returns a replacement pair, and the earlier refresh token stops working at once. A storefront stores the new pair on every refresh, refreshes before `expires_at` or once on `401 invalid_token`, and treats the shopper as signed out when `refreshToken` answers `401 invalid_refresh_token`. Presenting a used refresh token again ends the whole session, so concurrent refreshes with the same token leave one of them refused.
+
+## Sign-in errors
+
+`login` answers `401 invalid_credentials` for an unknown address, a wrong password, an account that has not been confirmed, a disabled account, and an account without a password. The body is identical in every case. `401 password_reset_required` is returned only after the correct password, for an account that must set a new one with `forgotPassword` and `resetPassword`. Repeated wrong passwords lock an account for a short period, during which calls for it answer `429 rate_limited` with a `Retry-After` header.
+
+## Reference
+
+- [AuthenticationService](/sdk/api-reference/classes/AuthenticationService): every method, response and error.
+- [Customers and Auth](/sdk/customers-and-auth): choosing between Galactic Core sign-in and a bring-your-own identity provider.

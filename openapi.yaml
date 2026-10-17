@@ -266,21 +266,24 @@ info:
 
     **Endpoints:**
     - `GET /v1/auth/me` - Get current authenticated customer
-    - `POST /v1/auth/update-password` - Update customer password
+    - `POST /v1/auth/password/change` - Change or set the customer's password
+    - Every customer-self endpoint (a customer's own orders, addresses, returns, wishlist, messages and so on)
 
-    Contains the authentication token obtained from login/register endpoints.
+    Contains the store's sign-in token: the `access_token` of the shopper's session.
 
     ```
     GET /v1/auth/me
     Authorization: Bearer tybrite_sk_live_YOUR_API_KEY
-    x-auth-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    x-auth-token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...
     ```
 
     **Flow:**
-    1. Customer logs in via `POST /v1/auth/login`
-    2. Response includes `access_token`
+    1. Customer signs in via `POST /v1/auth/login`, or confirms a new account via `POST /v1/auth/register/verify`
+    2. Response includes `session.access_token` and `session.refresh_token`
     3. Use `access_token` as `x-auth-token` header value
-    4. Token expires after session timeout (default 1 hour)
+    4. The token expires after 15 minutes (`expires_at`); `POST /v1/auth/refresh` returns a new pair
+    5. A token that is expired, revoked, issued by another store or environment, or malformed answers
+       `401 invalid_token`; the storefront refreshes once and treats the shopper as signed out if that fails
 
     ### X-Session-Id (Optional for Anonymous Carts)
 
@@ -444,22 +447,30 @@ tags:
       All three endpoints accept a publishable key. Drafts and private entries are never returned.
   - name: Authentication
     description: |
-      Customer authentication and session management.
-        
-      **⚠️ SECRET KEY REQUIRED**: All authentication endpoints require a secret key (tybrite_sk_*).
-      Publishable keys will return 403 Forbidden.
-        
-      These endpoints manage customer accounts, login sessions, password resets, and OTP verification.
-      Use these to build customer-facing authentication flows in your storefront.
-        
+      Shopper accounts and sessions for a store (or, on a marketplace key, for the marketplace).
+
+      **Secret key required for writes.** Every `POST` endpoint here requires a secret key (tybrite_sk_*);
+      publishable keys answer 403 Forbidden. `GET /v1/auth/me` accepts either key.
+
+      Sign-up is two steps: `POST /v1/auth/register` emails a code and link and returns no session, and
+      `POST /v1/auth/register/verify` creates the account and returns the first session. A shopper then signs
+      in with a password (`POST /v1/auth/login`) or an emailed code (`POST /v1/auth/magic-link`, then
+      `POST /v1/auth/verify-otp`), resets a forgotten password with `POST /v1/auth/password/forgot` and
+      `POST /v1/auth/password/reset`, and changes it with `POST /v1/auth/password/change`.
+
+      A session is `{ access_token, refresh_token, expires_in, expires_at, token_type: "shopper" }`. The
+      access token is the store's sign-in token: it lasts 15 minutes, is accepted only by the store and
+      environment that issued it, and is sent as the `x-auth-token` header on customer-self endpoints. The
+      refresh token lasts 30 days from its last use and works once; `POST /v1/auth/refresh` returns a
+      replacement pair.
+
       **Special Headers:**
-      - `x-auth-token`: Required for `GET /v1/auth/me` and `POST /v1/auth/update-password`
-      - Contains the authentication token from login/register response
-      - Token expires after session timeout (default 1 hour)
-        
+      - `x-auth-token`: required for `GET /v1/auth/me` and `POST /v1/auth/password/change`
+      - a token that is not valid for the store answers `401 invalid_token`
+
       **Rate Limiting:**
-      - All authentication endpoints: 10 requests/minute per IP address
-      - Prevents brute force attacks on customer accounts
+      - With a publishable key: 10 requests per minute per IP address on these endpoints
+      - Per-account attempt limits on every endpoint that takes an email address or a code
   - name: Products
     description: Product catalog management
   - name: Orders
@@ -6549,7 +6560,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -6643,7 +6654,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -6833,7 +6844,7 @@ paths:
                   message: Only 5 items available in stock
                   available_stock: 5
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -6990,7 +7001,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -7093,7 +7104,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -7227,7 +7238,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -7329,7 +7340,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -7443,7 +7454,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -7536,7 +7547,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -7692,7 +7703,7 @@ paths:
                   message: Only 3 items available in stock
                   available_stock: 3
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -8032,7 +8043,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -8409,7 +8420,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -19240,7 +19251,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -19356,35 +19367,43 @@ paths:
         - Authentication
       summary: Register customer account
       description: |
-        Create a new customer account with email and password.
-        Returns user details and authentication tokens upon successful registration.
-        The email must be a real, deliverable address — disposable and example domains (e.g. `example.com`) are rejected with `400 invalid_email`.
+        Start a customer account with an email address and, optionally, a password. Registration does not
+        return a session. Every call, whatever the address, answers `202` with the same body and sends one
+        email: a confirmation code and link when the address is new, or a notice that an account already
+        exists when it is not. The account is created, and the first session issued, by
+        `POST /v1/auth/register/verify` with the emailed code or link. A shopper who has not confirmed the
+        address has no account, so nothing about the address can be learned from the response.
+
+        A password is optional. An account created without one signs in with an emailed code
+        (`POST /v1/auth/magic-link`) and can set a password later with `POST /v1/auth/password/change`.
+
+        The email must be a real, deliverable address; disposable and example domains (e.g. `example.com`)
+        are refused with `400 invalid_email`.
 
         **Password rule:** a password must be 8 to 72 characters long (counted as characters, not bytes) and must not
         be on the list of commonly used passwords, which is compared without regard to case. A password that breaks the rule
         is refused with `400 weak_password` and `details.rule` set to `too_short`, `too_long` or `common`. The rule is
         checked before the email is looked up, so the refusal is the same whether or not the email already has an account.
-          
-        **Multi-Store Support:**
-        - If the email is already registered at another store, a new customer record
-          is created for this store (linked to the existing auth.users record)
-        - Response includes `is_multi_store_customer: true` when linking to existing account
-        - Customers can have accounts at multiple stores with the same email/password
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
-          
-        **Why Secret Key?** Authentication endpoints create and manage user sessions, which should
-        only be performed from secure server-side environments.
 
-        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
-        5 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
-        every 60 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
-        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
-        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
-        every store and address, past 20 attempts for one email the call is slowed to one every 60 seconds.
-        Every attempt counts, successful or not, and an address with no account is treated identically.
+        **Confirmation link:** `redirect_to` names the storefront page that receives the shopper from the
+        email. The email appends `?link_token=<token>` to it, and the page sends that token to
+        `POST /v1/auth/register/verify`. `redirect_to` must be on one of the store's allowed storefront
+        origins (set by the merchant in the dashboard); otherwise it is ignored and the email carries the
+        code only.
+
+        One account exists per email address at a store. The same address can hold accounts at several
+        stores, each with its own password and sessions.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** with a secret key, past 5 attempts for one email address from one store in
+        15 minutes, the call is slowed to one attempt every 60 seconds; other calls for that address
+        answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
+        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
+        and 60 per address, in 15 minutes. Across every store and address, past 20 attempts for one
+        email the call is slowed to one every 60 seconds. Every attempt counts, successful or not,
+        and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -19395,18 +19414,17 @@ paths:
               type: object
               required:
                 - email
-                - password
               properties:
                 email:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@tybritelabs.com
+                  example: john.doe@example.com
                 password:
                   type: string
                   minLength: 8
                   maxLength: 72
-                  description: Password, 8 to 72 characters, not on the list of commonly used passwords.
+                  description: Password, 8 to 72 characters, not on the list of commonly used passwords. Omit it to create an account that signs in with an emailed code.
                   example: SecurePassword123!
                 name:
                   type: string
@@ -19424,64 +19442,38 @@ paths:
                     Defaults to false (opt-in). Pass the state of your sign-up form's
                     marketing opt-in checkbox.
                   example: true
+                redirect_to:
+                  type: string
+                  format: uri
+                  description: Storefront page that receives the shopper from the confirmation email. Must be on one of the store's allowed storefront origins, or it is ignored.
+                  example: https://shop.example.com/account?link=register
             example:
-              email: john.doe@tybritelabs.com
+              email: john.doe@example.com
               password: SecurePassword123!
               name: John Doe
               phone: '+12125550142'
               marketing_consent: true
+              redirect_to: https://shop.example.com/account?link=register
       responses:
-        '201':
-          description: Registration successful
+        '202':
+          description: Confirmation required. The body is the same for a new address and for an address that already has an account.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    description: Success message
-                    example: Registration successful
-                  user:
-                    $ref: '#/components/schemas/User'
-                  customer:
-                    $ref: '#/components/schemas/Customer'
-                  session:
-                    $ref: '#/components/schemas/Session'
-                  is_multi_store_customer:
-                    type: boolean
-                    description: |
-                      Indicates if this customer already had an account at another store.
-                      When true, the customer's auth.users record already existed, and a new
-                      customers record was created for this store. When false or omitted,
-                      this is the customer's first store registration.
-                    example: false
+                $ref: '#/components/schemas/RegisterPending'
               example:
-                message: Registration successful
-                user:
-                  id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
-                  email: john.doe@tybritelabs.com
-                  email_confirmed: true
-                customer:
-                  id: de11e44b-78e5-4940-ad54-cac237d5d30d
-                  name: John Doe
-                  email: john.doe@tybritelabs.com
-                  phone: '+12125550142'
-                  created_at: '2026-06-20T13:47:38.831799+00:00'
-                session:
-                  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
-                  refresh_token: 67ksfnj5dyj6
-                  expires_in: 3600
-                  expires_at: 1781966858
-                is_multi_store_customer: false
+                status: verification_required
+                email: john.doe@example.com
+                expires_in: 900
         '400':
           description: |
-            The request was refused. `code` is `invalid_request` when `email` or `password` is missing,
-            `invalid_email` when the address is malformed or uses a disposable or example domain, and
-            `weak_password` when the password breaks the password rule (`details.rule` is `too_short`, `too_long` or `common`).
+            The request was refused. `code` is `invalid_request` when `email` is missing or a field has the
+            wrong type, `invalid_email` when the address is malformed or uses a disposable or example domain,
+            and `weak_password` when the password breaks the password rule (`details.rule` is `too_short`,
+            `too_long` or `common`).
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -19524,8 +19516,203 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
-        '409':
-          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/auth/register/verify:
+    post:
+      operationId: verifyRegistration
+      tags:
+        - Authentication
+      summary: Confirm a new account
+      description: |
+        Confirm the address with the code from the confirmation email, or with the `link_token` the
+        email's link carries, and create the account. The response is the shopper's first session.
+
+        A code is six digits, is valid for 15 minutes and is accepted 5 times; a `link_token` is single-use and
+        shares its code's expiry and attempts. A link needs no `email`. When the address already had an
+        account, the emailed code is consumed and the call answers `400 invalid_code`, the same as a wrong
+        code.
+
+        A refused call states why in `details.reason`: `expired`, `too_many_attempts` or `wrong`. The
+        reason reveals nothing about the address, because a code exists for every address that registers.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** with a secret key, past 10 attempts for one email address from one store in
+        15 minutes, the call is slowed to one attempt every 30 seconds; other calls for that address
+        answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
+        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
+        and 60 per address, in 15 minutes. Across every store and address, past 20 attempts for one
+        email the call is slowed to one every 30 seconds. Every attempt counts, successful or not,
+        and an address with no account is treated identically.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Send `email` with `code`, or `link_token` alone.
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: The address that registered. Required with `code`.
+                  example: john.doe@example.com
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                  description: The six-digit code from the confirmation email.
+                  example: '123456'
+                link_token:
+                  type: string
+                  description: The `link_token` query parameter of the confirmation link. Replaces `email` and `code`.
+            example:
+              email: john.doe@example.com
+              code: '123456'
+      responses:
+        '201':
+          description: Account created and signed in.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShopperSignedIn'
+              example:
+                message: Registration successful
+                user:
+                  id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
+                  email: john.doe@example.com
+                  email_confirmed: true
+                  email_verified: true
+                  has_password: true
+                customer:
+                  id: de11e44b-78e5-4940-ad54-cac237d5d30d
+                  name: John Doe
+                  email: john.doe@example.com
+                  phone: '+12125550142'
+                  tier: bronze
+                  total_purchases: 0
+                  created_at: '2026-06-20T13:47:38.831799+00:00'
+                session:
+                  access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
+                  refresh_token: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
+                  expires_in: 900
+                  expires_at: 1781967759
+                  token_type: shopper
+        '400':
+          description: |
+            `invalid_code` when the code or link is wrong, expired, used, or tried too many times
+            (`details.reason` is `expired`, `too_many_attempts` or `wrong`); `invalid_request` when the
+            body lacks `email` and `code`, or `link_token`.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/InvalidCodeError'
+                  - $ref: '#/components/schemas/Error'
+              examples:
+                expired:
+                  summary: Code past its 15 minutes
+                  value:
+                    error:
+                      code: invalid_code
+                      message: That code is not valid. Check it, or ask for a new one.
+                      details:
+                        reason: expired
+                wrong:
+                  summary: Code does not match
+                  value:
+                    error:
+                      code: invalid_code
+                      message: That code is not valid. Check it, or ask for a new one.
+                      details:
+                        reason: wrong
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/auth/register/resend:
+    post:
+      operationId: resendRegistration
+      tags:
+        - Authentication
+      summary: Resend the confirmation email
+      description: |
+        Send a new confirmation code and link for an address that has registered and not yet confirmed.
+        The earlier code stops working. The call answers `202` with the same body for every address, and
+        sends one email: a fresh confirmation for a pending registration, or the notice that an account
+        exists when the address already has one.
+
+        At most one email per address is sent every 60 seconds and five an hour; a call past that is
+        answered `202` and sends nothing.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** with a secret key, past 5 attempts for one email address from one store in
+        15 minutes, the call is slowed to one attempt every 60 seconds; other calls for that address
+        answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
+        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
+        and 60 per address, in 15 minutes. Across every store and address, past 10 attempts for one
+        email the call is slowed to one every 60 seconds. Every attempt counts, successful or not,
+        and an address with no account is treated identically.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: The address that registered.
+                  example: john.doe@example.com
+                redirect_to:
+                  type: string
+                  format: uri
+                  description: Storefront page that receives the shopper from the email. Must be on one of the store's allowed storefront origins, or it is ignored.
+                  example: https://shop.example.com/account?link=register
+            example:
+              email: john.doe@example.com
+      responses:
+        '202':
+          description: Accepted. The body is the same for every address.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterPending'
+              example:
+                status: verification_required
+                email: john.doe@example.com
+                expires_in: 900
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -19537,20 +19724,29 @@ paths:
         - Authentication
       summary: Login with email and password
       description: |
-        Authenticate using email and password credentials.
-        Returns user details and session tokens upon successful authentication.
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        Authenticate with an email address and password. Returns the shopper, the customer record and a
+        session.
 
-        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
-        10 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
-        every 15 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
-        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
-        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
-        every store and address, past 50 attempts for one email the call is slowed to one every 10 seconds.
-        Every attempt counts, successful or not, and an address with no account is treated identically.
+        Every refusal that depends on the account answers `401 invalid_credentials` with the same body: an
+        address with no account, a wrong password, an account that has not been confirmed, a disabled
+        account, and an account that has no password (one created for sign-in by emailed code). The
+        response never tells which. `401 password_reset_required` is returned only after the correct
+        password, for an account that must set a new password with `POST /v1/auth/password/forgot` and
+        `POST /v1/auth/password/reset`.
+
+        Repeated wrong passwords on one account lock it for a short period, during which every call for that
+        account answers `429 rate_limited` with a `Retry-After` header.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** with a secret key, past 10 attempts for one email address from one store in
+        15 minutes, the call is slowed to one attempt every 15 seconds; other calls for that address
+        answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
+        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
+        and 60 per address, in 15 minutes. Across every store and address, past 50 attempts for one
+        email the call is slowed to one every 10 seconds. Every attempt counts, successful or not,
+        and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -19567,13 +19763,13 @@ paths:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@tybritelabs.com
+                  example: john.doe@example.com
                 password:
                   type: string
                   description: Customer password
                   example: SecurePassword123!
             example:
-              email: john.doe@tybritelabs.com
+              email: john.doe@example.com
               password: SecurePassword123!
       responses:
         '200':
@@ -19584,40 +19780,57 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    description: Success message
-                    example: Login successful
-                  user:
-                    $ref: '#/components/schemas/User'
-                  customer:
-                    $ref: '#/components/schemas/Customer'
-                  session:
-                    $ref: '#/components/schemas/Session'
+                $ref: '#/components/schemas/ShopperSignedIn'
               example:
                 message: Login successful
                 user:
                   id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
-                  email: john.doe@tybritelabs.com
+                  email: john.doe@example.com
                   email_confirmed: true
+                  email_verified: true
+                  has_password: true
                 customer:
                   id: de11e44b-78e5-4940-ad54-cac237d5d30d
                   name: John Doe
-                  email: john.doe@tybritelabs.com
+                  email: john.doe@example.com
                   phone: '+12125550142'
+                  tier: bronze
                   total_purchases: 0
                   created_at: '2026-06-20T13:47:38.831799+00:00'
                 session:
-                  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
-                  refresh_token: di5varndacdt
-                  expires_in: 3600
-                  expires_at: 1781966859
+                  access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
+                  refresh_token: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
+                  expires_in: 900
+                  expires_at: 1781967759
+                  token_type: shopper
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          description: Invalid credentials (wrong email or password)
+          description: |
+            `invalid_credentials` for any refused sign-in, or `password_reset_required` when the password
+            was correct and the account must set a new one. An invalid API key answers `unauthorized`.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/AuthError'
+                  - $ref: '#/components/schemas/Error'
+              examples:
+                invalid_credentials:
+                  summary: Email or password is incorrect
+                  value:
+                    error:
+                      code: invalid_credentials
+                      message: Email or password is incorrect.
+                password_reset_required:
+                  summary: The account must set a new password
+                  value:
+                    error:
+                      code: password_reset_required
+                      message: This account needs a new password. Reset it to continue.
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -19631,31 +19844,36 @@ paths:
         - Authentication
       summary: Logout current session
       description: |
-        Invalidate the current access and refresh tokens.
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        End a session. The refresh token's whole session is revoked, so no refresh token issued since the
+        sign-in works again. The call answers `204` with no body for every request, including a refresh
+        token that is unknown or already ended, so a storefront can call it whenever a shopper leaves.
+
+        An access token already issued remains valid until its `expires_at` (at most 15 minutes).
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** 20 requests per refresh token per 15 minutes. Beyond that the call returns
+        `429 rate_limited` with a `Retry-After` header.
       security:
         - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                  description: The `refresh_token` of the session to end.
+                  example: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
       responses:
-        '200':
-          description: Successfully logged out
+        '204':
+          description: Session ended. No body.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Logout successful
-              example:
-                message: Logout successful
-        '400':
-          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -19669,22 +19887,35 @@ paths:
       operationId: sendMagicLink
       tags:
         - Authentication
-      summary: Send magic link / OTP
+      summary: Send a sign-in code
       description: |
-        Send a passwordless authentication link or OTP code to the customer's email.
-        The link/code is valid for 15 minutes.
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        Send a one-time sign-in code, and a link carrying it, to an address that has an account. Any
+        account can sign in this way, with or without a password. The code is six digits and is valid for 15
+        minutes. The call answers `202` with the same body for every address; an address without an account
+        receives no email and no account is created. The shopper completes sign-in with
+        `POST /v1/auth/verify-otp`.
 
-        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
-        5 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
-        every 60 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
-        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
-        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
-        every store and address, past 10 attempts for one email the call is slowed to one every 60 seconds.
-        Every attempt counts, successful or not, and an address with no account is treated identically.
+        Sign-in by code is on for every store unless the merchant switches it off; `store.auth.passwordless`
+        in the store information reports the setting. When it is off, the call answers
+        `403 passwordless_disabled`.
+
+        `redirect_to` names the storefront page that receives the shopper from the email, which appends
+        `?link_token=<token>` to it. It must be on one of the store's allowed storefront origins; otherwise
+        it is ignored and the email carries the code only.
+
+        At most one email per address is sent every 60 seconds and five an hour; a call past that is
+        answered `202` and sends nothing.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** with a secret key, past 5 attempts for one email address from one store in
+        15 minutes, the call is slowed to one attempt every 60 seconds; other calls for that address
+        answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
+        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
+        and 60 per address, in 15 minutes. Across every store and address, past 10 attempts for one
+        email the call is slowed to one every 60 seconds. Every attempt counts, successful or not,
+        and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -19700,43 +19931,47 @@ paths:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@tybritelabs.com
+                  example: john.doe@example.com
+                redirect_to:
+                  type: string
+                  format: uri
+                  description: Storefront page that receives the shopper from the email. Must be on one of the store's allowed storefront origins, or it is ignored.
+                  example: https://shop.example.com/account?link=signin
             example:
-              email: john.doe@tybritelabs.com
+              email: john.doe@example.com
+              redirect_to: https://shop.example.com/account?link=signin
       responses:
-        '200':
-          description: Magic link/OTP sent successfully
+        '202':
+          description: Accepted. The body is the same for every address.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    description: Success message
-                    example: Magic link sent
-                  email:
-                    type: string
-                    format: email
-                    description: Email address the magic link/OTP was sent to
-                    example: john.doe@tybritelabs.com
-                  hint:
-                    type: string
-                    description: Helpful guidance for the user
-                    example: Check your email for the login link or OTP code
+                $ref: '#/components/schemas/CodeSent'
               example:
-                message: Magic link sent
-                email: john.doe@tybritelabs.com
-                hint: Check your email for the login link or OTP code
+                status: code_sent
+                expires_in: 900
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: '`passwordless_disabled` when the store does not offer sign-in by emailed code, or `forbidden` when the call was made with a publishable key.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/AuthError'
+                  - $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: passwordless_disabled
+                  message: This store does not offer sign-in by emailed code.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -19746,21 +19981,26 @@ paths:
       operationId: verifyOtp
       tags:
         - Authentication
-      summary: Verify OTP code
+      summary: Verify a sign-in code
       description: |
-        Verify the OTP code sent via email and complete authentication.
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        Complete sign-in with the code from the sign-in email, or with the `link_token` the email's link
+        carries. Returns the shopper, the customer record and a session. A link needs no `email`.
 
-        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
-        10 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
-        every 30 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
-        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
-        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
-        every store and address, past 20 attempts for one email the call is slowed to one every 30 seconds.
-        Every attempt counts, successful or not, and an address with no account is treated identically.
+        A code is valid for 15 minutes, is accepted 5 times and works once; a `link_token` is single-use and
+        shares its code's expiry and attempts. A wrong, expired, used or unknown code answers
+        `400 invalid_code` with no reason, and an address without an account answers the same way. This
+        endpoint never creates an account.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** with a secret key, past 10 attempts for one email address from one store in
+        15 minutes, the call is slowed to one attempt every 30 seconds; other calls for that address
+        answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
+        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
+        and 60 per address, in 15 minutes. Across every store and address, past 20 attempts for one
+        email the call is slowed to one every 30 seconds. Every attempt counts, successful or not,
+        and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -19769,91 +20009,118 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - email
-                - token
+              description: Send `email` with `code`, or `link_token` alone.
               properties:
                 email:
                   type: string
                   format: email
-                  description: Customer email address
-                  example: john.doe@tybritelabs.com
-                token:
+                  description: Customer email address. Required with `code`.
+                  example: john.doe@example.com
+                code:
                   type: string
-                  description: 6-digit OTP code
+                  pattern: ^[0-9]{6}$
+                  description: The six-digit code from the sign-in email.
                   example: '123456'
+                link_token:
+                  type: string
+                  description: The `link_token` query parameter of the sign-in link. Replaces `email` and `code`.
             example:
-              email: john.doe@tybritelabs.com
-              token: '123456'
+              email: john.doe@example.com
+              code: '123456'
       responses:
         '200':
-          description: OTP verified successfully
+          description: Signed in
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    description: Success message
-                    example: OTP verified successfully
-                  user:
-                    $ref: '#/components/schemas/User'
-                  customer:
-                    $ref: '#/components/schemas/Customer'
-                  session:
-                    $ref: '#/components/schemas/Session'
+                $ref: '#/components/schemas/ShopperSignedIn'
               example:
-                message: OTP verified successfully
+                message: Signed in
                 user:
-                  id: df648f68-39b3-4ba6-9be2-ff0a9393c02b
-                  email: john.doe@tybritelabs.com
+                  id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
+                  email: john.doe@example.com
                   email_confirmed: true
+                  email_verified: true
+                  has_password: true
                 customer:
-                  id: 15ecd58f-a8f8-49e4-9098-96f1fa8308e9
+                  id: de11e44b-78e5-4940-ad54-cac237d5d30d
                   name: John Doe
-                  email: john.doe@tybritelabs.com
+                  email: john.doe@example.com
                   phone: '+12125550142'
                   tier: bronze
                   total_purchases: 0
-                  created_at: '2026-06-20T11:36:54.174303+00:00'
+                  created_at: '2026-06-20T13:47:38.831799+00:00'
                 session:
-                  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.<redacted>.signature
-                  refresh_token: 5h2g7k9m1n3p4q6r8s0t
-                  expires_in: 3600
+                  access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
+                  refresh_token: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
+                  expires_in: 900
+                  expires_at: 1781967759
+                  token_type: shopper
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: '`invalid_code` when the code or link is not accepted; `invalid_request` when the body lacks `email` and `code`, or `link_token`.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/InvalidCodeError'
+                  - $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_code
+                  message: That code is not valid. Check it, or ask for a new one.
         '401':
-          description: Invalid or expired OTP
+          $ref: '#/components/responses/UnauthorizedError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: '`passwordless_disabled` when the store does not offer sign-in by emailed code, or `forbidden` when the call was made with a publishable key.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/AuthError'
+                  - $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: passwordless_disabled
+                  message: This store does not offer sign-in by emailed code.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
-  /v1/auth/reset-password:
+  /v1/auth/password/forgot:
     post:
-      operationId: resetPassword
+      operationId: forgotPassword
       tags:
         - Authentication
-      summary: Request password reset
+      summary: Request a password reset
       description: |
-        Send a password reset link to the customer's email.
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        Send a password reset code, and a link carrying it, to an address that has an account. The call
+        answers `202` with the same body for every address; an address without an account receives no
+        email. The shopper completes the reset with `POST /v1/auth/password/reset`. The code is six digits
+        and is valid for 15 minutes.
 
-        **Attempt limits:** an account is never locked by attempts made on it. With a secret key, past
-        5 attempts for one email address from one store in 15 minutes, the call is slowed to one attempt
-        every 60 seconds; other calls for that address answer `429 rate_limited` with a `Retry-After` header
-        giving the seconds until the next attempt is accepted. With a publishable key, attempts are
-        limited per calling address: 10 per address and email, and 30 per address, in 15 minutes. Across
-        every store and address, past 10 attempts for one email the call is slowed to one every 60 seconds.
-        Every attempt counts, successful or not, and an address with no account is treated identically.
+        `redirect_to` names the storefront page that receives the shopper from the email, which appends
+        `?link_token=<token>` to it. It must be on one of the store's allowed storefront origins; otherwise
+        it is ignored and the email carries the code only.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** with a secret key, past 5 attempts for one email address from one store in
+        15 minutes, the call is slowed to one attempt every 60 seconds; other calls for that address
+        answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
+        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
+        and 60 per address, in 15 minutes. Across every store and address, past 10 attempts for one
+        email the call is slowed to one every 60 seconds. Every attempt counts, successful or not,
+        and an address with no account is treated identically.
       security:
         - BearerAuth: []
       requestBody:
@@ -19869,35 +20136,28 @@ paths:
                   type: string
                   format: email
                   description: Customer email address
-                  example: john.doe@tybritelabs.com
+                  example: john.doe@example.com
                 redirect_to:
                   type: string
                   format: uri
-                  description: URL to redirect the user to after clicking the reset link
-                  example: https://example.com/reset-password-callback
+                  description: Storefront page that receives the shopper from the email. Must be on one of the store's allowed storefront origins, or it is ignored.
+                  example: https://shop.example.com/reset-password
+            example:
+              email: john.doe@example.com
+              redirect_to: https://shop.example.com/reset-password
       responses:
-        '200':
-          description: Reset email sent
+        '202':
+          description: Accepted. The body is the same for every address.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    description: Success message
-                    example: Password reset email sent
-                  email:
-                    type: string
-                    format: email
-                    description: Email address the reset link was sent to
-                    example: john.doe@tybritelabs.com
+                $ref: '#/components/schemas/CodeSent'
               example:
-                message: Password reset email sent
-                email: jane.doe@tybritelabs.com
+                status: code_sent
+                expires_in: 900
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -19908,48 +20168,34 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
-  /v1/auth/update-password:
+  /v1/auth/password/reset:
     post:
-      operationId: updatePassword
+      operationId: resetPassword
       tags:
         - Authentication
-      summary: Update password
+      summary: Reset a password
       description: |
-        Update user password (requires authentication).
+        Set a new password with the code from the reset email, or with the `link_token` the email's link
+        carries. Every earlier session of the account ends, and the response is a new session. A link needs
+        no `email`. The account is also sent a notice that its password changed.
 
-        The new password follows the same rule as registration: 8 to 72 characters, not on the list of commonly used
-        passwords. A password that breaks the rule is refused with `400 weak_password` and `details.rule` set to
-        `too_short`, `too_long` or `common`.
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
-          
-        **Special Headers:**
-        - `x-auth-token`: **REQUIRED** - Authentication token from login/register response
-          
-        **Usage:**
-        ```
-        POST /v1/auth/update-password
-        Authorization: Bearer tybrite_sk_live_YOUR_API_KEY
-        x-auth-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-        Content-Type: application/json
-          
-        { "password": "newSecurePassword123" }
-        ```
+        A code is valid for 15 minutes, is accepted 5 times and works once. A wrong, expired or used code
+        answers `400 invalid_code` with no reason. The new password follows the password rule of
+        `POST /v1/auth/register`; a password that breaks it is refused with `400 weak_password`. The reset
+        also clears a `password_reset_required` state.
 
-        **Attempt limits:** 5 password changes per session per 15 minutes. Beyond that the call returns
-        `429 rate_limited` with a `Retry-After` header.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** with a secret key, past 10 attempts for one email address from one store in
+        15 minutes, the call is slowed to one attempt every 30 seconds; other calls for that address
+        answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
+        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
+        and 60 per address, in 15 minutes. Across every store and address, past 20 attempts for one
+        email the call is slowed to one every 30 seconds. Every attempt counts, successful or not,
+        and an address with no account is treated identically.
       security:
         - BearerAuth: []
-      parameters:
-        - name: x-auth-token
-          in: header
-          required: true
-          description: Authentication token obtained from login/register endpoints
-          schema:
-            type: string
-            example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
       requestBody:
         required: true
         content:
@@ -19957,16 +20203,158 @@ paths:
             schema:
               type: object
               required:
-                - password
+                - new_password
+              description: Send `email` with `code`, or `link_token` alone, together with `new_password`.
               properties:
-                password:
+                email:
+                  type: string
+                  format: email
+                  description: Customer email address. Required with `code`.
+                  example: john.doe@example.com
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                  description: The six-digit code from the reset email.
+                  example: '123456'
+                link_token:
+                  type: string
+                  description: The `link_token` query parameter of the reset link. Replaces `email` and `code`.
+                new_password:
                   type: string
                   minLength: 8
                   maxLength: 72
                   description: New password, 8 to 72 characters, not on the list of commonly used passwords.
+                  example: NewSecurePassword456!
+            example:
+              email: john.doe@example.com
+              code: '123456'
+              new_password: NewSecurePassword456!
       responses:
         '200':
-          description: Password updated
+          description: Password changed and signed in.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShopperSignedIn'
+              example:
+                message: Password reset
+                user:
+                  id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
+                  email: john.doe@example.com
+                  email_confirmed: true
+                  email_verified: true
+                  has_password: true
+                customer:
+                  id: de11e44b-78e5-4940-ad54-cac237d5d30d
+                  name: John Doe
+                  email: john.doe@example.com
+                  phone: '+12125550142'
+                  tier: bronze
+                  total_purchases: 0
+                  created_at: '2026-06-20T13:47:38.831799+00:00'
+                session:
+                  access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
+                  refresh_token: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
+                  expires_in: 900
+                  expires_at: 1781967759
+                  token_type: shopper
+        '400':
+          description: |
+            `invalid_code` when the code or link is not accepted; `weak_password` when the new password
+            breaks the password rule (`details.rule` is `too_short`, `too_long` or `common`);
+            `invalid_request` when `new_password`, or the code or link, is missing.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/InvalidCodeError'
+                  - $ref: '#/components/schemas/PasswordPolicyError'
+              examples:
+                invalid_code:
+                  summary: Code not accepted
+                  value:
+                    error:
+                      code: invalid_code
+                      message: That code is not valid. Check it, or ask for a new one.
+                common:
+                  summary: Password on the common-password list
+                  value:
+                    error:
+                      code: weak_password
+                      message: That password is too common. Choose a less predictable one.
+                      details:
+                        rule: common
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/auth/password/change:
+    post:
+      operationId: changePassword
+      tags:
+        - Authentication
+      summary: Change or set a password
+      description: |
+        Change the password of the signed-in shopper, or set one for an account that has none. Every other
+        session of the account ends; the response carries a new session for the caller. The account is also
+        sent a notice that its password changed.
+
+        `current_password` is required when the account has a password (`user.has_password` is `true`) and
+        is checked first; a wrong one answers `401 invalid_credentials` and counts toward the account's
+        lock. An account created for sign-in by emailed code has no password, so it omits
+        `current_password`. The new password follows the password rule of `POST /v1/auth/register`; a
+        password that breaks it is refused with `400 weak_password`.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+
+        **Attempt limits:** 5 password changes per sign-in token per 15 minutes. Beyond that the call
+        returns `429 rate_limited` with a `Retry-After` header.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The store's sign-in token, the `access_token` of the shopper's session. A token that is expired, revoked, issued by another store or environment, or malformed answers `401 invalid_token`.
+          schema:
+            type: string
+            example: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - new_password
+              properties:
+                current_password:
+                  type: string
+                  description: The password in use. Required when the account has a password.
+                  example: SecurePassword123!
+                new_password:
+                  type: string
+                  minLength: 8
+                  maxLength: 72
+                  description: New password, 8 to 72 characters, not on the list of commonly used passwords.
+                  example: NewSecurePassword456!
+            example:
+              current_password: SecurePassword123!
+              new_password: NewSecurePassword456!
+      responses:
+        '200':
+          description: Password updated.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -19974,30 +20362,37 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - message
+                  - user
+                  - session
                 properties:
                   message:
                     type: string
-                    description: Success message
-                    example: Password updated successfully
+                    example: Password updated
                   user:
-                    type: object
-                    description: Updated user details
-                    properties:
-                      id:
-                        type: string
-                        format: uuid
-                      email:
-                        type: string
-                        format: email
+                    $ref: '#/components/schemas/User'
+                  session:
+                    $ref: '#/components/schemas/ShopperSession'
               example:
-                message: Password updated successfully
+                message: Password updated
                 user:
                   id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
-                  email: john.doe@tybritelabs.com
+                  email: john.doe@example.com
+                  email_confirmed: true
+                  email_verified: true
+                  has_password: true
+                session:
+                  access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
+                  refresh_token: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
+                  expires_in: 900
+                  expires_at: 1781967759
+                  token_type: shopper
         '400':
           description: |
-            The request was refused. `code` is `invalid_request` when `password` is missing and
-            `weak_password` when the password breaks the password rule (`details.rule` is `too_short`, `too_long` or `common`).
+            `weak_password` when the new password breaks the password rule (`details.rule` is `too_short`,
+            `too_long` or `common`); `invalid_request` when `new_password` or a required `current_password`
+            is missing.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -20031,7 +20426,29 @@ paths:
                       details:
                         rule: common
         '401':
-          description: Invalid current password
+          description: '`invalid_token` when the sign-in token is not valid for this store, `invalid_credentials` when `current_password` is wrong, or `unauthorized` for an invalid API key.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/AuthError'
+                  - $ref: '#/components/schemas/Error'
+              examples:
+                invalid_token:
+                  summary: Sign-in token not valid
+                  value:
+                    error:
+                      code: invalid_token
+                      message: The sign-in token is not valid. Sign in again.
+                invalid_credentials:
+                  summary: Current password is wrong
+                  value:
+                    error:
+                      code: invalid_credentials
+                      message: Email or password is incorrect.
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -20045,11 +20462,18 @@ paths:
         - Authentication
       summary: Refresh access token
       description: |
-        Get new access token using refresh token.
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
+        Exchange a refresh token for a new session. The refresh token is valid for 30 days from its last use and
+        works once: the response carries a replacement, and the earlier token stops working the moment the
+        new one is issued. A storefront stores the new pair on every refresh.
+
+        A refresh that cannot be honoured answers `401 invalid_refresh_token`: the token has expired, its
+        session was ended by logout or a password change, it belongs to another store or environment, or it
+        was presented a second time. Presenting a used token again ends its whole session. Two refreshes
+        with the same token at once therefore leave one of them refused, so a storefront serialises
+        refreshes per session. On `invalid_refresh_token` the shopper is signed out.
+
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
+        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** 20 refreshes per refresh token per 15 minutes. Beyond that the call returns
         `429 rate_limited` with a `Retry-After` header.
@@ -20066,6 +20490,8 @@ paths:
               properties:
                 refresh_token:
                   type: string
+                  description: The `refresh_token` of the current session.
+                  example: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
       responses:
         '200':
           description: Token refreshed
@@ -20076,24 +20502,41 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - message
+                  - session
                 properties:
                   message:
                     type: string
                     description: Success message
                     example: Token refreshed successfully
                   session:
-                    $ref: '#/components/schemas/Session'
+                    $ref: '#/components/schemas/ShopperSession'
               example:
                 message: Token refreshed successfully
                 session:
-                  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
-                  refresh_token: x3w37jmqe6hg
-                  expires_in: 3600
-                  expires_at: 1781966861
+                  access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
+                  refresh_token: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
+                  expires_in: 900
+                  expires_at: 1781967759
+                  token_type: shopper
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: '`invalid_refresh_token` when the session has ended, or `unauthorized` for an invalid API key.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/AuthError'
+                  - $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_refresh_token
+                  message: The session has ended. Sign in again.
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -20107,23 +20550,14 @@ paths:
         - Authentication
       summary: Get current user
       description: |
-        Get current authenticated user details.
-          
-        **⚠️ SECRET KEY REQUIRED**
-          
-        This endpoint requires a secret key (tybrite_sk_*). Publishable keys will return 403 Forbidden.
-          
-        **Special Headers:**
-        - `x-auth-token`: **REQUIRED** - Authentication token from login/register response
-          
-        **Usage:**
-        ```
-        GET /v1/auth/me
-        Authorization: Bearer tybrite_sk_live_YOUR_API_KEY
-        x-auth-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-        ```
+        Return the signed-in shopper and their customer record, read from the sign-in token. A token that
+        is expired, revoked, issued by another store or environment, or malformed answers
+        `401 invalid_token`; a storefront refreshes once and treats the shopper as signed out if that
+        fails. `customer` is `null` when the key belongs to a marketplace.
 
-        **Attempt limits:** 120 requests per session per minute. Beyond that the call returns
+        This endpoint accepts a secret or a publishable key.
+
+        **Attempt limits:** 120 requests per sign-in token per minute. Beyond that the call returns
         `429 rate_limited` with a `Retry-After` header.
       security:
         - BearerAuth: []
@@ -20131,10 +20565,10 @@ paths:
         - name: x-auth-token
           in: header
           required: true
-          description: Authentication token obtained from login/register endpoints
+          description: The store's sign-in token, the `access_token` of the shopper's session. A token that is expired, revoked, issued by another store or environment, or malformed answers `401 invalid_token`.
           schema:
             type: string
-            example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            example: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...
       responses:
         '200':
           description: Success
@@ -20145,28 +20579,48 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - user
+                  - customer
                 properties:
                   user:
                     $ref: '#/components/schemas/User'
                   customer:
-                    $ref: '#/components/schemas/Customer'
+                    anyOf:
+                      - $ref: '#/components/schemas/Customer'
+                      - type: 'null'
               example:
                 user:
                   id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
-                  email: john.doe@tybritelabs.com
+                  email: john.doe@example.com
                   email_confirmed: true
-                  created_at: '2026-06-20T13:47:38.354399Z'
+                  email_verified: true
+                  has_password: true
                 customer:
                   id: de11e44b-78e5-4940-ad54-cac237d5d30d
                   name: John Doe
-                  email: john.doe@tybritelabs.com
+                  email: john.doe@example.com
                   phone: '+12125550142'
+                  tier: bronze
                   total_purchases: 0
                   created_at: '2026-06-20T13:47:38.831799+00:00'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: '`invalid_token` when the sign-in token is not valid for this store, or `unauthorized` for an invalid API key.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/AuthError'
+                  - $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_token
+                  message: The sign-in token is not valid. Sign in again.
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -20362,7 +20816,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -20480,7 +20934,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -20586,7 +21040,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -20714,7 +21168,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -20809,7 +21263,7 @@ paths:
                     created_at: '2026-06-20T13:47:46.210663+00:00'
                     updated_at: '2026-06-20T13:47:46.210663+00:00'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '500':
@@ -20955,7 +21409,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '500':
@@ -21088,7 +21542,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -21172,7 +21626,7 @@ paths:
                 success: true
                 message: Address deleted
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -21297,7 +21751,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -23181,7 +23635,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -23817,7 +24271,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -24397,7 +24851,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -24571,7 +25025,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -24668,7 +25122,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -24791,7 +25245,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -24939,7 +25393,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -25039,7 +25493,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -25223,7 +25677,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -25295,7 +25749,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -25401,7 +25855,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -25482,7 +25936,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -25602,7 +26056,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -26958,7 +27412,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -27124,7 +27578,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -27360,7 +27814,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '404':
           description: No such order for this customer.
           content:
@@ -27455,7 +27909,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -27588,7 +28042,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -27808,7 +28262,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -27931,7 +28385,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -28031,7 +28485,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -28131,7 +28585,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -28302,7 +28756,7 @@ paths:
                     created_at: '2026-07-17T09:12:44.201Z'
                     resolved_at: null
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -28428,7 +28882,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -28516,7 +28970,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -28599,7 +29053,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -28699,7 +29153,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          $ref: '#/components/responses/CustomerAuthError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -33124,6 +33578,16 @@ components:
                 - `distributor` — an authorised reseller for a brand or manufacturer, usually in set regions.
                 - `wholesaler` — buys in bulk and resells to other businesses.
                 `null` on a retail store, and on a wholesale store that has not stated a position. A buyer uses this to find the right tier of seller — buying direct from a manufacturer and buying from a wholesaler differ in price, minimum order quantity, and lead time.
+            auth:
+              type: object
+              description: How shoppers sign in to this store. A storefront renders its sign-in options from this object.
+              required:
+                - passwordless
+              properties:
+                passwordless:
+                  type: boolean
+                  description: Whether a shopper can sign in with an emailed one-time code or link instead of a password. `true` unless the merchant has switched it off. When `false`, `POST /v1/auth/magic-link` and `POST /v1/auth/verify-otp` answer `403 passwordless_disabled`.
+                  example: true
         catalog:
           type: object
           description: Catalog overview (optional, included when requested)
@@ -35659,23 +36123,93 @@ components:
           type: integer
         message:
           type: string
+    RegisterPending:
+      type: object
+      description: 'The answer to a sign-up request. It is identical whether or not the address already has an account, and it carries no session: a session is issued by `POST /v1/auth/register/verify`.'
+      required:
+        - status
+        - email
+        - expires_in
+      properties:
+        status:
+          type: string
+          enum:
+            - verification_required
+        email:
+          type: string
+          description: The address exactly as it was submitted.
+        expires_in:
+          type: integer
+          description: Seconds for which the emailed code and link remain valid (900).
+          example: 900
+    PasswordPolicyError:
+      type: object
+      description: |
+        Error body returned when a request is refused for its email address or password. `invalid_email`
+        refuses a malformed, disposable or example address. `weak_password` refuses a password that breaks
+        the password rule; `details.rule` names the rule. The body is the same whether or not the email
+        already has an account.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_request
+                - invalid_email
+                - weak_password
+              description: |
+                `invalid_request` when `email` or `password` is missing, `invalid_email` for an unusable address,
+                `weak_password` for a password that breaks the rule.
+            message:
+              type: string
+            details:
+              type: object
+              description: Present when `code` is `weak_password`.
+              required:
+                - rule
+              properties:
+                rule:
+                  type: string
+                  enum:
+                    - too_short
+                    - too_long
+                    - common
+                  description: |
+                    `too_short` is fewer than 8 characters, `too_long` is more than 72 characters, and `common`
+                    is a password found on the list of commonly used passwords (compared without regard to case).
     User:
       type: object
+      description: The shopper's sign-in identity.
       properties:
         id:
           type: string
           format: uuid
+          description: The shopper identity. It is the `sub` of the store's sign-in token.
         email:
           type: string
           format: email
         email_confirmed:
           type: boolean
+          description: Whether the shopper has proven control of the address with a one-time code or link.
         email_verified:
           type: boolean
-          description: Whether the account has proven control of its email address by verifying a one-time code or a sign-in link. Returned on marketplace keys. A marketplace links purchases made as a guest with this address to the account only when this is true.
-        created_at:
-          type: string
-          format: date-time
+          description: Same value as `email_confirmed`. A marketplace links purchases made as a guest with this address to the account only when this is true.
+        has_password:
+          type: boolean
+          description: Whether the account has a password. An account created without one signs in by emailed code and can set a password with `POST /v1/auth/password/change`.
+      required:
+        - id
+        - email
+        - email_confirmed
+        - email_verified
+        - has_password
     Customer:
       type: object
       properties:
@@ -35786,24 +36320,57 @@ components:
             - sandbox
           description: Whether this customer record belongs to the live or test environment.
           example: production
-    Session:
+    ShopperSession:
       type: object
+      description: 'A shopper''s session with the store: a short-lived sign-in token and a refresh token. Store both values and replace them on every refresh.'
+      required:
+        - access_token
+        - refresh_token
+        - expires_in
+        - expires_at
+        - token_type
       properties:
         access_token:
           type: string
+          description: The store's sign-in token. Sent as the `x-auth-token` header on customer-self endpoints. It is accepted only by the store (and environment) that issued it.
         refresh_token:
           type: string
+          description: 'Opaque token that begins with `gcsr_`. It is valid for 30 days from its last use and for one use: `POST /v1/auth/refresh` returns a replacement, and presenting an earlier one again ends the whole session.'
         expires_in:
           type: integer
+          description: Lifetime of `access_token` in seconds (900).
+          example: 900
         expires_at:
           type: integer
-    PasswordPolicyError:
+          description: Unix time at which `access_token` stops being accepted.
+        token_type:
+          type: string
+          enum:
+            - shopper
+          description: Always `shopper`.
+    ShopperSignedIn:
       type: object
-      description: |
-        Error body returned when a request is refused for its email address or password. `invalid_email`
-        refuses a malformed, disposable or example address. `weak_password` refuses a password that breaks
-        the password rule; `details.rule` names the rule. The body is the same whether or not the email
-        already has an account.
+      description: A successful sign-in, sign-up verification or password reset.
+      required:
+        - message
+        - user
+        - customer
+        - session
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+        customer:
+          description: The shopper's customer record at this store. `null` when the key belongs to a marketplace, where a shopper holds an account without a per-store record.
+          anyOf:
+            - $ref: '#/components/schemas/Customer'
+            - type: 'null'
+        session:
+          $ref: '#/components/schemas/ShopperSession'
+    InvalidCodeError:
+      type: object
+      description: The code or link was not accepted. On `POST /v1/auth/register/verify`, `details.reason` states why. The other endpoints that take a code never add a reason, because an address without an account receives no code and a reason would show which addresses have accounts.
       required:
         - error
       properties:
@@ -35816,29 +36383,58 @@ components:
             code:
               type: string
               enum:
-                - invalid_request
-                - invalid_email
-                - weak_password
-              description: |
-                `invalid_request` when `email` or `password` is missing, `invalid_email` for an unusable address,
-                `weak_password` for a password that breaks the rule.
+                - invalid_code
             message:
               type: string
             details:
               type: object
-              description: Present when `code` is `weak_password`.
               required:
-                - rule
+                - reason
               properties:
-                rule:
+                reason:
                   type: string
                   enum:
-                    - too_short
-                    - too_long
-                    - common
-                  description: |
-                    `too_short` is fewer than 8 characters, `too_long` is more than 72 characters, and `common`
-                    is a password found on the list of commonly used passwords (compared without regard to case).
+                    - expired
+                    - too_many_attempts
+                    - wrong
+                  description: '`expired` is a code past its 15 minutes, `too_many_attempts` is a code that has been tried 5 times, and `wrong` is any other mismatch.'
+    AuthError:
+      type: object
+      description: An authentication refusal. `invalid_credentials` is the single answer to a sign-in with an unknown address, a wrong password, or an account that cannot sign in. `password_reset_required` is returned only after the correct password and means the account must set a new one. `invalid_token` means the `x-auth-token` is not a valid sign-in token for this store. `invalid_refresh_token` means the session has ended. `passwordless_disabled` means the store does not offer sign-in by emailed code.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_credentials
+                - password_reset_required
+                - invalid_token
+                - invalid_refresh_token
+                - passwordless_disabled
+            message:
+              type: string
+    CodeSent:
+      type: object
+      description: The answer to a request for an emailed code. It is identical whether or not the address has an account; an address without an account receives no email.
+      required:
+        - status
+        - expires_in
+      properties:
+        status:
+          type: string
+          enum:
+            - code_sent
+        expires_in:
+          type: integer
+          description: Seconds for which the emailed code and link remain valid (900).
+          example: 900
     UnifiedCustomerProfile:
       type: object
       description: A shopper's unified profile across every merchant in the marketplace.
@@ -39883,6 +40479,29 @@ components:
             error:
               code: conflict
               message: A customer with this email already exists for this store
+    CustomerAuthError:
+      description: 'Authentication failed. `unauthorized` means the API key is missing or invalid, or the `x-auth-token` header is absent. `invalid_token` means the `x-auth-token` is not a valid sign-in token for this store and environment: expired, revoked, issued by another store, or malformed. A storefront refreshes the session once with `POST /v1/auth/refresh` and treats the shopper as signed out if that fails.'
+      headers:
+        Tybrite-Environment:
+          $ref: '#/components/headers/TybriteEnvironment'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              summary: Sign-in token not valid
+              value:
+                error:
+                  code: invalid_token
+                  message: Invalid or expired customer token
+                  hint: Refresh the token via POST /v1/auth/refresh once; if that fails, treat the shopper as signed out and re-authenticate.
+            unauthorized:
+              summary: API key missing or invalid
+              value:
+                error:
+                  code: unauthorized
+                  message: Missing or invalid Authorization header
   headers:
     TybriteEnvironment:
       description: |

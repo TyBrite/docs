@@ -3,48 +3,67 @@ title: "Authenticated Session"
 description: "Reference for the AuthenticationService class in the Tybrite SDK."
 ---
 
-The `AuthenticationService` (accessed via `client.authentication`) is the **gateway to obtaining customer session tokens**. It handles customer registration, login, passwordless flows, password management, and session refresh.
+The `AuthenticationService` (accessed via `client.authentication`) creates shopper accounts and issues their sessions. It handles sign-up with email confirmation, sign-in by password or emailed code, password recovery, session refresh and sign-out.
 
-Every customer-scoped operation across the SDK — on `client.customers`, `client.cartWishlist`, `client.giftCards`, and `client.messaging` — requires the `access_token` minted here to be passed as the `xAuthToken` header.
+Every customer-scoped operation across the SDK, on `client.customers`, `client.cartWishlist`, `client.giftCards` and `client.messaging` among others, takes the session's `access_token` as the `xAuthToken` header. The `access_token` is the store's sign-in token: it is issued by the store and environment of the API key that created the session, and no other store accepts it.
 
 <Note>
   **Already using your own auth provider?** If your storefront authenticates through Auth0, Clerk, Cognito, Firebase, NextAuth, SSO, or any other external identity system, you don't need this service. Use [`CustomersService`](./CustomersService) to provision Galactic Core customer records directly from your backend. See [Customers and Auth](../../customers-and-auth) for the decision matrix.
 </Note>
 
+Every method on this service is called with a secret key (`tybrite_sk_*`) from your server; a publishable key answers `403`. `getCurrentUser` is the exception and accepts either key.
+
 ## The Customer Session Lifecycle
 
 ```
-1. Customer authenticates (login | verifyOtp | register)
+1. Customer registers          register → emailed code → verifyRegistration
+   or signs in                 login | sendMagicLink → verifyOtp
    ↓
-2. Backend returns session.access_token (JWT) + refresh_token
+2. The response carries session.access_token and session.refresh_token
    ↓
-3. Storefront stores access_token (localStorage / httpOnly cookie)
+3. The storefront stores both (httpOnly cookie preferred)
    ↓
-4. Every customer-scoped API call (cart, wishlist, customers, messaging, gift-cards)
-   passes the access_token as xAuthToken
+4. Every customer-scoped API call passes the access_token as xAuthToken
    ↓
-5. When token nears expiry → refreshToken → swap stored access_token
+5. Before expires_at → refreshToken → store the NEW access_token and refresh_token
    ↓
-6. Customer logs out → clear stored tokens
+6. The customer signs out → logout, then clear the stored tokens
 ```
 
+A session is the object `{ access_token, refresh_token, expires_in, expires_at, token_type }`, and `token_type` is always `shopper`.
+
+| Field | Meaning |
+| --- | --- |
+| `access_token` | The store's sign-in token. It lasts 15 minutes (`expires_in` is `900`). |
+| `refresh_token` | An opaque string that begins with `gcsr_`. It is valid for 30 days from its last use and works once: each `refreshToken` call returns a replacement and the earlier token stops working. |
+| `expires_at` | Unix time at which `access_token` stops being accepted. |
+
 <Note>
-  Access tokens are JWTs valid for **1 hour**. Refresh tokens are long-lived but single-use — each `refreshToken` call returns a brand-new refresh token that supersedes the previous one.
+  A customer-scoped call whose `xAuthToken` is expired, revoked, issued by another store or environment, or malformed answers `401 invalid_token`. The storefront refreshes the session once and treats the shopper as signed out if the refresh also fails.
+</Note>
+
+<Note>
+  **On a marketplace key**, the session belongs to the marketplace, and `customer` in the responses below is `null` because a marketplace shopper has an account without a per-store customer record. A marketplace adds purchases made as a guest with an email address to the account only when `user.email_verified` is `true`, which is the case once the address has been confirmed.
 </Note>
 
 ---
 
-<Note>
-  **On a marketplace key**, the `user` object returned by `register`, `login`, `verifyOtp` and `getCurrentUser` also carries `email_verified`: whether the account has proven control of its email address by verifying a one-time code or a sign-in link. It is `false` straight after `register` and `true` once `verifyOtp` succeeds. `email_confirmed` does not answer that question. A marketplace adds purchases made as a guest with an email address to the account only when `email_verified` is `true`.
-</Note>
-
-## Core Authentication
+## Sign-up
 
 ### `register`
 
-Create a new customer account. On success, returns **`201 Created`** along with session tokens so you can log the user in immediately.
+Start a customer account. `register` does not return a session: every call answers **`202 Accepted`** with the same body, whether the address is new or already has an account, and sends one email.
 
-The email must be a real, deliverable address. Disposable and placeholder domains (`example.com`, `test.com`, known throwaway-mail providers, and similar) are rejected with `400 invalid_email`, so a sign-up form that submits a dummy address gets a validation error rather than a dead account.
+- A new address receives a confirmation code and, when `redirect_to` is allowed, a confirmation link.
+- An address that already has an account receives a notice that an account exists, with directions to sign in or reset the password.
+
+The account and the first session are created by [`verifyRegistration`](#verifyregistration). Until the address is confirmed no account exists, so the response reveals nothing about which addresses have one.
+
+`password` is optional. An account created without one signs in by emailed code (`sendMagicLink`, then `verifyOtp`) and can set a password later with [`changePassword`](#changepassword).
+
+`redirect_to` is the storefront page that receives the shopper from the email. The email appends `?link_token=<token>` to it, and the page passes that token to `verifyRegistration`. It must be on one of the store's allowed storefront origins, which the merchant sets in the dashboard; otherwise it is ignored and the email carries the code only.
+
+The email must be a real, deliverable address. Disposable and placeholder domains (`example.com`, `test.com`, known throwaway-mail providers, and similar) are rejected with `400 invalid_email`.
 
 A password must be 8 to 72 characters long, counted as characters, and must not appear on the list of commonly used passwords, which is compared without regard to case. A password that breaks the rule is refused with `400 weak_password`; `details.rule` identifies the rule.
 
@@ -64,26 +83,64 @@ A password must be 8 to 72 characters long, counted as characters, and must not 
 }
 ```
 
-The password rule is evaluated before the email is looked up, so the refusal is identical whether or not the email already has an account, and no error code distinguishes the two. The other `400` codes are `invalid_request` for a missing `email` or `password` and `invalid_email` for a malformed, disposable or placeholder address. Past the attempt limits below, the call answers `429 rate_limited` with a `Retry-After` header.
+The password rule is evaluated before the email is looked up, so the refusal is identical whether or not the email already has an account. The other `400` codes are `invalid_request` for a missing `email` or a field of the wrong type and `invalid_email` for a malformed, disposable or placeholder address.
 
-Pass `marketing_consent: true` when the sign-up form includes a marketing opt-in box and the customer checked it. It defaults to `false` (opt-in) — a customer is never subscribed to marketing without affirmative consent. The customer can change this later via `updateCustomer`.
+Pass `marketing_consent: true` when the sign-up form includes a marketing opt-in box and the customer checked it. It defaults to `false`: a customer is never subscribed to marketing without affirmative consent. The customer can change this later via `updateCustomer`.
 
 ```typescript
-const { user, customer, session, is_multi_store_customer } = await client.authentication.register({
+const pending = await client.authentication.register({
   requestBody: {
-    email: 'jane.doe@tybritelabs.com',
-    password: 'securePassword123',
-    name: 'Jane Doe',          // optional
-    phone: '+12125550142',     // optional
-    marketing_consent: true    // optional — they opted in to marketing
+    email: 'john.doe@example.com',
+    password: 'securePassword123',   // optional
+    name: 'John Doe',                // optional
+    phone: '+12125550142',           // optional
+    marketing_consent: true,         // optional
+    redirect_to: 'https://shop.example.com/account?link=register'   // optional
   }
 });
+// pending.status === 'verification_required'
+```
 
-if (is_multi_store_customer) {
-  console.log('Linked existing Tybrite identity to this store');
-} else {
-  console.log('Created a brand-new login identity');
+```json Response (202)
+{
+  "status": "verification_required",
+  "email": "john.doe@example.com",
+  "expires_in": 900
 }
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `status` | `string` | Always `verification_required`. |
+| `email` | `string` | The address exactly as submitted. |
+| `expires_in` | `integer` | Seconds for which the emailed code and link are valid (`900`). |
+
+---
+
+### `verifyRegistration`
+
+Confirm the address and create the account. Send the six-digit code from the email with the `email` that registered, or send the `link_token` from the email's link on its own. Returns **`201 Created`** with the shopper, the customer record and the first session.
+
+A code is valid for 15 minutes and is accepted 5 times. A `link_token` is single-use and shares its code's expiry and attempts. When the address already had an account the code is consumed and the call answers `400 invalid_code`, the same as a wrong code.
+
+A refused call carries the reason in `details.reason`:
+
+| `details.reason` | Meaning |
+| --- | --- |
+| `expired` | The code is more than 15 minutes old. |
+| `too_many_attempts` | The code has been tried 5 times. |
+| `wrong` | Any other mismatch. |
+
+```typescript
+// From the code screen
+const { user, customer, session } = await client.authentication.verifyRegistration({
+  requestBody: { email: 'john.doe@example.com', code: '123456' }
+});
+
+// Or from the link: /account?link_token=...
+await client.authentication.verifyRegistration({
+  requestBody: { link_token: new URLSearchParams(location.search).get('link_token')! }
+});
 ```
 
 ```json Response (201)
@@ -91,22 +148,36 @@ if (is_multi_store_customer) {
   "message": "Registration successful",
   "user": {
     "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
-    "email": "jane.doe@tybritelabs.com",
-    "email_confirmed": true
+    "email": "john.doe@example.com",
+    "email_confirmed": true,
+    "email_verified": true,
+    "has_password": true
   },
   "customer": {
     "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
-    "name": "Jane Doe",
-    "email": "jane.doe@tybritelabs.com",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
     "phone": "+12125550142",
     "tier": "bronze",
+    "total_purchases": 0,
     "created_at": "2026-06-20T11:36:54.174303+00:00"
   },
   "session": {
     "access_token": "eyJ...<redacted>.signature",
-    "refresh_token": "v1.MROK...<redacted>",
-    "expires_in": 3600,
-    "expires_at": 1781959013
+    "refresh_token": "gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo",
+    "expires_in": 900,
+    "expires_at": 1781959913,
+    "token_type": "shopper"
+  }
+}
+```
+
+```json Response (400)
+{
+  "error": {
+    "code": "invalid_code",
+    "message": "That code is not valid. Check it, or ask for a new one.",
+    "details": { "reason": "expired" }
   }
 }
 ```
@@ -115,25 +186,46 @@ if (is_multi_store_customer) {
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `user` | `object` | The login identity record (id, email, metadata). |
-| `customer` | `object` | The store-scoped customer profile row. |
-| `session` | `object` | `{ access_token, refresh_token, expires_in, expires_at }` |
-| `is_multi_store_customer` | `boolean` | `true` when an existing Tybrite identity (from another store) was linked rather than newly created. |
-
-<Warning>
-  If an account already exists **for this store** with the given email, `register` returns **`409 Conflict`** — distinct from a generic `400` validation error. Surface this to your UI so you can route the user to `/login` instead.
-</Warning>
+| `user` | `object` | The shopper's sign-in identity: `id`, `email`, `email_confirmed`, `email_verified`, `has_password`. |
+| `customer` | `object \| null` | The store-scoped customer profile. `null` on a marketplace key. |
+| `session` | `object` | `{ access_token, refresh_token, expires_in, expires_at, token_type }` |
 
 ---
 
+### `resendRegistration`
+
+Send a new confirmation code and link to an address that registered and has not yet confirmed. The earlier code stops working. The call answers **`202 Accepted`** with the same body as `register` for every address, and sends one email: a fresh confirmation for a pending registration, or the notice that an account exists when the address already has one.
+
+At most one email per address is sent every 60 seconds and five an hour. A call past that is answered `202` and sends nothing.
+
+```typescript
+await client.authentication.resendRegistration({
+  requestBody: { email: 'john.doe@example.com' }
+});
+```
+
+```json Response (202)
+{
+  "status": "verification_required",
+  "email": "john.doe@example.com",
+  "expires_in": 900
+}
+```
+
+---
+
+## Sign-in
+
 ### `login`
 
-Authenticate an existing customer using their email and password. Returns **`200 OK`**.
+Authenticate an existing customer with email and password. Returns **`200 OK`**.
+
+Every refusal that depends on the account answers `401 invalid_credentials` with the same body: an address with no account, a wrong password, an account that has not been confirmed, a disabled account, and an account that has no password. `401 password_reset_required` is returned only after the correct password, for an account that must set a new one through [`forgotPassword`](#forgotpassword) and [`resetPassword`](#resetpassword). Repeated wrong passwords lock an account for a short period, during which every call for it answers `429 rate_limited` with `Retry-After`.
 
 ```typescript
 const { message, user, customer, session } = await client.authentication.login({
   requestBody: {
-    email: 'jane.doe@tybritelabs.com',
+    email: 'john.doe@example.com',
     password: 'securePassword123'
   }
 });
@@ -143,107 +235,238 @@ localStorage.setItem('tybrite_access_token', session.access_token);
 localStorage.setItem('tybrite_refresh_token', session.refresh_token);
 ```
 
-**Session object:**
-
-```json
+```json Response (200)
 {
-  "access_token": "eyJhbGciOi...",
-  "refresh_token": "v1.MROK...",
-  "expires_in": 3600,
-  "expires_at": 1747700000
+  "message": "Login successful",
+  "user": {
+    "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
+    "email": "john.doe@example.com",
+    "email_confirmed": true,
+    "email_verified": true,
+    "has_password": true
+  },
+  "customer": {
+    "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "phone": "+12125550142",
+    "tier": "bronze",
+    "total_purchases": 0,
+    "created_at": "2026-06-20T11:36:54.174303+00:00"
+  },
+  "session": {
+    "access_token": "eyJ...<redacted>.signature",
+    "refresh_token": "gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo",
+    "expires_in": 900,
+    "expires_at": 1781959913,
+    "token_type": "shopper"
+  }
+}
+```
+
+```json Response (401)
+{
+  "error": {
+    "code": "invalid_credentials",
+    "message": "Email or password is incorrect."
+  }
 }
 ```
 
 ---
 
-### `logout`
-
-Invalidate the current session. Revokes both the access and refresh tokens on the server. Returns **`200 OK`**.
-
-```typescript
-await client.authentication.logout();
-// returns { message: 'Logout successful' }
-
-// Then clear local storage
-localStorage.removeItem('tybrite_access_token');
-localStorage.removeItem('tybrite_refresh_token');
-```
-
----
-
-## Passwordless Flows (Magic Links & OTP)
-
 ### `sendMagicLink`
 
-Send a passwordless authentication link **and** a 6-digit OTP code to the customer's email. Codes are valid for **15 minutes**. Returns **`200 OK`** with a hint to check email.
+Send a one-time sign-in code, and a link carrying it, to an address that has an account. Any account can sign in this way, with or without a password. The code is six digits and is valid for 15 minutes. The call answers **`202 Accepted`** with the same body for every address; an address without an account receives no email, and no account is created.
+
+Sign-in by code is on for every store unless the merchant switches it off. `store.auth.passwordless` in the store information (`client.system.getStoreInfo`) reports the setting, and while it is `false` this method and `verifyOtp` answer `403 passwordless_disabled`.
+
+`redirect_to` is the storefront page that receives the shopper from the email, which appends `?link_token=<token>` to it. It must be on one of the store's allowed storefront origins; otherwise it is ignored and the email carries the code only.
+
+At most one email per address is sent every 60 seconds and five an hour. A call past that is answered `202` and sends nothing.
 
 ```typescript
-const { message } = await client.authentication.sendMagicLink({
+await client.authentication.sendMagicLink({
   requestBody: {
-    email: 'jane.doe@tybritelabs.com'
+    email: 'john.doe@example.com',
+    redirect_to: 'https://shop.example.com/account?link=signin'   // optional
   }
 });
-// message → "Check your email for the magic link / OTP"
+```
+
+```json Response (202)
+{
+  "status": "code_sent",
+  "expires_in": 900
+}
 ```
 
 ---
 
 ### `verifyOtp`
 
-Verify the 6-digit OTP code emitted by `sendMagicLink` to complete authentication. Returns **`200 OK`** with the **same response shape as `login`** (`message`, `user`, `customer`, `session`).
+Complete sign-in with the code from the sign-in email, or with the `link_token` its link carries. Returns **`200 OK`** with the same shape as `login`: `message`, `user`, `customer` and `session`.
+
+A code is valid for 15 minutes, is accepted 5 times and works once. A wrong, expired, used or unknown code answers `400 invalid_code` with no reason, and an address without an account answers the same way. This method never creates an account.
 
 ```typescript
 const { user, customer, session } = await client.authentication.verifyOtp({
   requestBody: {
-    email: 'jane.doe@tybritelabs.com',
-    token: '123456' // The 6-digit code from email
+    email: 'john.doe@example.com',
+    code: '123456'                // the 6-digit code from the email
   }
 });
-// returns same shape as login: { message, user, customer, session }
-//   session.access_token is the JWT you pass as xAuthToken thereafter
+
+// Or from the link: /account?link_token=...
+await client.authentication.verifyOtp({
+  requestBody: { link_token: new URLSearchParams(location.search).get('link_token')! }
+});
+```
+
+```json Response (200)
+{
+  "message": "Signed in",
+  "user": {
+    "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
+    "email": "john.doe@example.com",
+    "email_confirmed": true,
+    "email_verified": true,
+    "has_password": false
+  },
+  "customer": {
+    "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "phone": "+12125550142",
+    "tier": "bronze",
+    "total_purchases": 0,
+    "created_at": "2026-06-20T11:36:54.174303+00:00"
+  },
+  "session": {
+    "access_token": "eyJ...<redacted>.signature",
+    "refresh_token": "gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo",
+    "expires_in": 900,
+    "expires_at": 1781959913,
+    "token_type": "shopper"
+  }
+}
 ```
 
 ---
 
 ## Password Management
 
-### `resetPassword`
+### `forgotPassword`
 
-Trigger a password reset email for a customer who has forgotten their password. Returns **`200 OK`**.
+Send a password reset code, and a link carrying it, to an address that has an account. The call answers **`202 Accepted`** with the same body for every address; an address without an account receives no email. The shopper completes the reset with [`resetPassword`](#resetpassword). The code is six digits and is valid for 15 minutes.
+
+`redirect_to` is the storefront page that receives the shopper from the email, which appends `?link_token=<token>` to it. It must be on one of the store's allowed storefront origins; otherwise it is ignored and the email carries the code only.
 
 ```typescript
-await client.authentication.resetPassword({
+await client.authentication.forgotPassword({
   requestBody: {
-    email: 'jane.doe@tybritelabs.com',
-    redirect_to: 'https://shop.example.com/reset-callback' // optional
+    email: 'john.doe@example.com',
+    redirect_to: 'https://shop.example.com/reset-password'   // optional
   }
 });
-// returns { message: 'Password reset email sent', email: 'jane.doe@tybritelabs.com' }
+```
+
+```json Response (202)
+{
+  "status": "code_sent",
+  "expires_in": 900
+}
 ```
 
 ---
 
-### `updatePassword`
+### `resetPassword`
 
-Update the password for the currently authenticated user. Returns **`200 OK`**. The new password follows the [password rule](#register) that applies to `register`; a password that breaks it is refused with `400 weak_password` and a `details.rule` of `too_short`, `too_long` or `common`.
+Set a new password with the code from the reset email, or with the `link_token` its link carries. Every earlier session of the account ends, the account is sent a notice that its password changed, and the response is a new session with the same shape as `login`. A reset also clears a `password_reset_required` state.
+
+A wrong, expired or used code answers `400 invalid_code` with no reason. The new password follows the [password rule](#register) that applies to `register`; a password that breaks it is refused with `400 weak_password`.
+
+```typescript
+const { user, customer, session } = await client.authentication.resetPassword({
+  requestBody: {
+    email: 'john.doe@example.com',
+    code: '123456',
+    new_password: 'newSecurePassword456'
+  }
+});
+```
+
+```json Response (200)
+{
+  "message": "Password reset",
+  "user": {
+    "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
+    "email": "john.doe@example.com",
+    "email_confirmed": true,
+    "email_verified": true,
+    "has_password": true
+  },
+  "customer": {
+    "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "phone": "+12125550142",
+    "tier": "bronze",
+    "total_purchases": 0,
+    "created_at": "2026-06-20T11:36:54.174303+00:00"
+  },
+  "session": {
+    "access_token": "eyJ...<redacted>.signature",
+    "refresh_token": "gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo",
+    "expires_in": 900,
+    "expires_at": 1781959913,
+    "token_type": "shopper"
+  }
+}
+```
+
+---
+
+### `changePassword`
+
+Change the password of the signed-in shopper, or set one for an account that has none. Every other session of the account ends, the account is sent a notice that its password changed, and the response carries a new session for the caller. Returns **`200 OK`**.
+
+`current_password` is required when the account has a password (`user.has_password` is `true`) and is checked first. A wrong one answers `401 invalid_credentials` and counts toward the account's lock. An account created for sign-in by emailed code has no password, so it omits `current_password`. The new password follows the [password rule](#register) that applies to `register`.
 
 <Warning>
-  `xAuthToken` is **mandatory** here and must be the customer's **own** session JWT (the `access_token` returned from `login` / `verifyOtp` / `register`). Server keys cannot stand in — this endpoint mutates the customer's login credentials and requires per-customer authorization.
+  `xAuthToken` is mandatory and must be the customer's own sign-in token (the `access_token` from a session). Server keys cannot stand in: this method changes the customer's login credentials and requires per-customer authorization.
 </Warning>
 
 ```typescript
 const token = localStorage.getItem('tybrite_access_token')!;
 
-await client.authentication.updatePassword({
+const { session } = await client.authentication.changePassword({
   xAuthToken: token,
   requestBody: {
-    password: 'newSecurePassword456'
+    current_password: 'securePassword123',
+    new_password: 'newSecurePassword456'
   }
 });
-// returns {
-//     message: 'Password updated successfully',
-//     user: { id: 'df648f68-39b3-4ba6-9be2-ff0a9393c02b', email: 'jane.doe@tybritelabs.com' }
-//   }
+```
+
+```json Response (200)
+{
+  "message": "Password updated",
+  "user": {
+    "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
+    "email": "john.doe@example.com",
+    "email_confirmed": true,
+    "email_verified": true,
+    "has_password": true
+  },
+  "session": {
+    "access_token": "eyJ...<redacted>.signature",
+    "refresh_token": "gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo",
+    "expires_in": 900,
+    "expires_at": 1781959913,
+    "token_type": "shopper"
+  }
+}
 ```
 
 ---
@@ -252,7 +475,9 @@ await client.authentication.updatePassword({
 
 ### `refreshToken`
 
-Exchange a refresh token for a fresh access token. Returns **`200 OK`** with a brand-new session object (including a rotated `refresh_token`).
+Exchange a refresh token for a new session. Returns **`200 OK`**. The refresh token works once: the response carries a replacement, and the earlier token stops working the moment the new one is issued. Store the new `access_token` and `refresh_token` on every refresh.
+
+A refresh that cannot be honoured answers `401 invalid_refresh_token`: the token has expired, its session ended through `logout` or a password change, it belongs to another store or environment, or it was presented a second time. Presenting a used token again ends its whole session. Two refreshes with the same token at once therefore leave one of them refused, so a storefront serialises refreshes per session. On `invalid_refresh_token` the shopper is signed out.
 
 ```typescript
 const { session } = await client.authentication.refreshToken({
@@ -260,29 +485,51 @@ const { session } = await client.authentication.refreshToken({
     refresh_token: localStorage.getItem('tybrite_refresh_token')!
   }
 });
-// returns { message: 'Token refreshed successfully', session: {
-//       access_token: 'eyJ...<redacted>.signature',
-//       refresh_token: 'v1.MROK...<redacted>',  // rotated — supersedes the old one
-//       expires_in: 3600,
-//       expires_at: 1781966861
-//   } }
 
 localStorage.setItem('tybrite_access_token', session.access_token);
 localStorage.setItem('tybrite_refresh_token', session.refresh_token);
 ```
 
+```json Response (200)
+{
+  "message": "Token refreshed successfully",
+  "session": {
+    "access_token": "eyJ...<redacted>.signature",
+    "refresh_token": "gcsr_dGhpc2lzYXJlcGxhY2VtZW50dG9rZW4xMjM0NTY3ODkw",
+    "expires_in": 900,
+    "expires_at": 1781959913,
+    "token_type": "shopper"
+  }
+}
+```
+
 <Tip>
-  Schedule the refresh ~60 seconds before `expires_at` rather than waiting for a `401` on a customer-scoped call. This avoids cart/wishlist write failures during checkout.
+  Schedule the refresh shortly before `expires_at`, or refresh once when a customer-scoped call answers `401 invalid_token`. Refreshing ahead of expiry avoids cart and wishlist write failures during checkout.
 </Tip>
+
+---
+
+### `logout`
+
+End a session. Send the `refresh_token` of the session: the whole session is revoked, so no refresh token issued since the sign-in works again. The call answers **`204 No Content`** for every request, including a refresh token that is unknown or already ended, so a storefront can call it whenever a shopper leaves. An access token already issued stays valid until its `expires_at`, at most 15 minutes.
+
+```typescript
+await client.authentication.logout({
+  requestBody: { refresh_token: localStorage.getItem('tybrite_refresh_token')! }
+});
+
+localStorage.removeItem('tybrite_access_token');
+localStorage.removeItem('tybrite_refresh_token');
+```
 
 ---
 
 ### `getCurrentUser`
 
-Retrieve the lightweight identity of the currently authenticated user — useful right after login to confirm "who am I?" Also routed as `GET /v1/auth/me`. Returns **`200 OK`** with `{ user, customer }`.
+Return the signed-in shopper and their customer record, read from the sign-in token. Also routed as `GET /v1/auth/me`. Returns **`200 OK`** with `{ user, customer }`. `customer` is `null` on a marketplace key.
 
 <Warning>
-  `xAuthToken` is **mandatory** and must be the customer's **own** session JWT. This endpoint resolves "who am I?" from the JWT alone — passing the wrong token returns a different customer's record (or `401`).
+  `xAuthToken` is mandatory and must be the customer's own sign-in token. A token that is expired, revoked, issued by another store or environment, or malformed answers `401 invalid_token`.
 </Warning>
 
 ```typescript
@@ -299,14 +546,15 @@ console.log(`Logged in as: ${user.email} (customer id: ${customer.id})`);
 {
   "user": {
     "id": "df648f68-39b3-4ba6-9be2-ff0a9393c02b",
-    "email": "jane.doe@tybritelabs.com",
+    "email": "john.doe@example.com",
     "email_confirmed": true,
-    "created_at": "2026-06-20T11:36:53.593963Z"
+    "email_verified": true,
+    "has_password": true
   },
   "customer": {
     "id": "15ecd58f-a8f8-49e4-9098-96f1fa8308e9",
-    "name": "Jane Doe",
-    "email": "jane.doe@tybritelabs.com",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
     "phone": "+12125550142",
     "tier": "bronze",
     "total_purchases": 0,
@@ -316,28 +564,27 @@ console.log(`Logged in as: ${user.email} (customer id: ${customer.id})`);
 ```
 
 <Note>
-  **Looking for the full customer profile?** `getCurrentUser` returns just enough to identify the customer (id, email, basic fields). For the complete profile — addresses, store metrics, purchase history, status — call [`CustomersService.getCustomer`](./CustomersService#getcustomer). The same `xAuthToken` works there. Profile *edits* (address change, name change, etc.) also live on `CustomersService` via [`updateCustomer`](./CustomersService#updatecustomer).
+  `getCurrentUser` returns just enough to identify the customer. For the complete profile, including addresses, store metrics, purchase history and status, call [`CustomersService.getCustomer`](./CustomersService#getcustomer); the same `xAuthToken` works there. Profile edits live on `CustomersService` via [`updateCustomer`](./CustomersService#updatecustomer).
 </Note>
 
 ---
 
 ## Full Lifecycle Example
 
-This walks the customer from sign-in, through a cart mutation and checkout, to logout — showing where `xAuthToken` flows.
+This walks the customer from sign-up, through a cart mutation and checkout, to logout, showing where `xAuthToken` flows.
 
 ```typescript
 import { Tybrite } from '@tybrite-labs/sdk';
 
-const client = new Tybrite({ apiKey: process.env.TYBRITE_PUBLISHABLE_KEY });
+const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
 
-// 1. LOGIN — mint the session
-const { customer, session } = await client.authentication.login({
-  requestBody: {
-    email: 'jane.doe@tybritelabs.com',
-    password: 'securePassword123'
-  }
+// 1. SIGN UP — the address is confirmed before the account exists
+await client.authentication.register({
+  requestBody: { email: 'john.doe@example.com', password: 'securePassword123', name: 'John Doe' }
 });
-// returns { message: 'Login successful', user, customer, session }
+const { customer, session } = await client.authentication.verifyRegistration({
+  requestBody: { email: 'john.doe@example.com', code: '123456' }   // the code from the email
+});
 
 const token = session.access_token;
 
@@ -345,32 +592,30 @@ const token = session.access_token;
 await client.cartWishlist.addToCart({
   xAuthToken: token,
   requestBody: {
-    customer_id: customer.id,
-    variant_id: '9a47e047-b1b6-4c35-9617-820629e22e04', // Sony WH-1000XM4 default variant
+    customer_id: customer!.id,
+    variant_id: '9a47e047-b1b6-4c35-9617-820629e22e04',
     quantity: 2
   }
 });
-// returns { items: [ { product_name, variant_name, quantity, unit_price, total_price, ... } ] }
 
 // 3. CHECKOUT — order creation is sk-only + idempotent + HMAC-signed
-//    (uses your server-side secret key, not the customer JWT)
-const order = await serverClient.orders.createOrder({
+//    (uses your server-side secret key, not the customer's token)
+const order = await client.orders.createOrder({
   idempotencyKey: crypto.randomUUID(),
   xTimestamp: timestamp,
   xSignature: signature,
-  requestBody: { customer_id: customer.id, items: [...] }
+  requestBody: { customer_id: customer!.id, items: [/* ... */] }
 });
-// returns { data: { id, order_number, payment_status: 'paid', total, ... } }
 
-// 4. REFRESH — if the access_token is near expiry
+// 4. REFRESH — before access_token expires
 const { session: refreshed } = await client.authentication.refreshToken({
   requestBody: { refresh_token: session.refresh_token }
 });
-// returns { message: 'Token refreshed successfully', session: { access_token, refresh_token, ... } }
 
-// 5. LOGOUT — revoke tokens server-side
-await client.authentication.logout();
-// returns { message: 'Logout successful' }
+// 5. LOGOUT — end the session server-side
+await client.authentication.logout({
+  requestBody: { refresh_token: refreshed.refresh_token }
+});
 ```
 
 ---
@@ -379,42 +624,45 @@ await client.authentication.logout();
 
 | Method | Success | Notable Errors |
 | --- | --- | --- |
-| `register` | **201 Created** | `400` `invalid_request`, `invalid_email` or `weak_password`; `429` `rate_limited`; **`409 Conflict`** account already exists at this store |
-| `login` | **200 OK** | `401` invalid credentials |
-| `logout` | **200 OK** | — |
-| `sendMagicLink` | **200 OK** | `400` invalid email |
-| `verifyOtp` | **200 OK** | `400` invalid/expired code |
-| `resetPassword` | **200 OK** | `400` invalid email |
-| `updatePassword` | **200 OK** | `400` `weak_password`; `401` missing or invalid `xAuthToken` |
-| `refreshToken` | **200 OK** | `401` invalid/revoked refresh token |
-| `getCurrentUser` | **200 OK** | `401` missing or invalid `xAuthToken` |
+| `register` | **202 Accepted** | `400` `invalid_request`, `invalid_email` or `weak_password`; `429` `rate_limited` |
+| `verifyRegistration` | **201 Created** | `400` `invalid_code` with `details.reason`; `429` |
+| `resendRegistration` | **202 Accepted** | `400` `invalid_email`; `429` |
+| `login` | **200 OK** | `401` `invalid_credentials` or `password_reset_required`; `429` |
+| `sendMagicLink` | **202 Accepted** | `400` `invalid_email`; `403` `passwordless_disabled` |
+| `verifyOtp` | **200 OK** | `400` `invalid_code`; `403` `passwordless_disabled` |
+| `forgotPassword` | **202 Accepted** | `400` `invalid_email` |
+| `resetPassword` | **200 OK** | `400` `invalid_code` or `weak_password` |
+| `changePassword` | **200 OK** | `400` `weak_password`; `401` `invalid_token` or `invalid_credentials` |
+| `refreshToken` | **200 OK** | `401` `invalid_refresh_token` |
+| `logout` | **204 No Content** | none for a well-formed call |
+| `getCurrentUser` | **200 OK** | `401` `invalid_token` |
 
 ### Attempt limits
 
-Attempts are limited by where they come from, and an account is never locked by attempts made on it. Every attempt counts, successful or not, and an address with no account is treated identically, so a `429` says nothing about whether an account exists. A refused call returns `429 rate_limited` with a `Retry-After` header giving the seconds to wait.
+Attempts are limited by where they come from. Every attempt counts, successful or not, and an address with no account is treated identically, so a `429` says nothing about whether an account exists. A refused call returns `429 rate_limited` with a `Retry-After` header giving the seconds to wait.
 
 With a **secret key** (a storefront's server, whose address is not the shopper's), each method is limited per store and email address. Past the threshold the account is not refused; it is slowed to one attempt per interval, and `Retry-After` gives the seconds until the next one is accepted.
 
 | Method | Per store and email, 15 minutes | Then one attempt every |
 | --- | --- | --- |
 | `login` | 10 | 15 seconds |
-| `verifyOtp` | 10 | 30 seconds |
+| `verifyRegistration`, `verifyOtp`, `resetPassword` | 10 | 30 seconds |
 | `register` | 5 | 60 seconds |
-| `sendMagicLink`, `resetPassword` | 5 | 60 seconds |
+| `resendRegistration`, `sendMagicLink`, `forgotPassword` | 5 | 60 seconds |
 
-With a **publishable key** (a browser), attempts are limited per calling address: 10 per address and email, and 30 per address across all emails, in 15 minutes.
+With a **publishable key** (a browser), attempts are limited per calling address: 20 per address and email, and 60 per address across all emails, in 15 minutes.
 
 Across every store and address, a higher per-email threshold slows an attack spread over many sources:
 
 | Method | Per email across all stores, 15 minutes | Then one attempt every |
 | --- | --- | --- |
 | `login` | 50 | 10 seconds |
-| `verifyOtp` | 20 | 30 seconds |
+| `verifyRegistration`, `verifyOtp`, `resetPassword` | 20 | 30 seconds |
 | `register` | 20 | 60 seconds |
-| `sendMagicLink`, `resetPassword` | 10 | 60 seconds |
+| `resendRegistration`, `sendMagicLink`, `forgotPassword` | 10 | 60 seconds |
 
-Session calls are limited per session or token: `refreshToken` 20 per refresh token and `updatePassword` 5 per session in 15 minutes, `getCurrentUser` 120 per session per minute.
+Session calls are limited per token: `refreshToken` and `logout` 20 per refresh token and `changePassword` 5 per sign-in token in 15 minutes, `getCurrentUser` 120 per sign-in token per minute.
 
 <Note>
-  **Token Lifetime:** Access tokens are valid for 1 hour. We recommend implementing an interceptor in your application to automatically call `refreshToken` before the access token expires.
+  **Token Lifetime:** Access tokens are valid for 15 minutes. A storefront calls `refreshToken` before `expires_at`, or once on `401 invalid_token`, and stores the replacement pair each time.
 </Note>
