@@ -1,0 +1,98 @@
+---
+title: "Lead Forms"
+description: "Collect signups with questions of the merchant's choosing. A storefront reads a form's definition, draws it, and submits the answers, with consent recorded as the shopper gave it."
+---
+
+# Lead Forms
+
+A lead form is a signup form a merchant defines in their dashboard: an email address plus any questions they want answered (a name, a phone number, a preference, a date), and the consent checkboxes that apply. A storefront reads the form's definition from the API and renders it, so a merchant can change the questions without a storefront release. Each submission adds the shopper to the store's subscribers and keeps their answers.
+
+Two calls cover the storefront side:
+
+| Call | Purpose |
+|---|---|
+| [`cms.getLeadForm`](/sdk/api-reference/classes/CmsService#getleadform) | Read the form: fields, consent wording, challenge settings |
+| [`cms.submitLeadForm`](/sdk/api-reference/classes/CmsService#submitleadform) | Record a signup |
+
+Both accept publishable and secret keys. A form is addressed by its slug, which the merchant sets (for example `spring-lookbook`). A form that is a draft, archived or unavailable on the store's plan answers `404`.
+
+## The form definition
+
+`getLeadForm` returns the title, description, button label, success message and the `fields` in display order. The email address is always collected and is not listed.
+
+| Field type | Value to send in `answers` |
+|---|---|
+| `text`, `textarea` | A string, within the field's `rules.minLength` and `rules.maxLength` and matching `rules.pattern` when set |
+| `number` | A number, within `rules.min` and `rules.max` when set |
+| `boolean` | `true` or `false` |
+| `select` | One entry of `options` |
+| `multiselect` | An array of entries of `options` |
+| `date` | A `YYYY-MM-DD` string |
+| `phone` | A phone number. A number without a country code is read in the store's country and stored in international (E.164) form |
+| `consent` | `true` or `false`; a required consent must be `true` |
+
+Each field also carries `label`, `required`, and optionally `help_text` and `placeholder`.
+
+## Consent
+
+`consents` holds the wording for up to two checkboxes. `consents.email` is the email consent text and `consents.sms` the text-message consent text; a key is absent when the form does not ask for it. The submission carries only the shopper's choice, `consents: { email: true, sms: false }`. The wording stored with the submission is the form's own at that moment, so a later edit by the merchant does not change what a past shopper agreed to. Email and SMS are independent: ticking one does not imply the other. When the form asks for SMS consent, a phone answer is required to receive texts.
+
+When `double_opt_in` is true, the response to a submission has `pending_confirmation: true` and the shopper is subscribed once they confirm from an email.
+
+## Spam protection
+
+Three mechanisms apply to every form.
+
+- **Hidden field.** `hp_field` names a field to render in the page but hide from people, for example with `position: absolute; left: -9999px`, `tabindex="-1"` and `autocomplete="off"`. Automated fillers complete it. A submission that fills it receives an ordinary success response and is discarded.
+- **Timing token.** When `form_token` is present in the definition, sending it back with the submission lets a submission that arrives within two seconds of the definition being fetched be discarded in the same way.
+- **Challenge.** `captcha.required` is true when every submission must include a `captcha_token`, the result of the challenge widget rendered with `captcha.site_key`. When `captcha.on_demand` is true, the form asks for a challenge only while it is receiving unusually heavy traffic: the submission is refused with `400` and `details.reason` of `captcha_required`, the storefront shows the widget, and the submission is sent again with the token. A token that fails verification is refused with `captcha_failed`. When a challenge is required and cannot be verified, the call answers `503` and nothing is recorded.
+
+## Limits and idempotency
+
+Submissions are limited per address and per form, and the same email address is slowed after repeated submissions to one form. A limited call answers `429` with a `Retry-After` header. A body is limited to 16 KB and 30 answers.
+
+A secret key is used from a server, where every request arrives from the server's own address. The server passes the shopper's address as `xForwardedShopperIp` so limits apply per shopper; the value is ignored on a publishable key.
+
+An `idempotencyKey` makes a retried submission safe: the same key with the same body returns the original result and records one submission, and the same key with a different body answers `409`.
+
+## Refusals
+
+A `400` names the answer in `details.field` and the cause in `details.reason`.
+
+| `details.reason` | Meaning |
+|---|---|
+| `invalid_email` | The address is missing or malformed |
+| `invalid_value` | An answer has the wrong type, breaks a rule of the field, or is not an offered option |
+| `invalid_phone` | A phone answer cannot be read as a phone number |
+| `required` | A required answer is missing |
+| `consent_required` | A required consent is unchecked |
+| `captcha_required` | The form asks for a challenge token and none was sent |
+| `captcha_failed` | The challenge token did not pass verification |
+
+A `403` with `details.reason` of `plan_required` is returned when the store's plan does not include lead forms.
+
+## Example
+
+```typescript
+import { Tybrite } from '@tybrite-labs/sdk';
+
+const client = new Tybrite({ apiKey: 'tybrite_pk_live_your_key_here' });
+
+const form = await client.cms.getLeadForm({ slug: 'spring-lookbook' });
+// Render form.fields, form.consents and a hidden input named form.hp_field.
+
+const result = await client.cms.submitLeadForm({
+  slug: form.slug,
+  requestBody: {
+    email: 'john.doe@example.com',
+    answers: { first_name: 'John' },
+    consents: { email: true },
+    form_token: form.form_token,
+    source: 'footer',
+  },
+});
+
+console.log(result.message);
+```
+
+The newsletter call, [`cms.subscribeNewsletter`](/sdk/api-reference/classes/CmsService#subscribenewsletter), remains available for a bare email signup with no form definition.

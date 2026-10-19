@@ -312,6 +312,13 @@ const lookbook = await storefront.cms.getLookbook({ slug: 'workspace-essentials'
 // Newsletter signup capture (email-keyed, idempotent — re-subscribing is safe)
 const sub = await storefront.cms.subscribeNewsletter({ requestBody: { email: 'shopper@example.com', source: 'footer' } });
 // → { subscribed: true, already_subscribed: false }
+
+// Lead form: read a merchant-defined form, then submit the shopper's answers
+const form = await storefront.cms.getLeadForm({ slug: 'spring-lookbook' });
+// → { slug, title, fields: [{ name, label, type, required }], consents: { email: { text } }, captcha: { required, on_demand }, hp_field }
+
+const lead = await storefront.cms.submitLeadForm({ slug: 'spring-lookbook', requestBody: { email: 'john.doe@example.com', answers: { first_name: 'John' }, consents: { email: true } } });
+// → { submitted: true, pending_confirmation: false, message, submission_id }
 ```
 
 ```typescript

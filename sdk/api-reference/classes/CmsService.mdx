@@ -1,9 +1,9 @@
 ---
-title: "CMS (Blog & Lookbooks)"
+title: "CMS (Blog, Lookbooks & Lead Forms)"
 description: "Reference for the CmsService class in the Tybrite SDK."
 ---
 
-The `CmsService` class (accessed via `client.cms`) reads a store's editorial content — blog posts and shoppable lookbooks — and records views against the shopper's session, so a sale can later be attributed to the content that led to it.
+The `CmsService` class (accessed via `client.cms`) reads a store's editorial content — blog posts and shoppable lookbooks — and records views against the shopper's session, so a sale can later be attributed to the content that led to it. It also captures signups: the newsletter, and merchant-defined lead forms.
 
 ## Blog Posts
 
@@ -464,15 +464,90 @@ It is **safe to call repeatedly** — re-subscribing the same email returns `200
 
 ---
 
+## Lead Forms
+
+A lead form is a signup form the merchant defines: a title, questions beyond the email address, consent wording and an optional challenge. A storefront reads the definition with `getLeadForm`, draws the form from it, and posts the answers with `submitLeadForm`. The [Lead forms guide](/lead-forms) describes the form definition, spam protection and server-side use in full.
+
+### `getLeadForm`
+
+Retrieve the published definition of a lead form by its slug. The response lists the fields in display order, the consent wording for the email and SMS checkboxes, whether a challenge is asked for, and the name of the hidden field to leave empty.
+
+```typescript
+const form = await client.cms.getLeadForm({ slug: 'spring-lookbook' });
+
+form.fields.forEach(field => {
+  console.log(`${field.label} (${field.type})${field.required ? ' *' : ''}`);
+});
+```
+
+```json Response
+{
+  "slug": "spring-lookbook",
+  "title": "Get the spring lookbook",
+  "description": "Enter your email and we will send the lookbook.",
+  "submit_label": "Send it to me",
+  "success_message": "Thanks, check your inbox.",
+  "double_opt_in": false,
+  "fields": [
+    { "name": "first_name", "label": "First name", "type": "text", "required": true, "placeholder": "Jane" },
+    { "name": "interests", "label": "Interests", "type": "multiselect", "required": false, "options": ["Womenswear", "Menswear", "Accessories"] }
+  ],
+  "consents": { "email": { "text": "I agree to receive emails from this store." } },
+  "captcha": { "required": false, "on_demand": true, "site_key": "0x4AAAAAAABkMYinukE8nzYS" },
+  "hp_field": "website_url"
+}
+```
+
+A form that is a draft, archived or unknown answers `404`. The email address is always collected and is not listed in `fields`. `redirect_url` appears when the merchant set one, and `form_token` when `captcha.required` is true.
+
+### `submitLeadForm`
+
+Record a signup. `answers` is keyed by the `name` of each field, `consents` carries the checkbox states, and the email address is `email`.
+
+```typescript
+const result = await client.cms.submitLeadForm({
+  slug: 'spring-lookbook',
+  requestBody: {
+    email: 'john.doe@example.com',
+    answers: { first_name: 'John', interests: ['Menswear'] },
+    consents: { email: true },
+    source: 'footer',
+  },
+  idempotencyKey: crypto.randomUUID(), // optional
+});
+```
+
+```json Response
+{
+  "submitted": true,
+  "pending_confirmation": false,
+  "message": "Thanks, check your inbox.",
+  "submission_id": "7c1f6a52-3b0e-4d8e-9d55-0f4a9a2c3e11"
+}
+```
+
+A first signup and a repeat signup by the same email return the same response. When the form uses double opt-in, `pending_confirmation` is `true` until the shopper confirms from the email they receive. Answers for keys the form does not define are ignored.
+
+A refused submission returns `400` with `details.field` naming the answer and `details.reason` giving the cause: `invalid_email`, `invalid_value`, `invalid_phone`, `required`, `consent_required`, `captcha_required` or `captcha_failed`.
+
+**Keys:** both **publishable** and **secret** keys are accepted. A secret key is called from a server, so the caller sends the shopper's address in `xForwardedShopperIp` for per-address limits to apply to the shopper rather than to the server; the value is ignored on a publishable key.
+
+**Idempotency:** repeating an `idempotencyKey` with the same body returns the original result without recording a second submission. The same key with a different body answers `409`.
+
+---
+
 ## Response Codes
 
-The read endpoints (posts, lookbooks) are `GET`; `subscribeNewsletter` is a `POST`. All accept both **publishable** and **secret** keys. Slug validation is enforced — empty or whitespace-only slugs return `400` without hitting the database.
+The read endpoints (posts, lookbooks, `getLeadForm`) are `GET`; `subscribeNewsletter` and `submitLeadForm` are `POST`. All accept both **publishable** and **secret** keys. Slug validation is enforced — empty or whitespace-only slugs return `400` without hitting the database.
 
 | Code | Meaning |
 | :--- | :--- |
 | `200` | Success. |
-| `400` | Empty slug, invalid slug format, or malformed query parameters. |
+| `400` | Empty slug, invalid slug format, malformed query parameters, or a lead form submission that fails validation. |
 | `401` | Invalid or missing API key. |
-| `404` | Post or lookbook not found. |
+| `403` | The store's plan does not include lead forms (`submitLeadForm`). |
+| `404` | Post, lookbook or lead form not found. |
+| `409` | `Idempotency-Key` reused with a different submission (`submitLeadForm`). |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |
+| `503` | A required challenge could not be verified (`submitLeadForm`). |

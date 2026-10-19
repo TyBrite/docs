@@ -19438,9 +19438,9 @@ paths:
                   type: boolean
                   default: false
                   description: |
-                    Whether the customer opted in to marketing communications at sign-up.
+                    Whether the customer opted in to marketing email at sign-up.
                     Defaults to false (opt-in). Pass the state of your sign-up form's
-                    marketing opt-in checkbox.
+                    email opt-in checkbox.
                   example: true
                 redirect_to:
                   type: string
@@ -20677,11 +20677,19 @@ paths:
                   type: boolean
                   default: false
                   description: |
-                    Whether the customer has opted in to marketing communications. Defaults
-                    to false (opt-in). Pass the state of your storefront's marketing opt-in
-                    checkbox. When true, the customer is eligible for subscription to the
-                    store's connected marketing tools.
+                    Whether the customer has opted in to marketing email. Defaults to false
+                    (opt-in). Pass the state of your storefront's email opt-in checkbox. When
+                    true, the customer is eligible for email subscription in the store's
+                    connected marketing tools. It does not cover SMS; see `sms_consent`.
                   example: true
+                sms_consent:
+                  type: boolean
+                  default: false
+                  description: |
+                    Whether the customer has opted in to marketing text messages. A separate
+                    opt-in from `marketing_consent`. Defaults to false. Requires a `phone`;
+                    the request is rejected with 400 when `true` and no phone number is given.
+                  example: false
       responses:
         '201':
           description: Customer created
@@ -20707,6 +20715,7 @@ paths:
                   join_date: '2026-06-20'
                   external_id: null
                   marketing_consent: false
+                  sms_consent: false
                   total_purchases: 0
                   store_credit_balance: 0
                   created_at: '2026-06-20T13:47:44.9279+00:00'
@@ -21033,6 +21042,7 @@ paths:
                 join_date: '2026-06-20'
                 external_id: null
                 marketing_consent: true
+                sms_consent: false
                 total_purchases: 0
                 store_credit_balance: 0
                 created_at: '2026-06-20T13:47:38.831799+00:00'
@@ -21134,7 +21144,10 @@ paths:
                     - inactive
                 marketing_consent:
                   type: boolean
-                  description: Whether the shopper agrees to receive marketing messages from the store.
+                  description: Whether the shopper agrees to receive marketing email from the store.
+                sms_consent:
+                  type: boolean
+                  description: Whether the shopper agrees to receive marketing text messages from the store. Requires the customer to have a phone number; the request is rejected with 400 otherwise.
       responses:
         '200':
           description: Customer updated successfully
@@ -21161,6 +21174,7 @@ paths:
                   join_date: '2026-06-20'
                   external_id: null
                   marketing_consent: true
+                  sms_consent: false
                   total_purchases: 0
                   store_credit_balance: 0
                   created_at: '2026-06-20T13:47:38.831799+00:00'
@@ -23213,6 +23227,340 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/lead-forms/{slug}:
+    get:
+      operationId: getLeadForm
+      tags:
+        - CMS
+      summary: Get a lead form
+      description: |
+        Returns the published definition of a lead form: its title, the questions it asks beyond the
+        email address, the consent wording to display, whether a challenge is asked for, and the
+        name of the hidden field to render. A storefront draws the form from this response and sends
+        the answers to `POST /v1/lead-forms/{slug}/submit`.
+
+        **Auth:** accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
+
+        **Caching:** the response is cacheable and changes when the merchant edits the form. A form that
+        requires a challenge on every submission is returned with `Cache-Control: private, no-store`
+        and carries a per-request `form_token`.
+
+        A form that is a draft, archived, or does not exist, and a form on a store whose plan does not
+        include lead forms, answer `404`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The form's address, lowercase letters, digits and hyphens, starting with a letter.
+          schema:
+            type: string
+            pattern: ^[a-z][a-z0-9-]{0,62}$
+          example: spring-lookbook
+      responses:
+        '200':
+          description: The form definition.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadForm'
+              example:
+                slug: spring-lookbook
+                title: Get the spring lookbook
+                description: Enter your email and we will send the lookbook.
+                submit_label: Send it to me
+                success_message: Thanks, check your inbox.
+                double_opt_in: false
+                fields:
+                  - name: first_name
+                    label: First name
+                    type: text
+                    required: true
+                    placeholder: Jane
+                  - name: interests
+                    label: Interests
+                    type: multiselect
+                    required: false
+                    options:
+                      - Womenswear
+                      - Menswear
+                      - Accessories
+                consents:
+                  email:
+                    text: I agree to receive emails from this store.
+                captcha:
+                  required: false
+                  on_demand: true
+                  site_key: 0x4AAAAAAABkMYinukE8nzYS
+                hp_field: website_url
+        '400':
+          description: The form address is not valid.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: invalid_request
+                  message: The form address is not valid.
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: The form does not exist or is not available.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: not_found
+                  message: This form does not exist or is not available.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          description: The form could not be loaded.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: server_error
+                  message: The form could not be loaded.
+  /v1/lead-forms/{slug}/submit:
+    post:
+      operationId: submitLeadForm
+      tags:
+        - CMS
+      summary: Submit a lead form
+      description: |
+        Records a signup through a lead form: the shopper's email address, their answers to the form's
+        questions, and the consents they gave. The shopper is added to the store's subscribers, and the
+        submission, with the form's labels and consent wording as they were at that moment, is kept for
+        the merchant.
+
+        **Auth:** accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. No
+        customer session is required.
+
+        **Validation:** the form's field definitions decide what is accepted. A key in `answers` that
+        the form does not define is ignored. Phone answers are converted to E.164 using the store's
+        country when the shopper omits a country code. Consent is recorded only from the `consents`
+        booleans; the wording stored is the form's own.
+
+        **Uniform response:** a first signup and a repeat signup by the same email both return `200` with
+        the same shape. Every submission appends to the form's history.
+
+        **Spam protection:** the field named by `hp_field` on the form is rendered hidden; a submission
+        that fills it is acknowledged with a normal `200` and discarded. A form may also require a
+        challenge: send the widget's result as `captcha_token`. When a challenge is required and
+        verification is unavailable, the request answers `503`.
+
+        **Rate limits:** per address and per form, and per email address per form. A secret key is
+        called from the merchant's server, so it should send the shopper's address in
+        `X-Forwarded-Shopper-Ip`; without it, every request on that key counts as one address. The header is
+        ignored on a publishable key, which is called from the shopper's own browser.
+
+        **Idempotency:** a request that repeats an `Idempotency-Key` with the same body returns the
+        original result without recording a second submission; the same key with a different body answers `409`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The form's address.
+          schema:
+            type: string
+            pattern: ^[a-z][a-z0-9-]{0,62}$
+          example: spring-lookbook
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: A unique string of 1 to 255 printable characters that identifies this submission.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          example: 6b0b5f2e-9c0d-4a77-8b62-2f5f1b1a7d10
+        - name: X-Forwarded-Shopper-Ip
+          in: header
+          required: false
+          description: The shopper's IP address. Honoured on a secret key only.
+          schema:
+            type: string
+          example: 203.0.113.42
+      requestBody:
+        required: true
+        description: Up to 16 KB of JSON, sent as `application/json`.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: The shopper's email address.
+                  example: john.doe@example.com
+                answers:
+                  type: object
+                  description: Answers keyed by field `name`, at most 30. A `multiselect` answer is an array.
+                  additionalProperties: true
+                  example:
+                    first_name: John
+                    interests:
+                      - Menswear
+                consents:
+                  type: object
+                  description: The consents the shopper gave.
+                  properties:
+                    email:
+                      type: boolean
+                      example: true
+                    sms:
+                      type: boolean
+                      example: false
+                captcha_token:
+                  type: string
+                  description: The challenge widget's result. Required when the form's `captcha.required` is true, or when a refusal with reason `captcha_required` asks for it.
+                form_token:
+                  type: string
+                  description: The `form_token` returned with the form definition, when it had one.
+                website_url:
+                  type: string
+                  description: The hidden field named by the form's `hp_field`. Leave empty.
+                source:
+                  type: string
+                  description: A label for where the signup happened. At most 200 characters.
+                  example: post:summer-style-guide
+                page_url:
+                  type: string
+                  description: The page the form was on. At most 500 characters.
+                  example: https://shop.example.com/pages/lookbook
+                utm:
+                  type: object
+                  description: Campaign parameters, up to 10 string entries.
+                  additionalProperties:
+                    type: string
+                  example:
+                    utm_source: instagram
+      responses:
+        '200':
+          description: The submission was accepted.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormSubmission'
+              example:
+                submitted: true
+                pending_confirmation: false
+                message: Thanks, check your inbox.
+                submission_id: 7c1f6a52-3b0e-4d8e-9d55-0f4a9a2c3e11
+        '400':
+          description: The submission is not valid. `details.field` names the answer and `details.reason` says why.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: invalid_request
+                  message: Please enter a valid email address.
+                  details:
+                    field: email
+                    reason: invalid_email
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The store's plan does not include lead forms (`details.reason` is `plan_required`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: forbidden
+                  message: This form is not available for this store.
+                  details:
+                    reason: plan_required
+        '404':
+          description: The form does not exist or is not available.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: not_found
+                  message: This form does not exist or is not available.
+        '409':
+          description: The `Idempotency-Key` was already used with a different submission.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: conflict
+                  message: This Idempotency-Key was already used with a different submission.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          description: The form could not be submitted.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: server_error
+                  message: The form could not be submitted.
+        '503':
+          description: The challenge could not be verified. The submission was not recorded; retry shortly.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: service_unavailable
+                  message: The check could not be completed right now. Please try again shortly.
   /v1/prices/products:
     get:
       operationId: getProductPrices
@@ -30177,7 +30525,15 @@ paths:
                     unsubscribe link, or the merchant removed them). The payload object carries
                     `id`, `email`, `source` (the label of the signup box, or null), `status`, and
                     `subscribed_at` or `unsubscribed_at`; a status change adds
-                    `previous_attributes.status`. Endpoints opt in explicitly; these events are not
+                    `previous_attributes.status`. A subscriber who signed up through a lead form also
+                    carries `name`, `phone` (only with SMS consent), `form_slug` and `answers`.
+
+                    **Lead forms:** `lead_form.submitted` (every submission of a lead form, including a
+                    repeat from the same person). The payload object carries `id`, `form_slug`,
+                    `email`, `name`, `phone` (only with SMS consent), `answers` (the fields the form
+                    shares with apps), `consents`, `source` and `submitted_at`.
+
+                    Endpoints opt in explicitly to the newsletter and lead form events; they are not
                     part of the default subscription.
 
                     **Inventory & catalog:** `product.created`, `product.updated`,
@@ -30648,6 +31004,7 @@ paths:
                     - payment.failed
                     - customer.created
                     - newsletter.subscribed
+                    - lead_form.submitted
                     - product.created
                     - product.stock_low
                     - cart.abandoned
@@ -36277,12 +36634,21 @@ components:
         marketing_consent:
           type: boolean
           description: |
-            Whether the customer has opted in to marketing communications. Defaults to false
-            (opt-in). Set this from your storefront's marketing opt-in checkbox at sign-up,
-            checkout, or in the customer's account preferences. When true, the customer is
-            eligible to be subscribed to the store's connected marketing tools.
+            Whether the customer has opted in to marketing email. Defaults to false (opt-in).
+            Set this from your storefront's email opt-in checkbox at sign-up, checkout, or in
+            the customer's account preferences. When true, the customer is eligible to be
+            subscribed to email in the store's connected marketing tools. It does not cover
+            SMS; see `sms_consent`.
           default: false
           example: true
+        sms_consent:
+          type: boolean
+          description: |
+            Whether the customer has opted in to marketing text messages. A separate opt-in
+            from `marketing_consent`, and only settable for a customer with a phone number.
+            Defaults to false.
+          default: false
+          example: false
         total_purchases:
           type: integer
         last_purchase:
@@ -37695,6 +38061,220 @@ components:
                     sale_price: null
                     image: https://cdn.example.com/products/linen-shirt.jpg
                     stock: 14
+    LeadFormField:
+      type: object
+      required:
+        - name
+        - label
+        - type
+        - required
+      properties:
+        name:
+          type: string
+          description: The key under which the answer is sent in `answers`.
+          example: first_name
+        label:
+          type: string
+          example: First name
+        type:
+          type: string
+          enum:
+            - text
+            - textarea
+            - number
+            - boolean
+            - select
+            - multiselect
+            - date
+            - phone
+            - consent
+          description: |
+            The input the field calls for. `select` takes one entry of `options`, `multiselect` an array of
+            entries, `boolean` and `consent` `true` or `false`, `date` a `YYYY-MM-DD` string, `phone` a phone
+            number in national or international form, and `number` a number. A `consent` field is a checkbox
+            the shopper must tick when `required` is true.
+          example: text
+        required:
+          type: boolean
+          example: true
+        options:
+          type: array
+          description: The choices of a `select` or `multiselect` field.
+          items: {}
+          example:
+            - Newsletter
+            - Events
+        help_text:
+          type: string
+          example: As it appears on your order.
+        placeholder:
+          type: string
+          example: Jane
+        rules:
+          type: object
+          description: Limits the answer must meet. Only the limits the merchant set are present.
+          properties:
+            min:
+              type: number
+            max:
+              type: number
+            minLength:
+              type: integer
+            maxLength:
+              type: integer
+            pattern:
+              type: string
+    LeadForm:
+      type: object
+      required:
+        - slug
+        - title
+        - submit_label
+        - success_message
+        - double_opt_in
+        - fields
+        - consents
+        - captcha
+        - hp_field
+      properties:
+        slug:
+          type: string
+          example: spring-lookbook
+        title:
+          type: string
+          example: Get the spring lookbook
+        description:
+          type:
+            - string
+            - 'null'
+          example: Enter your email and we will send the lookbook.
+        submit_label:
+          type: string
+          example: Send it to me
+        success_message:
+          type: string
+          example: Thanks, check your inbox.
+        double_opt_in:
+          type: boolean
+          description: When true, a shopper's signup is held until they confirm it from an email.
+          example: false
+        fields:
+          type: array
+          description: The questions beyond the email address, in display order. The email address is always collected and is not listed.
+          items:
+            $ref: '#/components/schemas/LeadFormField'
+        consents:
+          type: object
+          description: The consent checkboxes the form asks for, each with the wording to display. A key is absent when the form does not ask for that consent.
+          properties:
+            email:
+              type: object
+              properties:
+                text:
+                  type: string
+                  example: I agree to receive emails from this store.
+            sms:
+              type: object
+              properties:
+                text:
+                  type: string
+                  example: I agree to receive text messages from this store.
+        captcha:
+          type: object
+          required:
+            - required
+            - on_demand
+          properties:
+            required:
+              type: boolean
+              description: True when every submission must carry a `captcha_token`.
+            on_demand:
+              type: boolean
+              description: True when the form asks for a challenge only while it is receiving unusually heavy traffic. The submission is then refused with reason `captcha_required` and can be resent with a token.
+            site_key:
+              type: string
+              description: The public key for rendering the challenge widget. Present when the form can ask for a challenge.
+        hp_field:
+          type: string
+          description: The name of a field the storefront renders hidden. A submission that fills it is acknowledged and discarded.
+          example: website_url
+        redirect_url:
+          type: string
+          description: Where the merchant wants the shopper sent after a successful signup. Present only when set.
+        form_token:
+          type: string
+          description: Present when `captcha.required` is true. Sent back unchanged on submit; a submission that arrives within two seconds of it being issued is acknowledged and discarded.
+    LeadFormError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: invalid_request
+            message:
+              type: string
+              description: A sentence suitable for showing to the shopper.
+              example: Please enter a valid email address.
+            details:
+              type: object
+              properties:
+                field:
+                  type: string
+                  description: 'The answer the error refers to: `email`, `answers`, `captcha_token`, `consents.email`, `phone`, or the `name` of a form field.'
+                  example: email
+                reason:
+                  type: string
+                  description: |
+                    Why the submission was refused.
+
+                    - `invalid_email`: the address is missing or malformed.
+                    - `invalid_value`: an answer has the wrong type, is outside the field's rules or is not one of the listed options.
+                    - `invalid_phone`: a phone answer cannot be read as a phone number.
+                    - `required`: a required answer is missing.
+                    - `consent_required`: a required consent is unchecked.
+                    - `captcha_required`: the form asks for a challenge token and none was sent.
+                    - `captcha_failed`: the challenge token did not pass verification.
+                    - `plan_required`: the store's plan does not include lead forms (status `403`).
+                  enum:
+                    - invalid_email
+                    - invalid_value
+                    - invalid_phone
+                    - required
+                    - consent_required
+                    - captcha_required
+                    - captcha_failed
+                    - plan_required
+                  example: invalid_email
+    LeadFormSubmission:
+      type: object
+      required:
+        - submitted
+        - pending_confirmation
+        - message
+        - submission_id
+      properties:
+        submitted:
+          type: boolean
+          example: true
+        pending_confirmation:
+          type: boolean
+          description: True when the signup is waiting for the shopper to confirm from an email.
+          example: false
+        message:
+          type: string
+          description: The form's success message, for display.
+          example: Thanks, check your inbox.
+        submission_id:
+          type: string
+          format: uuid
+          example: 7c1f6a52-3b0e-4d8e-9d55-0f4a9a2c3e11
     Thread:
       type: object
       properties:
