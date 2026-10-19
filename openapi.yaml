@@ -30172,6 +30172,14 @@ paths:
 
                     **Customer lifecycle:** `customer.created`, `customer.updated`, `customer.deleted`
 
+                    **Newsletter:** `newsletter.subscribed` (a new signup, or a returning subscriber
+                    who signs up again), `newsletter.unsubscribed` (the shopper used the one-click
+                    unsubscribe link, or the merchant removed them). The payload object carries
+                    `id`, `email`, `source` (the label of the signup box, or null), `status`, and
+                    `subscribed_at` or `unsubscribed_at`; a status change adds
+                    `previous_attributes.status`. Endpoints opt in explicitly; these events are not
+                    part of the default subscription.
+
                     **Inventory & catalog:** `product.created`, `product.updated`,
                     `product.stock_low`, `product.out_of_stock`
 
@@ -30639,6 +30647,7 @@ paths:
                     - payment.succeeded
                     - payment.failed
                     - customer.created
+                    - newsletter.subscribed
                     - product.created
                     - product.stock_low
                     - cart.abandoned

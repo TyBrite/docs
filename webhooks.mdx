@@ -208,6 +208,15 @@ price is stale the moment one of these fires.
 | `lookbook.published` | A shoppable lookbook is published |
 | `review.approved` | A product review passes moderation and becomes visible. Carries `product_id`, `rating`, `verified_purchase` |
 
+### Newsletter
+
+| Event | Fired when |
+| :--- | :--- |
+| `newsletter.subscribed` | A shopper signs up, or a returning subscriber signs up again. The object carries `id`, `email`, `source` (the label of the signup box, or null), `status` and `subscribed_at`; a re-subscribe adds `previous_attributes.status` |
+| `newsletter.unsubscribed` | A subscriber uses the one-click unsubscribe link, or the merchant removes them. The object carries `id`, `email`, `source`, `status` and `unsubscribed_at`, with `previous_attributes.status` |
+
+Endpoints subscribe to these events explicitly; they are not included in the default subscriptions.
+
 ### Deletion & restore
 
 A deleted record has left the API: it no longer appears in any list, cannot be fetched by id, and stops taking effect — a deleted promotion stops discounting, a deleted product cannot be bought. Every deletion carries the record's `id` and `name`, plus `deleted_at` and `restorable_until`.

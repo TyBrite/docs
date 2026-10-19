@@ -423,6 +423,9 @@ An endpoint subscribes to any of these, or to `["*"]` for everything:
 - **Content & collections** — `collection.created`, `collection.updated` (name / banner / homepage
   placement changed, **or membership changed** — products added, removed, or re-ordered, carrying
   `members_changed: true`), `post.published`, `lookbook.published`, `review.approved`
+- **Newsletter** — `newsletter.subscribed` (a new signup or a re-subscribe), `newsletter.unsubscribed`
+  (the one-click unsubscribe link or removal by the merchant). The object carries `id`, `email`,
+  `source` and `status`. Endpoints opt in to these events explicitly
 - **Deletion & restore** — `product.deleted`, `product_variant.deleted`, `promotion.deleted`,
   `collection.deleted`, `post.deleted`, `lookbook.deleted`, `pricing_rule.deleted`,
   `subcategory.deleted`, `customer.deleted`. The record has left the API: it is gone from every
