@@ -12,6 +12,7 @@ Two calls cover the storefront side:
 | Call | Purpose |
 |---|---|
 | [`cms.getLeadForm`](/sdk/api-reference/classes/CmsService#getleadform) | Read the form: fields, consent wording, challenge settings |
+| [`cms.createLeadFormToken`](/sdk/api-reference/classes/CmsService#createleadformtoken) | Issue the timing token for one visit to the form |
 | [`cms.submitLeadForm`](/sdk/api-reference/classes/CmsService#submitleadform) | Record a signup |
 
 Both accept publishable and secret keys. A form is addressed by its slug, which the merchant sets (for example `spring-lookbook`). A form that is a draft, archived or unavailable on the store's plan answers `404`.
@@ -44,8 +45,8 @@ When `double_opt_in` is true, the response to a submission has `pending_confirma
 Three mechanisms apply to every form.
 
 - **Hidden field.** `hp_field` names a field to render in the page but hide from people, for example with `position: absolute; left: -9999px`, `tabindex="-1"` and `autocomplete="off"`. Automated fillers complete it. A submission that fills it receives an ordinary success response and is discarded.
-- **Timing token.** When `form_token` is present in the definition, sending it back with the submission lets a submission that arrives within two seconds of the definition being fetched be discarded in the same way.
-- **Challenge.** `captcha.required` is true when every submission must include a `captcha_token`, the result of the challenge widget rendered with `captcha.site_key`. When `captcha.on_demand` is true, the form asks for a challenge only while it is receiving unusually heavy traffic: the submission is refused with `400` and `details.reason` of `captcha_required`, the storefront shows the widget, and the submission is sent again with the token. A token that fails verification is refused with `captcha_failed`. When a challenge is required and cannot be verified, the call answers `503` and nothing is recorded.
+- **Timing token.** `cms.createLeadFormToken` issues a token for one visit; request it when the form is shown and send it back as `form_token`. A submission carrying a token that is not valid for this form, or that arrives within two seconds of the token being issued, receives an ordinary success response and is discarded.
+- **Challenge.** `captcha.available` reports whether a challenge can be shown for the store. When it is false, `captcha.required` and `captcha.on_demand` are false and submissions are protected by the other mechanisms. When it is true, `captcha.required` is true when every submission must include a `captcha_token`, the result of the challenge widget rendered with `captcha.site_key`. When `captcha.on_demand` is true, the form asks for a challenge only while it is receiving unusually heavy traffic: the submission is refused with `400` and `details.reason` of `captcha_required`, the storefront shows the widget, and the submission is sent again with the token. A token that fails verification is refused with `captcha_failed`. When a challenge is required and cannot be verified, the call answers `503` and nothing is recorded.
 
 ## Limits and idempotency
 
@@ -80,6 +81,7 @@ const client = new Tybrite({ apiKey: 'tybrite_pk_live_your_key_here' });
 
 const form = await client.cms.getLeadForm({ slug: 'spring-lookbook' });
 // Render form.fields, form.consents and a hidden input named form.hp_field.
+const { form_token } = await client.cms.createLeadFormToken({ slug: form.slug });
 
 const result = await client.cms.submitLeadForm({
   slug: form.slug,
@@ -87,7 +89,7 @@ const result = await client.cms.submitLeadForm({
     email: 'john.doe@example.com',
     answers: { first_name: 'John' },
     consents: { email: true },
-    form_token: form.form_token,
+    form_token,
     source: 'footer',
   },
 });

@@ -7720,6 +7720,145 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/variants/{id}/notify-when-available:
+    post:
+      operationId: notifyWhenAvailable
+      tags:
+        - Cart & Wishlist
+      summary: Ask to be told when a variant is back in stock
+      description: |
+        Records a shopper's request for one email when a sold-out variant is available again. The email
+        address is the only identity needed, so it works for an anonymous visitor and a signed-in customer
+        alike; send `customer_id` with a customer credential to attach the request to a customer record.
+
+        A request is not marketing consent. It subscribes the address to nothing and results in exactly one
+        message, sent when the variant's stock goes from nothing to something. After that message the shopper
+        can ask again.
+
+        The response is the same `200` whether the address has asked before, already holds the maximum number
+        of open requests for the store, or is new. The request is refused with `409` when the variant is in
+        stock, with `404` when the variant is not sold online by the store, and with `404` (`not_available`)
+        when the store has no way to deliver the message. Sandbox keys read their sandbox stock level and
+        never trigger a message.
+
+        **Auth / key type:** publishable key (`tybrite_pk_*`) or secret key (`tybrite_sk_*`). A customer
+        credential is needed only when `customer_id` is sent.
+
+        **Rate limits:** 20 requests per hour per IP address and 6 per hour per email address, each within
+        one store.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Variant UUID
+          schema:
+            type: string
+            format: uuid
+          example: 9a47e047-b1b6-4c35-9617-820629e22e04
+        - name: x-auth-token
+          in: header
+          required: false
+          description: Customer session access_token from /v1/auth/login or /v1/auth/verify-otp. Needed only when `customer_id` is sent; the resolved customer must match it.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Needed only when `customer_id` is sent. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's signing secret. Claim lifetime capped at 300 seconds.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Needed only when `customer_id` is sent. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - consent
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: Where to send the message. Stored lower-cased.
+                  example: john.doe@example.com
+                consent:
+                  type: boolean
+                  enum:
+                    - true
+                  description: Must be `true`. Records that the shopper asked for this one message.
+                  example: true
+                customer_id:
+                  type: string
+                  format: uuid
+                  description: Customer UUID, when the shopper is signed in. Requires a customer credential for the same customer.
+                  example: 650e8400-e29b-41d4-a716-446655440000
+      responses:
+        '200':
+          description: The request is recorded, or was already recorded.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - requested
+                properties:
+                  requested:
+                    type: boolean
+                    example: true
+              example:
+                requested: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/CustomerAuthError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: The variant is not sold online by this store (`not_found`), or the store cannot send back-in-stock messages (`not_available`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: Variant not found or not available
+        '409':
+          description: The variant is in stock (`in_stock`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: in_stock
+                  message: This item is in stock, so there is nothing to wait for.
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/cart/checkout:
     post:
       operationId: marketplaceCheckout
@@ -23236,14 +23375,14 @@ paths:
       description: |
         Returns the published definition of a lead form: its title, the questions it asks beyond the
         email address, the consent wording to display, whether a challenge is asked for, and the
-        name of the hidden field to render. A storefront draws the form from this response and sends
-        the answers to `POST /v1/lead-forms/{slug}/submit`.
+        name of the hidden field to render. A storefront draws the form from this response, requests a
+        `form_token` from `POST /v1/lead-forms/{slug}/token` when the form is shown, and sends the
+        answers to `POST /v1/lead-forms/{slug}/submit`.
 
         **Auth:** accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
 
-        **Caching:** the response is cacheable and changes when the merchant edits the form. A form that
-        requires a challenge on every submission is returned with `Cache-Control: private, no-store`
-        and carries a per-request `form_token`.
+        **Caching:** the response is cacheable and changes when the merchant edits the form. It carries
+        no per-visitor data; the `form_token` comes from its own endpoint.
 
         A form that is a draft, archived, or does not exist, and a form on a store whose plan does not
         include lead forms, answer `404`.
@@ -23293,6 +23432,7 @@ paths:
                   email:
                     text: I agree to receive emails from this store.
                 captcha:
+                  available: true
                   required: false
                   on_demand: true
                   site_key: 0x4AAAAAAABkMYinukE8nzYS
@@ -23340,6 +23480,77 @@ paths:
                 error:
                   code: server_error
                   message: The form could not be loaded.
+  /v1/lead-forms/{slug}/token:
+    post:
+      operationId: createLeadFormToken
+      tags:
+        - CMS
+      summary: Get a lead form token
+      description: |
+        Returns the signed token a submission must carry. Request it when the form is shown, so that it
+        is at least two seconds old by the time the shopper submits. A token is valid for one form on one
+        store for seven days and carries no data. The response is never cached.
+
+        **Auth:** accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
+
+        **Rate limits:** per address and store. A secret key is called from the merchant's server and
+        should send the shopper's address in `X-Forwarded-Shopper-Ip`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The form's address.
+          schema:
+            type: string
+            pattern: ^[a-z][a-z0-9-]{0,62}$
+          example: spring-lookbook
+        - name: X-Forwarded-Shopper-Ip
+          in: header
+          required: false
+          description: The shopper's IP address. Honoured on a secret key only.
+          schema:
+            type: string
+          example: 203.0.113.42
+      responses:
+        '200':
+          description: The token.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormToken'
+              example:
+                form_token: 1792505707265.54e2d133f4756a96b0f45d91a10f4313025d470e387cc8a8d2ff171134e80bc2
+        '400':
+          description: The form address is not valid.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: invalid_request
+                  message: The form address is not valid.
+        '429':
+          description: Too many requests from this address.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: rate_limited
+                  message: Too many requests from this address. Please try again later.
   /v1/lead-forms/{slug}/submit:
     post:
       operationId: submitLeadForm
@@ -23364,9 +23575,12 @@ paths:
         the same shape. Every submission appends to the form's history.
 
         **Spam protection:** the field named by `hp_field` on the form is rendered hidden; a submission
-        that fills it is acknowledged with a normal `200` and discarded. A form may also require a
-        challenge: send the widget's result as `captcha_token`. When a challenge is required and
-        verification is unavailable, the request answers `503`.
+        that fills it is acknowledged with a normal `200` and discarded. The same applies to a submission
+        that carries a `form_token` that is forged, issued for another form, or older than seven days, one made within two seconds of the token being issued, and (once the platform requires it) one with no token, and one
+        whose answers are mostly links or whose email address is a throwaway domain. Where the form
+        reports `captcha.available`, it may also require a challenge: send the widget's result as
+        `captcha_token`; when a challenge is required and verification is unavailable, the request answers
+        `503`. Where `captcha.available` is false no challenge is asked for and the other protections apply.
 
         **Rate limits:** per address and per form, and per email address per form. A secret key is
         called from the merchant's server, so it should send the shopper's address in
@@ -23440,7 +23654,7 @@ paths:
                   description: The challenge widget's result. Required when the form's `captcha.required` is true, or when a refusal with reason `captcha_required` asks for it.
                 form_token:
                   type: string
-                  description: The `form_token` returned with the form definition, when it had one.
+                  description: The token returned by `POST /v1/lead-forms/{slug}/token`. A submission with an invalid token is acknowledged and discarded; one with no token is accepted but held to a tighter per-address limit and answers `429` past it.
                 website_url:
                   type: string
                   description: The hidden field named by the form's `hp_field`. Leave empty.
@@ -38182,9 +38396,13 @@ components:
         captcha:
           type: object
           required:
+            - available
             - required
             - on_demand
           properties:
+            available:
+              type: boolean
+              description: True when a challenge can be shown and verified. When false, `required` and `on_demand` are false whatever the form's setting, and the other protections still apply.
             required:
               type: boolean
               description: True when every submission must carry a `captcha_token`.
@@ -38201,9 +38419,6 @@ components:
         redirect_url:
           type: string
           description: Where the merchant wants the shopper sent after a successful signup. Present only when set.
-        form_token:
-          type: string
-          description: Present when `captcha.required` is true. Sent back unchanged on submit; a submission that arrives within two seconds of it being issued is acknowledged and discarded.
     LeadFormError:
       type: object
       required:
@@ -38252,6 +38467,14 @@ components:
                     - captcha_failed
                     - plan_required
                   example: invalid_email
+    LeadFormToken:
+      type: object
+      required:
+        - form_token
+      properties:
+        form_token:
+          type: string
+          description: Sent back unchanged as `form_token` on submit. A submission carrying a token that is not valid for this form, or that arrives within two seconds of the token being issued, is acknowledged and discarded.
     LeadFormSubmission:
       type: object
       required:

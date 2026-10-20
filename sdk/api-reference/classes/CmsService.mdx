@@ -493,12 +493,27 @@ form.fields.forEach(field => {
     { "name": "interests", "label": "Interests", "type": "multiselect", "required": false, "options": ["Womenswear", "Menswear", "Accessories"] }
   ],
   "consents": { "email": { "text": "I agree to receive emails from this store." } },
-  "captcha": { "required": false, "on_demand": true, "site_key": "0x4AAAAAAABkMYinukE8nzYS" },
+  "captcha": { "available": false, "required": false, "on_demand": false },
   "hp_field": "website_url"
 }
 ```
 
-A form that is a draft, archived or unknown answers `404`. The email address is always collected and is not listed in `fields`. `redirect_url` appears when the merchant set one, and `form_token` when `captcha.required` is true.
+A form that is a draft, archived or unknown answers `404`. The email address is always collected and is not listed in `fields`. `redirect_url` appears when the merchant set one. The definition carries no per-visitor value, so it is cached.
+
+### `createLeadFormToken`
+
+Issue a token for one visit to a lead form. Request it when the form is shown and send it back unchanged as `form_token` with `submitLeadForm`. A submission carrying a token that is not valid for this form, or that arrives within two seconds of the token being issued, is acknowledged and discarded.
+
+```typescript
+const { form_token } = await client.cms.createLeadFormToken({ slug: 'spring-lookbook' });
+```
+
+```json Response
+{
+  "form_token": "lf1.1792571234.4f3c9a2b7e1d0c85a6b3f2e9d8c7b6a5"
+}
+```
+
 
 ### `submitLeadForm`
 

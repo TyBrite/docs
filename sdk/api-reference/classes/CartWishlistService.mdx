@@ -303,6 +303,36 @@ await client.cartWishlist.moveWishlistToCart({
 
 ---
 
+## Back in Stock
+
+### `notifyWhenAvailable`
+
+Ask to be emailed once when a sold-out variant is available again. The email address is the only identity needed, so the call works for an anonymous visitor and a signed-in customer alike; pass `customer_id` with the customer's `xAuthToken` (or `xExternalAuth`) to attach the request to a customer record.
+
+The request is not marketing consent. It subscribes the address to nothing and produces exactly one message, sent when the variant's stock goes from nothing to something; the shopper can ask again afterwards. A store can send the message when its Klaviyo connection is active.
+
+```typescript
+await client.cartWishlist.notifyWhenAvailable({
+  id: 'variant-uuid',
+  requestBody: {
+    email: 'john.doe@example.com',
+    consent: true
+  }
+});
+```
+
+```json Response
+{ "requested": true }
+```
+
+The response is the same whether the address has asked for this variant before, has reached the limit of open requests for the store, or is new. Requests are limited to 20 per hour per IP address and 6 per hour per email address within a store. Sandbox keys read the variant's sandbox stock level and never trigger a message.
+
+| Status | Meaning |
+| :--- | :--- |
+| `409` | `in_stock` — the variant is in stock, so there is nothing to wait for. |
+| `404` | `not_found` — the store does not sell the variant online; or `not_available` — the store cannot send the message. |
+| `400` | The email is missing or malformed, or `consent` is not `true`. |
+
 ## Response Objects
 
 ### `CartItem` & `WishlistItem`
@@ -467,5 +497,5 @@ const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
 | `401` | Missing or invalid `xAuthToken`. |
 | `403` | The customer token does not match the `customer_id` in the request. |
 | `404` | Variant, wishlist item, or cart item not found. |
-| `409` | Item already in wishlist (on `addToWishlist`). |
+| `409` | Item already in wishlist (on `addToWishlist`); variant in stock (on `notifyWhenAvailable`). |
 
