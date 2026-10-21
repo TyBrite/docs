@@ -34553,6 +34553,42 @@ components:
                   type: integer
                 published:
                   type: integer
+            lead_forms:
+              type: object
+              description: The lead forms a storefront can render. Each `slug` is accepted by `GET /v1/lead-forms/{slug}`, which returns the form's fields and consent text.
+              properties:
+                available:
+                  type: boolean
+                  description: Whether the store collects leads through forms. When false, `list` is empty and the form endpoints answer 404.
+                list:
+                  type: array
+                  description: Published forms in the key's environment, most recently updated first.
+                  items:
+                    type: object
+                    properties:
+                      slug:
+                        type: string
+                        example: spring-waitlist
+                      title:
+                        type: string
+                      description:
+                        type:
+                          - string
+                          - 'null'
+                      version:
+                        type: integer
+                        description: Increases whenever the form's fields or wording change.
+                      updated_at:
+                        type: string
+                        format: date-time
+                    required:
+                      - slug
+                      - title
+                      - version
+                      - updated_at
+              required:
+                - available
+                - list
         features:
           type: object
           description: |-

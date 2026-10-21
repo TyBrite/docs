@@ -148,7 +148,7 @@ const freshData = await client.system.getStoreInfo({ cache: false });
 | `promotions` | Active discounts and campaign summaries. |
 | `payments` | Merchant's active payment providers and methods. |
 | `shipping` | Whether and where the store delivers, its rates and free-delivery thresholds, and its pickup locations. |
-| `cms` | Number of published posts and lookbooks. |
+| `cms` | Number of published posts and lookbooks, and the lead forms the storefront can render (`lead_forms`). |
 | `features` | Platform capability flags (AI, Currency, etc.). |
 | `custom_fields` | Extra fields the merchant has added to their own records, grouped by what they describe. |
 | `profile` | Support contact, social profiles, published legal documents and legal identity, in summary. |
@@ -156,6 +156,34 @@ const freshData = await client.system.getStoreInfo({ cache: false });
 <Note>
   The `store` section (ID, Name, Timezone, Currencies) is **always included** regardless of the filtered sections.
 </Note>
+
+#### Lead forms
+
+`cms.lead_forms` lists the store's published lead forms: `available` states whether the store collects
+leads through forms, and `list` carries each form's `slug`, `title`, `description`, `version` and
+`updated_at`, most recently updated first. Each `slug` is accepted by `getLeadForm`, which returns the
+fields and consent text to render. When `available` is `false`, `list` is empty.
+
+```json Response
+{
+  "cms": {
+    "posts": { "total": 12, "published": 9, "draft": 3 },
+    "lookbooks": { "total": 2, "published": 2 },
+    "lead_forms": {
+      "available": true,
+      "list": [
+        {
+          "slug": "spring-waitlist",
+          "title": "Join the spring waitlist",
+          "description": "Be first to hear when the collection lands.",
+          "version": 3,
+          "updated_at": "2026-10-21T09:12:44Z"
+        }
+      ]
+    }
+  }
+}
+```
 
 #### Custom fields
 
