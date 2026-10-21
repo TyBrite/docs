@@ -308,6 +308,7 @@ reports two product counts, and they answer different questions:
 | :--- | :--- |
 | `product_count` | Products filed **directly** against that node. |
 | `product_count_including_descendants` | Products under that node at **any depth**, including those filed against nested subcategories. |
+| `slug` | The URL-safe identifier of the entry: unique in the store for a category, unique among subcategories sharing a parent for a subcategory. |
 | `base_category` (categories only) | The standard category the entry behaves like — its own name for a standard category, the closest standard category for one created for a particular marketplace or reseller. |
 
 The two differ wherever a merchant files products against subcategories rather than the category
@@ -330,6 +331,7 @@ direct children, so a client renders breadcrumbs and the nested tree without fur
           {
             "id": "0a4c2c19-16a6-4b1e-9d0e-4d8f1a6b2c37",
             "name": "Accessories & Cables",
+            "slug": "accessories-cables",
             "image": null,
             "base_category": "Accessories & Cables",
             "product_count": 3,
@@ -338,6 +340,7 @@ direct children, so a client renders breadcrumbs and the nested tree without fur
           {
             "id": "7c1f9b84-2d63-4a70-8f52-1b9e6c0a4d81",
             "name": "Audio & Headphones",
+            "slug": "audio-headphones",
             "image": null,
             "base_category": "Audio & Headphones",
             "product_count": 2,
@@ -351,6 +354,7 @@ direct children, so a client renders breadcrumbs and the nested tree without fur
           {
             "id": "b83d5f10-6c47-42a9-9e15-3f7a20d8c6b4",
             "name": "Over-Ear Headphones",
+            "slug": "over-ear-headphones",
             "image": null,
             "category": "Audio & Headphones",
             "category_id": "7c1f9b84-2d63-4a70-8f52-1b9e6c0a4d81",
