@@ -194,6 +194,72 @@ One request per category yields a separate cursor per response, and those cursor
 into a coherent page 2 — so a landing page spanning several categories is built from one multi-id
 request, not from several single-id requests stitched together.
 
+#### Filter by price and specification, sort, and count
+
+`minPrice` and `maxPrice` bound the price, `spec` filters on specification values, `sort` orders the
+list, and `includeTotal` adds the exact number of matching products. Each option combines with
+`search`, `brand`, `categoryId` and `subcategoryId`, and the whole combination pages with one
+`cursor`.
+
+```typescript
+const { products, pagination } = await client.products.listProducts({
+  minPrice: '100',
+  maxPrice: '400',
+  spec: { brand: ['Pulsewave', 'Sony'] },
+  sort: 'price_desc',
+  includeTotal: true,
+  limit: 2
+});
+```
+
+```json Response
+{
+  "products": [
+    {
+      "product_id": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8",
+      "name": "Sony WH-1000XM4",
+      "brand": "Sony",
+      "price": 349.99,
+      "selling_price": 349.99,
+      "sale_price": null,
+      "stock": 120,
+      "has_variants": false,
+      "display_currency": "USD",
+      "currency_symbol": "$"
+    },
+    {
+      "product_id": "f6a2629e-f899-4615-b17a-e78e2e4c35a4",
+      "name": "Pulsewave Wireless Earbuds",
+      "brand": "Pulsewave",
+      "price": 129,
+      "selling_price": 129,
+      "sale_price": null,
+      "stock": 64,
+      "has_variants": false,
+      "display_currency": "USD",
+      "currency_symbol": "$"
+    }
+  ],
+  "pagination": {
+    "limit": 2,
+    "next_cursor": null,
+    "has_more": false,
+    "total": 2
+  }
+}
+```
+
+| Option | Behaviour |
+| :--- | :--- |
+| `minPrice`, `maxPrice` | Decimal amounts in the store's currency, for example `'19.99'`, with at most four decimal places. A product's price is its lowest active variant price after sale pricing. A product with no price is excluded when either bound is set. A negative value, a non-number, or a `minPrice` above `maxPrice` returns `400`. |
+| `spec` | An object of specification field names to lists of values. A product matches a field when any of its published specifications holds one of the listed values, compared case-insensitively and exactly; a multi-value field matches on any of its entries. All fields must match. At most 10 fields, 10 values per field and 100 characters per value. |
+| `sort` | `featured` (default), `price_asc`, `price_desc` or `newest`. Products without a price come last in both price orders. Ties are ordered by product id, so every product appears once across pages. |
+| `includeTotal` | `true` adds `pagination.total`, the number of products the filters match regardless of the page. It is omitted otherwise. |
+
+A `cursor` is valid only with the `sort` and filters of the request that returned it. Using it with
+a different sort or different filters returns `400`. These options are not available with a
+marketplace operator key or together with `personalize` or `b2b`; those requests return `400`.
+
 ---
 
 ### `listBrands`
@@ -219,6 +285,79 @@ const { brands, total } = await client.products.listBrands();
 
 On a marketplace operator key the brands are aggregated across all active merchants; pass `storeId`
 to scope to one merchant.
+
+---
+
+### `listProductFacets`
+
+Return how many of the matching products carry each brand, category, subcategory and specification
+value, with the lowest and highest price. Use it to build the filter panel beside a product list: each
+value maps to a `listProducts` option (`brand`, `categoryId`, `subcategoryId`, `spec`).
+
+It accepts the filters of `listProducts` (`search`, `brand`, `categoryId`, `subcategoryId`, `minPrice`,
+`maxPrice`, `spec`) and counts the products that match all of them. It takes no cursor, sort or page
+size.
+
+```typescript
+const facets = await client.products.listProductFacets({
+  minPrice: '100',
+  maxPrice: '400'
+});
+```
+
+```json Response
+{
+  "total": 3,
+  "price": { "min": 129, "max": 349.99 },
+  "brands": {
+    "values": [
+      { "value": "Pulsewave", "count": 2 },
+      { "value": "Sony", "count": 1 }
+    ],
+    "truncated": false
+  },
+  "categories": {
+    "values": [
+      { "id": "c7f18400-eec6-448d-a599-cf871cf80b31", "name": "Audio & Headphones", "count": 2 },
+      { "id": "7bf671dd-f49e-492c-b89f-a2892931f88f", "name": "Electronics", "count": 1 }
+    ],
+    "truncated": false
+  },
+  "subcategories": { "values": [], "truncated": false },
+  "specs": [
+    {
+      "field": "brand",
+      "label": "Brand",
+      "type": "text",
+      "values": [
+        { "value": "Pulsewave", "count": 2 },
+        { "value": "Sony", "count": 1 }
+      ],
+      "truncated": false
+    },
+    {
+      "field": "color",
+      "label": "Color",
+      "type": "text",
+      "values": [
+        { "value": "Black", "count": 1 },
+        { "value": "Charcoal", "count": 1 }
+      ],
+      "truncated": false
+    }
+  ],
+  "display_currency": "USD",
+  "currency_symbol": "$"
+}
+```
+
+Each list holds at most 20 values, ordered by count and then name; `truncated` is `true` when more
+values exist. At most 20 specification fields are returned. A specification field is listed when one
+of the store's specification templates defines it as a text, select, multiselect or boolean field and a
+matching product has a value for it; a text field with more than 50 distinct values is treated as an
+identifier and is left out. The `field` of a specification facet is the name to pass as
+`spec: { [field]: [value] }`. Prices are in the store's currency (`display_currency`). The method is not
+available with a marketplace operator key, which returns `400`.
 
 ---
 
