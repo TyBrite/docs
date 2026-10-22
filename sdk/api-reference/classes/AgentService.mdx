@@ -401,13 +401,13 @@ Constraint search over the catalogue. Every constraint is optional; each result 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
 | `requestBody.query` | `string` | Free text, matched by meaning where the store has semantic search, and against name, brand, category, SKU and tags. A direct text match ranks above a match by meaning alone. |
-| `requestBody.price_min` / `price_max` | `number` | Bounds on the catalogue selling price. |
+| `requestBody.price_min` / `price_max` | `number` | Bounds on the product's price: the price of its lowest-priced variant, sale included. |
 | `requestBody.category` | `string` | A category or subcategory name, case-insensitive. |
 | `requestBody.attributes` | `Record<string, string>` | Attribute name to wanted value, such as `{ "color": "black" }`, matched against variant attributes, product attributes, brand and category. |
 | `requestBody.in_stock_only` | `boolean` | Excludes a product only when no variant is in stock. |
 | `requestBody.limit` | `number` | 1–50, default 10. |
 
-`price` in a result is the catalogue selling price. What a shopper pays after dynamic pricing, promotions, shipping and tax comes from `quote`. `semantic_search` reports whether ranking by meaning was used for this call.
+`price` in a result is the shopper price of the product's lowest-priced variant (its online sale price when one applies, otherwise its online price), and `list_price` is that variant's online price. What a shopper pays after dynamic pricing, promotions, shipping and tax comes from `quote`. `semantic_search` reports whether ranking by meaning was used for this call.
 
 ```typescript
 const { data } = await client.agent.search({
@@ -473,7 +473,7 @@ for (const r of data.results!) {
     {
       "source": "products",
       "operation": "GET /v1/products",
-      "field": "selling_price"
+      "field": "price"
     },
     {
       "source": "products",
@@ -861,7 +861,7 @@ const { data } = await client.agent.getAlternatives({
     {
       "source": "products",
       "operation": "GET /v1/products",
-      "field": "selling_price"
+      "field": "price"
     }
   ],
   "computed_at": "2026-09-28T21:53:35.751Z",

@@ -99,8 +99,8 @@ const feed = await client.feeds.getStoreCatalogFeedJson({
 | `media` | The full product-level media gallery. |
 | `variant_name` | Variant label, or `null`. |
 | `product_group` | Present on multi-variant products so a consumer can regroup variants; `null` otherwise. |
-| `price` | Selling price. |
-| `sale_price` | Sale price, or `null` when not on sale. |
+| `price` | The variant's online price (its in-store price when no online price is set). |
+| `sale_price` | The variant's online sale price, present only when it is above zero and below `price`, and `null` otherwise. A consumer strikes `price` exactly when `sale_price` is present. |
 | `stock` | On-hand quantity. |
 | `seo_title`, `seo_description`, `seo_keywords` | SEO fields, when present. |
 | `specifications` | Published specifications as a flat key/value object, when present. |

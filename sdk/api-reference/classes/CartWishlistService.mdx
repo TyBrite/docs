@@ -351,10 +351,10 @@ Both cart and wishlist items include structured data for optimized frontend rend
 | `thumbnail_url` | `string` | Primary image URL, prioritizing variant media. |
 | `media` | `array` | Full gallery of variant-aware images and videos. |
 | `quantity` | `number` | **(Cart only)** Number of items added. |
-| `unit_price` | `number` | **(Cart only)** Base price per unit. |
-| `selling_price` | `number` | **(Cart only)** Actual price including active sales. |
+| `unit_price` | `number` | **(Cart only)** The price charged per unit: the variant's online sale price when it has one, otherwise its online price. |
+| `selling_price` | `number` | **(Cart only)** The unit price charged; always equal to `unit_price`. |
 | `total_price` | `number` | **(Cart only)** `unit_price × quantity`. |
-| `product_price` | `number` | **(Wishlist only)** Current price of the variant. |
+| `product_price` | `number` | **(Wishlist only)** The price currently charged for one unit of the variant. |
 | `stock_available` | `number` | Real-time stock count for the variant. |
 | `has_variants` | `boolean` | Whether the product supports variation selection. |
 | `created_at` | `string` | Timestamp of when the item was added. |
@@ -432,7 +432,7 @@ Both cart and wishlist items include structured data for optimized frontend rend
 Stock checks are enforced against the specific variant during all cart operations. If the requested quantity exceeds `stock_available`, the API returns an `insufficient_stock` error code along with the current available count.
 
 ### Pricing Logic
-Prices are calculated at the variant level using the `selling_price` field. This ensures that different variations (e.g., larger sizes or premium colors) are priced accurately and that active promotions are automatically applied.
+Each variant is priced independently, so different variations (for example larger sizes or premium colors) carry their own price. A cart line's `unit_price` is the variant's online sale price when it has one, and its online price otherwise; a variant with no online price is charged its in-store price. The same price is what `getProduct` returns as the variant's `sale_price` (when present) or `price`, and it is the starting point for checkout: dynamic pricing, promotions and discounts apply on top of it.
 
 ---
 

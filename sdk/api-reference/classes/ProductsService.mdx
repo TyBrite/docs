@@ -25,6 +25,20 @@ To optimize performance across different device types, the service implements th
 
 ---
 
+## Prices
+
+Each variant carries an in-store price, an online price and an optional online sale price. The API returns the online figures:
+
+| Field | Meaning |
+| :--- | :--- |
+| `price` | The variant's online price. A variant with no online price sells online at its in-store price, so `price` always has a value. |
+| `sale_price` | The variant's online sale price. It is present only when it is greater than zero and below `price`; otherwise it is `null`. |
+| `price_range` | On a multi-variant detail response, the lowest (`min`) and highest (`max`) price a shopper pays across the variants. |
+
+A client strikes `price` exactly when `sale_price` is present; there is no separate compare-at field. The price a shopper is charged for a variant is its `sale_price` when present and its `price` otherwise. Variants of one product price independently, so a listed product shows the `price` and `sale_price` of its lowest-priced variant, and `minPrice`, `maxPrice`, `sort` and the facets price range use that same price. Dynamic pricing (`client.pricing`) applies on top of the variant's online price. The in-store price is not part of the response.
+
+---
+
 ## Catalog Discovery
 
 ### `listProducts`
@@ -33,7 +47,7 @@ Retrieve a paginated list of products. This method returns **flat structures** (
 
 *   **⚡ Performance**: 50-70% smaller than detail endpoints.
 *   **🖼️ Thumbnails**: Use `thumbnail_url` for fast rendering in lists without iterating arrays.
-*   **🛒 Quick Add**: Includes default variant data (`price`, `stock`, `sku`) at root level.
+*   **🛒 Quick Add**: Includes default variant data (`stock`, `sku`) at root level, with the `price` and `sale_price` of the product's lowest-priced variant (see [Prices](#prices)).
 *   **🔍 Intelligence**: Use the `has_variants` flag to determine if the UI should show "View Options".
 *   **⭐ Ratings**: Each item carries `average_rating` (the mean of the product's approved reviews, to one decimal place, or `null` when it has none) and `review_count` (`0` when none), so a grid can show a rating under each card without a review request per product.
 *   **⏩ Pagination**: Uses cursor-based navigation for stable, high-performance scrolling.
@@ -220,7 +234,6 @@ const { products, pagination } = await client.products.listProducts({
       "name": "Sony WH-1000XM4",
       "brand": "Sony",
       "price": 349.99,
-      "selling_price": 349.99,
       "sale_price": null,
       "stock": 120,
       "has_variants": false,
@@ -232,7 +245,6 @@ const { products, pagination } = await client.products.listProducts({
       "name": "Pulsewave Wireless Earbuds",
       "brand": "Pulsewave",
       "price": 129,
-      "selling_price": 129,
       "sale_price": null,
       "stock": 64,
       "has_variants": false,
@@ -251,7 +263,7 @@ const { products, pagination } = await client.products.listProducts({
 
 | Option | Behaviour |
 | :--- | :--- |
-| `minPrice`, `maxPrice` | Decimal amounts in the store's currency, for example `'19.99'`, with at most four decimal places. A product's price is its lowest active variant price after sale pricing. A product with no price is excluded when either bound is set. A negative value, a non-number, or a `minPrice` above `maxPrice` returns `400`. |
+| `minPrice`, `maxPrice` | Decimal amounts in the store's currency, for example `'19.99'`, with at most four decimal places. A product's price is the price of its lowest-priced active variant: the variant's `sale_price` when present, otherwise its `price`; the list shows, sorts by and counts the same price. A product with no price is excluded when either bound is set. A negative value, a non-number, or a `minPrice` above `maxPrice` returns `400`. |
 | `spec` | An object of specification field names to lists of values. A product matches a field when any of its published specifications holds one of the listed values, compared case-insensitively and exactly; a multi-value field matches on any of its entries. All fields must match. At most 10 fields, 10 values per field and 100 characters per value. |
 | `sort` | `featured` (default), `price_asc`, `price_desc` or `newest`. Products without a price come last in both price orders. Ties are ordered by product id, so every product appears once across pages. |
 | `includeTotal` | `true` adds `pagination.total`, the number of products the filters match regardless of the page. It is omitted otherwise. |
@@ -356,7 +368,7 @@ values exist. At most 20 specification fields are returned. A specification fiel
 of the store's specification templates defines it as a text, select, multiselect or boolean field and a
 matching product has a value for it; a text field with more than 50 distinct values is treated as an
 identifier and is left out. The `field` of a specification facet is the name to pass as
-`spec: { [field]: [value] }`. Prices are in the store's currency (`display_currency`). The method is not
+`spec: { [field]: [value] }`. Prices are in the store's currency (`display_currency`), and a product's price is that of its lowest-priced variant, sale included. The method is not
 available with a marketplace operator key, which returns `400`.
 
 ---
@@ -366,7 +378,7 @@ available with a marketplace operator key, which returns `400`.
 Retrieve complete details for a single item. This method handles **Multi-Variant** products by returning a hierarchical structure that eliminates data redundancy and supports **variant-aware media**.
 
 *   **Product-Level**: Shared metadata at the root (name, brand, media gallery).
-*   **Aggregate Data**: `total_stock` (sum of all variants) and `price_range` (`min`/`max` using `selling_price`).
+*   **Aggregate Data**: `total_stock` (sum of all variants) and `price_range` (`min`/`max` of the prices a shopper pays across the variants, a variant's price being its `sale_price` when present and its `price` otherwise).
 *   **Variants Array**: Clean array containing variant-specific attributes (color, size, SKU) and **isolated media** for that specific variation.
 
 ```typescript
@@ -492,7 +504,7 @@ if (product.gtin) {
   "name": "Sony WH-1000XM4",
   "sku": "SNY-WH1000",
   "price": 369.99,
-  "selling_price": 349.99,
+  "sale_price": 349.99,
   "stock": 40,
   "condition": "new",
   "gtin": "0885909950805",
@@ -554,9 +566,9 @@ fields=name,variants.sku,variants.media,variants.variant_attributes
 
 **Supported Fields for Filtering:**
 *   **Core:** `product_id`, `name`, `sku`, `description`, `thumbnail_url`, `media`
-*   **Pricing:** `price`, `selling_price`, `sale_price`, `price_range`
+*   **Pricing:** `price`, `sale_price`, `price_range`
 *   **Inventory:** `stock`, `total_stock`, `last_restocked` (`last_restocked` is not returned by default — request it explicitly)
-*   **Variants:** `variants.sku`, `variants.selling_price`, `variants.media`, `variants.variant_attributes`
+*   **Variants:** `variants.sku`, `variants.price`, `variants.sale_price`, `variants.media`, `variants.variant_attributes`
 *   **Reviews (list only):** `average_rating`, `review_count`
 
 ---

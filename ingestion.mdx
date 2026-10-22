@@ -135,7 +135,7 @@ The default is `upsert_by_sku` (update existing, create new).
 
 ### Variants
 
-Rows that share the same non-empty `product_group` become variants of a **single** product — each row still needs its own unique `sku`. A row with no `product_group` is a standalone, single-variant product. The first row in a group supplies the product-level fields (`name`, `description`, `category`); each row contributes its own `variant_name`, `price`, and `stock`.
+Rows that share the same non-empty `product_group` become variants of a **single** product — each row still needs its own unique `sku`. A row with no `product_group` is a standalone, single-variant product. The first row in a group supplies the product-level fields (`name`, `description`, `category`); each row contributes its own `variant_name`, `price`, `online_price`, `online_sale_price` and `stock`.
 
 ---
 
@@ -205,7 +205,7 @@ CSV follows standard quoting rules, so commas and newlines inside quoted fields 
 | :--- | :--- | :--- |
 | `sku` | Yes | Your unique stock-keeping unit — the identity used for matching. |
 | `name` | Yes | Product name. |
-| `price` | Yes | Selling price. Must be greater than 0. |
+| `price` | Yes | In-store selling price of the row's variant. Must be greater than 0. It is also the online price when `online_price` is not set. |
 | `product_group` | — | Groups rows into one multi-variant product. Omit for a standalone product. |
 | `variant_name` | — | Label for this variant (e.g. a size or colour). Defaults to `"Default"`. |
 | `description` | — | Product description. |
@@ -247,7 +247,7 @@ lists alongside them. These are read on both the push API and a [scheduled sync]
 | `tags` | A list of tags. Either a real array or a single string delimited by commas, semicolons or pipes. |
 | `seo_title` / `seo_description` / `seo_keywords` | Storefront metadata. `seo_keywords` is a list on the same terms as `tags`. |
 | `is_online_enabled` | Whether the product is published to the storefront. Reads `true`/`false`, `yes`/`no` and `1`/`0`; an empty value means "not stated" and leaves the current setting alone. A product created by an import starts unpublished whatever this says, and the column applies from the import after that. |
-| `online_price` / `online_sale_price` | Storefront price and sale price, where they differ from the in-store `price`. |
+| `online_price` / `online_sale_price` | The variant's online price and online sale price, where they differ from the in-store `price`. Each variant of a product carries its own, so a row sets the prices of its own variant only. A row without `online_price` sells online at its in-store `price`. The online sale price applies only when it is above zero and below the variant's online price; a storefront strikes the online price exactly when a sale price is present. |
 
 <Note>
   **`gtin` and `barcode` are separate fields.** `barcode` is whatever the merchant scans in-store,

@@ -1836,6 +1836,13 @@ paths:
         **Currency:** All prices returned in store's default currency. For multi-currency support with
         geographic detection, use the `/v1/prices/products` endpoint instead.
 
+        **Prices:** Each variant carries an online price, and optionally an online sale price. A variant
+        without an online price sells at its in-store price. `price` is the variant's online price.
+        `sale_price` is its online sale price and is present only when it is greater than zero and below
+        `price`; a client strikes `price` exactly when `sale_price` is present. A listed product shows the
+        `price` and `sale_price` of its lowest-priced variant, where a variant's price is its `sale_price`
+        when present and its `price` otherwise. The in-store price is not returned.
+
         **Marketplace:** When called with a marketplace operator key, this returns products aggregated
         across all merchants in the marketplace rather than a single store's catalog. With a marketplace
         operator key, pass `?store_id=<merchant>` to narrow results to a single merchant. Responses are
@@ -1941,8 +1948,9 @@ paths:
           description: |
             Lowest price to include, as a decimal in the store's currency (for example `19.99`).
 
-            A product's price for this filter is its lowest active variant price after sale pricing:
-            the sale price when one is set, otherwise the regular price. A product with no price is
+            A product's price for this filter is the price of its lowest-priced active variant: the
+            variant's online sale price when one applies, otherwise its online price. This is the same
+            price the list shows, sorts by and reports in the facets range. A product with no price is
             excluded whenever `min_price` or `max_price` is set.
 
             Must be a non-negative number with at most four decimal places, and no greater than
@@ -1968,8 +1976,8 @@ paths:
             Order of the list.
 
             - `featured` (default): the store's standard order.
-            - `price_asc`: lowest price first.
-            - `price_desc`: highest price first.
+            - `price_asc`: lowest price first, by the product's lowest-priced variant.
+            - `price_desc`: highest price first, by the product's lowest-priced variant.
             - `newest`: most recently created first.
 
             Products without a price come last in both price orders, and ties are broken by product id,
@@ -2079,7 +2087,7 @@ paths:
               
             **Allowed Fields:**
             - **Core:** `id` (alias of `product_id`), `product_id`, `variant_id`, `name`, `sku`, `description`
-            - **Pricing:** `price`, `selling_price`, `sale_price`, `display_currency`, `currency_symbol`
+            - **Pricing:** `price`, `sale_price`, `display_currency`, `currency_symbol`
             - **Inventory:** `stock`, `last_restocked` (`last_restocked` is not in the default response — request it explicitly)
             - **Media:** `media`, `thumbnail_url`
             - **SEO:** `product_slug`, `seo_title`, `seo_description`, `seo_keywords`
@@ -2242,7 +2250,6 @@ paths:
                         variant_id: 15ca5a86-4b1b-47c3-8762-a1aa43941565
                         sku: APP-MBP-13
                         price: 1999
-                        selling_price: 1999
                         stock: 42
                         has_variants: false
                         display_currency: USD
@@ -2270,7 +2277,6 @@ paths:
                         variant_id: 9a47e047-b1b6-4c35-9617-820629e22e04
                         sku: SNY-WH1000
                         price: 349.99
-                        selling_price: 349.99
                         stock: 120
                         has_variants: true
                         display_currency: USD
@@ -2291,7 +2297,6 @@ paths:
                         name: Sony WH-1000XM4
                         brand: Sony
                         price: 349.99
-                        selling_price: 349.99
                         sale_price: null
                         stock: 120
                         has_variants: false
@@ -2301,7 +2306,6 @@ paths:
                         name: Samsung Galaxy Watch 6
                         brand: Samsung
                         price: 299
-                        selling_price: 299
                         sale_price: null
                         stock: 80
                         has_variants: false
@@ -2422,8 +2426,9 @@ paths:
         it as a text, select, multiselect or boolean field and a matching product has a value for it. A text
         field with more than 50 distinct values is treated as an identifier and is not listed.
 
-        **Price.** `price.min` and `price.max` are the lowest and highest product prices after sale pricing, in
-        the store's currency (`display_currency`); both are `null` when nothing matches.
+        **Price.** `price.min` and `price.max` are the lowest and highest product prices, in the store's
+        currency (`display_currency`); both are `null` when nothing matches. A product's price is that of its
+        lowest-priced variant, sale included, the same price `min_price`, `max_price` and `sort` use.
 
         Not available on marketplace operator keys, which return `400`.
       security:
@@ -2722,19 +2727,25 @@ paths:
       summary: Get product by ID or variant ID
       description: |
         Retrieve complete details for a single product using either its product ID or variant ID.
+
+        **Prices:** each variant's `price` is its online price (its in-store price when no online price is
+        set) and `sale_price` is its online sale price, present only when it is greater than zero and below
+        `price`; a client strikes `price` exactly when `sale_price` is present. `price_range` is the lowest
+        and highest price a shopper pays across the variants, where a variant's price is its `sale_price`
+        when present and its `price` otherwise. The in-store price is not returned.
           
         **Response Structure:**
         - **Simple products (no variants):** Flat structure with all data at root level
         - **Multi-variant products:** Hierarchical structure with:
           - Product-level data at root (name, description, brand, media, etc.)
-          - Aggregate data (total_stock, price_range using selling_price)
+          - Aggregate data (total_stock, price_range from each variant's effective price)
           - Clean variants array with only variant-specific fields (no redundancy)
           
         **Field Filtering:**
         Supports both root-level and nested variant filtering:
         - Root filtering: ~ 38% bandwidth reduction
         - Nested filtering: ~ 52% bandwidth reduction
-        - Example: `fields=name,price_range,variants.sku,variants.selling_price,variants.stock`
+        - Example: `fields=name,price_range,variants.sku,variants.price,variants.stock`
           
         **Currency:** Prices returned in store's default currency. For multi-currency support with 
         geographic detection, use the `/v1/prices/products/{id}` endpoint instead.
@@ -2775,7 +2786,7 @@ paths:
               
             **Root-Level Fields:**
             - **Core:** `product_id`, `variant_id`, `name`, `sku`, `description`
-            - **Pricing:** `price`, `selling_price`, `sale_price`, `price_range`, `display_currency`, `currency_symbol`
+            - **Pricing:** `price`, `sale_price`, `price_range`, `display_currency`, `currency_symbol`
             - **Inventory:** `stock`, `total_stock`, `last_restocked` (`last_restocked` is not in the default response — request it explicitly)
             - **Media:** `media`, `thumbnail_url`
             - **Metadata:** `brand`, `category_name`, `subcategory_name`, `attributes.*`
@@ -2786,7 +2797,8 @@ paths:
             Use dot notation to filter specific fields within the variants array:
             - `variants.variant_id` - Variant identifier
             - `variants.sku` - Variant SKU
-            - `variants.selling_price` - Customer-facing price
+            - `variants.price` - The variant's online price
+            - `variants.sale_price` - The variant's online sale price, present when a sale applies
             - `variants.stock` - Stock quantity
             - `variants.variant_attributes` - Variant attributes (color, size, etc.). Where a colour is
               set, `color` is its name and `color_hex` the matching `#RRGGBB` value, so a storefront can
@@ -2810,7 +2822,7 @@ paths:
             Nested variant filtering (~ 52% reduction):
             ```
             fields=product_id,name,brand,total_stock,price_range,
-              variants.variant_id,variants.sku,variants.selling_price,
+              variants.variant_id,variants.sku,variants.price,
               variants.stock,variants.variant_attributes
             ```
               
@@ -2827,7 +2839,7 @@ paths:
             - Recommended for product cards and listing pages
           schema:
             type: string
-          example: product_id,name,price_range,total_stock,variants.sku,variants.selling_price,variants.stock
+          example: product_id,name,price_range,total_stock,variants.sku,variants.price,variants.stock
       responses:
         '200':
           description: |
@@ -2844,10 +2856,10 @@ paths:
             **For Multi-Variant Products (has_variants=true):**
             Returns hierarchical structure:
             - Product-level fields at root (name, description, brand, media, etc.)
-            - Aggregate data: total_stock, price_range (using selling_price)
+            - Aggregate data: total_stock, price_range (the lowest and highest variant price, sale included)
             - Flags: has_variants=true, variant_count
             - Clean variants array with only variant-specific fields:
-              - variant_id, sku, price, sale_price, selling_price
+              - variant_id, sku, price, sale_price
               - stock (last_restocked available via fields=variants.last_restocked)
               - variant_attributes (color + color_hex, size, etc.)
               - variant_name, is_default
@@ -2855,7 +2867,7 @@ paths:
             **Field Filtering:**
             - Root-level: Exclude unnecessary fields (~ 38% reduction)
             - Nested: Filter variant fields using dot notation (~ 52% reduction)
-            - Example: `fields=name,price_range,variants.sku,variants.selling_price,variants.stock`
+            - Example: `fields=name,price_range,variants.sku,variants.price,variants.stock`
               
             **SDK Usage:**
           headers:
@@ -2880,7 +2892,6 @@ paths:
                     variant_id: 15ca5a86-4b1b-47c3-8762-a1aa43941565
                     sku: APP-MBP-13
                     price: 1999
-                    selling_price: 1999
                     stock: 42
                     has_variants: false
                     display_currency: USD
@@ -2890,7 +2901,7 @@ paths:
                     updated_at: '2026-06-20T10:12:03.673701+00:00'
                 multi_variant_product_full:
                   summary: Multi-variant product (full response)
-                  description: Hierarchical structure with product-level data at root, an aggregate price_range, and a clean variants array. Each variant has its own selling_price and stock.
+                  description: Hierarchical structure with product-level data at root, an aggregate price_range, and a clean variants array. Each variant has its own price, optional sale_price and stock.
                   value:
                     product_id: 7d425c0a-50e7-4e39-af79-6f7945f9dfa8
                     name: Sony WH-1000XM4
@@ -2915,7 +2926,6 @@ paths:
                         sku: SNY-WH1000-7d42
                         price: 349.99
                         sale_price: null
-                        selling_price: 349.99
                         stock: 79
                         variant_attributes:
                           color: Grey
@@ -2926,7 +2936,6 @@ paths:
                         sku: SNY-WH1002-7d42
                         price: 331.07
                         sale_price: null
-                        selling_price: 331.07
                         stock: 138
                         variant_attributes:
                           color: Black
@@ -2937,7 +2946,6 @@ paths:
                         sku: SNY-WH1001-7d42
                         price: 368.91
                         sale_price: null
-                        selling_price: 368.91
                         stock: 125
                         variant_attributes:
                           color: Blue
@@ -2946,7 +2954,7 @@ paths:
                         is_default: false
                 multi_variant_product_filtered:
                   summary: Multi-variant product (nested filtering ~ 52% reduction)
-                  description: Optimized response with filtered variant fields via `?fields=product_id,name,brand,total_stock,price_range,variants.sku,variants.selling_price,variants.stock,variants.variant_attributes`.
+                  description: Optimized response with filtered variant fields via `?fields=product_id,name,brand,total_stock,price_range,variants.sku,variants.price,variants.stock,variants.variant_attributes`.
                   value:
                     product_id: 7d425c0a-50e7-4e39-af79-6f7945f9dfa8
                     name: Sony WH-1000XM4
@@ -2962,7 +2970,7 @@ paths:
                     variants:
                       - variant_id: 9a47e047-b1b6-4c35-9617-820629e22e04
                         sku: SNY-WH1000-7d42
-                        selling_price: 349.99
+                        price: 349.99
                         stock: 79
                         variant_attributes:
                           color: Grey
@@ -2971,7 +2979,7 @@ paths:
                         is_default: true
                       - variant_id: 8c0a90ea-df49-4705-a740-21f199a43d6b
                         sku: SNY-WH1002-7d42
-                        selling_price: 331.07
+                        price: 331.07
                         stock: 138
                         variant_attributes:
                           color: Black
@@ -2980,7 +2988,7 @@ paths:
                         is_default: false
                       - variant_id: 8109e807-6fef-47e5-8907-46f72d99b1cd
                         sku: SNY-WH1001-7d42
-                        selling_price: 368.91
+                        price: 368.91
                         stock: 125
                         variant_attributes:
                           color: Blue
@@ -3081,24 +3089,24 @@ paths:
             **Recommended Fields for PDPs:**
             - SEO: `seo_title`, `seo_description`, `seo_keywords`, `product_slug`
             - Core: `product_id`, `name`, `description`
-            - Pricing: `price`, `selling_price`, `price_range` (for multi-variant)
+            - Pricing: `price`, `sale_price`, `price_range` (for multi-variant)
             - Media: `media`, `thumbnail_url`
             - Metadata: `brand`, `category_name`, `attributes`, `tags`
             - Inventory: `stock`, `total_stock` (for multi-variant)
-            - Variants: `variants` or nested filtering (e.g., `variants.sku,variants.selling_price`)
+            - Variants: `variants` or nested filtering (e.g., `variants.sku,variants.price`)
               
             **Nested Variant Filtering:**
             For multi-variant products, use dot notation to filter variant fields:
             ```
             fields=product_id,name,description,price_range,
-              variants.variant_id,variants.sku,variants.selling_price,
+              variants.variant_id,variants.sku,variants.price,
               variants.stock,variants.variant_attributes
             ```
               
             **Example:**
           schema:
             type: string
-          example: product_id,name,description,price_range,media,seo_title,seo_description,variants.sku,variants.selling_price
+          example: product_id,name,description,price_range,media,seo_title,seo_description,variants.sku,variants.price
       responses:
         '200':
           description: |
@@ -3148,7 +3156,6 @@ paths:
                     variant_id: 15ca5a86-4b1b-47c3-8762-a1aa43941565
                     sku: APP-MBP-13
                     price: 1999
-                    selling_price: 1999
                     stock: 42
                     has_variants: false
                     display_currency: USD
@@ -3207,7 +3214,6 @@ paths:
                         sku: SNY-WH1000-7d42
                         price: 349.99
                         sale_price: null
-                        selling_price: 349.99
                         stock: 79
                         variant_attributes:
                           color: Grey
@@ -3218,7 +3224,6 @@ paths:
                         sku: SNY-WH1002-7d42
                         price: 331.07
                         sale_price: null
-                        selling_price: 331.07
                         stock: 138
                         variant_attributes:
                           color: Black
@@ -3229,7 +3234,6 @@ paths:
                         sku: SNY-WH1001-7d42
                         price: 368.91
                         sale_price: null
-                        selling_price: 368.91
                         stock: 125
                         variant_attributes:
                           color: Blue
@@ -4412,7 +4416,9 @@ paths:
         So the server independently recomputes the order from authoritative data and rejects any
         mismatch — you cannot set your own prices or discounts:
 
-        - **Item prices** are recomputed from the live catalog. `unit_price` / `total_price` that don't
+        - **Item prices** are recomputed from the live catalog. The catalog price of a line is the
+          variant's online sale price when one applies, otherwise its online price (its in-store price
+          when no online price is set). `unit_price` / `total_price` that don't
           match the catalog price → **`400 price_mismatch`**. (The stored order always uses the catalog
           price, never the value you send.)
         - **`subtotal`, `tax_amount`, `total_amount`** must reconcile to `subtotal + tax + shipping −
@@ -6880,6 +6886,11 @@ paths:
       description: |
         Retrieve cart contents for customer or session.
 
+        **Prices:** each line's `unit_price` is the price charged for one unit of its variant: the variant's
+        online sale price when one applies, otherwise its online price (its in-store price when no online
+        price is set). `selling_price` carries the same value, and `total_price` is `unit_price` ×
+        `quantity`. Dynamic pricing, promotions and discounts apply on top of these prices at checkout.
+
         **Auth / key type:** publishable key (`tybrite_pk_*`) or secret key
         (`tybrite_sk_*`) — both accepted. Anonymous (session-only) carts need just the
         key; authenticated carts (`customer_id`) also require a customer session token
@@ -7117,7 +7128,9 @@ paths:
       summary: Add to cart
       description: |
         Add item to cart with automatic stock checking. If the same variant
-        already exists in the cart, the quantity is incremented.
+        already exists in the cart, the quantity is incremented. The line's `unit_price` is the variant's
+        online sale price when one applies, otherwise its online price (its in-store price when no online
+        price is set).
 
         **Auth / key type:** publishable or secret key. This is a storefront write
         that is deliberately pk-accessible (it originates in the browser). Anonymous
@@ -10093,8 +10106,9 @@ paths:
         product attributes, brand and category — use `POST /v1/agent/fit` to check a product's published
         specifications.
 
-        `price` is the catalogue selling price. The amount a shopper is charged, after dynamic pricing,
-        promotions, shipping and tax, comes from `POST /v1/agent/quote`.
+        `price` is the shopper price of the product's lowest-priced variant: its online sale price when one
+        applies, otherwise its online price. `list_price` is that variant's online price. The amount a shopper
+        is charged, after dynamic pricing, promotions, shipping and tax, comes from `POST /v1/agent/quote`.
 
         `in_stock_only` checks every variant of a multi-variant product before excluding it.
 
@@ -10356,7 +10370,7 @@ paths:
                     evidence:
                       - source: products
                         operation: GET /v1/products
-                        field: selling_price
+                        field: price
                       - source: products
                         operation: GET /v1/products
                         field: stock
@@ -10435,7 +10449,7 @@ paths:
                     evidence:
                       - source: marketplace
                         operation: GET /v1/products
-                        field: selling_price
+                        field: effective_online_price
                       - source: marketplace
                         operation: GET /v1/products
                         field: stock
@@ -11731,7 +11745,7 @@ paths:
                     field: resolved_price
                   - source: products
                     operation: GET /v1/products
-                    field: selling_price
+                    field: price
                 computed_at: '2026-09-28T21:53:35.751Z'
                 currency: EUR
                 environment: sandbox
@@ -24249,6 +24263,7 @@ paths:
         - Volume/quantity-based discounts
         - Region-specific pricing rules
         - Time-based promotions
+        - Rules adjust the variant's online price (its online sale price when one applies); a rule never reads the in-store price
           
         **Field Filtering:**
         - Use `fields` parameter to reduce bandwidth by 50-90%
@@ -24294,7 +24309,7 @@ paths:
           description: |
             Comma-separated list of fields to return (reduces bandwidth by 50-90%).
               
-            **Allowed fields:** product_id, variant_id, name, sku, description, price, selling_price,
+            **Allowed fields:** product_id, variant_id, name, sku, description, price,
             stock, image, category_name, brand, has_variants, variant_count, total_stock,
             base_price, resolved_price, display_price, base_currency, display_currency, currency_symbol, 
             exchange_rate, price_breakdown, price_breakdown.*, pricing_context, pricing_context.*
@@ -24442,7 +24457,7 @@ paths:
                           type: string
                         base_price:
                           type: number
-                          description: Price in store's base currency (before conversion)
+                          description: The price in the store's base currency before dynamic pricing and conversion, which is the variant's online sale price when one applies, otherwise its online price
                         base_currency:
                           type: string
                           description: Store's base currency code (e.g., EUR, USD)
@@ -24677,6 +24692,7 @@ paths:
         - Volume/quantity-based discounts
         - Region-specific pricing rules (applied per variant)
         - Time-based promotions
+        - Rules adjust the variant's online price (its online sale price when one applies); a rule never reads the in-store price
           
         **Field Filtering:**
         - Root-level filtering: Reduce top-level fields
@@ -25320,6 +25336,7 @@ paths:
         - Volume/quantity-based discounts
         - Region-specific pricing rules (applied per variant)
         - Time-based promotions
+        - Rules adjust the variant's online price (its online sale price when one applies); a rule never reads the in-store price
           
         **Field Filtering:**
         - Root-level filtering: Reduce top-level fields
@@ -32006,6 +32023,13 @@ paths:
         product (each row needs its own unique `sku`). Rows without a `product_group` are
         single-variant products.
 
+        **Prices.** `price` is the in-store price of the row's variant. `online_price` and
+        `online_sale_price` set the variant's online price and online sale price, so each variant of a
+        product can sell online at its own price. A row without `online_price` sells online at its
+        in-store price. The online sale price applies only when it is greater than zero and below the
+        variant's online price. `sale_price` and `discount_price` are accepted as aliases of
+        `online_sale_price`, and `web_price` as an alias of `online_price`.
+
         **Partial success.** Rows are validated and applied independently — one bad row never
         fails the whole batch. The response always carries a `summary` with created / updated /
         skipped / failed counts and an `errors` array describing every rejected row (its
@@ -35492,7 +35516,7 @@ components:
         Product-level attributes (name, description, brand, etc.) are NOT duplicated here.
             
         **Field Filtering:**
-        Use dot notation to filter variant fields: variants.sku,variants.selling_price,variants.stock
+        Use dot notation to filter variant fields: variants.sku,variants.price,variants.stock
         This can reduce payload size by excluding non-default fields like last_restocked.
       properties:
         variant_id:
@@ -35506,16 +35530,13 @@ components:
           example: SNY-WH1002
         price:
           type: number
-          description: Base price in major currency units (369.99 = $369.99), not minor units
+          description: The variant's online price in major currency units (369.99 = $369.99), not minor units. It is the in-store price when no online price is set.
           example: 369.99
         sale_price:
           type:
             - number
             - 'null'
-          description: Sale price in major currency units (369.99 = $369.99); null if not on sale
-        selling_price:
-          type: number
-          description: Actual customer-facing price in major currency units (considers sale_price)
+          description: The variant's online sale price in major currency units (349.99 = $349.99). Present only when the sale price is greater than zero and below `price`; null otherwise. A client strikes `price` exactly when `sale_price` is present.
           example: 349.99
         stock:
           type: integer
@@ -35586,7 +35607,7 @@ components:
         **Field Filtering:**
         - Root-level filtering: Reduce top-level fields 
         - Nested filtering: Filter specific variant fields using dot notation 
-        - Example: fields=name,price_range,variants.sku,variants.selling_price,variants.stock
+        - Example: fields=name,price_range,variants.sku,variants.price,variants.stock
             
         **Channel and logistics fields:**
         `condition`, `gtin`, `mpn`, `weight_grams` and `dimensions_cm` describe an
@@ -35799,18 +35820,13 @@ components:
           type:
             - number
             - 'null'
-          description: Base price in major currency units (369.99 = $369.99), not minor units. Only present for simple products or the list endpoint.
+          description: The online price in major currency units (369.99 = $369.99), not minor units. It is the variant's online price, or its in-store price when no online price is set. On the list endpoint it is the price of the product's lowest-priced variant. Only present for simple products or the list endpoint.
           example: 369.99
         sale_price:
           type:
             - number
             - 'null'
-          description: Sale price in major currency units (369.99 = $369.99) if on sale
-        selling_price:
-          type:
-            - number
-            - 'null'
-          description: Actual customer-facing price (considers sale_price)
+          description: The online sale price in major currency units (349.99 = $349.99). Present only when the sale price is greater than zero and below `price`, and null otherwise. A client strikes `price` exactly when `sale_price` is present. On the list endpoint it belongs to the same variant as `price`.
           example: 349.99
         stock:
           type:
@@ -35884,15 +35900,15 @@ components:
           type:
             - object
             - 'null'
-          description: Price range across variants using selling_price (only present for multi-variant products)
+          description: Lowest and highest price a shopper pays across the variants, where a variant's price is its `sale_price` when present and its `price` otherwise (only present for multi-variant products)
           properties:
             min:
               type: number
-              description: Minimum selling price in major currency units (369.99 = $369.99)
+              description: Lowest variant price in major currency units (369.99 = $369.99)
               example: 349.99
             max:
               type: number
-              description: Maximum selling price in major currency units (369.99 = $369.99)
+              description: Highest variant price in major currency units (369.99 = $369.99)
               example: 38999
         has_variants:
           type: boolean
@@ -36625,12 +36641,12 @@ components:
         unit_price:
           type: number
           format: float
-          description: Price per unit
+          description: 'Price charged per unit: the variant''s online sale price when one applies, otherwise its online price (its in-store price when no online price is set).'
           example: 349.99
         selling_price:
           type: number
           format: float
-          description: Actual customer-facing price (includes sale price if applicable)
+          description: The unit price charged. Equal to `unit_price`.
           example: 349.99
         total_price:
           type: number
@@ -40995,8 +41011,16 @@ components:
           description: Public image URL.
         price:
           type: number
-          description: Selling price. Must be greater than 0.
+          description: In-store selling price of this variant. Must be greater than 0. It is also the online price when `online_price` is not set.
           example: 22
+        online_price:
+          type: number
+          description: Online price of this variant. Optional; the variant sells online at `price` when it is omitted. Each variant of a product carries its own online price.
+          example: 24
+        online_sale_price:
+          type: number
+          description: Online sale price of this variant. Optional. It applies only when it is greater than 0 and below the variant's online price; a client strikes the online price exactly when a sale price is present.
+          example: 19
         cost_price:
           type: number
           description: Unit cost. Optional.

@@ -36,7 +36,7 @@ Push or sync a batch of products into your store.
 | :--- | :--- | :--- |
 | `sku` | Yes | Your unique stock-keeping unit — the identity used for matching. |
 | `name` | Yes | Product name. |
-| `price` | Yes | Selling price. Must be greater than 0. |
+| `price` | Yes | In-store selling price of the row's variant. Must be greater than 0. It is also the online price when `online_price` is not set. |
 | `category` | Yes | The product's category, matched to an existing category by name (or id). Categories are **not** created from a feed — a row whose category doesn't exist is rejected (an inactive one is reactivated automatically). |
 | `product_group` | — | Groups rows into one multi-variant product. Omit (or `null`) for a standalone product. |
 | `variant_name` | — | Label for this variant (e.g. a size or colour). Defaults to `"Default"`. |
@@ -56,7 +56,7 @@ alternative spellings: `title` for `name`, `qty` or `quantity` for `stock`, `cos
 A row also carries catalog identifiers, shipping dimensions, channel taxonomy and storefront
 metadata: `gtin`, `mpn`, `condition`, `weight_grams`, `dimensions_cm`, `google_product_category`,
 `meta_product_category`, `tags`, `seo_title`, `seo_description`, `seo_keywords`, `is_online_enabled`,
-`online_price` and `online_sale_price`. See
+`online_price` and `online_sale_price`, which set the online price and online sale price of the row's variant. See
 [Catalog identity and channel fields](/ingestion#catalog-identity-and-channel-fields).
 
 A column matching none of the fields above is matched against the store's

@@ -14,6 +14,7 @@ The `PricingService` class (accessed via `client.pricing`) provides high-perform
 *   **Consistent with the catalog**: Returns the same product and variant data structures as the Products API, so you can use one shape across discovery and checkout.
 *   **Media included**: Returns `thumbnail_url` and `media` (including variant-level media) alongside pricing.
 *   **Multi-Variant Support**: Automatically calculates prices, discounts, and breakdowns for every variant in a product.
+*   **Starts from the online price**: Pricing rules adjust the price a shopper would otherwise pay for the variant: its online sale price when one applies, otherwise its online price (its in-store price when no online price is set). `base_price` is that figure, and `resolved_price` is the result after the rules apply.
 *   **Geographic Detection**: Accurate currency selection based on the customer's location, worldwide.
 
 ---
