@@ -24000,6 +24000,8 @@ paths:
                 error:
                   code: invalid_request
                   message: The form address is not valid.
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '429':
           description: Too many requests from this address.
           headers:
@@ -24013,6 +24015,19 @@ paths:
                 error:
                   code: rate_limited
                   message: Too many requests from this address. Please try again later.
+        '500':
+          description: The token could not be issued.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFormError'
+              example:
+                error:
+                  code: server_error
+                  message: The form could not be prepared.
   /v1/lead-forms/{slug}/submit:
     post:
       operationId: submitLeadForm
