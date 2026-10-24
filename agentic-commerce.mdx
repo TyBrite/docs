@@ -233,7 +233,8 @@ stopped producing anything.
 It is opt-in per store, at **Settings → Workflows**, and it changes who maintains the rules rather
 than what a rule may do. **The approval boundary is unchanged.** Discounts, gift cards, pricing rules
 and search rules are still prepared as drafts and still wait for a person, under the same permission
-and on the same pages. What becomes automatic is the upkeep, not the spending.
+and on the same pages. What becomes automatic is the upkeep, not the spending. [Full autonomous mode](#full-autonomous-mode), a separate level
+above this one, is the only setting that changes the approval boundary.
 
 Three constraints hold it in place, and each is enforced in Galactic Core's own code rather than left
 to the assistant's judgement — they sit alongside the wider set of platform
@@ -256,6 +257,25 @@ carry on running as they were.
 Where a store has a marketing goal recorded, the assistant reads it — what the merchant said they are
 optimising for, and until when — so its decisions follow that objective. Where there is none, which is
 the ordinary case, nothing changes.
+
+### Learning from results
+
+Standing rules learn from what their own suggestions achieved. When a promotion's window closes, the sales it ran
+against are compared with the same length of time before it, and the outcome is recorded against the rule that
+proposed it. A rejected suggestion counts too, and a merchant may say why — the discount was too deep, too shallow,
+the wrong products, the wrong time — so that a reason reaches the setting it concerns rather than being averaged
+away.
+
+What a rule learns is a small set of named settings: how deep its discount runs, how often it suggests, the return
+an advertising rule treats as losing money, the hour a social network's posts do best. Each moves only inside a
+range, by a bounded step at a time, and only once enough results exist; until then the standing default applies.
+Every value carries a sentence saying why it is what it is, and **Settings → Workflows → What it has learned** shows
+each one with its evidence, with controls to pin it, reset it to the standard value, narrow its range or switch
+learning off. A preference learned from rejections — "turned down three slow-stock offers as too big a discount" —
+is remembered for the assistant's own answers too, and can be forgotten from the same page.
+
+Learning tunes how a rule proposes; it never changes what a rule may do. The bounds and the approval step are
+described under [guardrails](/how-gc-works/guardrails#learned-settings-move-inside-fixed-bounds).
 
 ### Product pages
 
@@ -305,9 +325,45 @@ Each starts from a default appropriate to the plan and can be adjusted: a catalo
 categories and a focused one have different needs, and the ceiling follows the plan for any store that
 has not chosen its own.
 
+## Full autonomous mode
+
+Full autonomous mode is a level above autonomous mode for a store whose owner wants its standing rules to act rather
+than suggest. With it on, what a workflow would otherwise prepare for approval is carried out: promotions start and
+end, price rules and search rules switch on, campaigns start and ad budgets move within the monthly advertising limit,
+gift cards are issued within their limits, posts go to the connected social accounts, and blog posts, lookbooks and
+forms are published. It never, on its own, changes a base price, publishes or edits a returns, shipping, privacy or
+terms page, sends a wholesale quote, changes a credit limit, issues a refund or payout, or changes settings, staff or
+roles.
+
+Only the store's owner can turn it on, from a session signed in with two-factor authentication, after confirming each
+of the statements the [Terms of Service](https://gc.tybritelabs.com/terms#full-autonomous-mode) list and entering a
+one-time code sent by email. The panel at **Settings → Workflows → Advanced** shows each precondition with its current
+state — cost prices on nearly all of the catalogue, a month of autonomous mode with decided suggestions, funded credits
+— and the button stays disabled until every one is met.
+
+Every action is checked against limits the owner sets before it runs: a minimum margin over cost price, a monthly
+discount budget, how much of the catalogue may be on offer at once, how many products one action may touch, and how
+often and how far a price may change. An action that would go past a limit is not carried out; it is recorded as
+refused, with the reason in a sentence, and the suggestion waits for a person as it would without the mode. Each action
+that runs can be undone for 72 hours, and an hourly check switches the store back to autonomous mode — and tells the
+owner by email — when margin falls, refusals pile up, the owner's two-factor setup is removed or cost prices go
+missing. A daily summary and a weekly results email account for what it did. How each limit is enforced is described
+under [guardrails](/how-gc-works/guardrails#full-autonomous-mode-acts-only-inside-its-limits).
+
+## Replies to shopper messages
+
+A store can let the assistant answer shopper messages in its inbox. It is off by default and, once on, works in one of
+three ways: answering only questions the store's own records settle — whether a product is in stock, what it costs,
+where an order is — suggesting a reply for the merchant to send, or also answering general questions. A reply is signed
+as the store's automatic reply and quotes only what the records hold. Returns, refunds, cancellations, complaints and
+payment problems are always left for the merchant, as is a conversation a person has taken over, and the merchant's
+new-message email is sent only for conversations that still need them. The checks are listed under
+[guardrails](/how-gc-works/guardrails#automatic-replies-answer-from-the-stores-records).
+
 ## Where the decision sits
 
-The assistant never issues a gift card, activates a promotion, or turns on a pricing rule on its own.
+Unless the owner has turned on [Full autonomous mode](#full-autonomous-mode), the assistant never issues a gift card,
+activates a promotion, or turns on a pricing rule on its own.
 The margin check and the approval step are enforced in Galactic Core's own code rather than left to
 the assistant's judgement, so a prompt cannot talk its way past either; they are part of a wider set
 of platform [guardrails](/how-gc-works/guardrails). Every action it takes is recorded in your

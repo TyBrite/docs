@@ -16,7 +16,8 @@ directly against the API meets the same refusal a form would.
 ## Human approval on anything worth money
 
 The in-app assistant can prepare gift cards, promotions, pricing rules and marketing campaigns from what it sees in a
-store. It cannot issue any of them.
+store. It cannot issue any of them. The one exception is a store whose owner has turned on
+[Full autonomous mode](#full-autonomous-mode-acts-only-inside-its-limits), where actions run inside limits described below.
 
 Each one is written as a **draft** — a real row, inert until approved — and surfaced where the
 merchant already manages that kind of thing. Approval is a separate, explicitly granted permission,
@@ -62,7 +63,7 @@ A store can hand the assistant a standing job: rather than being asked for each 
 set of standing rules current — adding ones worth running, retuning ones whose thresholds have
 drifted, and retiring ones that have stopped producing anything.
 
-**This widens nothing about money.** Every constraint above still holds, unchanged: a discount, a
+**This widens nothing about money.** In autonomous mode every constraint above still holds, unchanged: a discount, a
 gift card and a pricing rule are still prepared as drafts and still wait for a person with the
 approval permission. What becomes automatic is the upkeep.
 
@@ -114,6 +115,62 @@ apply at once: events inside a quiet period fold into one run, at most three unr
 exist per store, and the per-account daily limit caps what any number of runs can publish. A network
 that refuses several posts in a day pauses the store's posting until the merchant has looked, and the
 platform can pause a single network for every store during that network's incident.
+
+## Full autonomous mode acts only inside its limits
+
+Full autonomous mode lets a store's standing rules carry out what they would otherwise suggest. The limits it runs
+inside are checked in the database at the moment of each action, against the store as it stands then, so neither the
+rule that drafted an action nor the request that switched the mode on can widen them.
+
+**Switching it on is deliberately hard.** Only the store's owner can do it, from a session signed in with two-factor
+authentication, after confirming each statement of the consent and entering a one-time code sent to the owner's email.
+The code opens one change and closes after it. Loosening any limit later takes a fresh code; tightening one does not.
+Anyone the owner has allowed to approve suggestions can switch it off at any time, without a code. The consent is
+recorded with its version, a fingerprint of the statements agreed to, the time and the address it came from, and the
+record cannot be edited afterwards; when the statements change, the mode pauses on every store until its owner agrees
+again.
+
+**Price actions meet a floor computed from cost.** Before a discount runs, the lowest price any variant could reach is
+worked out with every discount that can apply to the same shopper — one pricing rule per product, as the till applies
+them, plus every live promotion and campaign — and compared with the variant's cost plus the owner's minimum margin
+and, if the owner chooses, its share of running costs such as ad spend. An action that would sell any variant under
+that floor is refused and names the variant. A variant with no cost price is never discounted, and a running cost
+that cannot be converted to the store's currency makes every price action wait rather than guess.
+
+**Scale is bounded separately from depth.** A monthly discount budget, a cap on how many products one action may
+touch, a cap on how much of the catalogue may be on offer at once, and limits on how often and how far a price may
+move each refuse on their own. When a store is already over a limit before anything is tried — a standing store-wide
+offer, for example — the panel says so, rather than leaving a list of refusals to interpret.
+
+**Published content is read before it goes out.** A blog post, lookbook or form drafted by a rule is checked against
+the store: a quoted price must be the price an online shopper pays for a product it names or the value of a live
+offer, a stock claim must match stock, and leftover placeholders or words the merchant asked to avoid stop it. A draft
+that fails stays a draft, with the reason.
+
+**It reverses itself.** Every action can be undone for 72 hours from the panel. An hourly check compares the store
+with the owner's limits — margin over the last week, refusals in a day, rules failing, cost-price coverage, the
+owner's two-factor setup, top-ups failing — and on any breach switches the store back to autonomous mode and tells the
+owner by email and in the app. A daily summary and a weekly results email account for what it did and what it was
+refused.
+
+## Learned settings move inside fixed bounds
+
+Standing rules tune a small number of named settings from their own results — a discount's depth, how often a rule
+suggests, the return below which an advertising rule pauses a campaign, the hour a network's posts do best. Each has a
+range the platform sets and the merchant may narrow but not widen, moves at most one bounded step per update, and stays
+at its standard value until enough results exist. A value cannot change without a sentence explaining why, and a
+change larger than half its range is reported to the merchant. Results are recorded once and never edited. The
+merchant can pin a value, reset it, or switch learning off, and learning never alters what a rule is allowed to do —
+only the figure it proposes within that.
+
+## Automatic replies answer from the store's records
+
+When a store lets the assistant answer shopper messages, each reply passes three checks before it is sent. Messages
+about returns, refunds, cancellations, complaints, payments and similar matters are left for the merchant without
+being answered, as is any conversation a person has taken over. A reply must answer the question it was asked from
+the store's own records, and any price, stock level or order status it states must match those records. And a reply
+that arrives after the shopper or the merchant has written again is not sent. Replies are signed as automatic, each
+counts against the store's credits, and a store can switch to suggested replies that wait for the merchant to send.
 
 ## Extension code is checked before it serves a customer
 
