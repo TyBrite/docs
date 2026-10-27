@@ -6027,6 +6027,10 @@ paths:
         less than the order is worth. Pass the order's real `total_amount`; don't compute or alter it
         client-side.
 
+        An order that is already paid is refused with **`409 order_already_paid`**, and a cancelled order
+        with **`409 order_not_payable`**. An order is charged only in its own currency: omit `currency`
+        to use it, and a different `currency` is rejected with **`400 payment_currency_mismatch`**.
+
         **Provider-Specific Flows:**
 
         **Stripe (redirect):**
@@ -17910,7 +17914,9 @@ paths:
 
         The basket is re-priced first. If anything the shopper pays has changed — a line price, the discount,
         shipping, tax or the total — the response is `409 quote_changed` with the new quote in `error.details`,
-        and nothing is placed; show the shopper the new figures and create a new intent. Otherwise the order is
+        and nothing is placed; show the shopper the new figures and create a new intent. When the intent holds no
+        stock and an item is no longer available in the quantity quoted, the response is `409 out_of_stock`;
+        nothing is placed or charged and the intent stays pending. Otherwise the order is
         placed with payment pending, using the held stock, and the response carries what
         `POST /v1/payments/initialize` needs to take payment, plus the store's payment methods.
 
@@ -24079,6 +24085,10 @@ paths:
         `X-Forwarded-Shopper-Ip`; without it, every request on that key counts as one address. The header is
         ignored on a publishable key, which is called from the shopper's own browser.
 
+        **Advertising conversions:** a secret key should also send the shopper's country in
+        `X-Forwarded-Shopper-Country`. A submission from the European Economic Area, or from a country that is not
+        known, is stored but never reported to advertising conversion partners.
+
         **Idempotency:** a request that repeats an `Idempotency-Key` with the same body returns the
         original result without recording a second submission; the same key with a different body answers `409`.
       security:
@@ -24108,6 +24118,14 @@ paths:
           schema:
             type: string
           example: 203.0.113.42
+        - name: X-Forwarded-Shopper-Country
+          in: header
+          required: false
+          description: The shopper's two-letter country code. Honoured on a secret key only. When the country is not known (the header is absent, malformed or `XX`), the submission is stored but is not reported to advertising conversion partners.
+          schema:
+            type: string
+            pattern: ^[A-Za-z]{2}$
+          example: GB
       requestBody:
         required: true
         description: Up to 16 KB of JSON, sent as `application/json`.
@@ -30651,7 +30669,7 @@ paths:
             format: uuid
       responses:
         '201':
-          description: Quote accepted, purchase order created
+          description: 'Quote accepted and purchase order created. When the quote total reaches the store''s approval threshold the response is `{ quote_id, approval_pending: true, approval_id }` and the purchase order is created once the approval is granted.'
           content:
             application/json:
               example:
@@ -40866,7 +40884,7 @@ components:
           $ref: '#/components/schemas/B2bInvoicePayment'
     B2bDirectOrder:
       type: object
-      description: The result of a direct wholesale order. `settlement` is `terms` (a terms invoice was issued — `invoice_id`, `invoice_number`, and `due_date` are present) or `pay_now` (the order awaits payment — `order_id`, `order_number`, and `amount` are present; complete payment through the standard payment flow using `order_id`). `purchase_order_id`, `po_number`, and `currency` are always present.
+      description: The result of a direct wholesale order. `settlement` is `terms` (a terms invoice was issued — `invoice_id`, `invoice_number`, and `due_date` are present) or `pay_now` (the order awaits payment — `order_id`, `order_number`, and `amount` are present; complete payment through the standard payment flow using `order_id`) or `pending_approval` (the total reaches the store's approval threshold, so no order or invoice exists until a second approver signs it off — `approval_id` is present). `purchase_order_id`, `po_number`, and `currency` are always present.
       required:
         - settlement
         - purchase_order_id
@@ -40877,7 +40895,14 @@ components:
           enum:
             - terms
             - pay_now
-          description: How the order settles — on terms (invoice) or pay now (awaiting payment).
+            - pending_approval
+          description: How the order settles — on terms (invoice), pay now (awaiting payment), or held for approval.
+        approval_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: The approval request (pending_approval only).
         purchase_order_id:
           type: string
           format: uuid

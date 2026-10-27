@@ -545,7 +545,7 @@ A first signup and a repeat signup by the same email return the same response. W
 
 A refused submission returns `400` with `details.field` naming the answer and `details.reason` giving the cause: `invalid_email`, `invalid_value`, `invalid_phone`, `required`, `consent_required`, `captcha_required` or `captcha_failed`.
 
-**Keys:** both **publishable** and **secret** keys are accepted. A secret key is called from a server, so the caller sends the shopper's address in `xForwardedShopperIp` for per-address limits to apply to the shopper rather than to the server; the value is ignored on a publishable key.
+**Keys:** both **publishable** and **secret** keys are accepted. A secret key is called from a server, so the caller sends the shopper's address in `xForwardedShopperIp` for per-address limits to apply to the shopper rather than to the server; the value is ignored on a publishable key. The caller also sends the shopper's two-letter country in `xForwardedShopperCountry`: a submission from the European Economic Area, or from a country that is not known, is stored but never reported to advertising conversion partners.
 
 **Idempotency:** repeating an `idempotencyKey` with the same body returns the original result without recording a second submission. The same key with a different body answers `409`.
 

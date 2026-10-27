@@ -52,7 +52,7 @@ Three mechanisms apply to every form.
 
 Submissions are limited per address and per form, and the same email address is slowed after repeated submissions to one form. A limited call answers `429` with a `Retry-After` header. A body is limited to 16 KB and 30 answers.
 
-A secret key is used from a server, where every request arrives from the server's own address. The server passes the shopper's address as `xForwardedShopperIp` so limits apply per shopper; the value is ignored on a publishable key.
+A secret key is used from a server, where every request arrives from the server's own address. The server passes the shopper's address as `xForwardedShopperIp` so limits apply per shopper; the value is ignored on a publishable key. It also passes the shopper's two-letter country as `xForwardedShopperCountry`: a submission from the European Economic Area, or from a country that is not known, is stored but never reported to advertising conversion partners.
 
 An `idempotencyKey` makes a retried submission safe: the same key with the same body returns the original result and records one submission, and the same key with a different body answers `409`.
 

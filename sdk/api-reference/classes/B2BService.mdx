@@ -71,6 +71,7 @@ How the order settles depends on the supplier's policy for this buyer:
 
 - **On terms** — the order is confirmed and a terms invoice is issued (subject to the buyer's credit limit). The response's `settlement` is `"terms"`, with `invoice_id`, `invoice_number`, and `due_date`. The supplier records payment against the invoice when it is received.
 - **Pay now** — the order is created awaiting payment. The response's `settlement` is `"pay_now"`, with an `order_id` and `amount`. Complete the payment through the payment flow (`client.payments.initializePayment` then `verifyPayment`) using that `order_id`, exactly as for a normal online order.
+- **Held for approval** — the order total reaches the supplier's approval threshold. The response's `settlement` is `"pending_approval"`, with an `approval_id`; no order or invoice exists yet. Once a second approver signs it off, the order proceeds on terms or as an invoice due for payment.
 
 - `requestBody.items` — an array of `{ variant_id, quantity }` (required, non-empty). Do not send prices.
 - `requestBody.note` — an optional note on the order.
@@ -165,7 +166,7 @@ Returns a quote addressed to you by `id`, including its priced line items, total
 
 ### `acceptQuote(options)`
 
-Accepts a sent quote and creates a purchase order from it. The purchase order then awaits the supplier's confirmation before an invoice is issued. Returns `{ data: { quote_id, purchase_order_id, po_number } }`.
+Accepts a sent quote and creates a purchase order from it. The purchase order then awaits the supplier's confirmation before an invoice is issued. Returns `{ data: { quote_id, purchase_order_id, po_number } }`. When the quote total reaches the supplier's approval threshold the response is `{ data: { quote_id, approval_pending: true, approval_id } }`, and the purchase order is created once the approval is granted.
 
 ### `rejectQuote(options)`
 

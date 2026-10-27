@@ -1981,7 +1981,7 @@ const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
 
 The shopper's approval. Send the `confirmation_token` with the shopper's credential, or — for a guest — with `contact` (`email` and `name`, optionally `phone`). `payment_method` optionally records the method the shopper intends to use.
 
-The basket is priced again first. If anything the shopper pays has changed — a line price, the discount, shipping, tax or the total — the response is `409 quote_changed` with the new quote in `error.details`, and nothing is placed: show the shopper the new figures and create a new intent. Otherwise the order is placed with payment pending, using the held stock, and the response carries `payment.initialize_body` — the body `client.payments.initializePayment` takes, which your server sends signed like any other payment initialisation — and the store's payment methods.
+The basket is priced again first. If anything the shopper pays has changed — a line price, the discount, shipping, tax or the total — the response is `409 quote_changed` with the new quote in `error.details`, and nothing is placed: show the shopper the new figures and create a new intent. When the intent holds no stock and an item is no longer available in the quantity quoted, the response is `409 out_of_stock`: nothing is placed or charged, and the intent stays pending. Otherwise the order is placed with payment pending, using the held stock, and the response carries `payment.initialize_body` — the body `client.payments.initializePayment` takes, which your server sends signed like any other payment initialisation — and the store's payment methods.
 
 ```typescript
 const { data } = await client.agent.confirmCheckoutIntent({
@@ -2657,7 +2657,7 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | `402` | `insufficient_credits` — a hosted helper was called with a secret key and no AI credits available (a publishable key receives `403 helpers_unavailable`). |
 | `403` | `helpers_unavailable`, `consent_required`, `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
 | `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
-| `409` | `quote_changed`, `intent_not_pending`, `items_unavailable`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |
+| `409` | `quote_changed`, `intent_not_pending`, `items_unavailable`, `out_of_stock`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |
 | `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. |
 
 ```json

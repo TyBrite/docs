@@ -116,6 +116,8 @@ Create a payment session with your chosen provider. Requires a **Secret Key**, a
 
 A request refused before it reaches the payment provider — an invalid body, an unknown order, or an amount that does not match the order — does not use up its `Idempotency-Key`, so the corrected request can be sent with the same key. While another request with the same key is still being initialized, the call returns `409 idempotency_in_progress`; sending it again shortly with the same key returns the session once it exists.
 
+An order that is already paid returns `409 order_already_paid`, and a cancelled order returns `409 order_not_payable`. The payment is taken in the order's own currency: a `currency` that differs from it returns `400 payment_currency_mismatch`, and omitting `currency` uses the order's.
+
 <Tip>
   The mandatory `Idempotency-Key` also makes this call eligible for the SDK's [automatic retries](/sdk/introduction#automatic-retries): a transient failure is retried safely and returns the original session rather than starting a second charge.
 </Tip>
