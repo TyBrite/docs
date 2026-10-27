@@ -494,7 +494,7 @@ The full updated order is returned at the top level:
 }
 ```
 
-Besides the two statuses, the body accepts `notes`, `tracking_number`, `estimated_delivery`, `shipped_at`, `delivered_at`, `payment_reference` (checked against the store's payment method when marking an order paid), `reservation_ids` (stock already held for the shopper, committed rather than decremented again), and `shipping_metadata` — fulfilment details such as a purchased label's carrier, service, label URL and tracking. `shipping_metadata` replaces the order's stored object in full rather than being merged into it, so include any existing keys that should be kept:
+Besides the two statuses, the body accepts `notes`, `tracking_number`, `estimated_delivery`, `shipped_at`, `delivered_at`, `payment_reference` (checked against the store's payment method when marking an order paid), `reservation_ids` (stock already held for the shopper, committed rather than decremented again), and `shipping_metadata` — fulfilment details such as the carrier, service and tracking number. The keys sent are merged into the order's stored `shipping_metadata`; keys not sent are kept. The details of a label purchased through the platform (`shippo`, `label`, `label_url`, `transaction_id`, `rate_id`) are locked: a request that sets any of them returns `409 shipping_label_locked`.
 
 ```typescript
 await client.orders.updateOrder({
@@ -504,11 +504,8 @@ await client.orders.updateOrder({
   xSignature: '...',
   requestBody: {
     shipping_metadata: {
-      fee: 5.99,
-      tier_name: 'Local (within 10 km)',
       carrier: 'UPS',
       service: 'Ground',
-      label_url: 'https://example.com/labels/1Z999AA10123456784.pdf',
       tracking_number: '1Z999AA10123456784',
     },
   },
@@ -521,6 +518,10 @@ Status changes follow a fixed set of transitions:
 *   **`order_status`** moves forward only: `pending` → `confirmed` → `processing` → `shipped` → `delivered`. `cancelled` is available until the order ships. `cancelled` and `delivered` are final, and a cancelled order cannot be marked paid.
 *   Sending a field with the value it already has is not a transition: the call succeeds and nothing is repeated, so marking an order paid twice runs the paid side effects once.
 *   Any other move returns `409 invalid_transition`. When two updates change the same order at once, one succeeds and the other returns `409 order_changed`; fetch the order and decide whether to send the update again.
+
+An `Idempotency-Key` identifies one request body for one order. Sending the same key with a different body, or for a different order, returns `409 idempotency_key_reused`.
+
+When a `payment_reference` marks the order paid, the payment it names must belong to that order, be in the order's currency, and not be attached to another order of the store. A payment for another order returns `409 payment_order_mismatch`, a payment in another currency returns `409 payment_currency_mismatch`, and a reference already attached to another order returns `409 payment_reference_in_use`. When the reference cannot be checked at that moment, the call returns `503 verification_unavailable` and leaves the order unchanged; the same request can be retried shortly.
 
 When an unpaid order is cancelled or its payment fails, its stock holds are released and any store credit applied to it is returned to the customer.
 
@@ -556,10 +557,11 @@ Transitioning an order to the **paid** state automatically triggers:
 | `403` | Read & write | Publishable key used on an order endpoint. Orders are secret-key only. |
 | `400` | `POST /v1/orders` | `price_mismatch` (a price, tax, shipping or total that does not match the server's figure), `shipping_rate_invalid` (a carrier option that cannot be used), `shipping_not_deliverable` (the store does not deliver to the address), `shipping_option_unavailable` (the chosen delivery option does not apply to the order), `pickup_unavailable` (the store does not offer pickup at the location, or the order is below its minimum). |
 | `404` | `GET /v1/orders/{id}`, `PATCH`, `POST` | Order not found, or a `product_id` referenced in `items` not found. |
-| `409` | `POST /v1/orders` | Idempotency key reused with a different payload, or an order-number collision between two orders created in the same instant — retry the request. |
-| `409` | `PATCH /v1/orders/{id}` | `invalid_transition` — the status change is not allowed from the order's current state. `order_changed` — another update changed the order first. The order is left as it was. |
+| `409` | `POST /v1/orders` | `idempotency_key_reused` — the key was already used with a different request body; send a new key for a different request. Also returned for an order-number collision between two orders created in the same instant — retry the request. |
+| `409` | `PATCH /v1/orders/{id}` | `invalid_transition` — the status change is not allowed from the order's current state. `order_changed` — another update changed the order first. `idempotency_key_reused` — the key was already used with a different body or for a different order. `payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use` — the payment named by `payment_reference` belongs to another order, is in another currency, or is attached to another order. `shipping_label_locked` — `shipping_metadata` sets purchased-label details. The order is left as it was. |
 | `422` | `POST /v1/orders` | `order_rejected` — the store runs its own order-validation rule and that rule declined the order; the message carries the store's reason. No order is created. Also returned when the store requires validation but the rule could not be reached, so an order is never created unchecked. |
 | `422` | `PATCH /v1/orders/{id}` | `payment_not_verified` — you marked the order paid with a `payment_reference`, but the payment method the merchant added does not report that reference as paid. The order is left unchanged rather than accepted on an unverified claim. |
+| `503` | `PATCH /v1/orders/{id}` | `verification_unavailable` — the payment reference could not be checked at that moment. The order is left unchanged; retry shortly. |
 | `502` | `POST /v1/orders` | `shipping_unavailable` — the order's shipping could not be checked right now. No order is created; retry. |
 | `429` | All | Rate limit exceeded. |
 | `500` | All | Server error. |

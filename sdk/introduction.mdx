@@ -220,6 +220,8 @@ if (page1.pagination.has_more) {
 }
 ```
 
+A cursor that does not decode is rejected with `400 invalid_cursor`; the list is then requested again from the first page, without a cursor.
+
 The services whose list methods accept a cursor:
 - [Products](/sdk/api-reference/classes/ProductsService)
 - [Taxonomy](/sdk/api-reference/classes/TaxonomyService)

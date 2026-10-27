@@ -246,6 +246,59 @@ They are enforced on every request: a key calling an endpoint it was not granted
 | `recommendations:read` | Read AI product recommendations |
 | `search:read` | Run catalog and semantic search |
 | `store:read` | Read store metadata and settings |
+| `openid` | Return the signed-in person's stable user id (`user.sub`) in the token response |
+| `email` | Add the person's `email` and `email_verified` to `user` |
+| `profile` | Add the person's `name` to `user` |
+| `team:read` | Read the store's owner and team members with `getConnectTeam`; accompanies another store scope |
+
+---
+
+## Signing people in
+
+The `openid`, `email` and `profile` scopes make the flow a sign-in as well as a store connection. The token response then carries a `user` object: `sub` (the stable user id), plus `email` and `email_verified` with the `email` scope and `name` with the `profile` scope. Accounts are linked on `sub`, which does not change when the person changes their email address.
+
+Three modes follow from the scopes requested:
+
+| Mode | Scopes | Result |
+| :--- | :--- | :--- |
+| Store connection | Store scopes only | Key pair for the store, as described above |
+| Sign-in and link | Sign-in scopes plus store scopes | Key pair, `user`, and `store_role` (`owner`); the person must own the store they link |
+| Identity only | Sign-in scopes alone | `user`, `scopes` and `client_id`; no store is linked and no keys are issued |
+
+An identity-only request can be approved by any Galactic Core user. In the other two modes, a person who owns no store is redirected to the `redirect_uri` with `error=access_denied` and `error_description=no_owned_store`. In the identity-only response, `sk`, `pk`, `pair_id`, `store_id` and `environment` are absent.
+
+An optional `store_hint` parameter on the authorization URL names a store (by UUID) for the consent screen to preselect. It is honoured only when the signed-in person owns that store.
+
+```typescript
+const params = new URLSearchParams({
+  client_id: process.env.GC_CLIENT_ID!,
+  redirect_uri: 'https://yourapp.com/callback',
+  scope: 'openid email profile',   // identity only
+  state,
+});
+```
+
+```json Response
+{
+  "user": {
+    "sub": "2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11",
+    "email": "john.doe@example.com",
+    "email_verified": true,
+    "name": "John Doe"
+  },
+  "scopes": ["openid", "email", "profile"],
+  "client_id": "your-client-id"
+}
+```
+
+### Listing the store's team
+
+A connection granted `team:read` can list the people who work in the linked store. The call authenticates with the connection's `sk` and returns the owner and the active team members, each with the same `sub` that `user.sub` carries. Without the scope, the call answers `403 insufficient_scope`.
+
+```typescript
+const { members } = await merchant.gcConnect.getConnectTeam();
+// members: [{ sub, email, name, role }] where role is "owner" or the member's role, such as "manager" or "cashier"
+```
 
 ---
 

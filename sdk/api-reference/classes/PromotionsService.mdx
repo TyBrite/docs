@@ -389,7 +389,7 @@ Every method here accepts both **publishable** and **secret** keys, and `calcula
 | Code | Meaning |
 | :--- | :--- |
 | `200` | Success. |
-| `400` | Invalid `status` enum (must be one of `active`, `inactive`, `scheduled`, `expired`), a malformed query parameter, a calculation request with a missing/invalid `cart` (each line needs `product_id`, `quantity`, `price`), or a marketplace call missing `store_id`. |
+| `400` | Invalid `status` enum (must be one of `active`, `scheduled`, `ended`, `draft`, `paused`, `expired`), a malformed query parameter, a calculation request with a missing/invalid `cart` (each line needs `product_id`, `quantity`, `price`), or a marketplace call missing `store_id`. |
 | `401` | Invalid or missing API key. |
 | `403` | A marketplace key tried to list promotions, or write. Use `getPromotion` / the calculate methods with `store_id` instead. |
 | `404` | Promotion not found (`getPromotion` and `calculatePromotionDiscount`), or not live (`getPromotion`). `listPromotions` returns `200` with an empty array; `calculateBestPromotion` returns `200` with `promotion: null` when nothing matches. |

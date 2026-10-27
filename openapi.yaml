@@ -5258,7 +5258,15 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
-          $ref: '#/components/responses/ConflictError'
+          description: The `Idempotency-Key` was already used with a different request body (`idempotency_key_reused`), or the request conflicts with an existing order number (`conflict`). Send a new key for a different request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: idempotency_key_reused
+                  message: This Idempotency-Key was already used with a different request. Send a new key for a different request.
         '422':
           description: The store runs its own order-validation rule and that rule rejected the order. The `message` carries the reason the store gave. No order is created. This is also returned when the store requires validation but the rule could not be reached, so an order is never created unchecked.
           content:
@@ -5416,7 +5424,7 @@ paths:
         - `estimated_delivery`: Estimated delivery date/time
         - `shipped_at`: Timestamp when order was shipped
         - `delivered_at`: Timestamp when order was delivered
-        - `shipping_metadata`: Fulfilment details such as a purchased label's carrier and tracking (replaces the stored object)
+        - `shipping_metadata`: Fulfilment details such as carrier and tracking, merged into the stored object (purchased-label details are locked)
 
         **Status transitions:**
         - `payment_status`: `pending` → `paid` or `failed`; `failed` → `paid`. A `paid` order
@@ -5543,17 +5551,12 @@ paths:
                   example:
                     - 8f2c1a9b-4d7e-4f10-9a3b-2c5e7f1d0a44
                 shipping_metadata:
-                  type:
-                    - object
-                    - 'null'
+                  type: object
                   additionalProperties: true
-                  description: Fulfilment details to store on the order, such as the carrier, service, label URL and tracking details of a purchased shipping label. The object replaces the order's stored `shipping_metadata` in full rather than being merged into it, so include any existing keys that should be kept.
+                  description: Fulfilment details to add to the order, such as the carrier, service and tracking number. The keys sent are merged into the stored `shipping_metadata`; keys not sent are kept. The details of a label purchased through the platform (`shippo`, `label`, `label_url`, `transaction_id`, `rate_id`) cannot be set here and answer 409 `shipping_label_locked`.
                   example:
-                    fee: 5.99
-                    tier_name: Local (within 10 km)
                     carrier: UPS
                     service: Ground
-                    label_url: https://example.com/labels/1Z999AA10123456784.pdf
                     tracking_number: 1Z999AA10123456784
             examples:
               mark_as_paid:
@@ -5696,7 +5699,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
-          description: The requested status change is not allowed from the order's current state (`invalid_transition`), or the order changed while the request was being applied (`order_changed`). The order is left as it was.
+          description: The requested status change is not allowed from the order's current state (`invalid_transition`), or the order changed while the request was being applied (`order_changed`), or the `Idempotency-Key` was already used with a different request body or for a different order (`idempotency_key_reused`), or the verified payment belongs to another order, is in another currency or is already attached to another order (`payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use`), or `shipping_metadata` tries to set purchased-label details (`shipping_label_locked`). The order is left as it was.
           content:
             application/json:
               schema:
@@ -5728,6 +5731,16 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+        '503':
+          description: The payment reference could not be checked at this moment (`verification_unavailable`). The order is left unchanged; retry shortly.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: verification_unavailable
+                  message: Could not check the payment reference. Try again.
   /v1/checkout/reserve:
     post:
       operationId: reserveStock
@@ -22495,8 +22508,10 @@ paths:
             type: string
             enum:
               - active
-              - inactive
               - scheduled
+              - ended
+              - draft
+              - paused
               - expired
         - name: cart_total
           in: query
@@ -27747,6 +27762,13 @@ paths:
             `cart:write`, `cms:read`, `shipping:read`, `reviews:read`, `reviews:write`,
             `gift_cards:read`, `messaging:read`, `messaging:write`, `returns:read`, `returns:write`,
             `promotions:read`, `recommendations:read`, `search:read`, `store:read`
+
+            Sign-in scopes: `openid`, `email`, `profile` return the signed-in person in the token
+            response. With no other scope the request is identity-only: any user can approve it, no store
+            is linked and no keys are issued. Combined with store scopes the person must own the store
+            they link, and a user who owns none is redirected with `error=access_denied` and
+            `error_description=no_owned_store`. `team:read` lets the key pair call `GET /v1/connect/team`
+            and must accompany another store scope.
           example: products:read orders:read customers:read
         - name: state
           in: query
@@ -27771,6 +27793,15 @@ paths:
             Defaults to `sandbox`. Pass `production` once your integration is
             ready for live data. Merchants see this clearly on the consent screen.
           example: sandbox
+        - name: store_hint
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            A store the consent screen preselects. Honoured only when the signed-in user owns that store;
+            otherwise ignored.
       responses:
         '200':
           description: Request is valid — consent page can render
@@ -27790,6 +27821,8 @@ paths:
                   scopes:
                     - read
                     - orders:read
+                  mode: store
+                  store_hint: null
                   state: a8f3d2e1c9b7
                   environment: sandbox
                   receives_webhooks: true
@@ -27834,9 +27867,14 @@ paths:
                 - redirect_uri
                 - scope
                 - state
-                - environment
-                - store_id
               properties:
+                silent:
+                  type: boolean
+                  description: |
+                    Identity-only requests only. When true the request is approved only if the person already
+                    agreed to share the same identity scopes with this application; otherwise `409
+                    consent_required` is returned so the page shows the consent screen. A request with store
+                    scopes is never approved silently.
                 client_id:
                   type: string
                   description: Registered client identifier.
@@ -27859,12 +27897,15 @@ paths:
                   enum:
                     - sandbox
                     - production
-                  description: Environment for the provisioned key pair.
+                  description: Environment for the provisioned key pair. Required with store scopes.
                   example: sandbox
                 store_id:
                   type: string
                   format: uuid
-                  description: UUID of the store the merchant is authorizing access to.
+                  description: |
+                    UUID of the store the merchant is authorizing access to. Required with store scopes. When the
+                    request includes the sign-in scopes or `team:read`, the signed-in user must own the store;
+                    otherwise `403 access_denied` is returned.
                   example: 550e8400-e29b-41d4-a716-446655440000
       responses:
         '200':
@@ -27893,6 +27934,12 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: The request needs an explicit approval (`consent_required`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -27978,6 +28025,12 @@ paths:
                   - read
                   - orders:read
                 client_id: fantastic-storefront
+                user:
+                  sub: 2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11
+                  email: owner@store.com
+                  email_verified: true
+                  name: Jane Doe
+                store_role: owner
         '400':
           description: |
             Invalid code, expired code, already-used code, or mismatched redirect URI.
@@ -28140,6 +28193,76 @@ paths:
                     connected_at: '2026-05-28T10:00:00Z'
                     last_used_at: '2026-05-28T14:30:00Z'
                     pair_id: 550e8400-e29b-41d4-a716-446655440000
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/connect/team:
+    get:
+      operationId: getConnectTeam
+      tags:
+        - GC Connect
+      summary: List the linked store's team
+      description: |
+        Returns the owner and the active team members of the store the key belongs to, with each person's
+        role. Use it to offer the store's team a place in your application.
+
+        **Authentication:** The connection's secret key (`tybrite_sk_*`). The connection must have been
+        granted the `team:read` scope at consent; otherwise `403 insufficient_scope` is returned.
+
+        **Rate limit:** 120 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The store's team
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - members
+                properties:
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - sub
+                        - role
+                      properties:
+                        sub:
+                          type: string
+                          format: uuid
+                          description: The person's stable user id, the same value as `user.sub` in the token response.
+                        email:
+                          type:
+                            - string
+                            - 'null'
+                        name:
+                          type:
+                            - string
+                            - 'null'
+                        role:
+                          type: string
+                          description: '`owner`, or the member''s role on the store (for example `manager` or `cashier`).'
+              example:
+                members:
+                  - sub: 2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11
+                    email: owner@store.com
+                    name: Jane Doe
+                    role: owner
+                  - sub: 9d3e7a10-4b6c-4c1f-9a77-3e55c0d2a8b4
+                    email: till@store.com
+                    name: Sam Till
+                    role: cashier
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -39805,6 +39928,22 @@ components:
               example:
                 - read
                 - orders:read
+            mode:
+              type: string
+              enum:
+                - identity
+                - login_link
+                - store
+              description: |
+                `identity` asks only to sign the person in (no store, no keys); `login_link` signs the person in and
+                links a store they own; `store` is a store connection without sign-in.
+              example: login_link
+            store_hint:
+              type:
+                - string
+                - 'null'
+              format: uuid
+              description: The `store_hint` from the request when it is a valid UUID; the consent screen preselects it only for a store the signed-in user owns.
             state:
               type: string
               example: a8f3d2e1c9b7
@@ -39822,15 +39961,47 @@ components:
               example: true
     ConnectTokenResponse:
       type: object
+      description: |
+        A store connection returns the key pair fields (`sk`, `pk`, `pair_id`, `store_id`, `environment`,
+        `signing_secret`, optionally `webhook_endpoint`). A request with the identity scopes (`openid`,
+        `email`, `profile`) also returns `user`, and `store_role` when a store was linked. An identity-only
+        exchange returns just `user`, `scopes` and `client_id`: no keys are issued.
       required:
-        - sk
-        - pk
-        - pair_id
-        - store_id
-        - environment
         - scopes
         - client_id
       properties:
+        user:
+          type: object
+          description: |
+            The signed-in person, present when the `openid` scope was granted. `email` and `email_verified`
+            appear with the `email` scope, `name` with the `profile` scope. `sub` is the stable user id; link
+            accounts on it, never on the email address.
+          required:
+            - sub
+          properties:
+            sub:
+              type: string
+              format: uuid
+              example: 2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11
+            email:
+              type:
+                - string
+                - 'null'
+              example: owner@store.com
+            email_verified:
+              type: boolean
+              example: true
+            name:
+              type:
+                - string
+                - 'null'
+              example: Jane Doe
+        store_role:
+          type: string
+          enum:
+            - owner
+          description: The person's role on the linked store. Present with `user` when a store was linked; only the store's owner can link it.
+          example: owner
         sk:
           type: string
           description: |
@@ -41806,24 +41977,6 @@ components:
             error:
               code: not_found
               message: Resource not found
-    ConflictError:
-      description: |
-        Conflict — the request could not be completed because it conflicts with the current state of a resource.
-        Common causes:
-        - Email already registered to another customer at this store
-        - Item already exists in wishlist
-        - Idempotency-Key reused with a different request body
-      headers:
-        Tybrite-Environment:
-          $ref: '#/components/headers/TybriteEnvironment'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error:
-              code: conflict
-              message: A customer with this email already exists for this store
     CustomerAuthError:
       description: 'Authentication failed. `unauthorized` means the API key is missing or invalid, or the `x-auth-token` header is absent. `invalid_token` means the `x-auth-token` is not a valid sign-in token for this store and environment: expired, revoked, issued by another store, or malformed. A storefront refreshes the session once with `POST /v1/auth/refresh` and treats the shopper as signed out if that fails.'
       headers:
@@ -41847,6 +42000,24 @@ components:
                 error:
                   code: unauthorized
                   message: Missing or invalid Authorization header
+    ConflictError:
+      description: |
+        Conflict — the request could not be completed because it conflicts with the current state of a resource.
+        Common causes:
+        - Email already registered to another customer at this store
+        - Item already exists in wishlist
+        - Idempotency-Key reused with a different request body
+      headers:
+        Tybrite-Environment:
+          $ref: '#/components/headers/TybriteEnvironment'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: conflict
+              message: A customer with this email already exists for this store
   headers:
     TybriteEnvironment:
       description: |
