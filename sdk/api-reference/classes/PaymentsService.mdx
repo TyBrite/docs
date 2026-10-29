@@ -107,6 +107,8 @@ Each method in the returned list includes:
 | `environment` | `sandbox` or `production`, matching the key you used. |
 | `is_configured` | `true` when the provider is fully set up and ready to accept payments. |
 | `custom_provider` | Present and `true` when the store offers its own payment provider rather than a built-in one. |
+| `modes` | Stripe only. How a payment can be taken: `redirect` (a hosted checkout page) and, when the store's publishable key is set, `embedded`. |
+| `publishable_key` | Stripe only, present when `modes` includes `embedded`. The store's publishable key, which is public by design, so a storefront can show wallet buttons before an order exists. |
 
 ---
 
@@ -232,6 +234,35 @@ const response = await client.payments.initializePayment({
 ```
 
 </CodeGroup>
+
+---
+
+#### Taking a Stripe payment on your own page
+
+`initializePayment` with `mode: 'embedded'` (Stripe only; any other provider answers `400 invalid_request`) returns a `client_secret` and a `publishable_key` instead of a `checkout_url`, so the payment form is mounted in the storefront's own page and takes cards, Apple Pay, Google Pay and Link. No `success_url` or `cancel_url` is needed. The default, `mode: 'redirect'`, returns the hosted `checkout_url`.
+
+```typescript
+const payment = await client.payments.initializePayment({
+  idempotencyKey,
+  xTimestamp: timestamp,
+  xSignature: signature,
+  requestBody: {
+    provider: 'stripe',
+    mode: 'embedded',
+    amount: 5000,
+    currency: 'USD',
+    email: 'john.doe@example.com',
+    order_id: '880e8400-e29b-41d4-a716-446655440003'
+  }
+});
+// payment.client_secret and payment.publishable_key go to the payment form in the browser
+```
+
+The order settles from the payment confirmation; `verifyPayment` accepts the `reference` or the `payment_intent_id`. Repeating the request with the same `Idempotency-Key` while the payment is open returns the same `client_secret` with `idempotent: true`. A publishable key from a different mode than the secret key (test and live) is refused with `409 provider_misconfigured`. Apple Pay appears on the hosts registered for the store in its payment settings.
+
+#### Keeping a card for Subscribe & Save
+
+`save_payment_method: true` keeps the shopper's card so later [Subscribe & Save](/subscribe-save) deliveries can be charged without the shopper present. It applies only when `order_id` names an order that carries `subscribe_save` and was placed by a signed-in shopper, and only for `stripe` and `paystack`; it is ignored otherwise. The shopper sees the processor's own page and agrees to the card being kept, and the card details never reach your site. The response's `renewal_mode` is `off_session` when the card is kept and `confirm` when the shopper pays each later delivery from a link sent to them.
 
 ---
 

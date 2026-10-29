@@ -309,7 +309,7 @@ await client.cartWishlist.moveWishlistToCart({
 
 Ask to be emailed once when a sold-out variant is available again. The email address is the only identity needed, so the call works for an anonymous visitor and a signed-in customer alike; pass `customer_id` with the customer's `xAuthToken` (or `xExternalAuth`) to attach the request to a customer record.
 
-The request is not marketing consent. It subscribes the address to nothing and produces exactly one message, sent when the variant's stock goes from nothing to something; the shopper can ask again afterwards. A store can send the message when its Klaviyo connection is active.
+The request is not marketing consent. It subscribes the address to nothing and produces exactly one message, sent when the variant's stock goes from nothing to something; the shopper can ask again afterwards. Galactic Core sends the message in the store's name; a store with Klaviyo connected sends it from its own Klaviyo flow instead. The merchant can switch the message off.
 
 ```typescript
 await client.cartWishlist.notifyWhenAvailable({
@@ -330,8 +330,100 @@ The response is the same whether the address has asked for this variant before, 
 | Status | Meaning |
 | :--- | :--- |
 | `409` | `in_stock` — the variant is in stock, so there is nothing to wait for. |
-| `404` | `not_found` — the store does not sell the variant online; or `not_available` — the store cannot send the message. |
+| `404` | `not_found` — the store does not sell the variant online; or `not_available` — the merchant switched the message off and the store has no Klaviyo connection, so nothing would be sent. |
 | `400` | The email is missing or malformed, or `consent` is not `true`. |
+
+## Checkout recovery
+
+A guest's email address and cart can be recorded at the first step of checkout, so that a store follows up when the checkout is left unfinished. `captureCheckoutContact` records the address with the shopper's own answer to the marketing box; the store emits a `checkout.abandoned` event after its waiting period and, when the shopper agreed, sends one reminder email with a link back to the cart. `recoverCheckoutCart` returns the cart behind that link. Both methods work with a publishable key and need no customer credential.
+
+### `captureCheckoutContact`
+
+Record a guest's contact details at checkout.
+
+Records the email address a guest enters at the first step of checkout, with the cart they are buying and
+whether they agreed to hear from the store. The store uses it to follow up when the checkout is left
+unfinished: a `checkout.abandoned` event carrying the address is emitted after the store's waiting period,
+and, when `marketing_consent` is `true`, the store can send the shopper one reminder email containing a link
+back to their cart.
+
+Send the cart as `cart_id` (the cart's `X-Session-Id`) or as `lines`. Calling again for the same address and
+cart updates the one record, so the storefront can call it each time the details change. The response is the
+same for a new and a repeated record.
+
+`marketing_consent` is required and must be exactly what the shopper chose: an unticked box is `false`.
+A box that is ticked in advance is not consent. A later call with `false` withdraws it.
+
+`recovery_url` is the storefront page the reminder link opens, and must be on one of the store's own storefront
+addresses (`https`, no port; a test key may also use `http` and `localhost`). Any other address is refused with
+`400` (`recovery_url_not_allowed`). The reminder appends a `cart_recovery` query parameter to it; pass that value
+to `POST /v1/cart/checkout-recover` to restore the cart.
+
+**Auth / key type:** publishable key (`tybrite_pk_*`) or secret key (`tybrite_sk_*`). No customer credential
+is needed. Test keys write test records, which never send email.
+
+**Rate limits:** 60 requests per hour per IP address and 20 per hour per email address, each within one store.
+
+```typescript
+const result = await client.cartWishlist.captureCheckoutContact({
+  requestBody: {
+    email: 'john.doe@example.com',
+    marketing_consent: true,
+    recovery_url: 'https://shop.example.com/checkout'
+  }
+});
+```
+
+```json Response
+{
+  "capture_id": "3b0c2c34-6a3d-4a51-9d0e-7e7b8d5f6a10"
+}
+```
+
+`POST /v1/cart/checkout-contact`
+---
+
+### `recoverCheckoutCart`
+
+Restore the cart behind a recovery link.
+
+Returns the items of the cart a reminder email linked to, priced from the store's current catalogue. Pass the
+`cart_recovery` query parameter of the page the shopper arrived on as `token`. The storefront re-adds the
+returned items with `POST /v1/cart/items`.
+
+The token is the only credential. A token that is unknown, expired (30 days) or issued to another store
+answers the same `404`. The response carries no email address or name.
+
+**Auth / key type:** publishable key (`tybrite_pk_*`) or secret key (`tybrite_sk_*`). Test keys read test records.
+
+**Rate limits:** 60 requests per hour per IP address, within one store.
+
+```typescript
+const result = await client.cartWishlist.recoverCheckoutCart({
+  requestBody: {
+    token: '0f8e1c2d3b4a59687766554433221100ffeeddccbbaa99887766554433221100'
+  }
+});
+```
+
+```json Response
+{
+  "lines": [
+    {
+      "variant_id": "9a47e047-b1b6-4c35-9617-820629e22e04",
+      "product_id": "0c7a1e0e-3b0b-4d6e-8a39-2f3d6e5f9a11",
+      "name": "Ceramic Mug",
+      "sku": "MUG-001",
+      "quantity": 2,
+      "unit_price": 12.5,
+      "image_url": "https://cdn.example.com/mug.jpg",
+      "available": true
+    }
+  ]
+}
+```
+
+`POST /v1/cart/checkout-recover`
 
 ## Response Objects
 

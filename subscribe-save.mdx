@@ -1,0 +1,38 @@
+---
+title: "Subscribe & Save"
+description: "A merchant's standing offer to deliver a product again on a schedule at a lower price: listing offers, quoting a price, subscribing with an order, and managing the subscription."
+---
+
+Subscribe & Save lets a shopper buy a product on a schedule and pay less for it. A merchant creates an **offer** for chosen products; a shopper who accepts it holds a **shopper subscription**: which items, how often, where to send them and how each delivery is paid. The first delivery is an ordinary order with the offer's first-delivery discount, and each later delivery is created as a separate ordinary order on the shopper's interval. Stock, tax, shipping, returns and events work for a renewal as they do for any order.
+
+| Step | Method | Key |
+| :--- | :--- | :--- |
+| List the offers for a product | [`listSubscribeSaveOffers`](/sdk/api-reference/classes/PromotionsService) | Publishable |
+| Show the price before ordering | [`quoteSubscribeSave`](/sdk/api-reference/classes/PromotionsService) | Publishable |
+| Subscribe | `subscribe_save` on [`createOrder`](/sdk/api-reference/classes/OrdersService), then `save_payment_method` on [`initializePayment`](/sdk/api-reference/classes/PaymentsService) | Secret |
+| Manage the subscription | [Customers](/sdk/api-reference/classes/CustomersService) subscription methods | Publishable with the shopper's session |
+| Prepare and manage through an assistant | [Agent](/sdk/api-reference/classes/AgentService) Subscribe & Save methods | See the Agent page |
+
+## Offers
+
+An offer carries a `label` to show on the subscribe option, the `intervals` the shopper can choose from, a `discount_type` and `discount_value`, an optional `first_order_discount_value`, `min_cycles` (the deliveries the shopper commits to before cancelling takes effect), `max_skips_per_year`, `free_shipping` and `stacks_with_promotions`. `discount_value` is in hundredths of a percent for `percentage` (`1500` is 15%) and in the smallest currency unit taken off each item for `fixed_per_item`; it is `0` for `none`, where the benefit is free shipping.
+
+The list is empty when the product has no live offer, or when the store's plan does not include Subscribe & Save. An offer that is paused, archived, scheduled or past its end is not returned. The response is cached for a short time, so an offer paused in that window may still be listed; the quote and the order both check that it is live.
+
+## Pricing
+
+`quoteSubscribeSave` prices a set of items under one offer: the first delivery, each later delivery, the discount on each and whether shipping is free. Prices come from the store's catalogue and a price in the request is not read. The quote does not apply dynamic pricing rules or promotions, and later deliveries are priced again at the catalogue price on the day they are charged.
+
+## Subscribing
+
+A subscription belongs to a signed-in shopper, so the order carries the shopper's `customer_id`. The order's `subscribe_save` object names the `offer_id`, the interval and the shopper's `consent`: the exact wording shown next to the subscribe button, its version and the time it was accepted. The box is never pre-ticked, and the wording is kept with the subscription as the record of what was agreed. The subscription begins when the first order is paid, never before.
+
+To keep the shopper's card for the later deliveries, the payment is started with `save_payment_method: true`. The shopper agrees to this on the processor's own page and the card details never reach the storefront or the API. The payment response's `renewal_mode` is `off_session` when the card is kept and `confirm` when the shopper pays each later delivery from a link sent to them, as for a payment method that cannot keep a card.
+
+## Managing a subscription
+
+A shopper lists, changes, pauses, resumes, skips and cancels a subscription with the Customers methods, using the session token that identifies them. `status` is `active`, `paused`, `past_due` (a delivery could not be paid and is being retried), `cancelled` or `ended`. Cancelling can be previewed with `preview: true`, which returns the effective date and the deliveries still owed without cancelling. A shopper who keeps a card can replace it for one subscription on a hosted page, and can list and remove saved cards.
+
+## Events
+
+The `shopper_subscription.*` and `subscribe_save_offer.*` events are listed with their payloads on the [Webhooks](/webhooks) page.

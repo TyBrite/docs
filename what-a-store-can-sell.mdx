@@ -1,0 +1,149 @@
+---
+title: "What a store can sell"
+description: "Shipped goods, digital downloads, codes and licence keys, event tickets and services, and Subscribe & Save as the recurring form of any of them."
+---
+
+A Galactic Core store sells anything that has a price, variants and stock. Every product carries a
+**fulfilment kind** that states how the buyer receives it, and a variant can override its product's kind.
+The kind decides what checkout asks for, what happens once the order is paid, and how a refund or return
+is handled. Everything else about the product (catalogue, pricing rules, promotions, tax, the order, the
+accounting entries, the events) works the same way for every kind.
+
+| Kind | `fulfilment_kind` | What the buyer receives | When |
+|---|---|---|---|
+| Shipped goods | `shipped` | The item, by delivery or collected at a pickup location | When the merchant ships or hands it over |
+| Digital download | `digital` | One or more files, through short-lived download links | Within a minute of payment |
+| Code or licence key | `code` | One or more codes from the merchant's code pool | Within a minute of payment |
+| Event ticket | `event_ticket` | One QR code per person, or one per group | Within a minute of payment |
+| Service | `service` | A confirmation with the merchant's note | Within a minute of payment |
+
+`shipped` is the default. A product created without a kind is shipped goods, and an order line written
+before the kind existed reads as `shipped`.
+
+## Reading the kind from the catalogue
+
+Product and variant objects carry `fulfilment_kind`. A variant whose kind is not `shipped` also carries a
+`fulfilment` object with the public terms of its kind:
+
+```json
+{
+  "fulfilment_kind": "event_ticket",
+  "fulfilment": {
+    "kind": "event_ticket",
+    "valid_from": "2027-06-12T18:00:00Z",
+    "valid_until": "2027-06-13T01:00:00Z",
+    "sale_starts_at": "2027-03-01T10:00:00Z",
+    "sale_ends_at": null,
+    "admits_per_unit": 1,
+    "group_mode": "per_person",
+    "max_per_order": 6,
+    "entry_label": "VIP entrance",
+    "check_in": "single",
+    "available": 42
+  }
+}
+```
+
+For an event ticket, `available` is the number of tickets that can still be sold: the lower of the
+variant's own stock and the room left in any shared venue capacity it belongs to. `null` means no limit.
+The figure is refreshed at least every 30 seconds; checkout checks it again at the moment of purchase. The
+catalogue never exposes file locations, code pools or code counts.
+
+## Checkout
+
+`POST /v1/orders` decides delivery per line, on the server.
+
+- **An order with at least one `shipped` line** follows the delivery or pickup flow. The shipping quote and
+  any free-delivery threshold count the shipped lines only; the other lines are delivered after payment
+  without a shipping charge.
+- **An order with no `shipped` line** has `fulfillment_method: "none"`. It needs no shipping address, has no
+  shipping quote and no shipping charge, and requires a billing location instead:
+  `billing_address.country_code` (ISO 3166-1 alpha-2) and `billing_address.postal_code`. A store can
+  require the full billing address. The billing location is the tax destination, so sales tax and VAT on
+  digital goods follow the buyer. When `fulfillment_method` is omitted it is derived from the lines; a
+  request that names `delivery` or `pickup` for an order with nothing to ship is treated as `none`, and one
+  that names `none` while a line ships is refused with `400 fulfillment_method_invalid`.
+- **Tax.** Each line is taxed with the tax code of its kind (digital goods, services, admission to events),
+  which the merchant can change per kind.
+- **Order-line fields.** `items[].custom_fields` carries values for the store's order-line fields, such as
+  an attendee name or a licence holder. A required field on an event-ticket or code line is enforced
+  (`400 line_field_required`). For a group event ticket issued one per person, `items[].attendee_names`
+  lists one name per person.
+- **Free items.** A digital download or an event ticket can be priced at zero. An order whose total is zero
+  and whose lines are all downloads or event tickets is created as paid with `payment_method: "free"`, for
+  a signed-in shopper (`x-auth-token`, `x-external-auth` or `x-idp-token`); otherwise it is refused with
+  `409 account_required`. Every other kind needs a price above zero.
+
+### Event-ticket rules at checkout
+
+Ticket types (general admission, VIP, student, early bird) are variants of one event product, each with its
+own price and stock. Several types can share one venue capacity, so the types together never exceed it.
+
+| Refusal | Status | Cause |
+|---|---|---|
+| `ticket_sale_closed` | 409 | The variant's sale has not started or has ended, for example an early-bird type after its end date |
+| `ticket_event_ended` | 409 | The event's validity has passed |
+| `ticket_limit_exceeded` | 400 | The order holds more of the variant than its per-order limit |
+| `insufficient_stock` | 409 | The variant's stock or the shared venue capacity has no room left |
+
+### Codes at checkout
+
+A code product draws from a pool of codes the merchant has uploaded. Checkout refuses a line the pool
+cannot cover with `409 insufficient_stock`, so a paid order always has its codes. Codes are stored
+encrypted and are shown only to the buyer and to the merchant, one delivery at a time.
+
+## After payment
+
+Delivery starts once the order is paid, whatever paid it: a card payment, a payment provider's
+confirmation, a marketplace order or a free order. Each purchased unit is delivered exactly once, even when
+a payment confirmation arrives twice. Delivery never holds up the payment: a unit that cannot be delivered
+at once is retried for up to a day and the merchant is told if it still has not been delivered.
+
+The buyer receives one email when their items are ready, with download buttons, their codes and their event
+tickets' QR codes. The same items are listed in the buyer's account:
+
+| Method | Purpose |
+|---|---|
+| `GET /v1/customers/{id}/fulfilments` | The shopper's delivered items across orders, one entry per unit |
+| `POST /v1/customers/{id}/fulfilments/{fulfilment_id}/reveal` | The codes of one delivery, in clear; each reveal is recorded and rate-limited |
+| `GET /v1/fulfilment/downloads/{fulfilment_id}/{asset_id}` | A `302` to a short-lived link to the file |
+
+The two customer methods take the shopper's credential (`x-auth-token`, `x-external-auth` or `x-idp-token`,
+exactly one) and the `fulfilment:read` scope for a Connect key. The download method accepts either the
+shopper's credential or the link token `t` from the delivery email, so an email link works without an API
+key. A download link is minted on each request and is never stored; the merchant can limit the number of
+downloads and the number of days a purchase stays downloadable, and a refused download answers `410` with
+`link_expired`, `limit_reached`, `voided` or `asset_unavailable`.
+
+### Event tickets at the door
+
+Each ticket's QR code carries a random token; only its hash is stored. Staff admit holders from GC Admin or
+the app by scanning the QR code with the device camera or a handheld scanner, or by searching for the
+holder's name or order number. A ticket admits once, or once per day for a multi-day pass, and a check-in
+shows the holder's name, the ticket type's entry label and the number of people admitted. A group ticket is
+issued either as one QR code admitting the whole group or as one QR code per person.
+
+## Refunds and returns
+
+A refund or a processed return cancels the deliveries of the lines it covers: download links stop working,
+issued codes are cancelled (never put back on sale), and event tickets stop admitting. An event ticket that
+has already been used to check in is not cancelled. The merchant chooses which kinds accept returns (by
+default shipped goods and event tickets) and how long before an event its tickets can still be returned.
+
+## Subscribe & Save
+
+[Subscribe & Save](/subscribe-save) is the recurring form of any of these kinds. A renewal is an order like
+any other: a renewal of downloads, codes, event tickets or services has `fulfillment_method: "none"`, takes
+its billing location from the first order and is delivered once per cycle.
+
+## Events
+
+| Event | When |
+|---|---|
+| `order_item.fulfilled` | A purchased unit was delivered |
+| `order_item.fulfilment_failed` | A unit could not be delivered within the retry window |
+| `order_item.fulfilment_voided` | A unit was cancelled by a refund, a return or the merchant |
+| `event_ticket.checked_in` | An event ticket was admitted |
+| `code_pool.low` | A code pool reached its low-stock threshold |
+
+Payloads and delivery are described in [Webhooks](/webhooks).

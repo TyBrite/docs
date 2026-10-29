@@ -169,6 +169,43 @@ A checkout an AI shopping assistant prepared through the [Agent API](/sdk/api-re
 
 An order placed from a confirmed intent carries `source_channel: "agent"` on `order.created`, with `agent_client_ref` naming the API key or connected application that created the intent; an order placed directly through `POST /v1/orders` carries `source_channel: "storefront"`.
 
+### Subscribe & Save
+
+Events about a shopper's [Subscribe & Save](/subscribe-save) subscription and the merchant's offers. A renewal order also emits the ordinary `order.*` events. Payment details are never included.
+
+| Event | Fired when |
+| :--- | :--- |
+| `shopper_subscription.created` | A shopper subscribed |
+| `shopper_subscription.activated` | The subscription became active |
+| `shopper_subscription.paused` / `shopper_subscription.resumed` | The subscription was paused or resumed |
+| `shopper_subscription.skipped` | One delivery was skipped |
+| `shopper_subscription.renewal_upcoming` | The shopper was reminded that a renewal is due. Carries `due_on` |
+| `shopper_subscription.renewed` | A renewal was paid. Carries `order_id`, `amount_cents` and `currency` |
+| `shopper_subscription.renewal_failed` | A renewal payment failed. Carries `attempts`, `last_error_code` and `next_attempt_at` |
+| `shopper_subscription.action_required` | The shopper must confirm and pay a renewal |
+| `shopper_subscription.past_due` | Renewals kept failing |
+| `shopper_subscription.cancelled` / `shopper_subscription.ended` | The subscription was cancelled, or reached its end |
+| `shopper_subscription.updated` | The interval, address, payment method, pause date or cancellation request changed, or a past-due subscription recovered |
+| `subscribe_save_offer.created` | An offer left draft. A draft awaiting approval emits nothing |
+| `subscribe_save_offer.activated` | An offer went live or resumed |
+| `subscribe_save_offer.paused` / `subscribe_save_offer.archived` | An offer was paused or archived |
+
+A subscription event's object carries `id`, `customer_id`, `offer_id`, `status`, `interval_unit`, `interval_count`, `next_run_on`, `renewal_mode`, `cycles_completed`, `cancel_effective_on` and `created_source`. An event about a single renewal carries `subscription_id` and `cycle_no` instead. An offer event's object carries `id`, `name`, `display_label`, `status`, `discount_type`, `discount_value`, `first_order_discount_value`, `intervals`, `applies_to`, `starts_at`, `ends_at`, `free_shipping` and `min_cycles`.
+
+### Product fulfilment
+
+Events about the delivery of downloads, codes, event tickets and services. See [What a store can sell](/what-a-store-can-sell). They fire for production orders only, and never include links, codes, files or ticket tokens.
+
+| Event | Fired when |
+| :--- | :--- |
+| `order_item.fulfilled` | One unit was delivered. A line of quantity 3 emits one event per unit. Carries `delivered_at` |
+| `order_item.fulfilment_failed` | A delivery did not complete after repeated attempts. Carries `attempts` |
+| `order_item.fulfilment_voided` | A unit was cancelled, for example by a refund. Carries `voided_at` and `void_reason` |
+| `event_ticket.checked_in` | A ticket was admitted at the door; a multi-day pass fires once per day. Carries `event_name`, `entry_label`, `holder_name`, `admits`, `check_in_count` and `checked_in_at` |
+| `code_pool.low` | A code pool is at or below its alert level, at most once a day. Carries `name`, `remaining`, `low_stock_alert` and `alerted_at` |
+
+A fulfilment object carries `id`, `order_id`, `order_item_id`, `sale_id`, `sale_item_id` (the order pair for an online order, the sale pair for an in-store sale; the other pair is `null`), `unit_no`, `kind`, `product_id` and `variant_id`.
+
 ### Gift cards
 
 | Event | Fired when |

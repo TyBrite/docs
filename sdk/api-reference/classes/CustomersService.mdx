@@ -357,6 +357,761 @@ await client.customers.deleteAddress({
 ```
 
 
+## Subscribe & Save subscriptions
+
+A shopper subscription is one shopper's acceptance of a [Subscribe & Save](/subscribe-save) offer: which items, how often, where to send them and how each delivery is paid. These are **customer-self** operations. They work with a publishable key and require the shopper's session token in `xAuthToken` (or `xExternalAuth`, never both); the token must resolve to the customer in the `id` path parameter, otherwise the call returns `403`. A subscription that belongs to another shopper reads as `404`.
+
+### `listShopperSubscriptions`
+
+List a shopper's Subscribe & Save subscriptions.
+
+Return the signed-in shopper's Subscribe & Save subscriptions at this store, newest first
+(at most 100). Each subscription lists its items, the interval, the date of the next delivery, the
+saved card that is charged (when there is one) and the terms the shopper accepted.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.listShopperSubscriptions({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "subscriptions": [
+    {
+      "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+      "status": "active",
+      "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+      "offer_label": "Subscribe & save 15%",
+      "interval_unit": "month",
+      "interval_count": 1,
+      "next_delivery_on": "2026-11-28",
+      "fulfillment_method": "delivery",
+      "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+      "pickup_location_id": null,
+      "renewal_mode": "off_session",
+      "payment_method": {
+        "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+        "brand": "visa",
+        "last4": "4242",
+        "exp_month": 12,
+        "exp_year": 2028
+      },
+      "terms": {
+        "offer_name": "Monthly coffee",
+        "discount_type": "percentage",
+        "discount_value": 1500,
+        "first_order_discount_value": 2000,
+        "min_cycles": 0,
+        "max_skips_per_year": 4,
+        "free_shipping": false,
+        "stacks_with_promotions": false,
+        "interval_unit": "month",
+        "interval_count": 1
+      },
+      "deliveries_completed": 3,
+      "paused_until": null,
+      "cancel_effective_on": null,
+      "created_at": "2026-08-28T09:30:00+00:00",
+      "items": [
+        {
+          "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+          "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+          "quantity": 2,
+          "name": "Colombian Roast 1 kg"
+        }
+      ],
+      "pending_action": null
+    }
+  ]
+}
+```
+
+`GET /v1/customers/{id}/shopper-subscriptions`
+---
+
+### `getShopperSubscription`
+
+Get a Subscribe & Save subscription.
+
+Return one of the signed-in shopper's subscriptions.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.getShopperSubscription({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  subscriptionId: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "subscription": {
+    "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+    "status": "active",
+    "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+    "offer_label": "Subscribe & save 15%",
+    "interval_unit": "month",
+    "interval_count": 1,
+    "next_delivery_on": "2026-11-28",
+    "fulfillment_method": "delivery",
+    "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+    "pickup_location_id": null,
+    "renewal_mode": "off_session",
+    "payment_method": {
+      "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+      "brand": "visa",
+      "last4": "4242",
+      "exp_month": 12,
+      "exp_year": 2028
+    },
+    "terms": {
+      "offer_name": "Monthly coffee",
+      "discount_type": "percentage",
+      "discount_value": 1500,
+      "first_order_discount_value": 2000,
+      "min_cycles": 0,
+      "max_skips_per_year": 4,
+      "free_shipping": false,
+      "stacks_with_promotions": false,
+      "interval_unit": "month",
+      "interval_count": 1
+    },
+    "deliveries_completed": 3,
+    "paused_until": null,
+    "cancel_effective_on": null,
+    "created_at": "2026-08-28T09:30:00+00:00",
+    "items": [
+      {
+        "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+        "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+        "quantity": 2,
+        "name": "Colombian Roast 1 kg"
+      }
+    ],
+    "pending_action": null
+  }
+}
+```
+
+`GET /v1/customers/{id}/shopper-subscriptions/{subscriptionId}`
+---
+
+### `updateShopperSubscription`
+
+Change a Subscribe & Save subscription.
+
+Change one thing about the shopper's subscription per request: the delivery interval, the
+items, or where the deliveries go. A change to the items applies from the next delivery; a change to
+the interval restarts the schedule from today. A change the offer or the store does not allow is refused with `400` or `409`
+and a message the shopper can read: an interval the offer does not list, an item the offer does not
+cover, or item changes the store has turned off.
+
+Send exactly one group of fields:
+
+- `interval_unit` with `interval_count`: the delivery interval, one of the offer's intervals.
+- `items`: the full list of items for each delivery, 1 to 50 entries. Items left out are removed.
+- `fulfillment_method` with `shipping_address_id` (one of the shopper's saved addresses) for delivery, or
+  with `pickup_location_id` for pickup, and optionally `shipping_option_id`.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.updateShopperSubscription({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  subscriptionId: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  xAuthToken: shopperToken,
+  requestBody: {
+    interval_unit: 'week',
+    interval_count: 6
+  }
+});
+```
+
+```json Response
+{
+  "subscription": {
+    "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+    "status": "active",
+    "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+    "offer_label": "Subscribe & save 15%",
+    "interval_unit": "month",
+    "interval_count": 1,
+    "next_delivery_on": "2026-11-28",
+    "fulfillment_method": "delivery",
+    "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+    "pickup_location_id": null,
+    "renewal_mode": "off_session",
+    "payment_method": {
+      "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+      "brand": "visa",
+      "last4": "4242",
+      "exp_month": 12,
+      "exp_year": 2028
+    },
+    "terms": {
+      "offer_name": "Monthly coffee",
+      "discount_type": "percentage",
+      "discount_value": 1500,
+      "first_order_discount_value": 2000,
+      "min_cycles": 0,
+      "max_skips_per_year": 4,
+      "free_shipping": false,
+      "stacks_with_promotions": false,
+      "interval_unit": "month",
+      "interval_count": 1
+    },
+    "deliveries_completed": 3,
+    "paused_until": null,
+    "cancel_effective_on": null,
+    "created_at": "2026-08-28T09:30:00+00:00",
+    "items": [
+      {
+        "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+        "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+        "quantity": 2,
+        "name": "Colombian Roast 1 kg"
+      }
+    ],
+    "pending_action": null
+  }
+}
+```
+
+`PATCH /v1/customers/{id}/shopper-subscriptions/{subscriptionId}`
+---
+
+### `pauseShopperSubscription`
+
+Pause a Subscribe & Save subscription.
+
+Pause the subscription so no delivery is created while it is paused. Send `until` to resume
+automatically on that date, from tomorrow up to a year ahead; omit it to stay paused until the shopper
+resumes. Only an active subscription can be paused, and not while a delivery is being prepared.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.pauseShopperSubscription({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  subscriptionId: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  xAuthToken: shopperToken,
+  requestBody: {
+    until: '2026-12-15'
+  }
+});
+```
+
+```json Response
+{
+  "subscription": {
+    "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+    "status": "active",
+    "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+    "offer_label": "Subscribe & save 15%",
+    "interval_unit": "month",
+    "interval_count": 1,
+    "next_delivery_on": "2026-11-28",
+    "fulfillment_method": "delivery",
+    "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+    "pickup_location_id": null,
+    "renewal_mode": "off_session",
+    "payment_method": {
+      "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+      "brand": "visa",
+      "last4": "4242",
+      "exp_month": 12,
+      "exp_year": 2028
+    },
+    "terms": {
+      "offer_name": "Monthly coffee",
+      "discount_type": "percentage",
+      "discount_value": 1500,
+      "first_order_discount_value": 2000,
+      "min_cycles": 0,
+      "max_skips_per_year": 4,
+      "free_shipping": false,
+      "stacks_with_promotions": false,
+      "interval_unit": "month",
+      "interval_count": 1
+    },
+    "deliveries_completed": 3,
+    "paused_until": null,
+    "cancel_effective_on": null,
+    "created_at": "2026-08-28T09:30:00+00:00",
+    "items": [
+      {
+        "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+        "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+        "quantity": 2,
+        "name": "Colombian Roast 1 kg"
+      }
+    ],
+    "pending_action": null
+  }
+}
+```
+
+`POST /v1/customers/{id}/shopper-subscriptions/{subscriptionId}/pause`
+---
+
+### `resumeShopperSubscription`
+
+Resume a paused Subscribe & Save subscription.
+
+Resume a paused subscription. The next delivery date is calculated from today on the
+subscription's interval.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.resumeShopperSubscription({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  subscriptionId: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "subscription": {
+    "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+    "status": "active",
+    "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+    "offer_label": "Subscribe & save 15%",
+    "interval_unit": "month",
+    "interval_count": 1,
+    "next_delivery_on": "2026-11-28",
+    "fulfillment_method": "delivery",
+    "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+    "pickup_location_id": null,
+    "renewal_mode": "off_session",
+    "payment_method": {
+      "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+      "brand": "visa",
+      "last4": "4242",
+      "exp_month": 12,
+      "exp_year": 2028
+    },
+    "terms": {
+      "offer_name": "Monthly coffee",
+      "discount_type": "percentage",
+      "discount_value": 1500,
+      "first_order_discount_value": 2000,
+      "min_cycles": 0,
+      "max_skips_per_year": 4,
+      "free_shipping": false,
+      "stacks_with_promotions": false,
+      "interval_unit": "month",
+      "interval_count": 1
+    },
+    "deliveries_completed": 3,
+    "paused_until": null,
+    "cancel_effective_on": null,
+    "created_at": "2026-08-28T09:30:00+00:00",
+    "items": [
+      {
+        "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+        "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+        "quantity": 2,
+        "name": "Colombian Roast 1 kg"
+      }
+    ],
+    "pending_action": null
+  }
+}
+```
+
+`POST /v1/customers/{id}/shopper-subscriptions/{subscriptionId}/resume`
+---
+
+### `skipNextShopperDelivery`
+
+Skip the next Subscribe & Save delivery.
+
+Skip the next scheduled delivery. The following delivery keeps the subscription's interval. A
+delivery that is already being prepared cannot be skipped, and an offer may limit how many deliveries a
+shopper skips in a year.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.skipNextShopperDelivery({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  subscriptionId: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "subscription": {
+    "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+    "status": "active",
+    "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+    "offer_label": "Subscribe & save 15%",
+    "interval_unit": "month",
+    "interval_count": 1,
+    "next_delivery_on": "2026-11-28",
+    "fulfillment_method": "delivery",
+    "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+    "pickup_location_id": null,
+    "renewal_mode": "off_session",
+    "payment_method": {
+      "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+      "brand": "visa",
+      "last4": "4242",
+      "exp_month": 12,
+      "exp_year": 2028
+    },
+    "terms": {
+      "offer_name": "Monthly coffee",
+      "discount_type": "percentage",
+      "discount_value": 1500,
+      "first_order_discount_value": 2000,
+      "min_cycles": 0,
+      "max_skips_per_year": 4,
+      "free_shipping": false,
+      "stacks_with_promotions": false,
+      "interval_unit": "month",
+      "interval_count": 1
+    },
+    "deliveries_completed": 3,
+    "paused_until": null,
+    "cancel_effective_on": null,
+    "created_at": "2026-08-28T09:30:00+00:00",
+    "items": [
+      {
+        "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+        "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+        "quantity": 2,
+        "name": "Colombian Roast 1 kg"
+      }
+    ],
+    "pending_action": null
+  }
+}
+```
+
+`POST /v1/customers/{id}/shopper-subscriptions/{subscriptionId}/skip-next`
+---
+
+### `cancelShopperSubscription`
+
+Cancel a Subscribe & Save subscription.
+
+Cancel the subscription in one step. The cancellation takes effect today unless the offer requires
+a minimum number of deliveries that have not yet been made, in which case it takes effect on the date of
+the last committed delivery and `cancel_effective_on` says when. Send `preview: true` to read that date,
+and how many deliveries remain, without cancelling, so the shopper is told before they confirm.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.cancelShopperSubscription({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  subscriptionId: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  xAuthToken: shopperToken,
+  requestBody: {
+    reason: 'Too much coffee',
+    preview: false
+  }
+});
+```
+
+```json Response
+{
+  "preview": true,
+  "cancel_effective_on": "2026-11-28",
+  "deliveries_remaining": 1
+}
+```
+
+`POST /v1/customers/{id}/shopper-subscriptions/{subscriptionId}/cancel`
+
+## Saved payment methods
+
+A card the shopper agreed to keep for later deliveries is listed without its number: brand, last four digits and expiry. `startShopperCardUpdate` returns a hosted page on which the shopper enters a replacement card for one subscription, so card details never reach the storefront.
+
+### `startShopperCardUpdate`
+
+Add a card to a Subscribe & Save subscription.
+
+Start adding a replacement card for a subscription. The response is the payment processor's own
+hosted page; the shopper enters the card there. When the processor confirms the card it is saved and
+the subscription charges it for every later delivery, and a delivery that was waiting on a declined
+card is retried with it. The shopper returns to the subscription's manage page afterwards.
+
+A store whose processor cannot save cards answers `409`. At most 10 sessions can be started per
+shopper per hour (`429`).
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.startShopperCardUpdate({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  subscriptionId: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "checkout_url": "https://checkout.example.com/c/pay/cs_test_a1b2c3"
+}
+```
+
+`POST /v1/customers/{id}/shopper-subscriptions/{subscriptionId}/payment-method`
+---
+
+### `listShopperPaymentMethods`
+
+List a shopper's saved cards.
+
+Return the cards the signed-in shopper has saved for Subscribe & Save deliveries, newest first.
+Each card shows its brand, last four digits and expiry; the card number and the processor's references
+are never returned. Removed and replaced cards are not listed.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.listShopperPaymentMethods({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "payment_methods": [
+    {
+      "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+      "processor": "stripe",
+      "brand": "visa",
+      "last4": "4242",
+      "exp_month": 12,
+      "exp_year": 2028,
+      "status": "active",
+      "created_at": "2026-08-28T09:31:12+00:00"
+    }
+  ]
+}
+```
+
+`GET /v1/customers/{id}/payment-methods`
+---
+
+### `deleteShopperPaymentMethod`
+
+Remove a saved card.
+
+Remove one of the signed-in shopper's saved cards. The store can no longer charge it. A
+subscription that was charging this card switches to confirm-and-pay: the shopper is sent a link to pay
+each delivery until a new card is added.
+
+**Customer-self access.** Works with a publishable key (safe from the
+browser). Provide the shopper's session token in the `x-auth-token`
+header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+it must resolve to the customer in the `{id}` path parameter, otherwise the
+request returns `403`. A subscription that belongs to another shopper reads
+as `404`.
+
+```typescript
+const result = await client.customers.deleteShopperPaymentMethod({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  paymentMethodId: '5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "success": true,
+  "message": "Saved card removed"
+}
+```
+
+`DELETE /v1/customers/{id}/payment-methods/{paymentMethodId}`
+
+## Purchased items
+
+Digital downloads, codes and licence keys, and event tickets are delivered once an order is paid. `listShopperFulfilments` lists the delivered items across orders, `revealShopperFulfilmentCodes` returns the codes of one delivery in clear, and `downloadShopperFulfilmentFile` answers with a redirect to a short-lived link to one file. See [What a store can sell](/what-a-store-can-sell).
+
+### `listShopperFulfilments`
+
+List a shopper's delivered items.
+
+Return the downloads, codes, event tickets and services the shopper has bought, across their
+orders, newest first. Each purchased unit is one entry, so an order line of three event tickets
+lists three entries. An entry is `preparing` until the item is delivered, then `delivered`, and
+`voided` after a refund or return.
+
+A `digital` entry lists its files, each with a `download_url`. A `code` entry shows its codes
+masked and a `reveal_url`; read the codes themselves with
+`POST /v1/customers/{id}/fulfilments/{fulfilment_id}/reveal`. An `event_ticket` entry lists its
+tickets with the text to encode as the QR code. A `service` entry carries the merchant's
+confirmation note.
+
+**Customer-self access.** Works with a publishable key (safe from the browser). Provide the
+shopper's session token in the `x-auth-token` header (or the store's bring-your-own-auth
+assertion in `x-external-auth`, never both); it must resolve to the customer in the `{id}` path
+parameter, otherwise the request returns `403`. A Connect key needs the `fulfilment:read` scope.
+
+```typescript
+const result = await client.customers.listShopperFulfilments({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "fulfilments": [
+    {
+      "id": "3b7c2f60-5d1a-4e8b-9c42-7a1d0e6f8b21",
+      "order_id": "922d235e-48c9-4933-abcd-88cb2a264f86",
+      "order_number": "ORD-1771523999910",
+      "item_name": "Photography Course",
+      "unit_no": 1,
+      "kind": "digital",
+      "status": "delivered",
+      "created_at": "2026-10-28T10:30:00+00:00",
+      "delivered_at": "2026-10-28T10:30:04+00:00",
+      "downloads": [
+        {
+          "asset_id": "0c9d4e21-7b3a-4f15-8e60-2a5b6c7d8e90",
+          "file_name": "lesson-1.pdf",
+          "content_type": "application/pdf",
+          "bytes": 482113,
+          "available": true,
+          "download_url": "https://api.example.com/v1/fulfilment/downloads/3b7c2f60-5d1a-4e8b-9c42-7a1d0e6f8b21/0c9d4e21-7b3a-4f15-8e60-2a5b6c7d8e90?t=Zk3q9XvL2mPaT7uRw1Yb8A"
+        }
+      ]
+    }
+  ],
+  "has_more": false
+}
+```
+
+`GET /v1/customers/{id}/fulfilments`
+---
+
+### `revealShopperFulfilmentCodes`
+
+Reveal the codes of a delivered item.
+
+Return the codes of one `code` entry in clear, for example a licence key or a voucher code. Each
+reveal is recorded and is limited per shopper and per address; the response is never cached. An
+entry that is not the shopper's reads as `404`, and an entry that was refunded or whose codes are
+not available answers `409` or `410` with a sentence for the shopper.
+
+**Customer-self access.** Works with a publishable key (safe from the browser). Provide the
+shopper's session token in the `x-auth-token` header (or the store's bring-your-own-auth
+assertion in `x-external-auth`, never both); it must resolve to the customer in the `{id}` path
+parameter, otherwise the request returns `403`. A Connect key needs the `fulfilment:read` scope.
+
+```typescript
+const result = await client.customers.revealShopperFulfilmentCodes({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  fulfilmentId: '3b7c2f60-5d1a-4e8b-9c42-7a1d0e6f8b21',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "codes": [
+    {
+      "label": "Licence key",
+      "code": "ABCD-EFGH-IJKL-MNOP"
+    }
+  ]
+}
+```
+
+`POST /v1/customers/{id}/fulfilments/{fulfilment_id}/reveal`
+---
+
+### `downloadShopperFulfilmentFile`
+
+Download a file the shopper bought.
+
+Answer `302` with a short-lived link to one file of a delivered `digital` entry. The response has
+no body; follow the `Location` header to receive the file. Each request counts towards the
+download limit and the access period the merchant set for the product.
+
+Two ways to call it:
+
+- **Link from the delivery email or the entry's `download_url`.** Pass the link token as the `t`
+  query parameter. No API key and no shopper header is sent; the token is the credential, and
+  sending a shopper header with it returns `400`. Requests are limited per address and per entry.
+- **Shopper credentials.** Omit `t`, send the API key, and send the shopper's session token in
+  `x-auth-token` (or the store's assertion in `x-external-auth`, never both). The shopper must be
+  the buyer of the entry. A Connect key needs the `fulfilment:read` scope.
+
+An entry or file that does not exist, a token that does not match and a shopper who is not the
+buyer all answer the same `404`.
+
+```typescript
+const result = await client.customers.downloadShopperFulfilmentFile({
+  fulfilmentId: '3b7c2f60-5d1a-4e8b-9c42-7a1d0e6f8b21',
+  assetId: '0c9d4e21-7b3a-4f15-8e60-2a5b6c7d8e90',
+  t: 'Zk3q9XvL2mPaT7uRw1Yb8A' // the link token from the delivery email
+});
+```
+
+`GET /v1/fulfilment/downloads/{fulfilment_id}/{asset_id}`
+
 ## Customer Utilities
 
 <Tip>

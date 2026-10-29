@@ -2419,6 +2419,588 @@ const { data } = await client.agent.cancelMandate({
 }
 ```
 
+## Subscribe & Save
+
+An assistant can show a product's Subscribe & Save offers and, with the shopper's consent, prepare and manage the shopper's subscriptions. Every method here returns the standard envelope and requires the shopper's personalization consent; the shopper methods require the shopper's credential. A subscription is never confirmed through the API: `createAgentShopperSubscription` returns a hosted checkout link on which the shopper reads the terms and agrees to them. See [Subscribe & Save](/subscribe-save).
+
+### `getSubscribeSaveOffersForProduct`
+
+Subscribe & Save offers on a product.
+
+The Subscribe & Save offers that cover a product: each offer's label, the delivery intervals it allows,
+its discount, any different discount on the first delivery, the minimum number of deliveries, the yearly
+skip limit and whether shipping is free. The list is empty when the store offers none.
+
+With `variant_id`, each offer also carries `per_delivery`: the price of one delivery of that variant
+(times `quantity`) for the first delivery and for every later one, worked out from the variant's live
+catalogue price. These prices cover the items only; shipping and tax are added at checkout. Without
+`variant_id`, `per_delivery` is null.
+
+A subscription is started with `POST /v1/agent/me/shopper-subscriptions`.
+
+```typescript
+const result = await client.agent.getSubscribeSaveOffersForProduct({
+  id: '715b8c10-eb11-4289-8c0e-2966e78cf9a5'
+});
+```
+
+```json Response
+{
+  "data": {
+    "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+    "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+    "offers": [
+      {
+        "id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+        "label": "Subscribe & save 15%",
+        "intervals": [
+          {
+            "unit": "month",
+            "count": 1
+          },
+          {
+            "unit": "week",
+            "count": 6
+          }
+        ],
+        "discount_type": "percentage",
+        "discount_value": 1500,
+        "first_order_discount_value": 2000,
+        "min_cycles": 3,
+        "max_skips_per_year": 2,
+        "free_shipping": false,
+        "stacks_with_promotions": false,
+        "image": null,
+        "image_mobile": null,
+        "video": null,
+        "ends_at": null,
+        "per_delivery": {
+          "currency": "USD",
+          "quantity": 1,
+          "unit_price": 24,
+          "first_delivery": {
+            "price": 19.2,
+            "discount": 4.8
+          },
+          "later_delivery": {
+            "price": 20.4,
+            "discount": 3.6
+          },
+          "free_shipping": false
+        }
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "source": "subscribe_save",
+      "field": "offers"
+    },
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+      "field": "resolved_price"
+    },
+    {
+      "source": "subscribe_save",
+      "field": "per_delivery"
+    }
+  ],
+  "computed_at": "2026-10-28T11:25:08.030Z",
+  "currency": "USD",
+  "environment": "production"
+}
+```
+
+`GET /v1/agent/products/{id}/subscribe-save`
+---
+
+### `listAgentShopperSubscriptions`
+
+List the shopper's Subscribe & Save subscriptions.
+
+The shopper's Subscribe & Save subscriptions with this store, newest first: status, delivery interval,
+the date of the next delivery, the items, the terms the shopper accepted, and the saved card's brand and
+last four digits. Requires the shopper's credential and personalization consent.
+
+```typescript
+const result = await client.agent.listAgentShopperSubscriptions({
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "data": {
+    "subscriptions": [
+      {
+        "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+        "status": "active",
+        "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+        "offer_label": "Subscribe & save 15%",
+        "interval_unit": "month",
+        "interval_count": 1,
+        "next_delivery_on": "2026-11-28",
+        "fulfillment_method": "delivery",
+        "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+        "pickup_location_id": null,
+        "renewal_mode": "off_session",
+        "payment_method": {
+          "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+          "brand": "visa",
+          "last4": "4242",
+          "exp_month": 12,
+          "exp_year": 2028
+        },
+        "terms": {
+          "offer_name": "Monthly coffee",
+          "discount_type": "percentage",
+          "discount_value": 1500,
+          "first_order_discount_value": 2000,
+          "min_cycles": 0,
+          "max_skips_per_year": 4,
+          "free_shipping": false,
+          "stacks_with_promotions": false,
+          "interval_unit": "month",
+          "interval_count": 1
+        },
+        "deliveries_completed": 3,
+        "paused_until": null,
+        "cancel_effective_on": null,
+        "created_at": "2026-08-28T09:30:00+00:00",
+        "items": [
+          {
+            "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+            "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+            "quantity": 2,
+            "name": "Colombian Roast 1 kg"
+          }
+        ],
+        "pending_action": null
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "source": "subscribe_save",
+      "field": "shopper_subscription_manage"
+    }
+  ],
+  "computed_at": "2026-10-28T11:25:08.000Z",
+  "currency": "USD",
+  "environment": "production"
+}
+```
+
+`GET /v1/agent/me/shopper-subscriptions`
+---
+
+### `createAgentShopperSubscription`
+
+Start a Subscribe & Save subscription.
+
+Prepares the first order of a Subscribe & Save subscription as a hosted checkout and returns the link
+the shopper opens. The items are priced for the address with the offer's first-delivery discount, and
+the stock is held for 30 minutes, as for any checkout intent.
+
+The shopper confirms the order on the store's own checkout page, never through the API. The page shows
+the terms in `subscribe_save.terms`: the items, the price per delivery with the discount, the interval,
+that it renews until cancelled, how to cancel, the minimum number of deliveries and the dates of the
+first charge and the next delivery. The shopper ticks an unticked consent box, and the exact wording
+accepted is recorded with the subscription. Confirming a subscription with the confirmation token
+through `POST /v1/agent/checkout-intents/{id}/confirm` answers `409 hosted_confirmation_required`.
+
+The card used for the first payment is kept for the later deliveries where the store's payment provider
+allows it; otherwise the shopper is sent a payment link for each delivery. The subscription begins when
+the first order is paid, never before.
+
+Requires the shopper's credential and personalization consent. A request without a shopper credential
+answers `409 account_required`. A replay of the same `Idempotency-Key` returns the same intent with
+`confirmation_token` and `confirmation_url` null.
+
+```typescript
+const result = await client.agent.createAgentShopperSubscription({
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: {
+    offer_id: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+    interval_unit: 'week',
+    interval_count: 1,
+    items: [
+      {
+        variant_id: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+        quantity: 1
+      }
+    ],
+    shipping_address: {
+      name: 'John Doe',
+      line1: '350 Fifth Avenue',
+      line2: 'Suite 4',
+      city: 'New York',
+      state: 'NY',
+      postal_code: '10118',
+      country: 'US',
+      latitude: 1,
+      longitude: 1
+    }
+  },
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "data": {
+    "id": "6e1d4b2a-8c35-4f07-9a12-3b5c7d9e0f41",
+    "status": "pending",
+    "confirmation_mode": "hosted",
+    "confirmation_url": "https://shop.example.com/checkout/confirm/6e1d4b2a-8c35-4f07-9a12-3b5c7d9e0f41",
+    "confirmation_token": null,
+    "expires_at": "2026-10-28T11:55:08.000Z",
+    "total": 38.4,
+    "currency": "USD",
+    "items": [
+      {
+        "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+        "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+        "name": "Colombian Roast 1 kg",
+        "quantity": 2,
+        "unit_price": 19.2
+      }
+    ],
+    "quote": {
+      "subtotal": 38.4,
+      "shipping": 0,
+      "tax": 0,
+      "total": 38.4
+    },
+    "subscribe_save": {
+      "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+      "interval_unit": "month",
+      "interval_count": 1,
+      "terms": {
+        "text_version": "2026-10-27",
+        "lines": [
+          "2 x Colombian Roast 1 kg",
+          "$38.40 for the first delivery, then $40.80 per delivery",
+          "Renews every month until you cancel"
+        ],
+        "agreement": "I agree to these terms and understand the subscription renews until I cancel it.",
+        "text": "2 x Colombian Roast 1 kg\n$38.40 for the first delivery, then $40.80 per delivery\nRenews every month until you cancel",
+        "first_charge_on": "2026-10-28",
+        "next_delivery_on": "2026-11-28",
+        "currency": "USD",
+        "first_delivery_price": 38.4,
+        "price_per_delivery": 40.8,
+        "min_deliveries": 0,
+        "free_shipping": false
+      },
+      "accepted_at": null
+    }
+  },
+  "evidence": [
+    {
+      "source": "subscribe_save",
+      "field": "offers"
+    },
+    {
+      "source": "pricing",
+      "operation": "GET /v1/prices/products/{id}",
+      "field": "resolved_price"
+    }
+  ],
+  "computed_at": "2026-10-28T11:25:08.000Z",
+  "currency": "USD",
+  "environment": "production"
+}
+```
+
+`POST /v1/agent/me/shopper-subscriptions`
+---
+
+### `updateAgentShopperSubscription`
+
+Change a Subscribe & Save subscription.
+
+Changes how often one of the shopper's subscriptions delivers, or what it delivers. Send either
+`interval_unit` with `interval_count` (one of the intervals the offer allows), or `items`, the full new
+list of products and quantities (each covered by the offer). The next delivery date is recalculated from
+the last delivery. A store can turn off item changes for shoppers, in which case `items` answers
+`409`. Requires the shopper's credential and personalization consent.
+
+```typescript
+const result = await client.agent.updateAgentShopperSubscription({
+  id: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  requestBody: { interval_unit: 'week', interval_count: 6 },
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "data": {
+    "subscription": {
+      "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+      "status": "active",
+      "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+      "offer_label": "Subscribe & save 15%",
+      "interval_unit": "month",
+      "interval_count": 1,
+      "next_delivery_on": "2026-11-28",
+      "fulfillment_method": "delivery",
+      "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+      "pickup_location_id": null,
+      "renewal_mode": "off_session",
+      "payment_method": {
+        "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+        "brand": "visa",
+        "last4": "4242",
+        "exp_month": 12,
+        "exp_year": 2028
+      },
+      "terms": {
+        "offer_name": "Monthly coffee",
+        "discount_type": "percentage",
+        "discount_value": 1500,
+        "first_order_discount_value": 2000,
+        "min_cycles": 0,
+        "max_skips_per_year": 4,
+        "free_shipping": false,
+        "stacks_with_promotions": false,
+        "interval_unit": "month",
+        "interval_count": 1
+      },
+      "deliveries_completed": 3,
+      "paused_until": null,
+      "cancel_effective_on": null,
+      "created_at": "2026-08-28T09:30:00+00:00",
+      "items": [
+        {
+          "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+          "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+          "quantity": 2,
+          "name": "Colombian Roast 1 kg"
+        }
+      ],
+      "pending_action": null
+    }
+  },
+  "evidence": [
+    {
+      "source": "subscribe_save",
+      "field": "shopper_subscription_manage"
+    }
+  ],
+  "computed_at": "2026-10-28T11:25:08.000Z",
+  "currency": "USD",
+  "environment": "production"
+}
+```
+
+`POST /v1/agent/me/shopper-subscriptions/{id}/update`
+---
+
+### `pauseAgentShopperSubscription`
+
+Pause a Subscribe & Save subscription.
+
+Pauses one of the shopper's subscriptions. No delivery is prepared or charged while it is paused. With
+`until`, deliveries resume on that day (from tomorrow, up to a year ahead); without it, the subscription
+stays paused until the shopper resumes it. Only an active subscription can be paused. Requires the
+shopper's credential and personalization consent.
+
+```typescript
+const result = await client.agent.pauseAgentShopperSubscription({
+  id: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  requestBody: { until: '2026-12-15' },
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "data": {
+    "subscription": {
+      "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+      "status": "active",
+      "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+      "offer_label": "Subscribe & save 15%",
+      "interval_unit": "month",
+      "interval_count": 1,
+      "next_delivery_on": "2026-11-28",
+      "fulfillment_method": "delivery",
+      "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+      "pickup_location_id": null,
+      "renewal_mode": "off_session",
+      "payment_method": {
+        "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+        "brand": "visa",
+        "last4": "4242",
+        "exp_month": 12,
+        "exp_year": 2028
+      },
+      "terms": {
+        "offer_name": "Monthly coffee",
+        "discount_type": "percentage",
+        "discount_value": 1500,
+        "first_order_discount_value": 2000,
+        "min_cycles": 0,
+        "max_skips_per_year": 4,
+        "free_shipping": false,
+        "stacks_with_promotions": false,
+        "interval_unit": "month",
+        "interval_count": 1
+      },
+      "deliveries_completed": 3,
+      "paused_until": null,
+      "cancel_effective_on": null,
+      "created_at": "2026-08-28T09:30:00+00:00",
+      "items": [
+        {
+          "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+          "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+          "quantity": 2,
+          "name": "Colombian Roast 1 kg"
+        }
+      ],
+      "pending_action": null
+    }
+  },
+  "evidence": [
+    {
+      "source": "subscribe_save",
+      "field": "shopper_subscription_manage"
+    }
+  ],
+  "computed_at": "2026-10-28T11:25:08.000Z",
+  "currency": "USD",
+  "environment": "production"
+}
+```
+
+`POST /v1/agent/me/shopper-subscriptions/{id}/pause`
+---
+
+### `skipAgentShopperSubscription`
+
+Skip the next Subscribe & Save delivery.
+
+Skips the next delivery of one of the shopper's subscriptions; the delivery after it stays on schedule.
+The offer may limit how many deliveries can be skipped in a year, and a delivery that is already being
+prepared cannot be skipped. Requires the shopper's credential and personalization consent.
+
+```typescript
+const result = await client.agent.skipAgentShopperSubscription({
+  id: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "data": {
+    "subscription": {
+      "id": "8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10",
+      "status": "active",
+      "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+      "offer_label": "Subscribe & save 15%",
+      "interval_unit": "month",
+      "interval_count": 1,
+      "next_delivery_on": "2026-11-28",
+      "fulfillment_method": "delivery",
+      "shipping_address_id": "c176eadf-13e3-4bdc-ba5b-06cfa3f2fcb9",
+      "pickup_location_id": null,
+      "renewal_mode": "off_session",
+      "payment_method": {
+        "id": "5a0e2d7c-91b4-4c3a-8e6f-1d2b3c4a5e60",
+        "brand": "visa",
+        "last4": "4242",
+        "exp_month": 12,
+        "exp_year": 2028
+      },
+      "terms": {
+        "offer_name": "Monthly coffee",
+        "discount_type": "percentage",
+        "discount_value": 1500,
+        "first_order_discount_value": 2000,
+        "min_cycles": 0,
+        "max_skips_per_year": 4,
+        "free_shipping": false,
+        "stacks_with_promotions": false,
+        "interval_unit": "month",
+        "interval_count": 1
+      },
+      "deliveries_completed": 3,
+      "paused_until": null,
+      "cancel_effective_on": null,
+      "created_at": "2026-08-28T09:30:00+00:00",
+      "items": [
+        {
+          "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+          "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+          "quantity": 2,
+          "name": "Colombian Roast 1 kg"
+        }
+      ],
+      "pending_action": null
+    }
+  },
+  "evidence": [
+    {
+      "source": "subscribe_save",
+      "field": "shopper_subscription_manage"
+    }
+  ],
+  "computed_at": "2026-10-28T11:25:08.000Z",
+  "currency": "USD",
+  "environment": "production"
+}
+```
+
+`POST /v1/agent/me/shopper-subscriptions/{id}/skip`
+---
+
+### `cancelAgentShopperSubscription`
+
+Cancel a Subscribe & Save subscription.
+
+Cancels one of the shopper's subscriptions. When the offer has a minimum number of deliveries that has
+not yet been reached, the cancellation is requested now and takes effect after the last of them;
+`cancel_effective_on` is that date, and the subscription's own `cancel_effective_on` carries it too.
+Otherwise it takes effect at once.
+
+Send `preview: true` to learn the effective date and the deliveries still owed without cancelling, so
+the shopper can be told before they decide. Requires the shopper's credential and personalization consent.
+
+```typescript
+const result = await client.agent.cancelAgentShopperSubscription({
+  id: '8d6a1c52-0b8f-4e63-a1f4-2c9d7e5b3a10',
+  requestBody: { reason: 'Too much coffee', preview: true },
+  xAuthToken: shopperToken
+});
+```
+
+```json Response
+{
+  "data": {
+    "preview": true,
+    "cancel_effective_on": "2026-11-28",
+    "deliveries_remaining": 1
+  },
+  "evidence": [
+    {
+      "source": "subscribe_save",
+      "field": "shopper_subscription_manage"
+    }
+  ],
+  "computed_at": "2026-10-28T11:25:08.000Z",
+  "currency": "USD",
+  "environment": "production"
+}
+```
+
+`POST /v1/agent/me/shopper-subscriptions/{id}/cancel`
+
 ## Store and usage
 
 ### `getStorePolicies`

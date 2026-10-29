@@ -337,6 +337,142 @@ A marketplace key may read and calculate a single merchant's promotions this way
 
 ---
 
+## Subscribe & Save offers
+
+A Subscribe & Save offer is a merchant's standing invitation to buy a product again on a schedule at a lower price. `listSubscribeSaveOffers` returns the offers that are live for a product and `quoteSubscribeSave` prices a set of items under one offer. The shopper's choice is sent with the order as `subscribe_save` on `createOrder`; see [OrdersService](/sdk/api-reference/classes/OrdersService). Both methods work with a publishable key.
+
+`discount_value` depends on `discount_type`: hundredths of a percent for `percentage` (`1500` is 15%), the smallest currency unit taken off each item for `fixed_per_item`, and `0` for `none`, where the benefit is free shipping.
+
+### `listSubscribeSaveOffers`
+
+List the Subscribe & Save offers for a product.
+
+Returns the Subscribe & Save offers that are live for a product, highest discount value first. An offer
+lets a shopper subscribe to a recurring delivery of the product at a discount. Show the offers
+next to the add-to-cart button, let the shopper pick one and an interval, and send the choice
+with the order (`subscribe_save` on `POST /v1/orders`).
+
+The list is empty when the product has no live offer, or when the store's plan does not include
+Subscribe & Save. An offer that is paused, archived, scheduled or past its end is not returned.
+Pass `variant_id` to see only the offers that cover that variant.
+
+The response is cached for a short time. An offer paused in that window may still be listed; the
+quote and the order both check that it is live, so it cannot be bought.
+
+Works with a publishable key.
+
+```typescript
+const result = await client.promotions.listSubscribeSaveOffers({
+  productId: '715b8c10-eb11-4289-8c0e-2966e78cf9a5'
+});
+```
+
+```json Response
+{
+  "offers": [
+    {
+      "id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+      "label": "Subscribe & save 15%",
+      "intervals": [
+        {
+          "unit": "month",
+          "count": 1
+        },
+        {
+          "unit": "week",
+          "count": 6
+        }
+      ],
+      "discount_type": "percentage",
+      "discount_value": 1500,
+      "first_order_discount_value": 2000,
+      "min_cycles": 0,
+      "max_skips_per_year": 4,
+      "free_shipping": false,
+      "stacks_with_promotions": false,
+      "image": null,
+      "image_mobile": null,
+      "video": null,
+      "ends_at": null
+    }
+  ]
+}
+```
+
+`GET /v1/subscribe-save/offers`
+---
+
+### `quoteSubscribeSave`
+
+Quote the price of a Subscribe & Save offer.
+
+Returns what a set of items costs under one Subscribe & Save offer: the price of the first
+delivery, the price of each later delivery, the discount on each, and whether shipping is free.
+Amounts are in the smallest unit of the store's currency.
+
+Prices come from the store's catalogue; a price in the request is not read. An item without a
+`variant_id` is priced at the product's default variant. Only the items the offer covers are
+priced; `available` is `false` when the offer is not live or covers none of the items.
+
+The quote does not apply dynamic pricing rules or promotions, and later deliveries are priced
+again at the catalogue price on the day they are charged. Nothing is reserved or saved: the
+quote is the same function that prices the order.
+
+Not cached. Works with a publishable key.
+
+```typescript
+const result = await client.promotions.quoteSubscribeSave({
+  requestBody: {
+    offer_id: '4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11',
+    items: [
+      {
+        product_id: '715b8c10-eb11-4289-8c0e-2966e78cf9a5',
+        variant_id: '15ca5a86-4b1b-47c3-8762-a1aa43941565',
+        quantity: 2
+      }
+    ],
+    interval_unit: 'month',
+    interval_count: 1
+  }
+});
+```
+
+```json Response
+{
+  "available": true,
+  "offer_id": "4c1c7b9e-2f58-4f43-9d3a-6f0e2a8b1c11",
+  "currency": "USD",
+  "covered_items": [
+    {
+      "product_id": "715b8c10-eb11-4289-8c0e-2966e78cf9a5",
+      "variant_id": "15ca5a86-4b1b-47c3-8762-a1aa43941565",
+      "quantity": 2,
+      "unit_cents": 2000
+    }
+  ],
+  "subtotal_cents": 4000,
+  "first_order_discount_cents": 800,
+  "renewal_discount_cents": 600,
+  "first_order_price_cents": 3200,
+  "renewal_price_cents": 3400,
+  "free_shipping": false,
+  "min_cycles": 0,
+  "intervals": [
+    {
+      "unit": "month",
+      "count": 1
+    }
+  ],
+  "stacks_with_promotions": false,
+  "interval": {
+    "unit": "month",
+    "count": 1
+  }
+}
+```
+
+`POST /v1/subscribe-save/quote`
+
 ## Data Schema
 
 ### `Promotion` Structure

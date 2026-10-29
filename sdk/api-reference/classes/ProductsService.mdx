@@ -468,6 +468,10 @@ document.title = product.seo_title ?? product.name;
 These fields are also included in a store's public catalog feed, so a catalog mirrored from
 one store into another preserves its SEO metadata.
 
+### Delivery kinds
+
+Every product and variant carries `fulfilment_kind`: `shipped` (the default), `digital`, `code`, `event_ticket` or `service`. A variant that is not shipped also carries a `fulfilment` object with the public terms of its kind. On an event ticket these include the sale window, the entry window, `max_per_order` and `available`, the number of units that can still be bought (`null` when unlimited); a response that carries a limited `available` figure is cached for seconds rather than minutes. A listed product shows its default variant's kind and summary, and `fulfilment_kind` and `fulfilment` can be requested through `fields`. See [What a store can sell](/what-a-store-can-sell).
+
 ### Channel and logistics fields
 
 Alongside the merchandising fields, a product carries the identifiers and measurements that

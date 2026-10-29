@@ -236,6 +236,20 @@ When the store does not deliver to the address but offers pickup, the response i
 }
 ```
 
+### Pricing from a country alone
+
+A `country_code` with no coordinates is also a location, with an optional `postal_code` for zones narrowed to postcode prefixes. It prices the zones that cover the country and the store's "everywhere else" rate without geocoding, which is enough for a delivery price on a product page. Zones drawn on a map and distance rates need coordinates and are skipped. When the store's only rules are map zones and distance rates, a country alone cannot be priced: the answer is `200` with `configured: true`, `fee: null`, `cheapest_option: null` and `options` holding only the pickup locations. No "everywhere else" price is given in that case.
+
+```typescript
+const quote = await client.shipping.calculateShipping({
+  requestBody: { country_code: 'GB', postal_code: 'SW1A', order_total: 50 }
+});
+```
+
+### Delivery dates
+
+When the store has set delivery days, an option carries `min_days` and `max_days` (delivery days after dispatch, counted on the store's delivery weekdays) and a `delivery_window` of calendar dates, `{ from, to, dispatch_date }`. Dates are computed in the store's timezone, `delivery.timezone`: an order placed before the dispatch cutoff, `delivery.dispatch_cutoff`, on a delivery weekday dispatches that day, otherwise on the next delivery weekday. Public holidays are not considered. A carrier option with only `estimated_days` carries `min_days` and `max_days` equal to that value. `cheapest_option` is the lowest-fee available option. A store with no delivery rates answers `configured: false` with `is_free: false`: it has set up no delivery charges, so no delivery price and no free-delivery message is shown, and `configured: false` never means free delivery.
+
 ### Live carrier rates (multi-carrier)
 
 When the store has a carrier account connected, or its own custom shipping extension, send a destination `address_to` **and** a `parcel` to also receive live carrier options in `rates[]`. Each option carries its `source` — the store's carrier account (`shippo`) or its custom shipping extension (`custom`).
