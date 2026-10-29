@@ -38535,6 +38535,39 @@ components:
           type: object
           description: Catalog overview (optional, included when requested)
           properties:
+            fulfilment:
+              type: object
+              description: The delivery kinds the store sells online, counted across its whole live catalogue. A store that sells one kind (most do) can build its checkout around it; `nothing_to_ship` means no product needs a delivery address, so checkout asks only for a billing country and postcode. A mixed catalogue decides per cart from each product's `fulfilment_kind`.
+              properties:
+                kinds:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - shipped
+                      - digital
+                      - code
+                      - event_ticket
+                      - service
+                  example:
+                    - digital
+                    - event_ticket
+                product_counts:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                  description: Online products per delivery kind.
+                  example:
+                    digital: 12
+                    event_ticket: 3
+                ships_physical:
+                  type: boolean
+                  description: At least one online product is shipped.
+                  example: false
+                nothing_to_ship:
+                  type: boolean
+                  description: The store sells online products and none of them is shipped.
+                  example: true
             products:
               type: object
               properties:
