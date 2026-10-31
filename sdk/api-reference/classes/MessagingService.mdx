@@ -286,7 +286,7 @@ await client.messaging.deleteMessage({
 
 ### `createConversation` 🔒
 
-Initiate a new support ticket with an initial message.
+Initiate a new support ticket with an initial message. A customer cannot set a priority; threads start at `normal`.
 
 ```typescript
 const { thread, message } = await client.messaging.createConversation({
@@ -297,7 +297,6 @@ const { thread, message } = await client.messaging.createConversation({
     customer_email: 'jane@tybritelabs.com',
     subject: "Missing Item - Order #8821",
     message: "My package arrived but the headphones were missing.",
-    priority: 'high',
     thread_type: 'order_inquiry',
     order_id: 'order-uuid-abc',  // Optional: link to an order
     product_id: 'product-uuid'   // Optional: link to a specific product
@@ -333,6 +332,40 @@ classification its own request produced without a follow-up read.
 ---
 
 ## Data Schemas
+
+### `viewGuestThread`
+
+Returns a guest's conversation for the link token in the store's reply email, oldest message first. The token opens one conversation of the key's store and environment. Contact details are never returned.
+
+```typescript
+const conversation = await client.messaging.viewGuestThread({
+  requestBody: { token: guestLinkToken }
+});
+```
+
+```json Response
+{
+  "thread": {
+    "status": "active",
+    "subject": "Missing item",
+    "store_name": "Galactic Test Store",
+    "store_logo": null
+  },
+  "messages": [
+    { "id": "7104b035-8d42-4826-a5ea-c073b94606b8", "from": "you", "message": "Where is my order?", "created_at": "2026-10-31T08:30:25+00:00", "sender_name": null }
+  ]
+}
+```
+
+### `replyToGuestThread`
+
+Adds the guest's reply to the conversation the link token opens. An expired, revoked or unknown token returns `404`.
+
+```typescript
+await client.messaging.replyToGuestThread({
+  requestBody: { token: guestLinkToken, message: 'Thank you, it arrived.' }
+});
+```
 
 ### `Thread` Structure
 | Field | Type | Description |
