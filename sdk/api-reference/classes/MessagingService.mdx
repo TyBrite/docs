@@ -130,7 +130,7 @@ const thread = await client.messaging.getThread({
 
 ### `updateThread` 🔒
 
-Update thread state including status, priority, or lifecycle flags.
+Archives, mutes or pins the customer's own thread, or closes it. A customer cannot change a thread's priority or set any other status (`403`); a value outside the allowed list is `400`.
 
 <Note>Requires a **Secret Key** (for merchant lifecycle changes) **or** a customer `xAuthToken` belonging to the thread owner (for customer-driven actions like muting or archiving their own conversation). A customer request must own the thread, otherwise it is rejected.</Note>
 
@@ -139,14 +139,13 @@ await client.messaging.updateThread({
   xAuthToken: customerSession.access_token, // Required when called with a publishable key
   id: 'thread-uuid-123',
   requestBody: {
-    status: 'resolved',
-    priority: 'normal',
+    status: 'closed',
     archived: true,
     pinned: false,
     muted: true
   }
 });
-// returns { thread: { id, status: 'resolved', priority: 'normal', is_archived: true, is_muted: true, is_pinned: false, … } }
+// returns { thread: { id, status: 'closed', priority: 'normal', is_archived: true, is_muted: true, is_pinned: false, … } }
 ```
 
 ---

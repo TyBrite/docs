@@ -293,3 +293,7 @@ When building authenticated customer experiences (like "My Account" or "Quick Ch
 <Tip>
   Our TypeScript SDK exposes `refreshToken` so you can wire up a scheduled rotation. See the [Authentication Service](/sdk/api-reference/classes/AuthenticationService) for the full method reference and lifecycle diagram.
 </Tip>
+
+## Keys limited to a list of endpoints
+
+A key issued for a single custom extension is limited to an approved list of endpoints. A request outside the list returns `403` with the code `endpoint_not_allowed`. Other keys are not affected.

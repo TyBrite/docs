@@ -29822,8 +29822,9 @@ paths:
         - Messaging
       summary: Update thread
       description: |
-        Update thread status, priority, or toggle the archived/muted/pinned state.
-        Requires a secret key.
+        Archive, mute or pin the customer's own thread, or close it (`status: closed`).
+        A customer cannot change a thread's priority or set any other status; those
+        requests are refused with `403`, and a value outside the allowed list is `400`.
       security:
         - BearerAuth: []
       parameters:
@@ -29867,18 +29868,11 @@ paths:
                 status:
                   type: string
                   enum:
-                    - active
-                    - resolved
                     - closed
-                    - escalated
-                    - pending
+                  description: The only status a customer can set. Closing a thread removes it from the store's open inbox.
                 priority:
                   type: string
-                  enum:
-                    - urgent
-                    - high
-                    - normal
-                    - low
+                  description: A customer cannot change a thread's priority. A valid priority (`low`, `normal`, `high`, `urgent`) is refused with `403`; any other value is `400`.
                 archived:
                   type: boolean
                   description: Set to true to archive, false to unarchive
@@ -30203,6 +30197,11 @@ paths:
         session token in `x-auth-token` when you pass `customer_id` (the token must
         own that customer, otherwise `403`).
 
+        With a customer session token (and no `customer_id`) the thread belongs to
+        that customer. With neither it is a guest thread the store can answer by
+        email. The thread and the first message are created together or not at all.
+        `order_id` and `product_id` must belong to the store.
+
         **`thread_type`** classifies the inquiry: `general`, `order_inquiry`,
         `product_inquiry`, `support`, `complaint`, `delivery`, `return`, `refund`,
         or `technical`.
@@ -30253,19 +30252,24 @@ paths:
                   description: Optional — links thread to an existing customer record
                 customer_name:
                   type: string
+                  maxLength: 120
                   example: Jane Doe
                 customer_email:
                   type: string
                   format: email
+                  maxLength: 254
                   example: jane.doe@example.com
                 customer_phone:
                   type: string
+                  maxLength: 20
                   example: '+12125550175'
                 subject:
                   type: string
+                  maxLength: 200
                   example: Question about my order
                 message:
                   type: string
+                  maxLength: 5000
                   example: Hi, I placed an order yesterday — when will it ship?
                 order_id:
                   type: string
@@ -30276,11 +30280,11 @@ paths:
                 priority:
                   type: string
                   enum:
-                    - urgent
                     - high
                     - normal
                     - low
                   default: normal
+                  description: '`urgent` is set by the store, not by the customer.'
                 thread_type:
                   type: string
                   enum:
@@ -31854,8 +31858,11 @@ paths:
         Returns all active third-party tool connections for the authenticated
         store. Powers the **Integrations → Developer → Connected Apps** panel.
 
-        **Authentication:** Secret key (`tybrite_sk_*`) required.
-        Publishable keys return 403.
+        **Authentication:** Secret key (`tybrite_sk_*`) or a merchant session
+        required. Publishable keys return 403, and so does a key issued to a
+        connected app (it carries granular scopes and cannot list the store's
+        other connections). A secret key lists the connections of its own
+        environment.
 
         **Rate limit:** 120 requests/hour per API key.
       security:
@@ -32224,18 +32231,18 @@ paths:
                   example: 5
                 title:
                   type: string
-                  description: Optional short headline for the review.
+                  description: Optional short headline for the review. At most 120 characters unless the store sets another limit.
                   example: Absolutely love it
                 body:
                   type: string
-                  description: Optional full review text.
+                  description: Optional full review text. At most 5,000 characters unless the store sets another limit.
                   example: Best purchase I've made this year. Quality is outstanding.
                 media_urls:
                   type: array
                   items:
                     type: string
                     format: uri
-                  description: Optional array of image or video URLs attached to the review.
+                  description: Optional array of image or video URLs attached to the review. Each must be an https link on the platform's media host; at most 5 unless the store sets another limit. Any other host is refused with 400.
                   example:
                     - https://cdn.example.com/review-photo-1.jpg
       responses:
