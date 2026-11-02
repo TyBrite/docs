@@ -225,3 +225,64 @@ const { data: payment } = await client.b2B.payInvoice({
   }
 }
 ```
+
+---
+
+## Approvals
+
+A supplier can hold a wholesale purchase above an approval threshold until someone at the buying business approves it. When the buyer orders through the API with no store of its own, its approvers decide those holds with these two methods. Each acts on the person behind the session; the person who placed an order can never approve it.
+
+### `listB2BApprovals(options)`
+
+Returns the purchases waiting for a decision on the wholesale accounts the signed-in person approves for, newest first (`{ data: B2bApproval[] }`). Each entry carries the amount in cents, the currency, the status and `can_decide`, which is `false` for an order this person placed. Requires exactly one of `xAuthToken`, `xExternalAuth` or `xIdpToken`.
+
+```typescript
+const { data: approvals } = await client.b2B.listB2BApprovals({ xAuthToken: session });
+const waiting = approvals.filter((a) => a.can_decide);
+```
+
+```json Response
+{
+  "data": [
+    {
+      "approval_id": "0b0c2d3e-6f5a-4c7b-9d8e-1a2b3c4d5e6f",
+      "subject_type": "purchase_order",
+      "subject_id": "7761b763-224b-43f2-a3f0-01139159b430",
+      "po_number": "PO-20260711-47cc6c",
+      "amount_cents": 250000,
+      "currency": "USD",
+      "status": "pending",
+      "requested_at": "2026-07-11T13:32:07.271Z",
+      "can_decide": true
+    }
+  ]
+}
+```
+
+### `decideB2BApproval(options)`
+
+Records the signed-in approver's decision on one held purchase. Approving a pay-now purchase makes the order payable; rejecting it releases nothing. Deciding an approval that is already decided returns it unchanged. Requires a secret key.
+
+- `id` — the approval id.
+- `requestBody.decision` — `approved` or `rejected`.
+- `requestBody.reason` — optional; a note of up to 500 characters kept with the decision.
+
+Responses: `400` for any other decision, `403` for a publishable key, a person who is not an approver of the account, or the person who placed the order, and `404` for an approval this person cannot see.
+
+```typescript
+const { data: decision } = await client.b2B.decideB2BApproval({
+  id: 'approval-uuid',
+  requestBody: { decision: 'approved', reason: "Within the quarter's budget" },
+  xAuthToken: session,
+});
+```
+
+```json Response
+{
+  "data": {
+    "approval_id": "0b0c2d3e-6f5a-4c7b-9d8e-1a2b3c4d5e6f",
+    "status": "approved",
+    "decided_by": "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c"
+  }
+}
+```

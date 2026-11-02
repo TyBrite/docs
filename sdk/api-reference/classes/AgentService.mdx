@@ -1981,6 +1981,20 @@ const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
 
 The shopper's approval. Send the `confirmation_token` with the shopper's credential, or — for a guest — with `contact` (`email` and `name`, optionally `phone`). `payment_method` optionally records the method the shopper intends to use.
 
+A guest confirmation is completed only with a six-digit code emailed to `contact.email`, unless the merchant has turned that check off. The first call sends the code and answers `409 person_proof_required`, with the masked address in `error.details.sent_to`; the code is valid for 15 minutes. Send the same request again with the code as `person_proof`. A wrong code returns `403 invalid_person_proof`; each code allows five tries (`429 too_many_attempts`), and an intent gets at most five codes (`429 too_many_codes`). Confirming with the shopper's credential never asks for a code.
+
+```typescript
+// Second call, after the guest reads the emailed code
+const { data } = await client.agent.confirmCheckoutIntent({
+  id: intent.id!,
+  requestBody: {
+    confirmation_token: intent.confirmation_token!,
+    contact: { email: 'john.doe@example.com', name: 'John Doe' },
+    person_proof: '482913',
+  },
+});
+```
+
 The basket is priced again first. If anything the shopper pays has changed — a line price, the discount, shipping, tax or the total — the response is `409 quote_changed` with the new quote in `error.details`, and nothing is placed: show the shopper the new figures and create a new intent. When the intent holds no stock and an item is no longer available in the quantity quoted, the response is `409 out_of_stock`: nothing is placed or charged, and the intent stays pending. Otherwise the order is placed with payment pending, using the held stock, and the response carries `payment.initialize_body` — the body `client.payments.initializePayment` takes, which your server sends signed like any other payment initialisation — and the store's payment methods.
 
 ```typescript
@@ -2119,8 +2133,13 @@ const { data } = await client.agent.confirmCheckoutIntent({
 
 Cancels a pending intent and releases its stock hold at once. The cancelled intent carries the shopper's personal data on the same terms as `getCheckoutIntent`; the response below is a publishable-key cancel.
 
+A secret key may cancel any intent. With a publishable key, an intent prepared for a signed-in shopper, or created with `confirmation_mode` `hosted`, is cancelled only with its `confirmation_token` in `requestBody` or with that shopper's credential; anything else returns `403 forbidden`, and a wrong token `403 invalid_token`. A guest intent in `token` mode is cancelled with its id alone.
+
 ```typescript
-const { data } = await client.agent.cancelCheckoutIntent({ id: intent.id! });
+const { data } = await client.agent.cancelCheckoutIntent({
+  id: intent.id!,
+  requestBody: { confirmation_token: intent.confirmation_token! },
+});
 ```
 
 ```json Response
