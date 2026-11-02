@@ -31961,6 +31961,7 @@ paths:
                   email: owner@store.com
                   email_verified: true
                   name: Jane Doe
+                  picture: https://cdn.tybritelabs.com/user-avatars/2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11/1786003914840.png
                 store_role: owner
         '400':
           description: |
@@ -45071,8 +45072,8 @@ components:
           type: object
           description: |
             The signed-in person, present when the `openid` scope was granted. `email` and `email_verified`
-            appear with the `email` scope, `name` with the `profile` scope. `sub` is the stable user id; link
-            accounts on it, never on the email address.
+            appear with the `email` scope, `name` and `picture` with the `profile` scope. `sub` is the stable
+            user id; link accounts on it, never on the email address.
           required:
             - sub
           properties:
@@ -45093,6 +45094,13 @@ components:
                 - string
                 - 'null'
               example: Jane Doe
+            picture:
+              type:
+                - string
+                - 'null'
+              format: uri
+              description: The person's profile photo as an absolute https URL that can be fetched without authentication, or null when they have none.
+              example: https://cdn.tybritelabs.com/user-avatars/2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11/1786003914840.png
         store_role:
           type: string
           enum:

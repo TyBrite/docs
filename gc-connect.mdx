@@ -248,14 +248,14 @@ They are enforced on every request: a key calling an endpoint it was not granted
 | `store:read` | Read store metadata and settings |
 | `openid` | Return the signed-in person's stable user id (`user.sub`) in the token response |
 | `email` | Add the person's `email` and `email_verified` to `user` |
-| `profile` | Add the person's `name` to `user` |
+| `profile` | Add the person's `name` and `picture` to `user` |
 | `team:read` | Read the store's owner and team members with `getConnectTeam`; accompanies another store scope |
 
 ---
 
 ## Signing people in
 
-The `openid`, `email` and `profile` scopes make the flow a sign-in as well as a store connection. The token response then carries a `user` object: `sub` (the stable user id), plus `email` and `email_verified` with the `email` scope and `name` with the `profile` scope. Accounts are linked on `sub`, which does not change when the person changes their email address.
+The `openid`, `email` and `profile` scopes make the flow a sign-in as well as a store connection. The token response then carries a `user` object: `sub` (the stable user id), plus `email` and `email_verified` with the `email` scope, and `name` and `picture` with the `profile` scope. `picture` is the person's profile photo as an absolute https URL that can be fetched without authentication, or `null` when they have none. Accounts are linked on `sub`, which does not change when the person changes their email address.
 
 Three modes follow from the scopes requested:
 
@@ -284,7 +284,8 @@ const params = new URLSearchParams({
     "sub": "2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11",
     "email": "john.doe@example.com",
     "email_verified": true,
-    "name": "John Doe"
+    "name": "John Doe",
+    "picture": "https://cdn.tybritelabs.com/user-avatars/2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11/1786003914840.png"
   },
   "scopes": ["openid", "email", "profile"],
   "client_id": "your-client-id"
