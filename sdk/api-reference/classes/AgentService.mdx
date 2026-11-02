@@ -501,7 +501,7 @@ for (const r of data.results!) {
 
 A hosted helper. It turns a request in plain language into the exact constraint object `search` accepts, and lists in `unresolved` the parts it could not map to a constraint — a recipient, an occasion — so the assistant can ask a follow-up question or carry them into its own reply.
 
-It debits the store's AI credits at the true cost of the call and reports the amount in `usage`. A call that fails keeps no credits. `query` is required, up to 500 characters.
+It debits the store's AI credits at the true cost of the call and reports the amount in `usage`. A call that fails keeps no credits. `query` is required, up to 500 characters. With a publishable key, helper calls count against a daily spend cap the merchant sets (USD 10 a store by default, up to USD 1,000; 0 turns publishable-key helper calls off). Over the cap the answer is `403 helpers_unavailable`. Secret keys are not capped.
 
 ```typescript
 const { data } = await client.agent.interpret({
@@ -1088,7 +1088,7 @@ const draftId = data.draft!.id;
 
 A hosted helper. An intent such as "a birthday gift for a runner, under 80" and an optional `budget` become a priced, stock-checked draft. The request is turned into constraints, the catalogue is searched for in-stock products, and a model chooses from those results only, by variant — it never supplies a price. Every amount in the draft comes from the quote, and `over_budget` reports whether the quoted total exceeds the budget. `selections` gives the reason for each choice.
 
-It debits the store's AI credits for both model steps; `usage` reports the total. A request that no in-stock product matches returns `404`.
+It debits the store's AI credits for both model steps; `usage` reports the total. A request that no in-stock product matches returns `404`. With a publishable key, helper calls count against a daily spend cap the merchant sets (USD 10 a store by default, up to USD 1,000; 0 turns publishable-key helper calls off). Over the cap the answer is `403 helpers_unavailable`. Secret keys are not capped.
 
 ```typescript
 const { data } = await client.agent.draftCartFromIntent({
@@ -1196,7 +1196,7 @@ const { data } = await client.agent.draftCartFromIntent({
 
 ### `getCartDraft`
 
-A draft with a fresh quote: prices, promotion and availability, and — when the draft was created with an address — shipping and tax, all read again at the time of the call.
+A draft with a fresh quote: prices, promotion and availability, and — when the draft was created with an address — shipping and tax, all read again at the time of the call. `quote.shipping_address` is `null` unless the call uses a secret key or the credential of the shopper the draft belongs to.
 
 ```typescript
 const { data } = await client.agent.getCartDraft({ id: draftId });
@@ -1981,7 +1981,7 @@ const { data } = await client.agent.getCheckoutIntent({ id: intent.id! });
 
 The shopper's approval. Send the `confirmation_token` with the shopper's credential, or — for a guest — with `contact` (`email` and `name`, optionally `phone`). `payment_method` optionally records the method the shopper intends to use.
 
-A guest confirmation is completed only with a six-digit code emailed to `contact.email`, unless the merchant has turned that check off. The first call sends the code and answers `409 person_proof_required`, with the masked address in `error.details.sent_to`; the code is valid for 15 minutes. Send the same request again with the code as `person_proof`. A wrong code returns `403 invalid_person_proof`; each code allows five tries (`429 too_many_attempts`), and an intent gets at most five codes (`429 too_many_codes`). Confirming with the shopper's credential never asks for a code.
+A guest confirmation is completed only with a six-digit code emailed to `contact.email`, unless the merchant has turned that check off. The first call sends the code and answers `409 person_proof_required`, with the masked address in `error.details.sent_to`; the code is valid for 15 minutes. Send the same request again with the code as `person_proof`. A wrong code returns `403 invalid_person_proof`; each code allows five tries (`429 too_many_attempts`), and an intent gets at most five codes, at least 60 seconds apart (`429 too_many_codes`). Confirming with the shopper's credential never asks for a code. With a marketplace key, the marketplace operator's setting decides whether the code is asked.
 
 ```typescript
 // Second call, after the guest reads the emailed code
@@ -2133,7 +2133,7 @@ const { data } = await client.agent.confirmCheckoutIntent({
 
 Cancels a pending intent and releases its stock hold at once. The cancelled intent carries the shopper's personal data on the same terms as `getCheckoutIntent`; the response below is a publishable-key cancel.
 
-A secret key may cancel any intent. With a publishable key, an intent prepared for a signed-in shopper, or created with `confirmation_mode` `hosted`, is cancelled only with its `confirmation_token` in `requestBody` or with that shopper's credential; anything else returns `403 forbidden`, and a wrong token `403 invalid_token`. A guest intent in `token` mode is cancelled with its id alone.
+A secret key may cancel any intent. With a publishable key, an intent prepared for a signed-in shopper, or created with `confirmation_mode` `hosted`, is cancelled only with its `confirmation_token` in `requestBody` or with that shopper's credential; anything else returns `403 forbidden`, and a wrong token `403 invalid_token`. A guest intent in `token` mode is cancelled with its id alone. With a marketplace key, a secret key cancels any of that marketplace's intents, and a publishable key cancels only with the intent's `confirmation_token`; a shopper credential does not stand in for it.
 
 ```typescript
 const { data } = await client.agent.cancelCheckoutIntent({
