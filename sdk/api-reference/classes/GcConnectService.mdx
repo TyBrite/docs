@@ -282,7 +282,7 @@ await client.gcConnect.connectRevoke({
 
 Returns all active connections for the authenticated store. This powers the Connected Apps section in the merchant's settings panel.
 
-**Requires a secret key (`tybrite_sk_*`).**
+**Requires a secret key (`tybrite_sk_*`).** A secret key lists the connections of its own environment. A merchant session may instead send `storeId` (required with a session, `400 invalid_request` without it; the store must be one the session's user owns or belongs to, otherwise `403 forbidden`) and optionally `environment` (`production` or `sandbox`) to restrict the list to one environment.
 
 ```typescript
 const { sessions } = await client.gcConnect.listConnectSessions();

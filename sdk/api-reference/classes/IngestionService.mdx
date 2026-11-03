@@ -218,6 +218,10 @@ console.log(sample.products); // model rows you can adapt to your own catalog
 
 ---
 
+### Publishing created products and the feed format
+
+`ingestProducts` and `testIngest` take two optional query options. `publish: true` publishes the products a batch creates to the storefront at once; it is off by default, existing products the batch updates keep their current state, and a row with `is_online_enabled` set to `false` stays offline. `format` (`json`, `xml` or `csv`) names the feed format when the content type does not.
+
 ## `testIngest`
 
 Parses and validates a feed **without writing anything** to your store, returning the same `summary` and `errors` a real import would — plus a `normalized_preview` showing how Galactic Core interpreted each row. **No API key required**, so you can perfect your feed format before integrating. Rate-limited to 60 requests/hour per IP.

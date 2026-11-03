@@ -330,7 +330,7 @@ const { thread, message } = await client.messaging.createConversation({
 
 <Note>Whenever `body.customer_id` is supplied, it must match the `customer_id` on `xAuthToken`. Returns `201` with both the new `thread` and the initial `message`.</Note>
 
-`thread_type` may be `dispute` for a conversation about a dispute over an order, including one opened from an existing thread about the same product, so the store has the history in one place. `thread_type` is inferred when it is not supplied: `order_inquiry` when `order_id` is present,
+`thread_type` may be `dispute` for a conversation about a dispute over an order or product; a shopper may open one. `source_thread_id` opens the conversation from an earlier thread of the same shopper, for example a dispute about a product the shopper had already written to the store about, so the store sees the history in one place. It must be a thread of this shopper in the same store and environment, otherwise the call returns `400`. When `order_id` or `product_id` is omitted, the earlier thread's value is used. The new thread returns `source_thread_id`, which is `null` when it was not opened from another. `thread_type` is inferred when it is not supplied: `order_inquiry` when `order_id` is present,
 `product_inquiry` when `product_id` is present, and `general` otherwise. The response echoes the
 resolved `thread_type` along with `order_id` and `product_id`, so a storefront can confirm the
 classification its own request produced without a follow-up read.
@@ -386,6 +386,7 @@ await client.messaging.replyToGuestThread({
 | `thread_type` | `enum` | `general`, `order_inquiry`, `product_inquiry`, `support`, `complaint`, `delivery`, `return`, `refund`, `technical`, `dispute`. `dispute` is a conversation about a dispute over an order. |
 | `unread_count_customer`| `number`| Store messages the shopper has not read. |
 | `unread_count_store`| `number`| Messages awaiting store reply. |
+| `source_thread_id` | `uuid \| null` | The earlier conversation this one was opened from. `null` when it was not opened from another. |
 | `customer_last_read_at`| `datetime \| null`| When the shopper last read the thread. Messages the store sent before this time have been read. |
 | `store_last_read_at`| `datetime \| null`| When the store last read the thread. Messages the shopper sent before this time have been read by the store. |
 

@@ -246,7 +246,7 @@ Each interface operation receives an `input` (with an `operation` discriminator 
 | `AuthProvider` | `{ operation: 'verifyToken', token, store_id, environment }` — the raw identity-provider token a shopper presented | `{ ok: true, external_id, email? }` if the token is valid, else `{ ok: false, error? }`. `external_id` resolves to the customer; a non-`ok` result or an unreachable endpoint leaves the request signed-out. |
 | `SocialPublisher` | `{ operation: 'listDestinations' }` · `{ operation: 'rules', destination }` · `{ operation: 'publish', destination, caption, title?, media: [{ url, kind, alt? }], link?, options, idempotency_key }` · `{ operation: 'insights', destination, provider_post_ids }` · and, for an extension that runs its own authorization, `{ operation: 'connect', redirect_uri, state }` — return the user to `redirect_uri` with `state` unchanged. | `listDestinations → { destinations: [{ external_id, display_name, avatar_url?, meta?: { rules? } }] }`; `rules → { rules: { max_images, max_videos, carousel, caption_max, title_max?, link_supported, text_only, media_only, image_mime_types?, video_mime_types?, max_image_bytes?, max_video_bytes?, max_video_seconds?, preferred_ratios?, platform_daily_cap? } }`; `publish → { ok: true, provider_post_id, permalink?, pending? }` or `{ ok: false, permanent?, reconnect? }`; `insights → { metrics: [{ provider_post_id, views?, reach?, likes?, comments?, shares?, saves?, clicks? }] }`; `connect → { consent_url }`. Every post is checked against your declared rules before `publish` is called; an answer of the wrong shape fails the post. |
 | `order.validate` | `{ operation: 'validate', customer_id, customer_email, customer_name, subtotal, tax_amount, shipping_amount, discount_amount, total_amount, currency, payment_method, item_count, shipping_address, billing_address }` — the order as the platform resolved it, not as the client sent it | `{ allow: boolean, reason?, annotations? }` — `allow: false` rejects the order with `422`. |
-| `SubscriptionBillingProvider` | `{ operation: 'createSubscription', plan, period, amount_cents, currency, subscriber_email, return_url, cancel_url, kind, reference }` / `{ operation: 'getSubscription' \| 'cancelSubscription', subscription_id }` — `amount_cents` is resolved from the operator's price catalogue, never sent by the client. | `createSubscription → { subscription_id, status, redirect_url, provider, provider_reference? }` — `redirect_url` is required; without one the subscription is treated as not created. `getSubscription → { subscription_id, status, next_billing_at?, provider }`; `cancelSubscription → { subscription_id, status, provider }`. Returning `{ error }` from any operation reports a billing failure. |
+| `SubscriptionBillingProvider` | `{ operation: 'createSubscription', plan, period, amount, currency, subscriber_email, return_url, cancel_url, kind, reference }` / `{ operation: 'getSubscription' \| 'cancelSubscription', subscription_id }` — `amount` (major currency units) is resolved from the operator's price catalogue, never sent by the client. | `createSubscription → { subscription_id, status, redirect_url, provider, provider_reference? }` — `redirect_url` is required; without one the subscription is treated as not created. `getSubscription → { subscription_id, status, next_billing_at?, provider }`; `cancelSubscription → { subscription_id, status, provider }`. Returning `{ error }` from any operation reports a billing failure. |
 
 <Note>
   **Declining a payment provider name you don't serve.** Your payment extension is dispatched for
@@ -361,7 +361,7 @@ Three operations, all admin-plane — no shopper is ever waiting on them:
 
 | Operation | You receive | You return |
 | :--- | :--- | :--- |
-| `createSubscription` | `store_id`, `plan`, `period`, `amount_cents`, `currency`, `subscriber_email`, `return_url`, `cancel_url` | `{ subscription_id, status, redirect_url?, provider }` |
+| `createSubscription` | `store_id`, `plan`, `period`, `amount`, `currency`, `subscriber_email`, `return_url`, `cancel_url` | `{ subscription_id, status, redirect_url?, provider }` |
 | `getSubscription` | `subscription_id` | `{ subscription_id, status, next_billing_at?, provider }` |
 | `cancelSubscription` | `subscription_id` | `{ subscription_id, status, provider }` |
 
@@ -369,11 +369,11 @@ Three operations, all admin-plane — no shopper is ever waiting on them:
 // A remote SubscriptionBillingProvider — verify the signature first (see above), then:
 switch (input.operation) {
   case 'createSubscription': {
-    // amount_cents is server-resolved from the agency's price catalogue. Charge THAT — a different
+    // amount (major currency units) is server-resolved from the agency's price catalogue. Charge THAT — a different
     // amount is a tampering attempt and is revalidated.
     const sub = await myGateway.subscriptions.create({
       email: input.subscriber_email,
-      amount: input.amount_cents,
+      amount: input.amount,
       currency: input.currency,
       returnUrl: input.return_url,
     });
@@ -394,7 +394,7 @@ switch (input.operation) {
 ```
 
 <Warning>
-  **`amount_cents` is server-authoritative.** It is resolved from the agency's own price catalogue, not
+  **`amount` is server-authoritative.** It is resolved from the agency's own price catalogue, not
   supplied by the browser. Charging a different amount does not change what the merchant is recorded
   as owing — it only creates a mismatch between your gateway and the platform's ledger.
 </Warning>

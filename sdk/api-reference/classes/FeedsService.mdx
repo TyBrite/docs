@@ -117,8 +117,7 @@ const xml = await client.feeds.getStoreCatalogFeedXml({
 // xml is a string you can serve or re-parse.
 ```
 
-**Catalog feed response codes:** `200` (the catalog), `404` (no public feed — not opted in, or a wrong
-or missing token), `429` (rate limit exceeded).
+**Catalog feed response codes:** `200` (the catalog), `401` (the feed token is missing or wrong), `403` (the store is on a trial or its subscription has lapsed, so it does not publish a feed), `404` (no public feed — not opted in, or an unknown store code), `429` (rate limit exceeded).
 
 ---
 
@@ -135,7 +134,7 @@ catalog changes.
 
 The file is published by default. A wholesale store publishes it once the merchant turns it on, and any
 merchant can turn it off from **Settings → Agentic commerce**. A store on a trial or with a lapsed
-subscription returns `404`. There is no token: the file is either public or not published.
+subscription returns `403`. There is no token: the file is either public or not published.
 
 **Parameters:**
 
@@ -175,7 +174,7 @@ const catalog = await client.feeds.getStoreLlmsFullTxt({ store: 'GTS001' });
 // - Standard — SKU ELEC-ACTIONCAM-01-de4a — 129.00 USD (was 149.00 USD) — in stock
 ```
 
-**llms.txt response codes:** `200` (the Markdown file), `404` (the store does not publish one), `429`
+**llms.txt response codes:** `200` (the Markdown file), `403` (the store is on a trial or its subscription has lapsed), `404` (the store does not publish one), `429`
 (rate limit exceeded).
 
 ### `getStoreAgentDescriptor`
@@ -252,4 +251,4 @@ The response is cached for five minutes.
 
 **Descriptor response codes:** `200` (the descriptor), `403` (the store is on a trial or its plan has
 lapsed), `404` (the store does not publish a descriptor, or does not exist), `429` (rate limit
-exceeded).
+exceeded), `500` (the descriptor is temporarily unavailable).

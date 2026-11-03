@@ -111,13 +111,13 @@ beacon: it never returns data to read, and a failed write is never surfaced to t
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
 | `requestBody.event_type` | `string` | `session_start` (first event of a session), `page_view` (each route change), `page_close` (on page hide, with `duration_ms`, to capture time-on-page and exit pages — send via `navigator.sendBeacon`), `search` (what the shopper searched for), or `search_result_click` (which result they clicked). |
-| `requestBody.search_query` | `string` | The shopper's search term. Required with `search`, ignored otherwise. Casing and extra spacing are normalised before storage, so they do not fragment the reporting. May also be sent as `q`. |
-| `requestBody.search_result_count` | `number` | How many results the search returned. Send `0` when it found nothing — that marks a search the catalogue could not answer. |
+| `requestBody.search_query` | `string` | The shopper's search term. Required with `search`, ignored otherwise; over 200 characters it is truncated. Casing and extra spacing are normalised before storage, so they do not fragment the reporting. May also be sent as `q`. |
+| `requestBody.search_result_count` | `number` | How many results the search returned; values above 100000 are capped. Send `0` when it found nothing — that marks a search the catalogue could not answer. |
 | `requestBody.search_result_product_id` | `string` | The product the shopper clicked. Required with `search_result_click` — a click with no product cannot be attributed to anything. |
-| `requestBody.search_result_position` | `number` | Its 1-based position in the results as shown. Optional, but worth sending: it distinguishes a product clicked because it was featured from one that would have been found anyway. |
+| `requestBody.search_result_position` | `number` | Its 1-based position in the results as shown; values above 1000 are capped. Optional, but worth sending: it distinguishes a product clicked because it was featured from one that would have been found anyway. |
 | `requestBody.duration_ms` | `number` | Time on the page in milliseconds; send with `page_close` to power average time-on-page and session-duration. |
 | `requestBody.visitor_id` | `string` | A stable per-visitor identifier you persist in the browser (e.g. localStorage). Lets returning visitors be recognised. |
-| `requestBody.session_id` | `string` | The browsing-session identifier — the same one you use for an anonymous cart. May also be sent as the `x-session-id` header. |
+| `requestBody.session_id` | `string` | The browsing-session identifier — the same one you use for an anonymous cart. Required in the body or the `x-session-id` header (`xSessionId` in the SDK); the body value takes precedence. |
 | `requestBody.path` | `string` | The page path. Only the pathname is stored; any query string is discarded. |
 | `requestBody.referrer` | `string` | The document referrer, when present. |
 | `requestBody.utm_source` `utm_medium` `utm_campaign` `utm_term` `utm_content` | `string` | UTM campaign parameters from the landing URL, when present. These drive revenue-by-source reporting. |
@@ -182,7 +182,7 @@ recent activity shows up within minutes.
 
 | Code | Meaning |
 | :--- | :--- |
-| `202` | The event was accepted (`{ recorded: true }`). Beacons are fire-and-forget. |
-| `400` | Missing `event_type`, `visitor_id`, or `session_id`. |
+| `202` | The event was accepted for processing. `recorded` is `false` when the event was not stored (a crawler user agent or an internal failure); the status is `202` either way, so a beacon never blocks the page. |
+| `400` | Missing `event_type`, `visitor_id`, or a session identifier in both the body and the `x-session-id` header. |
 | `401` | Invalid or missing API key. |
 | `429` | Rate limit exceeded. |

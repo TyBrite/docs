@@ -181,7 +181,7 @@ Events about a shopper's [Subscribe & Save](/subscribe-save) subscription and th
 | `shopper_subscription.paused` / `shopper_subscription.resumed` | The subscription was paused or resumed |
 | `shopper_subscription.skipped` | One delivery was skipped |
 | `shopper_subscription.renewal_upcoming` | The shopper was reminded that a renewal is due. Carries `due_on` |
-| `shopper_subscription.renewed` | A renewal was paid. Carries `order_id`, `amount_cents` and `currency` |
+| `shopper_subscription.renewed` | A renewal was paid. Carries `order_id`, `amount` (major currency units) and `currency` |
 | `shopper_subscription.renewal_failed` | A renewal payment failed. Carries `attempts`, `last_error_code` and `next_attempt_at` |
 | `shopper_subscription.action_required` | The shopper must confirm and pay a renewal |
 | `shopper_subscription.past_due` | Renewals kept failing |
@@ -336,7 +336,7 @@ Credit and approvals emit alongside them. `b2b.credit.threshold_reached` and
 `b2b.buyer.on_hold` / `b2b.buyer.released` when they are stopped or let go again. Each fires on the
 crossing rather than the level, so a buyer who stays above a threshold produces one event rather
 than one per order. `b2b.approval.requested` / `.approved` / `.rejected` follow an order the buying
-organisation routes for internal sign-off before it reaches the supplier.
+organisation routes for internal sign-off before it reaches the supplier; their payloads carry `amount` in major currency units.
 
 `b2b.replenishment.needed` fires when stock falls to its reorder point. It is the one wholesale
 event that fires in the buying store about its own stock rather than in the supplier's, and it

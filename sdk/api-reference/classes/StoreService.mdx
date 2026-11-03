@@ -189,7 +189,7 @@ A slug that has never been published, is switched off or has been unpublished re
 ---
 
 <Note>
-  **Caching and updates.** Responses are cached for up to five minutes and carry an `ETag`, so a browser or a server-side fetch can revalidate cheaply. To react to changes as they happen, subscribe to the `store.profile_updated`, `store.policy_published` and `store.policy_unpublished` [webhook events](/sdk/api-reference/classes/WebhooksService).
+  **Caching and updates.** Responses are cached for up to five minutes and carry an `ETag`, so a browser or a server-side fetch can revalidate cheaply; a request with a matching `If-None-Match` returns `304`. Passing `cache: false` (the `cache=false` query parameter) reads fresh data and reports `X-Cache: MISS`. To react to changes as they happen, subscribe to the `store.profile_updated`, `store.policy_published` and `store.policy_unpublished` [webhook events](/sdk/api-reference/classes/WebhooksService).
 </Note>
 
 ## Response Codes

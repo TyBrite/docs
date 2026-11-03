@@ -406,10 +406,10 @@ Constraint search over the catalogue. Every constraint is optional; each result 
 | `requestBody.price_min` / `price_max` | `number` | Bounds on the product's price: the price of its lowest-priced variant, sale included. |
 | `requestBody.category` | `string` | A category or subcategory name, case-insensitive. |
 | `requestBody.attributes` | `Record<string, string>` | Attribute name to wanted value, such as `{ "color": "black" }`, matched against variant attributes, product attributes, brand and category. |
-| `requestBody.in_stock_only` | `boolean` | Excludes a product only when no variant is in stock. |
+| `requestBody.in_stock_only` | `boolean` | Excludes a product only when no variant is in stock. The variants of up to 20 multi-variant products are checked per request; a product beyond that is excluded unless its default variant is in stock. |
 | `requestBody.limit` | `number` | 1–50, default 10. |
 
-`price` in a result is the shopper price of the product's lowest-priced variant (its online sale price when one applies, otherwise its online price), and `list_price` is that variant's online price. What a shopper pays after dynamic pricing, promotions, shipping and tax comes from `quote`. `semantic_search` reports whether ranking by meaning was used for this call.
+`price` in a result is the shopper price of the product's default variant (its online sale price when one applies, otherwise its online price), and `list_price` is that variant's online price. What a shopper pays after dynamic pricing, promotions, shipping and tax comes from `quote`. `semantic_search` reports whether ranking by meaning was used for this call.
 
 ```typescript
 const { data } = await client.agent.search({
@@ -998,7 +998,7 @@ const { data: quote } = await client.agent.quote({
 
 ### `createCartDraft`
 
-A draft cart, kept apart from the shopper's live cart, returned with its quote. An assistant can build and revise a draft through a conversation without touching what the shopper has already put in their cart. A draft expires after 24 hours. Sending a shopper credential records the draft against that shopper; without one the draft is anonymous.
+A draft cart, kept apart from the shopper's live cart, returned with its quote. An assistant can build and revise a draft through a conversation without touching what the shopper has already put in their cart. A draft expires after 24 hours. A line's `quantity` defaults to 1, and a variant's total across lines is at most 100. Sending a shopper credential records the draft against that shopper; without one the draft is anonymous.
 
 ```typescript
 const { data } = await client.agent.createCartDraft({
@@ -1191,7 +1191,7 @@ const { data } = await client.agent.draftCartFromIntent({
   "environment": "sandbox",
   "usage": {
     "credits_debited": 0.001873,
-    "model_class": "fast+reasoning"
+    "model_class": "fast"
   }
 }
 ```
@@ -1353,7 +1353,7 @@ const { data } = await client.agent.applyCartDraft({ id: draftId, xAuthToken: sh
 
 ### `getCartInsights`
 
-What an assistant might point out about a cart: lines that can no longer be bought as they are, prices that changed since each item was added, the promotion the cart qualifies for, the gap to free shipping for a destination, and complementary items where the store's recommendations provide them.
+What an assistant might point out about a cart: lines that can no longer be bought as they are, prices that changed since each item was added, the promotion the cart qualifies for, the gap to free shipping for a destination, and complementary items where the store's recommendations provide them. It quotes at most 25 lines.
 
 It reads a draft when `draftId` is given; otherwise the shopper's live cart, identified by their credential or, for an anonymous cart, by `xSessionId`. Pass the destination (`country`, and optionally `postalCode`, `city`, `state`, `line1`) for the free-shipping gap.
 
@@ -1520,7 +1520,7 @@ const { data } = await client.agent.getShopperContext({ xAuthToken: shopperToken
 
 ### `getWishlistInsights`
 
-The shopper's wishlist with each item's current stock and the price they would be charged now, and whether that price is below the item's list price — the basis for "back in stock" and "now cheaper" prompts.
+The shopper's wishlist (the first 25 items; the two counts cover those items) with each item's current stock and the price they would be charged now, and whether that price is below the item's list price — the basis for "back in stock" and "now cheaper" prompts.
 
 ```typescript
 const { data } = await client.agent.getWishlistInsights({ xAuthToken: shopperToken });
@@ -1553,7 +1553,7 @@ const { data } = await client.agent.getWishlistInsights({ xAuthToken: shopperTok
 
 ### `getReorderSuggestions`
 
-Items the shopper has bought before, most often first, with how many they usually buy and the current price and stock. Requires consent.
+Items the shopper has bought before, most often first, drawn from the 10 most-ordered items of the shopper's 50 most recent orders, with how many they usually buy and the current price and stock. Requires consent.
 
 ```typescript
 const { data } = await client.agent.getReorderSuggestions({ xAuthToken: shopperToken });
@@ -1640,7 +1640,7 @@ const { data } = await client.agent.getOrderStatus({
 
 ### `requestReturn`
 
-Lodges a return for one of the shopper's own orders — the action `getOrderStatus` lists as `request_return` while the order is inside the store's return window. Omit `items` to return every line in full, or name lines with `order_item_id` and a `quantity` (and optionally a `condition`). `reason_code` is one of `damaged`, `defective`, `wrong_item`, `not_as_described`, `wrong_size`, `no_longer_needed`, `arrived_late` or `other`; `other` also needs `reason_description`. `return_type` is `full_refund` (the default), `partial_refund`, `exchange` or `store_credit`.
+Lodges a return for one of the shopper's own orders — the action `getOrderStatus` lists as `request_return` while the order is inside the store's return window. The call returns `422` when the store has returns switched off (`returns_disabled`) or the order was not paid or was cancelled (`order_not_paid`). Omit `items` to return every line in full, or name lines with `order_item_id` and a `quantity` (and optionally a `condition`). `reason_code` is one of `damaged`, `defective`, `wrong_item`, `not_as_described`, `wrong_size`, `no_longer_needed`, `arrived_late` or `other`; `other` also needs `reason_description`. `return_type` is `full_refund` (the default), `partial_refund`, `exchange` or `store_credit`.
 
 The return arrives as `pending`: the store reviews it and decides the refund, and the shopper is emailed that it was received. It is the same return a shopper lodges through [Returns](/sdk/api-reference/classes/ReturnsService), so it appears in the store's returns queue like any other.
 
@@ -2336,7 +2336,7 @@ An eleventh instruction is refused with `409 mandate_limit`, and an address the 
 
 ### `listMandates`
 
-The shopper's standing instructions with this store, newest first, in every status: `active`, `paused`, `cancelled`, `completed` or `expired`. `last_intent_id` is the checkout intent prepared the last time one fired.
+The shopper's standing instructions with this store, newest first (at most 50), in every status: `active`, `paused`, `cancelled`, `completed` or `expired`. `last_intent_id` is the checkout intent prepared the last time one fired.
 
 ```typescript
 const { data } = await client.agent.listMandates({ xAuthToken: shopperToken });
@@ -2539,7 +2539,7 @@ const result = await client.agent.getSubscribeSaveOffersForProduct({
 
 ### `listAgentShopperSubscriptions`
 
-List the shopper's Subscribe & Save subscriptions.
+List the shopper's Subscribe & Save subscriptions, newest first (at most 100).
 
 The shopper's Subscribe & Save subscriptions with this store, newest first: status, delivery interval,
 the date of the next delivery, the items, the terms the shopper accepted, and the saved card's brand and

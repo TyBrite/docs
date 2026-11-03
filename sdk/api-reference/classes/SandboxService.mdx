@@ -56,6 +56,8 @@ const result = await client.sandbox.advanceSandboxTime({
 // returns {
 //     advanced_days: 30,
 //     shifted: { shopping_carts: 3, stock_reservations: 1, storefront_events: 120 },
+//     expired: { stock_reservations: 1 },
+//     crons_run: [ '…' ],
 //     not_shifted: { promotions: "...", gift_cards: "...", trial: "...", subscription_renewal: "..." }
 //   }
 ```
@@ -63,7 +65,7 @@ const result = await client.sandbox.advanceSandboxTime({
 <Note>
   Subscription trials/renewals are real account state and are not time-shifted; promotions and gift
   cards aren't shifted either. To test their expiry, seed one with a near-future `end_date` or
-  `expiry_date` using the methods below. The `not_shifted` object explains each.
+  `expiry_date` using the methods below. The `not_shifted` object explains each. `expired` reports what the shift made past due and expired, and `crons_run` lists the expiry and rollup jobs run for the sandbox after the shift.
 </Note>
 
 ### `replaySandboxWebhook`

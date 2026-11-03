@@ -163,7 +163,7 @@ await client.webhooks.createWebhookEndpoint({
 | Feature availability | `feature.status_changed` (a capability crossed between `available` / `awaiting_data` / `not_in_plan` / `unavailable` — carries `feature`, `status`, `previous_status`; `feature` includes `agentic_commerce` and `agent_hosted_helpers`) |
 | Catalog Sync | `feed.sync.completed` (a scheduled inbound feed-pull finished — carries `source_id`, `source_name`, `format`, `status`, `rows_total`, `rows_created`, `rows_updated`, `rows_skipped`, `rows_failed` and `errors`), `channel.sync.completed` (a sales-channel push finished — carries `channel_id`, `provider`, `status`, `items_total`, `items_pushed`, `items_rejected`) |
 | Wholesale (B2B) | `b2b.rfq.created`, `b2b.quote.sent` / `.accepted` / `.rejected`, `b2b.po.issued` / `.confirmed` / `.fulfilled`, `b2b.invoice.issued` / `.paid` / `.overdue` (stores with wholesale enabled) |
-| Wholesale credit &amp; approvals | `b2b.credit.threshold_reached`, `b2b.credit.exhausted`, `b2b.buyer.on_hold`, `b2b.buyer.released`, `b2b.approval.requested` / `.approved` / `.rejected` — each fires on the crossing, not the level |
+| Wholesale credit &amp; approvals | `b2b.credit.threshold_reached`, `b2b.credit.exhausted`, `b2b.buyer.on_hold`, `b2b.buyer.released`, `b2b.approval.requested` / `.approved` / `.rejected` (payloads carry `amount` in major currency units) — each fires on the crossing, not the level |
 | Wholesale replenishment | `b2b.replenishment.needed` — fires in the buying store about its own stock, carrying the supplier that line was last bought from |
 
 The store-lifecycle, content, and feature-availability events describe a store *growing* rather than a
@@ -447,7 +447,7 @@ for (const delivery of webhook_event.deliveries) {
 
 ### `retryWebhookEvent` 🔒
 
-Manually re-delivers the event to all enabled endpoints of the same environment that are subscribed to its event type. Each re-delivery is recorded as a new attempt. An event from the other environment than the calling key returns `404`.
+Manually re-delivers the event to all enabled endpoints of the same environment that are subscribed to its event type. Each re-delivery is recorded as a new attempt. A retry reaches a bounded number of endpoints per call; the `offset` option (the position of the first subscribed endpoint to retry) continues from the response's `next_offset`. An event from the other environment than the calling key returns `404`.
 
 ```typescript
 const result = await client.webhooks.retryWebhookEvent({

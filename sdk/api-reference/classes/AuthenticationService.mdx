@@ -48,6 +48,10 @@ A session is the object `{ access_token, refresh_token, expires_in, expires_at, 
 
 ---
 
+## The customer in sign-in responses
+
+Sign-in responses (`verifyRegistration`, `login`, `verifyOtp`, `resetPassword`, `claimAccountFromOrder`) and `getCurrentUser` return the shopper's customer record in a short form: identity, `phone` (an empty string when none was given), the `tier` the merchant assigned (new customers start at `bronze`), and purchase totals, with `total_purchases` in the store's currency as a decimal major-unit amount. The full record, with address, status, consent and custom fields, comes from the customer methods.
+
 ## Sign-up
 
 ### `register`

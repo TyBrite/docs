@@ -213,7 +213,7 @@ info:
     - Prevents accidental duplicate orders and duplicate update processing
 
     **Authentication Operations**:
-    - All auth endpoints: 10 requests/minute per IP address at each store, plus per-account limits
+    - Publishable keys: 10 requests a minute per address and store. Secret keys: the per-account limits on each endpoint
     - Prevents brute force attacks
     - Applies to login, register, password reset, etc.
 
@@ -1219,8 +1219,9 @@ paths:
             - When you need real-time data
               
             **Cache Headers:**
-            - `X-Cache: HIT` - Response served from cache
-            - `X-Cache: MISS` - Response fetched from database
+            - `X-Cache: HIT` - Response served from the edge cache (`HIT-304` for a 304 on an ETag match)
+            - `X-Cache: MISS` - Response read fresh (`cache=false`)
+            - The header can be absent on other 200 responses
             - `Cache-Control: public, max-age=300` - Browser/CDN caching
               
             **SDK Usage:**
@@ -1233,11 +1234,12 @@ paths:
           description: Store information retrieved successfully
           headers:
             X-Cache:
-              description: Cache status (HIT or MISS)
+              description: '`HIT` when served from the edge cache (`HIT-304` for a 304), `MISS` when `cache=false`; may be absent otherwise.'
               schema:
                 type: string
                 enum:
                   - HIT
+                  - HIT-304
                   - MISS
             Cache-Control:
               description: Cache control directives
@@ -1599,6 +1601,14 @@ paths:
         `store.profile_updated` webhook event to learn when the profile changes.
       security:
         - BearerAuth: []
+      parameters:
+        - name: cache
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Set to `false` to bypass the cache and read fresh data.
       responses:
         '200':
           description: The store profile
@@ -1670,6 +1680,8 @@ paths:
                       effective_date: '2026-09-30'
                   custom_fields: []
                   updated_at: '2026-09-30T12:07:48.007304+00:00'
+        '304':
+          description: Unchanged since the `If-None-Match` ETag.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -1697,6 +1709,14 @@ paths:
         merchant hosts that document elsewhere, and a storefront links to that address instead.
       security:
         - BearerAuth: []
+      parameters:
+        - name: cache
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Set to `false` to bypass the cache and read fresh data.
       responses:
         '200':
           description: The published documents
@@ -1730,6 +1750,8 @@ paths:
                     external_url: null
                     published_at: '2026-09-30T12:07:48.007304+00:00'
                     effective_date: '2026-09-30'
+        '304':
+          description: Unchanged since the `If-None-Match` ETag.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -1822,6 +1844,8 @@ paths:
                         We collect your name, email address and shipping address to fulfil your order.
                       format: markdown
                       external_url: null
+        '304':
+          description: Unchanged since the `If-None-Match` ETag.
         '400':
           description: The slug or version is malformed.
           content:
@@ -2133,7 +2157,7 @@ paths:
             - **Metadata:** `brand`, `featured`, `featured_order`, `tags`, `is_active`
             - **Nested:** `attributes.*`, `shipping_info.*`, `variant_attributes.*`
             - **Timestamps:** `created_at`, `updated_at`
-            - **Flags:** `has_variants`, `is_default`
+            - **Flags:** `has_variants`
             - **Delivery:** `fulfilment_kind`, `fulfilment`, `fulfilment.*`
             - **Reviews:** `average_rating`, `review_count` (list only)
               
@@ -2844,7 +2868,7 @@ paths:
             - **Inventory:** `stock`, `total_stock`, `last_restocked` (`last_restocked` is not in the default response — request it explicitly)
             - **Media:** `media`, `thumbnail_url`
             - **Metadata:** `brand`, `category_name`, `subcategory_name`, `attributes.*`
-            - **Flags:** `has_variants`, `variant_count`, `is_default`
+            - **Flags:** `has_variants`, `variant_count`
             - **Delivery:** `fulfilment_kind`, `fulfilment`, `fulfilment.*`
             - **Variants:** `variants` (includes all variant fields)
               
@@ -5014,8 +5038,9 @@ paths:
                   type: string
                   enum:
                     - shippo
+                    - carrier
                     - custom
-                  description: 'Where the chosen option came from — its `source` in `rates[]`: the store''s carrier account (`shippo`) or its custom shipping extension (`custom`).'
+                  description: 'Where the chosen option came from — its `source` in `rates[]`: the store''s carrier account (`shippo`, or the neutral spelling `carrier`) or its custom shipping extension (`custom`).'
                   example: shippo
                 shipping_parcel:
                   type: object
@@ -9712,7 +9737,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/CustomerAuthError'
+          $ref: '#/components/responses/UnauthorizedError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
@@ -9940,7 +9965,7 @@ paths:
         - name: x-tybrite-channel
           in: header
           required: false
-          description: Where the shopper was, when it is easier to set a header than to add a body field — `marketplace` from a marketplace storefront, `storefront` (or omitted) for a seller's own site. Equivalent to the `channel` body field; the body wins if both are sent. The marketplace itself is resolved server-side from the store, so this says which channel and cannot name one.
+          description: Where the shopper was, when it is easier to set a header than to add a body field — `marketplace` from a marketplace storefront, `storefront` (or omitted) for a seller's own site. A `marketplace` value in either this header or the `channel` body field attributes the event to the marketplace; `storefront` in one does not override `marketplace` in the other. The marketplace itself is resolved server-side from the store, so this says which channel and cannot name one.
           schema:
             type: string
             enum:
@@ -9991,7 +10016,7 @@ paths:
                   session_id: 7c1f0e8a-2b3c-4d5e-9f01-23456789abcd
       responses:
         '202':
-          description: The event was accepted.
+          description: Accepted for processing. `recorded` is `false` when the event was not stored (a crawler user agent or an internal failure); the status is 202 either way, so a beacon never blocks the page.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -9999,11 +10024,19 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - recorded
                 properties:
                   recorded:
                     type: boolean
-              example:
-                recorded: true
+              examples:
+                recorded:
+                  value:
+                    recorded: true
+                not_recorded:
+                  summary: A crawler user agent, or an internal failure
+                  value:
+                    recorded: false
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -10343,10 +10376,16 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: The browsing-session identifier, when it is easier to set a header than a body field. The body `session_id` takes precedence.
         - name: x-tybrite-channel
           in: header
           required: false
-          description: Where the shopper was, when it is easier to set a header than to add a body field — `marketplace` from a marketplace storefront, `storefront` (or omitted) for a seller's own site. Equivalent to the `channel` body field; the body wins if both are sent. The marketplace itself is resolved server-side from the store, so this says which channel and cannot name one.
+          description: Where the shopper was, when it is easier to set a header than to add a body field — `marketplace` from a marketplace storefront, `storefront` (or omitted) for a seller's own site. A `marketplace` value in either this header or the `channel` body field attributes the event to the marketplace; `storefront` in one does not override `marketplace` in the other. The marketplace itself is resolved server-side from the store, so this says which channel and cannot name one.
           schema:
             type: string
             enum:
@@ -10361,7 +10400,6 @@ paths:
               required:
                 - event_type
                 - visitor_id
-                - session_id
               properties:
                 event_type:
                   type: string
@@ -10401,7 +10439,7 @@ paths:
                   type: string
                   maxLength: 200
                   description: |
-                    The shopper's search term. Required when `event_type` is `search`, ignored
+                    The shopper's search term; over 200 characters it is truncated. Required when `event_type` is `search`, ignored
                     otherwise. Leading, trailing and repeated whitespace is collapsed and the term is
                     lowercased before storage, so casing and spacing do not fragment the reporting.
                     May also be sent as `q`.
@@ -10420,15 +10458,17 @@ paths:
                 search_result_position:
                   type: integer
                   minimum: 1
+                  maximum: 1000
                   description: |
-                    Its 1-based position in the results as they were shown. Optional, but worth
+                    Values above 1000 are capped. Its 1-based position in the results as they were shown. Optional, but worth
                     sending: it is what distinguishes a product that was clicked because it was
                     featured from one that would have been found anyway.
                 search_result_count:
                   type: integer
                   minimum: 0
+                  maximum: 100000
                   description: |
-                    How many results the search returned. Send `0` when it returned none — that is the
+                    Values above 100000 are capped. How many results the search returned. Send `0` when it returned none — that is the
                     signal a merchant most needs, marking a search the catalogue could not answer at
                     all. Only meaningful when `event_type` is `search`.
                 visitor_id:
@@ -10436,7 +10476,7 @@ paths:
                   description: A stable per-visitor identifier persisted in the browser (e.g. localStorage). Used to distinguish new vs returning visitors.
                 session_id:
                   type: string
-                  description: The shopper's browsing-session identifier (same concept as the anonymous cart session). May also be sent as the `x-session-id` header.
+                  description: The shopper's browsing-session identifier (same concept as the anonymous cart session). Required in the body or the `x-session-id` header; `400` if neither is sent.
                 path:
                   type: string
                   description: The page path being viewed. Only the pathname is stored; any query string is discarded.
@@ -10529,7 +10569,7 @@ paths:
                   content_product_id: 0c498ac2-4b77-4b03-a9b8-dbd4661efa54
       responses:
         '202':
-          description: The event was accepted.
+          description: Accepted for processing. `recorded` is `false` when the event was not stored (a crawler user agent or an internal failure); the status is 202 either way, so a beacon never blocks the page.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -10537,11 +10577,19 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - recorded
                 properties:
                   recorded:
                     type: boolean
-              example:
-                recorded: true
+              examples:
+                recorded:
+                  value:
+                    recorded: true
+                not_recorded:
+                  summary: A crawler user agent, or an internal failure
+                  value:
+                    recorded: false
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -10822,11 +10870,12 @@ paths:
         product attributes, brand and category — use `POST /v1/agent/fit` to check a product's published
         specifications.
 
-        `price` is the shopper price of the product's lowest-priced variant: its online sale price when one
+        `price` is the shopper price of the product's default variant: its online sale price when one
         applies, otherwise its online price. `list_price` is that variant's online price. The amount a shopper
         is charged, after dynamic pricing, promotions, shipping and tax, comes from `POST /v1/agent/quote`.
 
-        `in_stock_only` checks every variant of a multi-variant product before excluding it.
+        `in_stock_only` checks the variants of up to 20 multi-variant products per request; a product beyond that
+        is excluded unless its default variant is in stock.
 
         With a marketplace operator key the search spans every active seller of that marketplace and no other.
         Each result names its seller (`merchant_store_id`, `merchant_name`), `price` is in the marketplace's
@@ -11214,6 +11263,16 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+        '502':
+          description: The store's catalogue could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: upstream_error
+                  message: The catalogue could not be read
   /v1/agent/interpret:
     post:
       operationId: interpret
@@ -11343,8 +11402,6 @@ paths:
                           - 'null'
                         enum:
                           - fast
-                          - reasoning
-                          - fast+reasoning
                           - null
               example:
                 data:
@@ -11538,6 +11595,14 @@ paths:
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
+            X-Cache:
+              description: '`STALE` when a stored copy is served because the live read failed; `Warning` and `Age` then accompany it.'
+              schema:
+                type: string
+            Warning:
+              description: '`110 - Response is stale` when `X-Cache` is `STALE`.'
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -11805,6 +11870,16 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+        '502':
+          description: The product could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: upstream_error
+                  message: The product could not be read
   /v1/agent/compare:
     post:
       operationId: compare
@@ -12067,6 +12142,7 @@ paths:
                   format: uuid
                 constraints:
                   type: object
+                  minProperties: 1
                   properties:
                     query:
                       type: string
@@ -12146,8 +12222,28 @@ paths:
                               type: string
                       alternatives:
                         type: array
+                        description: In-stock products that meet more of the constraints.
                         items:
                           type: object
+                          properties:
+                            product_id:
+                              type: string
+                              format: uuid
+                            name:
+                              type: string
+                            price:
+                              type: number
+                            in_stock:
+                              type: boolean
+                            met:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  constraint:
+                                    type: string
+                                  detail:
+                                    type: string
                   evidence:
                     type: array
                     description: Where each figure in `data` was read from.
@@ -12594,7 +12690,6 @@ paths:
                     type: object
                     required:
                       - variant_id
-                      - quantity
                     properties:
                       variant_id:
                         type: string
@@ -12603,6 +12698,8 @@ paths:
                         type: integer
                         minimum: 1
                         maximum: 100
+                        default: 1
+                        description: Defaults to 1. A variant's total across lines is at most 100.
                       merchant_store_id:
                         type: string
                         format: uuid
@@ -12649,6 +12746,7 @@ paths:
                         enum:
                           - custom
                           - shippo
+                          - carrier
             example:
               items:
                 - variant_id: fbe89cdf-90a3-4050-a43b-e4c42302484a
@@ -13924,8 +14022,6 @@ paths:
                           - 'null'
                         enum:
                           - fast
-                          - reasoning
-                          - fast+reasoning
                           - null
               example:
                 data:
@@ -13997,7 +14093,7 @@ paths:
                 environment: sandbox
                 usage:
                   credits_debited: 0.001873
-                  model_class: fast+reasoning
+                  model_class: fast
         '400':
           description: The request is invalid
           headers:
@@ -14924,7 +15020,7 @@ paths:
         For a draft (`draft_id`) or the shopper's live cart (a shopper credential, or `x-session-id` for an
         anonymous cart): lines that can no longer be bought as they are, prices that changed since each item was
         added, the promotion the cart qualifies for, the gap to free shipping when a destination is given, and
-        complementary items where the store's recommendations provide them.
+        complementary items where the store's recommendations provide them. Quotes at most 25 lines.
       security:
         - BearerAuth: []
       parameters:
@@ -15718,7 +15814,7 @@ paths:
       summary: Get wishlist insights
       description: |-
         The shopper's wishlist with each item's current stock and the price they would be charged now, and
-        whether that price is below the item's list price. Requires the shopper's credential.
+        whether that price is below the item's list price. Reads at most the first 25 wishlist items; the two counts cover those items. Requires the shopper's credential.
       security:
         - BearerAuth: []
       parameters:
@@ -15867,7 +15963,8 @@ paths:
       summary: Get reorder suggestions
       description: |-
         Items the shopper has bought before, most often first, with how many they usually buy and the current
-        price and stock. Requires the shopper's credential and their consent.
+        price and stock. Considers the 10 most-ordered items from the shopper's 50 most recent orders. Requires the
+        shopper's credential and their consent.
       security:
         - BearerAuth: []
       parameters:
@@ -16447,6 +16544,16 @@ paths:
           $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '422':
+          description: The store has returns switched off (`returns_disabled`), or the order was not paid or was cancelled (`order_not_paid`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: order_not_paid
+                  message: This order was not paid, or was cancelled, so there is nothing to return.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -16458,7 +16565,7 @@ paths:
         - Agent
       summary: List the shopper's standing instructions
       description: |-
-        The shopper's standing instructions with this store, newest first. Requires the shopper's credential and
+        The shopper's standing instructions with this store, newest first, at most 50. Requires the shopper's credential and
         personalization consent.
       security:
         - BearerAuth: []
@@ -17358,7 +17465,7 @@ paths:
         - Agent
       summary: List the shopper's Subscribe & Save subscriptions
       description: |-
-        The shopper's Subscribe & Save subscriptions with this store, newest first: status, delivery interval,
+        The shopper's Subscribe & Save subscriptions with this store, newest first (at most 100): status, delivery interval,
         the date of the next delivery, the items, the terms the shopper accepted, and the saved card's brand and
         last four digits. Requires the shopper's credential and personalization consent.
       security:
@@ -17390,6 +17497,50 @@ paths:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
+              example:
+                data:
+                  subscriptions:
+                    - id: 64a67bdc-8fd1-42b4-89b6-ac17372bc05e
+                      items:
+                        - name: Linen Throw Pillow
+                          quantity: 1
+                          product_id: 9f1b6656-c238-47c3-8ad3-b91986b73746
+                          variant_id: 43894fd2-9dda-454a-9429-3a50a96eec5e
+                      terms:
+                        min_cycles: 0
+                        offer_name: SSPROBE-live
+                        discount_type: percentage
+                        free_shipping: false
+                        interval_unit: month
+                        discount_value: 1000
+                        interval_count: 1
+                        max_skips_per_year: null
+                        consent_text_version: probe-1
+                        price_rise_notice_bps: 1000
+                        stacks_with_promotions: false
+                        first_order_discount_value: 2000
+                      status: active
+                      offer_id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                      created_at: '2026-11-03T10:40:55.397324+00:00'
+                      offer_label: SSPROBE-live
+                      paused_until: null
+                      renewal_mode: confirm
+                      interval_unit: month
+                      interval_count: 1
+                      payment_method: null
+                      pending_action: null
+                      next_delivery_on: '2027-01-03'
+                      fulfillment_method: delivery
+                      pickup_location_id: null
+                      cancel_effective_on: null
+                      shipping_address_id: null
+                      deliveries_completed: 1
+                evidence:
+                  - source: subscribe_save
+                    field: subscriptions
+                computed_at: '2026-11-03T10:41:11.928Z'
+                currency: null
+                environment: sandbox
               schema:
                 type: object
                 required:
@@ -17569,7 +17720,187 @@ paths:
                   description: Optional. A subscription is always confirmed on the hosted page.
       responses:
         '200':
-          description: A replay of an earlier request with the same `Idempotency-Key`; the token and link are null.
+          description: A replay of an earlier request with the same `Idempotency-Key`; the token and link are null and `data.replayed` is true.
+          content:
+            application/json:
+              example:
+                data:
+                  id: 275b5cd0-0a33-498c-be56-7ff4daf54aa2
+                  status: pending_confirmation
+                  confirmation_mode: hosted
+                  expires_at: '2026-11-03T11:11:17.42+00:00'
+                  order_id: null
+                  customer_id: 45212a7f-e52c-464d-957d-fd0065d59850
+                  total: 503.96
+                  currency: EUR
+                  items:
+                    - quantity: 1
+                      variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                  quote:
+                    tax:
+                      amount: 69.51
+                      source: fallback
+                      status: quoted
+                      prices_include_tax: true
+                    lines:
+                      - sku: sku-managed-1
+                        name: The Multi-managed Snowboard
+                        stock: 80
+                        quantity: 1
+                        available: true
+                        line_total: 629.95
+                        list_price: 629.95
+                        product_id: f7e24571-1fa9-4264-9ca4-298de2336a35
+                        unit_price: 629.95
+                        variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                        variant_name: Default
+                        category_name: General
+                        unavailable_reason: null
+                    currency: EUR
+                    discount:
+                      amount: 125.99
+                      promotion: null
+                      subscribe_save_discount: 125.99
+                    shipping:
+                      amount: 0
+                      status: quoted
+                      is_free: true
+                      description: 'Free delivery: the order qualifies'
+                      free_threshold: 100
+                    subtotal: 629.95
+                    grand_total: 503.96
+                    subscribe_save:
+                      currency: EUR
+                      offer_id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                      intervals:
+                        - unit: month
+                          count: 1
+                        - unit: week
+                          count: 2
+                      min_cycles: 0
+                      covered_items:
+                        - quantity: 1
+                          product_id: f7e24571-1fa9-4264-9ca4-298de2336a35
+                          variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                          unit_price: 629.95
+                      free_shipping: false
+                      first_delivery:
+                        price: 503.96
+                        discount: 125.99
+                      later_delivery:
+                        price: 566.96
+                        discount: 62.99
+                      stacks_with_promotions: false
+                    total_is_final: true
+                    shipping_address:
+                      city: New York
+                      line1: 350 Fifth Avenue
+                      region: NY
+                      country: US
+                      postal_code: '10118'
+                    unavailable_count: 0
+                  created_at: '2026-11-03T10:41:17.443926+00:00'
+                  confirmed_at: null
+                  cancelled_at: null
+                  subscribe_save:
+                    offer_id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                    interval_unit: month
+                    interval_count: 1
+                    terms:
+                      text_version: agent-ss-1
+                      lines:
+                        - 'You are subscribing to: 1 × The Multi-managed Snowboard · Default.'
+                        - 'Price per delivery today: €566.96 after your Subscribe & Save discount (you save €62.99 each time).'
+                        - Your first delivery is €503.96.
+                        - Shipping and any tax are added to each delivery.
+                        - Each delivery is priced at the store's price on the day, less your discount.
+                        - Delivered every month. It renews automatically until you cancel.
+                        - 'First charge: 3 November 2026, when you pay for this order. Your next delivery is on 3 December 2026.'
+                        - 'There is no minimum: you can cancel at any time.'
+                        - Cancel online at any time from your account with Galactic Core Store, from the link in any reminder email, or through your shopping assistant. You are reminded before each renewal.
+                      agreement: 'I agree to these terms. I understand that Galactic Core Store will charge my payment method for each delivery until I cancel: a saved card where my payment provider allows it, otherwise a payment link I am sent each time.'
+                      text: |-
+                        You are subscribing to: 1 × The Multi-managed Snowboard · Default.
+                        Price per delivery today: €566.96 after your Subscribe & Save discount (you save €62.99 each time).
+                        Your first delivery is €503.96.
+                        Shipping and any tax are added to each delivery.
+                        Each delivery is priced at the store's price on the day, less your discount.
+                        Delivered every month. It renews automatically until you cancel.
+                        First charge: 3 November 2026, when you pay for this order. Your next delivery is on 3 December 2026.
+                        There is no minimum: you can cancel at any time.
+                        Cancel online at any time from your account with Galactic Core Store, from the link in any reminder email, or through your shopping assistant. You are reminded before each renewal.
+                        I agree to these terms. I understand that Galactic Core Store will charge my payment method for each delivery until I cancel: a saved card where my payment provider allows it, otherwise a payment link I am sent each time.
+                      first_charge_on: '2026-11-03'
+                      next_delivery_on: '2026-12-03'
+                      currency: EUR
+                      first_delivery_price: 503.96
+                      price_per_delivery: 566.96
+                      min_deliveries: 0
+                      free_shipping: false
+                    accepted_at: null
+                  confirmation_token: null
+                  confirmation_url: null
+                  replayed: true
+                evidence:
+                  - source: pricing
+                    operation: GET /v1/prices/products/{id}
+                    id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                    field: resolved_price
+                  - source: subscribe_save
+                    operation: offer quote
+                    id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                    field: first_delivery
+                  - source: shipping
+                    operation: shipping quote
+                    field: fee
+                  - source: tax
+                    operation: POST /v1/tax/preview
+                    field: tax_amount
+                  - source: orders
+                    operation: POST /v1/checkout/reserve
+                    field: reservations
+                computed_at: '2026-11-03T10:41:17.476Z'
+                currency: EUR
+                environment: sandbox
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    description: The checkout intent, as in the 201, with `replayed` true.
+                    additionalProperties: true
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                      confirmation_token:
+                        type:
+                          - string
+                          - 'null'
+                      confirmation_url:
+                        type:
+                          - string
+                          - 'null'
+                      replayed:
+                        type: boolean
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type:
+                      - string
+                      - 'null'
+                  environment:
+                    type: string
         '201':
           description: The checkout is prepared
           headers:
@@ -17577,6 +17908,144 @@ paths:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
+              example:
+                data:
+                  id: 275b5cd0-0a33-498c-be56-7ff4daf54aa2
+                  status: pending_confirmation
+                  confirmation_mode: hosted
+                  expires_at: '2026-11-03T11:11:17.42+00:00'
+                  order_id: null
+                  customer_id: 45212a7f-e52c-464d-957d-fd0065d59850
+                  total: 503.96
+                  currency: EUR
+                  items:
+                    - quantity: 1
+                      variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                  quote:
+                    tax:
+                      amount: 69.51
+                      source: fallback
+                      status: quoted
+                      prices_include_tax: true
+                    lines:
+                      - sku: sku-managed-1
+                        name: The Multi-managed Snowboard
+                        stock: 80
+                        quantity: 1
+                        available: true
+                        line_total: 629.95
+                        list_price: 629.95
+                        product_id: f7e24571-1fa9-4264-9ca4-298de2336a35
+                        unit_price: 629.95
+                        variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                        variant_name: Default
+                        category_name: General
+                        unavailable_reason: null
+                    currency: EUR
+                    discount:
+                      amount: 125.99
+                      promotion: null
+                      subscribe_save_discount: 125.99
+                    shipping:
+                      amount: 0
+                      status: quoted
+                      is_free: true
+                      description: 'Free delivery: the order qualifies'
+                      free_threshold: 100
+                    subtotal: 629.95
+                    grand_total: 503.96
+                    subscribe_save:
+                      currency: EUR
+                      offer_id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                      intervals:
+                        - unit: month
+                          count: 1
+                        - unit: week
+                          count: 2
+                      min_cycles: 0
+                      covered_items:
+                        - quantity: 1
+                          product_id: f7e24571-1fa9-4264-9ca4-298de2336a35
+                          variant_id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                          unit_price: 629.95
+                      free_shipping: false
+                      first_delivery:
+                        price: 503.96
+                        discount: 125.99
+                      later_delivery:
+                        price: 566.96
+                        discount: 62.99
+                      stacks_with_promotions: false
+                    total_is_final: true
+                    shipping_address:
+                      city: New York
+                      line1: 350 Fifth Avenue
+                      region: NY
+                      country: US
+                      postal_code: '10118'
+                    unavailable_count: 0
+                  created_at: '2026-11-03T10:41:17.443926+00:00'
+                  confirmed_at: null
+                  cancelled_at: null
+                  subscribe_save:
+                    offer_id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                    interval_unit: month
+                    interval_count: 1
+                    terms:
+                      text_version: agent-ss-1
+                      lines:
+                        - 'You are subscribing to: 1 × The Multi-managed Snowboard · Default.'
+                        - 'Price per delivery today: €566.96 after your Subscribe & Save discount (you save €62.99 each time).'
+                        - Your first delivery is €503.96.
+                        - Shipping and any tax are added to each delivery.
+                        - Each delivery is priced at the store's price on the day, less your discount.
+                        - Delivered every month. It renews automatically until you cancel.
+                        - 'First charge: 3 November 2026, when you pay for this order. Your next delivery is on 3 December 2026.'
+                        - 'There is no minimum: you can cancel at any time.'
+                        - Cancel online at any time from your account with Galactic Core Store, from the link in any reminder email, or through your shopping assistant. You are reminded before each renewal.
+                      agreement: 'I agree to these terms. I understand that Galactic Core Store will charge my payment method for each delivery until I cancel: a saved card where my payment provider allows it, otherwise a payment link I am sent each time.'
+                      text: |-
+                        You are subscribing to: 1 × The Multi-managed Snowboard · Default.
+                        Price per delivery today: €566.96 after your Subscribe & Save discount (you save €62.99 each time).
+                        Your first delivery is €503.96.
+                        Shipping and any tax are added to each delivery.
+                        Each delivery is priced at the store's price on the day, less your discount.
+                        Delivered every month. It renews automatically until you cancel.
+                        First charge: 3 November 2026, when you pay for this order. Your next delivery is on 3 December 2026.
+                        There is no minimum: you can cancel at any time.
+                        Cancel online at any time from your account with Galactic Core Store, from the link in any reminder email, or through your shopping assistant. You are reminded before each renewal.
+                        I agree to these terms. I understand that Galactic Core Store will charge my payment method for each delivery until I cancel: a saved card where my payment provider allows it, otherwise a payment link I am sent each time.
+                      first_charge_on: '2026-11-03'
+                      next_delivery_on: '2026-12-03'
+                      currency: EUR
+                      first_delivery_price: 503.96
+                      price_per_delivery: 566.96
+                      min_deliveries: 0
+                      free_shipping: false
+                    accepted_at: null
+                  confirmation_token: <token>
+                  confirmation_url: https://gc.tybritelabs.com/confirm/275b5cd0-0a33-498c-be56-7ff4daf54aa2#t=<token>
+                evidence:
+                  - source: pricing
+                    operation: GET /v1/prices/products/{id}
+                    id: 86eb90c5-48ea-41b0-a82e-069b1b170f1e
+                    field: resolved_price
+                  - source: subscribe_save
+                    operation: offer quote
+                    id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                    field: first_delivery
+                  - source: shipping
+                    operation: shipping quote
+                    field: fee
+                  - source: tax
+                    operation: POST /v1/tax/preview
+                    field: tax_amount
+                  - source: orders
+                    operation: POST /v1/checkout/reserve
+                    field: reservations
+                computed_at: '2026-11-03T10:41:17.476Z'
+                currency: EUR
+                environment: sandbox
               schema:
                 type: object
                 required:
@@ -17607,6 +18076,34 @@ paths:
                       expires_at:
                         type: string
                         format: date-time
+                      order_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                        description: Null until the checkout is confirmed.
+                      customer_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                        description: The signed-in shopper the checkout was prepared for.
+                      created_at:
+                        type: string
+                        format: date-time
+                      confirmed_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      cancelled_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      replayed:
+                        type: boolean
+                        description: True on a replay of an earlier request with the same `Idempotency-Key`.
                       total:
                         type: number
                         description: What the first order costs, shipping and tax included.
@@ -17688,7 +18185,15 @@ paths:
                       - production
                       - sandbox
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: The request is invalid (`invalid_request`, including an interval the offer does not allow), or the offer does not cover the items or is no longer available (`subscribe_save_not_applicable`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: subscribe_save_not_applicable
+                  message: This Subscribe & Save offer is not available for these items.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
@@ -17705,8 +18210,7 @@ paths:
                   message: The shopper has not granted personalization. Ask them to, then call POST /v1/agent/me/consent.
         '409':
           description: |-
-            Not possible as asked. `account_required`: no shopper credential was sent. `subscribe_save_not_applicable`
-            (400): the offer does not cover the items or is no longer available. `items_unavailable`,
+            Not possible as asked. `account_required`: no shopper credential was sent. `items_unavailable`,
             `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached` and `idempotency_conflict` are
             as for any checkout intent.
           content:
@@ -17779,6 +18283,50 @@ paths:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
+              example:
+                data:
+                  subscription:
+                    id: 64a67bdc-8fd1-42b4-89b6-ac17372bc05e
+                    items:
+                      - name: Linen Throw Pillow
+                        quantity: 1
+                        product_id: 9f1b6656-c238-47c3-8ad3-b91986b73746
+                        variant_id: 43894fd2-9dda-454a-9429-3a50a96eec5e
+                    terms:
+                      min_cycles: 0
+                      offer_name: SSPROBE-live
+                      discount_type: percentage
+                      free_shipping: false
+                      interval_unit: month
+                      discount_value: 1000
+                      interval_count: 1
+                      max_skips_per_year: null
+                      consent_text_version: probe-1
+                      price_rise_notice_bps: 1000
+                      stacks_with_promotions: false
+                      first_order_discount_value: 2000
+                    status: paused
+                    offer_id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                    created_at: '2026-11-03T10:40:55.397324+00:00'
+                    offer_label: SSPROBE-live
+                    paused_until: null
+                    renewal_mode: confirm
+                    interval_unit: month
+                    interval_count: 1
+                    payment_method: null
+                    pending_action: null
+                    next_delivery_on: '2027-01-03'
+                    fulfillment_method: delivery
+                    pickup_location_id: null
+                    cancel_effective_on: null
+                    shipping_address_id: null
+                    deliveries_completed: 1
+                evidence:
+                  - source: subscribe_save
+                    field: subscription_manage
+                computed_at: '2026-11-03T10:41:12.328Z'
+                currency: null
+                environment: sandbox
               schema:
                 type: object
                 required:
@@ -17878,6 +18426,50 @@ paths:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
+              example:
+                data:
+                  subscription:
+                    id: 64a67bdc-8fd1-42b4-89b6-ac17372bc05e
+                    items:
+                      - name: Linen Throw Pillow
+                        quantity: 1
+                        product_id: 9f1b6656-c238-47c3-8ad3-b91986b73746
+                        variant_id: 43894fd2-9dda-454a-9429-3a50a96eec5e
+                    terms:
+                      min_cycles: 0
+                      offer_name: SSPROBE-live
+                      discount_type: percentage
+                      free_shipping: false
+                      interval_unit: month
+                      discount_value: 1000
+                      interval_count: 1
+                      max_skips_per_year: null
+                      consent_text_version: probe-1
+                      price_rise_notice_bps: 1000
+                      stacks_with_promotions: false
+                      first_order_discount_value: 2000
+                    status: active
+                    offer_id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                    created_at: '2026-11-03T10:40:55.397324+00:00'
+                    offer_label: SSPROBE-live
+                    paused_until: null
+                    renewal_mode: confirm
+                    interval_unit: month
+                    interval_count: 1
+                    payment_method: null
+                    pending_action: null
+                    next_delivery_on: '2027-02-03'
+                    fulfillment_method: delivery
+                    pickup_location_id: null
+                    cancel_effective_on: null
+                    shipping_address_id: null
+                    deliveries_completed: 1
+                evidence:
+                  - source: subscribe_save
+                    field: subscription_manage
+                computed_at: '2026-11-03T10:41:13.284Z'
+                currency: null
+                environment: sandbox
               schema:
                 type: object
                 required:
@@ -18042,7 +18634,7 @@ paths:
                   deliveries_remaining: 2
                 evidence:
                   - source: subscribe_save
-                    field: shopper_subscription_manage
+                    field: subscription_manage
                 computed_at: '2026-10-28T11:25:08.030Z'
                 currency: null
                 environment: production
@@ -18154,6 +18746,50 @@ paths:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
+              example:
+                data:
+                  subscription:
+                    id: 64a67bdc-8fd1-42b4-89b6-ac17372bc05e
+                    items:
+                      - name: Linen Throw Pillow
+                        quantity: 1
+                        product_id: 9f1b6656-c238-47c3-8ad3-b91986b73746
+                        variant_id: 43894fd2-9dda-454a-9429-3a50a96eec5e
+                    terms:
+                      min_cycles: 0
+                      offer_name: SSPROBE-live
+                      discount_type: percentage
+                      free_shipping: false
+                      interval_unit: month
+                      discount_value: 1000
+                      interval_count: 1
+                      max_skips_per_year: null
+                      consent_text_version: probe-1
+                      price_rise_notice_bps: 1000
+                      stacks_with_promotions: false
+                      first_order_discount_value: 2000
+                    status: active
+                    offer_id: 03f8169b-c7d4-4334-9742-9ebed5238a2f
+                    created_at: '2026-11-03T10:40:55.397324+00:00'
+                    offer_label: SSPROBE-live
+                    paused_until: null
+                    renewal_mode: confirm
+                    interval_unit: week
+                    interval_count: 2
+                    payment_method: null
+                    pending_action: null
+                    next_delivery_on: '2026-12-15'
+                    fulfillment_method: delivery
+                    pickup_location_id: null
+                    cancel_effective_on: null
+                    shipping_address_id: null
+                    deliveries_completed: 1
+                evidence:
+                  - source: subscribe_save
+                    field: subscription_manage
+                computed_at: '2026-11-03T10:41:13.708Z'
+                currency: null
+                environment: sandbox
               schema:
                 type: object
                 required:
@@ -18360,6 +18996,7 @@ paths:
                         enum:
                           - custom
                           - shippo
+                          - carrier
                 confirmation_mode:
                   type: string
                   enum:
@@ -18386,6 +19023,73 @@ paths:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
+              example:
+                data:
+                  id: cdd0070c-01d1-4095-97d2-29665e51ee46
+                  status: pending_confirmation
+                  confirmation_mode: token
+                  expires_at: '2026-11-03T11:09:23.756+00:00'
+                  order_id: null
+                  customer_id: null
+                  total: 2629.95
+                  currency: EUR
+                  items:
+                    - quantity: 1
+                      variant_id: df6d046e-2c81-403f-b4e4-f8e42017811b
+                  quote:
+                    tax:
+                      amount: 362.75
+                      source: fallback
+                      status: quoted
+                      prices_include_tax: true
+                    lines:
+                      - sku: sku-hosted-1
+                        name: The 3p Fulfilled Snowboard
+                        stock: 14
+                        quantity: 1
+                        available: true
+                        line_total: 2629.95
+                        list_price: 2629.95
+                        product_id: 02525ff5-0916-4f00-857c-c2c6237e671b
+                        unit_price: 2629.95
+                        variant_id: df6d046e-2c81-403f-b4e4-f8e42017811b
+                        variant_name: Default
+                        category_name: General
+                        unavailable_reason: null
+                    currency: EUR
+                    discount:
+                      amount: 0
+                      promotion: null
+                    shipping:
+                      amount: 0
+                      status: quoted
+                      is_free: true
+                      description: 'Free delivery: the order qualifies'
+                      free_threshold: 100
+                    subtotal: 2629.95
+                    grand_total: 2629.95
+                    total_is_final: true
+                    shipping_address:
+                      city: New York
+                      name: Test Shopper
+                      line1: 350 Fifth Avenue
+                      state: NY
+                      country: US
+                      postal_code: '10118'
+                    unavailable_count: 0
+                  created_at: '2026-11-03T10:39:23.780689+00:00'
+                  confirmed_at: null
+                  cancelled_at: null
+                  confirmation_token: null
+                  confirmation_url: null
+                  replayed: true
+                evidence:
+                  - source: agent
+                    id: cdd0070c-01d1-4095-97d2-29665e51ee46
+                    field: checkout_intent
+                computed_at: '2026-11-03T10:39:24.770Z'
+                currency: EUR
+                environment: sandbox
               schema:
                 type: object
                 required:
@@ -19268,7 +19972,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '409':
-          description: The key was used with different items, or the basket cannot be bought as quoted
+          description: The key was used with different items, or the basket cannot be bought as quoted. `insufficient_stock` means a line sold out between the quote and the hold (`details` is a sentence naming the variant, the stock available and the quantity asked for)
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -20669,7 +21373,7 @@ paths:
                   code: not_found
                   message: 'Checkout intent not found: 00000000-0000-4000-8000-000000000000'
         '409':
-          description: The price changed, the intent is no longer pending or has expired, or a guest confirmation needs its emailed code (`person_proof_required`; the masked address is in `error.details.sent_to`)
+          description: The price changed, the intent is no longer pending or has expired, or a guest confirmation needs its emailed code (`person_proof_required`; the masked address is in `error.details.sent_to`), or a Subscribe & Save intent must be confirmed on the hosted page (`hosted_confirmation_required`), or a line sold out before the hold (`out_of_stock`, `insufficient_stock`; `details` names the variant and the stock)
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -20746,9 +21450,29 @@ paths:
                         country: US
                         postal_code: '10118'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          description: '`too_many_attempts` (five wrong codes; `details.retry_after_seconds`), `too_many_codes` (five codes sent for this intent), or the abuse throttle `rate_limited`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: too_many_attempts
+                  message: Too many wrong codes. Ask for a new one by confirming again in a few minutes.
+                  details:
+                    retry_after_seconds: 300
         '500':
           $ref: '#/components/responses/ServerError'
+        '502':
+          description: The confirmation code could not be delivered to the shopper.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: delivery_failed
+                  message: The code could not be sent right now. Try again shortly.
   /v1/agent/checkout-intents/{id}/cancel:
     post:
       operationId: cancelCheckoutIntent
@@ -21603,8 +22327,8 @@ paths:
         - Search
       summary: Simple text search
       description: |
-        Fast text-based product search matching the query against product names, brands, and
-        descriptions in the store's catalog. Returns a ranked list of matches with a relevance
+        Fast text-based product search matching the query against product names. When no product name matches,
+        the query is retried by similarity against product names and brands (see Typo tolerance). Returns a ranked list of matches with a relevance
         `score` and a human-readable `matchReason`.
 
         **Auth:** accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys, so
@@ -21754,6 +22478,13 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: With a marketplace operator key, narrows the search to one merchant of the marketplace. Ignored for a store key. May also be sent as `store_id` in the body.
         - name: x-auth-token
           in: header
           required: false
@@ -21830,7 +22561,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/CustomerAuthError'
+          $ref: '#/components/responses/UnauthorizedError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
@@ -23311,7 +24042,7 @@ paths:
                     $ref: '#/components/schemas/User'
                   customer:
                     anyOf:
-                      - $ref: '#/components/schemas/Customer'
+                      - $ref: '#/components/schemas/ShopperCustomer'
                       - type: 'null'
               example:
                 user:
@@ -27158,12 +27889,12 @@ paths:
                   - product_id: 715b8c10-eb11-4289-8c0e-2966e78cf9a5
                     variant_id: 15ca5a86-4b1b-47c3-8762-a1aa43941565
                     quantity: 2
-                    unit_cents: 2000
-                subtotal_cents: 4000
-                first_order_discount_cents: 800
-                renewal_discount_cents: 600
-                first_order_price_cents: 3200
-                renewal_price_cents: 3400
+                    unit_price: 20
+                subtotal: 40
+                first_order_discount: 8
+                renewal_discount: 6
+                first_order_price: 32
+                renewal_price: 34
                 free_shipping: false
                 min_cycles: 0
                 intervals:
@@ -27268,8 +27999,6 @@ paths:
                           - 'null'
                       has_more:
                         type: boolean
-                  total:
-                    type: integer
               example:
                 posts:
                   - id: 154000f5-0dce-4c1e-aacc-873ccb8aab00
@@ -27300,7 +28029,6 @@ paths:
                   limit: 20
                   next_cursor: null
                   has_more: false
-                total: 2
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -27757,8 +28485,6 @@ paths:
                           - 'null'
                       has_more:
                         type: boolean
-                  total:
-                    type: integer
               example:
                 lookbooks:
                   - id: 2a78a917-656f-4826-9968-86a2de64cfb9
@@ -27905,9 +28631,11 @@ paths:
         `already_subscribed: true` and never creates a duplicate. A fresh signup returns `201`.
 
         **Subscribing again after an unsubscribe:** an address that unsubscribed is re-subscribed only with
-        the shopper's own sign-in token (`x-auth-token`) for the customer who owns that address. Without it
-        the call answers `403 resubscribe_requires_login`; with another shopper's token, `403 forbidden`.
-        A publishable key alone never re-subscribes an address that opted out.
+        the shopper's own sign-in token (`x-auth-token`, `x-external-auth` or `x-idp-token`) for the customer who
+        owns that address, which re-subscribes at once (`200`); another shopper's token answers `403 forbidden`.
+        Without a token the call answers `202` with `pending_confirmation: true` and the address receives a
+        confirmation link; the subscription returns when its owner follows the link. A repeat request within ten
+        minutes sends no second email. A publishable key alone never re-subscribes an address that opted out.
       security:
         - BearerAuth: []
       parameters:
@@ -27951,7 +28679,7 @@ paths:
                   example: post:summer-style-guide
       responses:
         '200':
-          description: Already subscribed (idempotent re-subscribe).
+          description: Already subscribed (idempotent re-subscribe), or an address that had unsubscribed was re-subscribed with the owner's own sign-in token.
           content:
             application/json:
               schema:
@@ -27982,6 +28710,25 @@ paths:
               example:
                 subscribed: true
                 already_subscribed: false
+        '202':
+          description: The address had unsubscribed and no sign-in token was sent. A confirmation link was emailed to it; the subscription returns when the owner follows it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscribed
+                  - pending_confirmation
+                properties:
+                  subscribed:
+                    type: boolean
+                    example: false
+                  pending_confirmation:
+                    type: boolean
+                    example: true
+              example:
+                subscribed: false
+                pending_confirmation: true
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -27989,7 +28736,15 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          description: A GC Connect key without the operation's scope (`insufficient_scope`), or a sign-in token that belongs to a different shopper than the address (`forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: The signed-in shopper is not the owner of this address.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -28085,7 +28840,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '404':
-          description: The form does not exist or is not available.
+          description: The form does not exist or is not available, including when the store's plan does not include lead forms.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -28371,21 +29126,6 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
-        '403':
-          description: The store's plan does not include lead forms (`details.reason` is `plan_required`).
-          headers:
-            Tybrite-Environment:
-              $ref: '#/components/headers/TybriteEnvironment'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LeadFormError'
-              example:
-                error:
-                  code: forbidden
-                  message: This form is not available for this store.
-                  details:
-                    reason: plan_required
         '404':
           description: The form does not exist or is not available.
           headers:
@@ -28513,7 +29253,7 @@ paths:
             Comma-separated list of fields to return (reduces bandwidth by 50-90%).
               
             **Allowed fields:** product_id, variant_id, name, sku, description, price,
-            stock, image, category_name, brand, has_variants, variant_count, total_stock,
+            stock, thumbnail_url, media, category_name, brand, has_variants, variant_count, total_stock,
             base_price, resolved_price, display_price, base_currency, display_currency, currency_symbol, 
             exchange_rate, price_breakdown, price_breakdown.*, pricing_context, pricing_context.*
               
@@ -28863,7 +29603,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/CustomerAuthError'
+          $ref: '#/components/responses/UnauthorizedError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
@@ -29502,7 +30242,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/CustomerAuthError'
+          $ref: '#/components/responses/UnauthorizedError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
@@ -30085,7 +30825,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
-          $ref: '#/components/responses/CustomerAuthError'
+          $ref: '#/components/responses/UnauthorizedError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
@@ -30498,7 +31238,7 @@ paths:
         - Messaging
       summary: Get messages in a thread
       description: |
-        Returns messages in a thread. Soft-deleted messages are excluded by default.
+        Returns messages in a thread. Soft-deleted messages are always excluded.
         Supports cursor-based pagination and sort order (default: oldest first).
       security:
         - BearerAuth: []
@@ -30659,8 +31399,6 @@ paths:
 
         **Body field:** the message text goes in `message`. (Note the sibling
         `editMessage` endpoint uses `message_content` instead.)
-
-        **SDK**
       security:
         - BearerAuth: []
       parameters:
@@ -30705,6 +31443,7 @@ paths:
               properties:
                 message:
                   type: string
+                  maxLength: 5000
       responses:
         '201':
           description: Message sent
@@ -30774,9 +31513,12 @@ paths:
 
         **`thread_type`** classifies the inquiry: `general`, `order_inquiry`,
         `product_inquiry`, `support`, `complaint`, `delivery`, `return`, `refund`,
-        `technical`, or `dispute` (a conversation about a dispute over an order).
+        `technical`, or `dispute` (a conversation about a dispute over an order or product). A shopper may open a
+        `dispute` thread.
 
-        **SDK**
+        **`source_thread_id`** opens the conversation from an earlier one of the same shopper, so the store sees the
+        history in one place. It must be a thread of this shopper in the same store and environment (otherwise `400`);
+        when `order_id` or `product_id` is omitted, the earlier thread's value is used.
       security:
         - BearerAuth: []
       parameters:
@@ -30844,6 +31586,10 @@ paths:
                 order_id:
                   type: string
                   format: uuid
+                source_thread_id:
+                  type: string
+                  format: uuid
+                  description: The earlier thread of this shopper that this conversation continues from.
                 product_id:
                   type: string
                   format: uuid
@@ -30954,8 +31700,9 @@ paths:
         - Messaging
       summary: Mark thread as read
       description: |
-        Resets `unread_count_store` to 0 and marks all customer messages in the thread as `read`.
-        Requires a secret key.
+        Marks the thread as read by the shopper: resets `unread_count_customer` to 0 and marks the store's messages
+        in the thread as `read`. Requires the shopper's session credential (`x-auth-token` or `x-external-auth`);
+        a publishable key is accepted.
       security:
         - BearerAuth: []
       parameters:
@@ -31081,6 +31828,7 @@ paths:
                 message_content:
                   type: string
                   minLength: 1
+                  description: The new text. It is trimmed; a value that is empty after trimming answers 400.
                   example: Updated content for this message.
       responses:
         '200':
@@ -31227,11 +31975,18 @@ paths:
 
         This is a WebSocket upgrade, not a normal request — send the standard upgrade headers
         (`Upgrade: websocket`). The connection is served on the API's own domain; the server responds
-        `101 Switching Protocols` and then pushes one JSON frame per new message:
+        `101 Switching Protocols` and then pushes JSON frames shaped `{ "type", "payload" }`:
 
         ```json
-        { "type": "message.created", "payload": { "thread_id": "…", "message": { … } } }
+        { "type": "message.created", "payload": { "thread_id": "…", "message": { … }, "environment": "production" } }
         ```
+
+        - `message.created` carries `{ thread_id, message, environment }`.
+        - `presence.join` and `presence.leave` carry `{ participant: { pid, role }, participants: [ … ] }`.
+        - `presence.typing` carries `{ participant, is_typing }` and `presence.read` carries `{ participant, at }`.
+        - The text frame `ping` is answered with `pong`. A client may send `{ "type": "typing", "payload": { "is_typing": true } }`
+          and `{ "type": "read", "payload": { "at": "…" } }`, which are relayed to the other participants; other frame
+          types are ignored. Clients should ignore a frame `type` they do not recognise.
 
         **Authentication.** Because a browser `WebSocket` cannot set request headers, supply the
         credentials as **query parameters** on the connection URL (they may also be sent as headers
@@ -31247,7 +32002,7 @@ paths:
             the store's Auth verifier to validate (equivalently the `x-idp-token` header).
 
         The server validates the credential and confirms the customer is the thread's participant
-        before accepting the socket; an unauthorized or non-participant connection is closed. Use the
+        before accepting the socket; a connection that fails the check is refused with 401, 403 or 404 before the upgrade. Use the
         `subscribeToThread` helper in the SDK to manage the connection (it returns an unsubscribe
         function), or open the WebSocket yourself.
 
@@ -31354,7 +32109,7 @@ paths:
         The token opens one conversation of the key's own store and environment. It expires 30 days
         after the email that carried it, and stops working when the store rotates it or the
         conversation is closed. Every failure (malformed, unknown, expired, rotated, closed,
-        another store's) is the same `404` with no other detail. Internal notes and the guest's
+        another store's) is the same `404` with no other detail; so is a body without a `token`. A body that is not a JSON object answers `400`. Internal notes and the guest's
         contact details are never returned. At most 120 reads an hour per address and 60 per token.
       security:
         - BearerAuth: []
@@ -31438,6 +32193,8 @@ paths:
                     created_at: '2026-11-02T11:40:00Z'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
@@ -31502,6 +32259,8 @@ paths:
                   created_at: '2026-11-02T12:05:00Z'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
@@ -31551,6 +32310,14 @@ paths:
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
+            ETag:
+              description: Validator for `If-None-Match`.
+              schema:
+                type: string
+            Cache-Control:
+              description: Shared caching directives; the response is cached for up to 60 seconds.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -31650,6 +32417,8 @@ paths:
                     minimum_order: null
                     ready_text: Ready in 2 hours
                     instructions: Collect from the counter at the back of the store.
+        '304':
+          description: Unchanged since the `If-None-Match` ETag.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
@@ -31729,6 +32498,17 @@ paths:
         This is a **read-only operation** (safe for publishable keys).
       security:
         - BearerAuth: []
+      parameters:
+        - name: rate_source_format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - provider
+              - neutral
+            default: provider
+          description: How `rate_source` names a carrier-account source. `provider` (the default) uses `shippo`; `neutral` uses `carrier`. A request may send either spelling wherever a rate source is accepted.
       requestBody:
         required: true
         content:
@@ -32078,13 +32858,15 @@ paths:
           required: true
           schema:
             type: string
-          description: Carrier token (e.g. usps, ups, fedex).
+            maxLength: 50
+          description: Carrier token (e.g. usps, ups, fedex). At most 50 characters.
         - name: number
           in: path
           required: true
           schema:
             type: string
-          description: The tracking number.
+            maxLength: 100
+          description: The tracking number. At most 100 characters.
       responses:
         '200':
           description: Tracking status
@@ -32147,7 +32929,15 @@ paths:
                       state: VA
                       country: US
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: '`invalid_request` when the carrier exceeds 50 characters or the tracking number 100; `provider_not_configured` when the store has not connected a carrier account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: provider_not_configured
+                  message: No carrier account is connected for this store.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
@@ -32175,7 +32965,7 @@ paths:
               example:
                 error:
                   code: tracking_unavailable
-                  message: Could not fetch tracking.
+                  message: Tracking could not be fetched. Please try again.
   /v1/connect/authorize:
     get:
       operationId: getConnectAuthorize
@@ -32636,6 +33426,23 @@ paths:
         **Rate limit:** 120 requests/hour per API key.
       security:
         - BearerAuth: []
+      parameters:
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Required with a merchant session (`400 invalid_request` without it); the store must be one the session's user owns or belongs to (`403 forbidden` otherwise). Ignored with a secret key.
+        - name: environment
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - production
+              - sandbox
+          description: With a merchant session, restricts the list to one environment. A secret key lists its own environment.
       responses:
         '200':
           description: Active connections for this store
@@ -32666,6 +33473,8 @@ paths:
                     connected_at: '2026-05-28T10:00:00Z'
                     last_used_at: '2026-05-28T14:30:00Z'
                     pair_id: 550e8400-e29b-41d4-a716-446655440000
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -34877,7 +35686,8 @@ paths:
         - B2B
       summary: List your requests for quote
       description: |
-        Returns the buyer's own requests for quote (RFQs), newest first. Requires
+        Returns the buyer's own requests for quote (RFQs), newest first. Returns the 100 most recent records; older
+        records are not returned and the list is not paginated. Requires
         the buyer's session token (x-auth-token or x-external-auth) alongside the API key.
       security:
         - BearerAuth: []
@@ -34926,11 +35736,27 @@ paths:
                     items:
                       $ref: '#/components/schemas/B2bRfq'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Missing or invalid API key, or a missing or invalid buyer credential (x-auth-token, x-external-auth or x-idp-token).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: A buyer sign-in is required
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: No B2B buyer account for this customer on this store (`forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: No B2B buyer account for this customer on this store
         '500':
           $ref: '#/components/responses/ServerError'
     post:
@@ -35088,10 +35914,28 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/B2bRfq'
+        '401':
+          description: Missing or invalid API key, or a missing or invalid buyer credential (x-auth-token, x-external-auth or x-idp-token).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: A buyer sign-in is required
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: No B2B buyer account for this customer on this store
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -35159,10 +36003,28 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/B2bQuote'
+        '401':
+          description: Missing or invalid API key, or a missing or invalid buyer credential (x-auth-token, x-external-auth or x-idp-token).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: A buyer sign-in is required
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: No B2B buyer account for this customer on this store
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -35362,11 +36224,27 @@ paths:
                     items:
                       $ref: '#/components/schemas/B2bPurchaseOrder'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Missing or invalid API key, or a missing or invalid buyer credential (x-auth-token, x-external-auth or x-idp-token).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: A buyer sign-in is required
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: No B2B buyer account for this customer on this store (`forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: No B2B buyer account for this customer on this store
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/b2b/purchase-orders/{id}:
@@ -35427,10 +36305,28 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/B2bPurchaseOrder'
+        '401':
+          description: Missing or invalid API key, or a missing or invalid buyer credential (x-auth-token, x-external-auth or x-idp-token).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: A buyer sign-in is required
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: No B2B buyer account for this customer on this store
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -35490,11 +36386,27 @@ paths:
                     items:
                       $ref: '#/components/schemas/B2bInvoice'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Missing or invalid API key, or a missing or invalid buyer credential (x-auth-token, x-external-auth or x-idp-token).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: A buyer sign-in is required
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: No B2B buyer account for this customer on this store (`forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: No B2B buyer account for this customer on this store
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/b2b/invoices/{id}:
@@ -35555,10 +36467,28 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/B2bInvoice'
+        '401':
+          description: Missing or invalid API key, or a missing or invalid buyer credential (x-auth-token, x-external-auth or x-idp-token).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: A buyer sign-in is required
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: No B2B buyer account for this customer on this store
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -35746,13 +36676,21 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The key is publishable, or the wholesale feature is not enabled for this store.
+          description: No B2B buyer account for this customer on this store (`forbidden`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          $ref: '#/components/responses/NotFoundError'
+          description: B2B is not enabled for this store (`not_available`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_available
+                  message: Wholesale is not enabled for this store
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -35882,9 +36820,11 @@ paths:
           `amount`; complete the payment through the standard payment flow (`/v1/payments/initialize`
           then `/v1/payments/verify`) with that `order_id`, exactly as for a normal online order.
 
-        Requires the buyer's session token (x-auth-token or x-external-auth), an Idempotency-Key, and a
-        request signature (X-Timestamp + X-Signature over the body with the store's signing secret) —
-        the same signing a standard order requires.
+        Requires the buyer's session token (x-auth-token or x-external-auth) and an Idempotency-Key. The request
+        signature (X-Timestamp + X-Signature over the body with the store's signing secret) is required unless the
+        store has turned order signing off (on by default); when sent, the signature is always verified. A signing
+        failure answers 401 with `signature_missing`, `timestamp_missing`, `timestamp_malformed`,
+        `timestamp_out_of_window` or `signature_invalid`.
       security:
         - BearerAuth: []
       parameters:
@@ -35917,16 +36857,16 @@ paths:
           description: A unique key so a retried order is not duplicated.
         - name: X-Timestamp
           in: header
-          required: true
+          required: false
           schema:
             type: string
-          description: Unix timestamp (milliseconds) used in the request signature. Required — a direct order must be signed, like a standard order. Must be within 5 minutes of the server time.
+          description: Unix timestamp (milliseconds) used in the request signature. Required unless the store has turned order signing off (on by default). Must be within 5 minutes of the server time.
         - name: X-Signature
           in: header
-          required: true
+          required: false
           schema:
             type: string
-          description: Base64 HMAC-SHA256 of `{X-Timestamp}.{raw JSON body}` using the store's signing secret. Required — a direct order must be signed, like a standard order.
+          description: Base64 HMAC-SHA256 of `{X-Timestamp}.{raw JSON body}` using the store's signing secret. Required unless the store has turned order signing off (on by default); always verified when sent.
       requestBody:
         required: true
         content:
@@ -36144,7 +37084,7 @@ paths:
                     `shopper_subscription.skipped` (one delivery was skipped),
                     `shopper_subscription.renewal_upcoming` (the shopper was reminded that a renewal is
                     due, with `due_on`), `shopper_subscription.renewed` (a renewal was paid; carries
-                    `order_id`, `amount_cents` and `currency`), `shopper_subscription.renewal_failed`
+                    `order_id`, `amount` (major currency units) and `currency`), `shopper_subscription.renewal_failed`
                     (a renewal payment failed; carries `attempts`, `last_error_code` and
                     `next_attempt_at`), `shopper_subscription.action_required` (the shopper must
                     confirm and pay a renewal), `shopper_subscription.past_due` (renewals kept failing),
@@ -36919,6 +37859,14 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Position of the first subscribed endpoint to retry. A retry reaches a bounded number of endpoints per call; send the response's next_offset to continue.
         - name: id
           in: path
           required: true
@@ -37079,6 +38027,13 @@ paths:
             type: boolean
             default: false
           description: When `true`, validate and report without writing anything.
+        - name: publish
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When `true`, products this batch creates are published to the storefront at once. Off by default. Existing products updated by the batch keep their current state, and a row with `is_online_enabled` false stays offline.
       requestBody:
         required: true
         description: |
@@ -37296,6 +38251,17 @@ paths:
         `normalized_preview` of how Galactic Core interpreted your rows. **No API key
         required**, so you can perfect your feed format before integrating. Accepts JSON, XML,
         or CSV like the real endpoint. Rate-limited to 60 requests/hour per IP.
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - json
+              - xml
+              - csv
+          description: The feed format, when the content type does not say.
       requestBody:
         required: true
         content:
@@ -37452,8 +38418,28 @@ paths:
                     seo_keywords:
                       - 65w usb-c charger
                       - gan charger
+        '401':
+          description: The feed token is missing or wrong.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or missing feed token for this catalog feed
+        '403':
+          description: The store is on a trial or its subscription has lapsed, so it does not publish a feed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: feed_not_available_on_trial
+                  message: The public catalog feed is available on paid plans. Choose a plan to publish your catalog.
         '404':
-          description: The store has no public feed (not opted in, or wrong/missing token).
+          description: The store has no public feed (not opted in, or unknown store code).
         '429':
           $ref: '#/components/responses/RateLimitError'
   /v1/feeds/{store}/products.xml:
@@ -37504,8 +38490,28 @@ paths:
                     </seo_keywords>
                   </product>
                 </products>
+        '401':
+          description: The feed token is missing or wrong.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or missing feed token for this catalog feed
+        '403':
+          description: The store is on a trial or its subscription has lapsed, so it does not publish a feed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: feed_not_available_on_trial
+                  message: The public catalog feed is available on paid plans. Choose a plan to publish your catalog.
         '404':
-          description: The store has no public feed.
+          description: The store has no public feed (not opted in, or unknown store code).
         '429':
           $ref: '#/components/responses/RateLimitError'
   /v1/feeds/{store}/llms.txt:
@@ -37522,7 +38528,7 @@ paths:
 
         `{store}` is the store id or store code. The file is published by default; a wholesale store
         publishes it only once the merchant turns it on, and the merchant can turn it off at any time.
-        A store on a trial or with a lapsed subscription returns 404. No API key required.
+        A store on a trial or with a lapsed subscription returns 403 `feed_not_available_on_trial`. No API key required.
 
         AI assistants look for `/llms.txt` at the root of a site, so a storefront typically forwards its
         own `/llms.txt` to this address.
@@ -37554,6 +38560,16 @@ paths:
                   - T-Shirts (1)
                 - Kitchen & Dining (5)
                   - Drinkware (4)
+        '403':
+          description: The store is on a trial or its subscription has lapsed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: feed_not_available_on_trial
+                  message: llms.txt is available on paid plans. Choose a plan to publish it.
         '404':
           description: The store does not publish an llms.txt.
         '429':
@@ -37599,6 +38615,16 @@ paths:
                 Waterproof 4K action camera with image stabilization and dual screens.
 
                 - Standard — SKU ELEC-ACTIONCAM-01-de4a — 129.00 USD (was 149.00 USD) — in stock
+        '403':
+          description: The store is on a trial or its subscription has lapsed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: feed_not_available_on_trial
+                  message: llms.txt is available on paid plans. Choose a plan to publish it.
         '404':
           description: The store does not publish an llms.txt.
         '429':
@@ -37705,6 +38731,16 @@ paths:
                   message: This store does not publish a descriptor for AI assistants
         '429':
           $ref: '#/components/responses/RateLimitError'
+        '500':
+          description: The descriptor is temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: server_error
+                  message: The descriptor is temporarily unavailable
   /v1/marketplace/info:
     get:
       operationId: getMarketplaceInfo
@@ -38079,11 +39115,12 @@ paths:
         - name: limit
           in: query
           required: false
-          description: Maximum number of members to return.
+          description: Maximum number of members to return. Values above 50 are capped at 50. Defaults to 24.
           schema:
             type: integer
             minimum: 1
-            maximum: 100
+            maximum: 50
+            default: 24
           example: 12
       responses:
         '200':
@@ -38212,6 +39249,17 @@ paths:
                   shifted:
                     type: object
                     description: Per-area count of sandbox rows moved.
+                  expired:
+                    type: object
+                    description: What the shift made past due and expired.
+                    properties:
+                      stock_reservations:
+                        type: integer
+                  crons_run:
+                    type: array
+                    items:
+                      type: string
+                    description: The expiry and rollup jobs run for this store's sandbox after the shift.
                   not_shifted:
                     type: object
                     description: Areas intentionally not affected, with the reason.
@@ -38221,9 +39269,16 @@ paths:
                   shopping_carts: 3
                   stock_reservations: 1
                   storefront_events: 120
+                expired:
+                  stock_reservations: 1
+                crons_run:
+                  - release_expired_reservations
+                  - run_analytics_rollup
                 not_shifted:
-                  promotions: create a sandbox promo with a near-future end date to test expiry
-                  trial: real subscription state — not changed
+                  promotions: not shifted — create a sandbox promotion with a near-future end_date to test expiry
+                  gift_cards: not shifted — create a sandbox gift card with a near-future expiry to test
+                  trial: stores.trial_ends_at is real subscription state — not shifted
+                  subscription_renewal: Stripe-driven — not simulated
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -38856,7 +39911,7 @@ paths:
       summary: List sandbox stock levels
       description: |
         Lists the sandbox stock levels set for your store, each with the variant's live stock beside
-        it. A variant with no level reads live stock with a test key.
+        it. A variant with no level reads live stock with a test key. Returns at most 1,000 levels, most recently changed first.
 
         **Requires a secret test key** (`tybrite_sk_test_*`).
       security:
@@ -39129,7 +40184,7 @@ components:
           reviews, storefront events, and the Agent API's quotes, cart drafts and checkout intents
             
         **Endpoint-Specific Requirements:**
-        - **Authentication endpoints** (`/v1/auth/*`): Secret key required
+        - **Authentication endpoints** (`/v1/auth/*`): state-changing `POST` calls require a secret key (marketplace keys excepted); `GET /v1/auth/me` accepts either key
         - **Payment verification** (`POST /v1/payments/verify`): Secret key required
         - **AI Recommendations** (`POST /v1/recommendations`): Secret key required
         - **Semantic Search** (`POST /v1/search`): Both key types allowed (read-only operation)
@@ -42114,6 +43169,7 @@ components:
           type: string
           enum:
             - shippo
+            - carrier
             - custom
           description: The `source` of the chosen rate, as the quote returned it.
     MarketplaceShippingRate:
@@ -42145,6 +43201,7 @@ components:
           type: string
           enum:
             - shippo
+            - carrier
             - custom
     MarketplaceShippingLine:
       type: object
@@ -42447,6 +43504,7 @@ components:
             $ref: '#/components/schemas/Recommendation'
         fromCache:
           type: boolean
+          description: An internal hint, not a cache indicator. False when the list was assembled by a fallback (see `fallbackUsed`). Use `computedAt` for freshness.
         computedAt:
           type: string
           format: date-time
@@ -42899,6 +43957,160 @@ components:
         - email_confirmed
         - email_verified
         - has_password
+    ShopperCustomer:
+      type: object
+      description: The shopper's customer record as the sign-in endpoints and `GET /v1/auth/me` return it. The full record, with address, status, consent and custom fields, comes from `GET /v1/customers/me`.
+      required:
+        - id
+        - name
+        - email
+        - phone
+        - tier
+        - total_purchases
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          description: The phone number on file; an empty string when none was given.
+        tier:
+          type:
+            - string
+            - 'null'
+          description: The pricing tier the merchant assigned to this customer. New customers start at `bronze`.
+          example: bronze
+        total_purchases:
+          type:
+            - number
+            - 'null'
+          description: The customer's lifetime purchases, in the store's currency (decimal major units).
+        created_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    ShopperSession:
+      type: object
+      description: 'A shopper''s session with the store: a short-lived sign-in token and a refresh token. Store both values and replace them on every refresh.'
+      required:
+        - access_token
+        - refresh_token
+        - expires_in
+        - expires_at
+        - token_type
+      properties:
+        access_token:
+          type: string
+          description: The store's sign-in token. Sent as the `x-auth-token` header on customer-self endpoints. It is accepted only by the store (and environment) that issued it.
+        refresh_token:
+          type: string
+          description: 'Opaque token that begins with `gcsr_`. It is valid for 30 days from its last use and for one use: `POST /v1/auth/refresh` returns a replacement, and presenting an earlier one again ends the whole session.'
+        expires_in:
+          type: integer
+          description: Lifetime of `access_token` in seconds (900).
+          example: 900
+        expires_at:
+          type: integer
+          description: Unix time at which `access_token` stops being accepted.
+        token_type:
+          type: string
+          enum:
+            - shopper
+          description: Always `shopper`.
+    ShopperSignedIn:
+      type: object
+      description: A successful sign-in, sign-up verification or password reset.
+      required:
+        - message
+        - user
+        - customer
+        - session
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+        customer:
+          description: The shopper's customer record at this store. `null` when the key belongs to a marketplace, where a shopper holds an account without a per-store record. `GET /v1/customers/me` returns the full record.
+          anyOf:
+            - $ref: '#/components/schemas/ShopperCustomer'
+            - type: 'null'
+        session:
+          $ref: '#/components/schemas/ShopperSession'
+    InvalidCodeError:
+      type: object
+      description: The code or link was not accepted. On `POST /v1/auth/register/verify`, `details.reason` states why. The other endpoints that take a code never add a reason, because an address without an account receives no code and a reason would show which addresses have accounts.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_code
+            message:
+              type: string
+            details:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  enum:
+                    - expired
+                    - too_many_attempts
+                    - wrong
+                  description: '`expired` is a code past its 15 minutes, `too_many_attempts` is a code that has been tried 5 times, and `wrong` is any other mismatch.'
+    AuthError:
+      type: object
+      description: An authentication refusal. `invalid_credentials` is the single answer to a sign-in with an unknown address, a wrong password, or an account that cannot sign in. `password_reset_required` is returned only after the correct password and means the account must set a new one. `invalid_token` means the `x-auth-token` is not a valid sign-in token for this store. `invalid_refresh_token` means the session has ended. `passwordless_disabled` means the store does not offer sign-in by emailed code.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_credentials
+                - password_reset_required
+                - invalid_token
+                - invalid_refresh_token
+                - passwordless_disabled
+            message:
+              type: string
+    CodeSent:
+      type: object
+      description: The answer to a request for an emailed code. It is identical whether or not the address has an account; an address without an account receives no email.
+      required:
+        - status
+        - expires_in
+      properties:
+        status:
+          type: string
+          enum:
+            - code_sent
+        expires_in:
+          type: integer
+          description: Seconds for which the emailed code and link remain valid (900).
+          example: 900
     Customer:
       type: object
       properties:
@@ -43004,121 +44216,6 @@ components:
               type: string
             preferred_store:
               type: string
-    ShopperSession:
-      type: object
-      description: 'A shopper''s session with the store: a short-lived sign-in token and a refresh token. Store both values and replace them on every refresh.'
-      required:
-        - access_token
-        - refresh_token
-        - expires_in
-        - expires_at
-        - token_type
-      properties:
-        access_token:
-          type: string
-          description: The store's sign-in token. Sent as the `x-auth-token` header on customer-self endpoints. It is accepted only by the store (and environment) that issued it.
-        refresh_token:
-          type: string
-          description: 'Opaque token that begins with `gcsr_`. It is valid for 30 days from its last use and for one use: `POST /v1/auth/refresh` returns a replacement, and presenting an earlier one again ends the whole session.'
-        expires_in:
-          type: integer
-          description: Lifetime of `access_token` in seconds (900).
-          example: 900
-        expires_at:
-          type: integer
-          description: Unix time at which `access_token` stops being accepted.
-        token_type:
-          type: string
-          enum:
-            - shopper
-          description: Always `shopper`.
-    ShopperSignedIn:
-      type: object
-      description: A successful sign-in, sign-up verification or password reset.
-      required:
-        - message
-        - user
-        - customer
-        - session
-      properties:
-        message:
-          type: string
-        user:
-          $ref: '#/components/schemas/User'
-        customer:
-          description: The shopper's customer record at this store. `null` when the key belongs to a marketplace, where a shopper holds an account without a per-store record.
-          anyOf:
-            - $ref: '#/components/schemas/Customer'
-            - type: 'null'
-        session:
-          $ref: '#/components/schemas/ShopperSession'
-    InvalidCodeError:
-      type: object
-      description: The code or link was not accepted. On `POST /v1/auth/register/verify`, `details.reason` states why. The other endpoints that take a code never add a reason, because an address without an account receives no code and a reason would show which addresses have accounts.
-      required:
-        - error
-      properties:
-        error:
-          type: object
-          required:
-            - code
-            - message
-          properties:
-            code:
-              type: string
-              enum:
-                - invalid_code
-            message:
-              type: string
-            details:
-              type: object
-              required:
-                - reason
-              properties:
-                reason:
-                  type: string
-                  enum:
-                    - expired
-                    - too_many_attempts
-                    - wrong
-                  description: '`expired` is a code past its 15 minutes, `too_many_attempts` is a code that has been tried 5 times, and `wrong` is any other mismatch.'
-    AuthError:
-      type: object
-      description: An authentication refusal. `invalid_credentials` is the single answer to a sign-in with an unknown address, a wrong password, or an account that cannot sign in. `password_reset_required` is returned only after the correct password and means the account must set a new one. `invalid_token` means the `x-auth-token` is not a valid sign-in token for this store. `invalid_refresh_token` means the session has ended. `passwordless_disabled` means the store does not offer sign-in by emailed code.
-      required:
-        - error
-      properties:
-        error:
-          type: object
-          required:
-            - code
-            - message
-          properties:
-            code:
-              type: string
-              enum:
-                - invalid_credentials
-                - password_reset_required
-                - invalid_token
-                - invalid_refresh_token
-                - passwordless_disabled
-            message:
-              type: string
-    CodeSent:
-      type: object
-      description: The answer to a request for an emailed code. It is identical whether or not the address has an account; an address without an account receives no email.
-      required:
-        - status
-        - expires_in
-      properties:
-        status:
-          type: string
-          enum:
-            - code_sent
-        expires_in:
-          type: integer
-          description: Seconds for which the emailed code and link remain valid (900).
-          example: 900
     UnifiedCustomerProfile:
       type: object
       description: A shopper's unified profile across every merchant in the marketplace.
@@ -44044,7 +45141,7 @@ components:
               - product_id
               - variant_id
               - quantity
-              - unit_cents
+              - unit_price
             properties:
               product_id:
                 type: string
@@ -44056,29 +45153,29 @@ components:
                 format: uuid
               quantity:
                 type: integer
-              unit_cents:
-                type: integer
-                description: The catalogue price of one unit before the offer's discount.
-        subtotal_cents:
-          type: integer
+              unit_price:
+                type: number
+                description: The catalogue price of one unit before the offer's discount, in `currency`.
+        subtotal:
+          type: number
           description: The covered items' total before any discount.
-          example: 4000
-        first_order_discount_cents:
-          type: integer
+          example: 40
+        first_order_discount:
+          type: number
           description: The discount on the first delivery.
-          example: 800
-        renewal_discount_cents:
-          type: integer
+          example: 8
+        renewal_discount:
+          type: number
           description: The discount on each later delivery.
-          example: 600
-        first_order_price_cents:
-          type: integer
+          example: 6
+        first_order_price:
+          type: number
           description: What the covered items cost on the first delivery.
-          example: 3200
-        renewal_price_cents:
-          type: integer
+          example: 32
+        renewal_price:
+          type: number
           description: What the covered items cost on each later delivery, at today's catalogue prices.
-          example: 3400
+          example: 34
         free_shipping:
           type: boolean
         min_cycles:
@@ -44369,14 +45466,18 @@ components:
         slug:
           type: string
         excerpt:
-          type: string
+          type:
+            - string
+            - 'null'
         content:
           description: The article body, or `null` for a post with no body. See `PostContent`.
           oneOf:
             - $ref: '#/components/schemas/PostContent'
             - type: 'null'
         featured_image:
-          type: string
+          type:
+            - string
+            - 'null'
         video:
           type:
             - string
@@ -44384,18 +45485,30 @@ components:
           format: uri
           description: Optional URL of a short video for this banner (MP4, H.264 with AAC audio). Null when none is set. `featured_image` stays the poster and the fallback, so a storefront that shows only images keeps working unchanged.
         category_id:
-          type: string
+          type:
+            - string
+            - 'null'
           format: uuid
         category_name:
-          type: string
+          type:
+            - string
+            - 'null'
         category_slug:
-          type: string
+          type:
+            - string
+            - 'null'
         category_icon:
-          type: string
+          type:
+            - string
+            - 'null'
         author_name:
-          type: string
+          type:
+            - string
+            - 'null'
         author_avatar:
-          type: string
+          type:
+            - string
+            - 'null'
         status:
           type: string
           enum:
@@ -44410,9 +45523,13 @@ components:
         product_count:
           type: integer
         seo_title:
-          type: string
+          type:
+            - string
+            - 'null'
         seo_description:
-          type: string
+          type:
+            - string
+            - 'null'
         seo_keywords:
           type:
             - array
@@ -44561,7 +45678,9 @@ components:
         slug:
           type: string
         description:
-          type: string
+          type:
+            - string
+            - 'null'
         featured_image:
           type: string
         video:
@@ -44868,7 +45987,6 @@ components:
                     - `consent_required`: a required consent is unchecked.
                     - `captcha_required`: the form asks for a challenge token and none was sent.
                     - `captcha_failed`: the challenge token did not pass verification.
-                    - `plan_required`: the store's plan does not include lead forms (status `403`).
                   enum:
                     - invalid_email
                     - invalid_value
@@ -44877,7 +45995,6 @@ components:
                     - consent_required
                     - captcha_required
                     - captcha_failed
-                    - plan_required
                   example: invalid_email
     LeadFormToken:
       type: object
@@ -44942,6 +46059,12 @@ components:
           type:
             - string
             - 'null'
+        source_thread_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: The earlier conversation this one was opened from, for example a dispute about a product the shopper had already written to the store about. Null when it was not opened from another.
         subject:
           type: string
         thread_type:
@@ -45699,10 +46822,11 @@ components:
             - tier
             - fallback
             - shippo
+            - carrier
             - custom
             - none
           example: tier
-          description: Which source produced the result — the store's `zone`, distance `tier` or `fallback` rate, a connected carrier account (`shippo`), the store's custom shipping extension (`custom`), or `none`.
+          description: Which source produced the result — the store's `zone`, distance `tier` or `fallback` rate, a connected carrier account (`shippo`, or `carrier` when `rate_source_format=neutral` is sent), the store's custom shipping extension (`custom`), or `none`.
         rates:
           type: array
           description: Carrier options, present when the store has a carrier account or a custom shipping extension AND a destination address + parcel were sent. Each is a real quote. To order with one, pass its `rate_id` and `source` as `shipping_rate_id` / `shipping_rate_source` on createOrder, where the option is fetched again from its source before it is charged.
@@ -45762,6 +46886,7 @@ components:
                 type: string
                 enum:
                   - shippo
+                  - carrier
                   - custom
                 description: Where the option came from — the store's carrier account, or its custom shipping extension.
     ConnectAuthorizeResponse:

@@ -176,7 +176,7 @@ const shipping = await client.shipping.calculateShipping({
 | `fee` | The standard delivery charge (the `place` option's fee), in `currency`. `null` on a carrier-options-only request, and when the store does not deliver to the address but offers pickup. |
 | `currency` | The currency of `fee` and `free_threshold` — the store's own. |
 | `applied_rule` | Which rate priced the address: `zone`, `distance`, `fallback` (the "everywhere else" rate) or `none` (no delivery rates, or a carrier-options-only request). |
-| `rate_source` | Which source produced the result: `zone`, `tier`, `fallback`, `shippo`, `custom` or `none`. |
+| `rate_source` | Which source produced the result: `zone`, `tier`, `fallback`, `shippo`, `custom` or `none`. A connected carrier account is reported as `shippo` by default and as `carrier` when the request sends `rateSourceFormat: 'neutral'`. |
 | `is_free` | `true` when no delivery charge applies to this order. |
 | `free_threshold` | The order total from which the matched rate delivers free, or `null`. |
 | `configured` | Whether the store has any delivery rates. |
@@ -252,7 +252,7 @@ When the store has set delivery days, an option carries `min_days` and `max_days
 
 ### Live carrier rates (multi-carrier)
 
-When the store has a carrier account connected, or its own custom shipping extension, send a destination `address_to` **and** a `parcel` to also receive live carrier options in `rates[]`. Each option carries its `source` — the store's carrier account (`shippo`) or its custom shipping extension (`custom`).
+When the store has a carrier account connected, or its own custom shipping extension, send a destination `address_to` **and** a `parcel` to also receive live carrier options in `rates[]`. Each option carries its `source` — the store's carrier account (`shippo`, or `carrier` with `rateSourceFormat: 'neutral'`) or its custom shipping extension (`custom`).
 
 ```typescript
 const quote = await client.shipping.calculateShipping({
@@ -265,6 +265,17 @@ const quote = await client.shipping.calculateShipping({
 ```
 
 To request carrier options only, send `address_to` and `parcel` with no coordinates or place name. The store's own rate is then not priced (there is no location to price it from), so `fee` is `null` and `applied_rule` is `none`. A store with no carrier connected answers that request with `400 provider_not_configured`.
+
+`rateSourceFormat` is a call option (the `rate_source_format` query parameter), `provider` by default or `neutral`:
+
+```typescript
+const quote = await client.shipping.calculateShipping({
+  rateSourceFormat: 'neutral',
+  requestBody: { latitude: 40.748, longitude: -73.985, address_to, parcel },
+});
+```
+
+It It only changes how a carrier-account source is named in the response; a request may send either spelling (`shippo` or `carrier`) wherever a rate source is accepted.
 
 To order with a carrier option, pass its `rate_id` as `shipping_rate_id` and its `source` as `shipping_rate_source` on `createOrder` (with `shipping_parcel` for a custom-extension option). The option is fetched again from its source and checked before it is charged.
 
