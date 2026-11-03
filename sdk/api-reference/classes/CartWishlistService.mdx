@@ -10,7 +10,7 @@ The `CartWishlistService` class (accessed via `client.cartWishlist`) manages sho
 Cart and wishlist entries are held against a specific variant rather than a product, so a saved selection carries its own colour and size, its own price, its current stock level, and the images belonging to that variant.
 
 <Note>
-  **Sandbox isolation:** Cart and wishlist items created with a `tybrite_pk_test_*` or `tybrite_sk_test_*` key are stored in the sandbox environment and are never visible to production keys. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment resolved.
+  **Sandbox isolation:** Cart and wishlist items created with a `tybrite_pk_test_*` or `tybrite_sk_test_*` key are stored in the sandbox environment and are never visible to production keys. Every response, including error responses, includes a `Tybrite-Environment: sandbox | production` header confirming which environment resolved.
 </Note>
 
 ## Security Model
@@ -437,7 +437,7 @@ Both cart and wishlist items include structured data for optimized frontend rend
 | `product_id` | `uuid` | The product UUID this item belongs to. |
 | `variant_id` | `uuid` | The specific identifier for the selected variation. |
 | `product_name` | `string` | Name of the product. |
-| `variant_name` | `string` | Display name for the variant (e.g., "Space Gray"). |
+| `variant_name` | `string \| null` | Display name for the variant (e.g., "Space Gray"), or `null` for a product with a single variant. |
 | `variant_attributes`| `object` | JSON attributes like color or size. |
 | `product_sku` | `string` | SKU for the specific variant. |
 | `thumbnail_url` | `string` | Primary image URL, prioritizing variant media. |
@@ -450,7 +450,7 @@ Both cart and wishlist items include structured data for optimized frontend rend
 | `stock_available` | `number` | Real-time stock count for the variant. |
 | `has_variants` | `boolean` | Whether the product supports variation selection. |
 | `created_at` | `string` | Timestamp of when the item was added. |
-| `environment` | `string` | `production` or `sandbox` — matches the key used to add the item. |
+| `environment` | `string` | **(Wishlist only)** `production` or `sandbox` — matches the key used to add the item. A cart item carries no `environment` field; the `Tybrite-Environment` response header names the environment. |
 
 <CodeGroup>
 
@@ -481,8 +481,7 @@ Both cart and wishlist items include structured data for optimized frontend rend
     "stock_available": 49,
     "has_variants": false,
     "created_at": "2026-04-11T10:54:23Z",
-    "updated_at": "2026-04-11T10:54:23Z",
-    "environment": "production"
+    "updated_at": "2026-04-11T10:54:23Z"
 }
 ```
 
@@ -587,7 +586,8 @@ const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
 | `201` | Success on `addToWishlist` — a new wishlist item was created. |
 | `400` | `insufficient_stock`, missing required fields, or invalid body. |
 | `401` | Missing or invalid `xAuthToken`. |
-| `403` | The customer token does not match the `customer_id` in the request. |
-| `404` | Variant, wishlist item, or cart item not found. |
+| `402` | `subscription_expired` — the store's subscription is not active. |
+| `403` | The customer token does not match the `customer_id` in the request, or a GC Connect key lacks the `cart:write` scope (`insufficient_scope`). |
+| `404` | Variant, wishlist item, or cart item not found; also returned by `getCart` and `clearCart` when the cart cannot be found. |
 | `409` | Item already in wishlist (on `addToWishlist`); variant in stock (on `notifyWhenAvailable`). |
 

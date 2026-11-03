@@ -9,7 +9,7 @@ When a store turns on **automatic tax**, the platform calculates tax for each or
 
 - A store either has **automatic tax** turned on (calculated for the destination) or uses a **single manual rate** it configures. Either way, **the order endpoint is the authority on the tax amount** — it recalculates tax server-side and rejects an order whose total doesn't match, so a tampered total can't slip through.
 - Because the order's total must already include tax, your storefront **previews the tax first** (`client.tax.previewTax`), shows the shopper the final total, and submits that same total to `createOrder`.
-- Every order response carries the resolved tax inline — `tax_amount`, a per-jurisdiction `tax_breakdown`, and a `tax_source` telling you how it was produced. There's no separate "get the tax for this order" call.
+- Every order response carries the resolved tax inline — `tax_amount`, a per-jurisdiction `tax_breakdown`, and a `tax_source` telling you how it was produced: `automatic` (calculated for the destination), `fallback` (automatic calculation was unavailable, so the store's configured rate was used) or `manual` (the store's configured rate). `tax_breakdown` is `null` when a flat store rate was used. Orders also carry an `environment` field, `production` or `sandbox`. There's no separate "get the tax for this order" call.
 
 ## Preview tax before checkout
 
@@ -44,7 +44,7 @@ const tax = await client.tax.previewTax({
 | `tax_amount` | The total tax for the cart at this destination. |
 | `taxable` | The taxable base the tax was calculated on. |
 | `tax_source` | `automatic` (calculated for the destination) or `fallback` (automatic tax isn't configured — apply the store's own rate). |
-| `breakdown[]` | One entry per taxing jurisdiction (state, county, city, special district…), each with its `rate` and `tax`. Present when `tax_source` is `automatic`. Render this if you want to itemize tax for the shopper. |
+| `breakdown[]` | One entry per taxing jurisdiction (state, county, city, special district…), each with its `rate` and `tax`, and where known its `jurisType` (the level of the jurisdiction), `rateType` (the kind of rate applied) and `exemption` (the amount exempted from that jurisdiction's tax). Present when `tax_source` is `automatic`. Render this if you want to itemize tax for the shopper. |
 
 <Tip>
   Pass each line's `category_name` so the right tax code is applied — some categories (food, clothing, books, digital goods) are taxed differently from general merchandise. Without it, the line is taxed as standard tangible goods.

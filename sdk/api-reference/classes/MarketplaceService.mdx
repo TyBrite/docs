@@ -274,6 +274,8 @@ const { error } = await stripe.confirmPayment({
 
 `total_amount` is the amount charged: the basket after every discount, plus shipping, less `wallet_applied`. In `merchant_breakdown`, `gross_amount` is a merchant's portion before discount and `merchant_gross` after the merchant's own discount. `shipping_charged` is the shopper's shipping for that merchant's items; `shipping_amount` is the part the merchant receives and `shipping_retained` the part the marketplace keeps when it ships the items itself (`fulfillment_mode: "operator"`). `shipping_commission` is commission on the merchant's shipping, when the marketplace charges it. `net_amount` is what the merchant receives: `merchant_gross` plus `shipping_amount`, less `commission_amount`, which includes any `shipping_commission`.
 
+When a merchant prices in a currency other than the marketplace's, its entry in `merchant_breakdown` also carries `seller_currency` (ISO 4217, upper case), `currency_rate` (the rate used to convert the merchant's prices into the cart currency), and the seller-currency counterparts `gross_seller_amount`, `merchant_gross_seller` and `gift_card_amount_seller`. `gift_card_amount` is the gift card value applied to that merchant's share, in the cart currency. `shipping_description` is the label of the shipping applied, for example `Flat rate`, and `shipping_rate` holds the carrier option chosen (`null` unless `shipping_pricing` is `carrier_rate`). `shipping_pricing` is one of `seller_rate`, `operator_rate` (the marketplace operator's own rates), `carrier_rate`, a flat rate, or free shipping under the marketplace's threshold.
+
 **Responses**
 
 | Code | Meaning |

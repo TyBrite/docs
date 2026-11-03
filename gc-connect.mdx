@@ -218,7 +218,7 @@ pattern for keeping a storefront in step with a store is in
 
 Scopes are passed space-separated in the `scope` parameter, and the merchant sees exactly the set you asked for on the consent screen.
 
-They are enforced on every request: a key calling an endpoint it was not granted is rejected with `403 insufficient_scope`. A scope requested but never used therefore costs nothing at runtime and everything on the consent screen, which is the reason to request the narrowest set the integration needs.
+They are enforced on every request: a key calling an endpoint it was not granted is rejected with `403 insufficient_scope`. The key pair's publishable key never carries `write`, `orders:*`, `customers:*`, `payments:*` or `b2b:write`; those belong to its secret key. A scope requested but never used therefore costs nothing at runtime and everything on the consent screen, which is the reason to request the narrowest set the integration needs.
 
 | Scope | Access |
 | :--- | :--- |
@@ -232,6 +232,7 @@ They are enforced on every request: a key calling an endpoint it was not granted
 | `customers:read` | Read customer profiles |
 | `customers:write` | Create and update customer records |
 | `payments:read` | Read payment status and history |
+| `payments:write` | Initiate payments. Without it (or `write`), initializing a payment returns `403 forbidden` |
 | `cart:write` | Cart operations (browser-safe) |
 | `cms:read` | Read blog posts and lookbooks |
 | `shipping:read` | Read delivery zones and rates |
@@ -242,6 +243,15 @@ They are enforced on every request: a key calling an endpoint it was not granted
 | `messaging:write` | Send messages in conversation threads |
 | `returns:read` | Read returns and their status |
 | `returns:write` | Lodge and update returns |
+| `disputes:read` | Read disputes (marketplaces only) |
+| `disputes:write` | Open and cancel disputes (marketplaces only) |
+| `b2b:read` | Read wholesale quotes, orders and invoices (wholesale stores only) |
+| `b2b:write` | Act on wholesale quotes, orders and invoices (wholesale stores only) |
+| `agent:read` | Use the shopping-assistant tools that read the store |
+| `agent:write` | Use the shopping-assistant tools that act for a shopper |
+| `shopper_subscriptions:read` | Read shoppers' subscriptions |
+| `shopper_subscriptions:write` | Change shoppers' subscriptions |
+| `fulfilment:read` | Read digital fulfilment of orders |
 | `promotions:read` | Read promotions and discounts |
 | `recommendations:read` | Read AI product recommendations |
 | `search:read` | Run catalog and semantic search |
@@ -294,11 +304,11 @@ const params = new URLSearchParams({
 
 ### Listing the store's team
 
-A connection granted `team:read` can list the people who work in the linked store. The call authenticates with the connection's `sk` and returns the owner and the active team members, each with the same `sub` that `user.sub` carries. Without the scope, the call answers `403 insufficient_scope`.
+A connection granted `team:read` can list the people who work in the linked store. The call authenticates with the connection's `sk` and returns the owner and the active team members, each with the same `sub` that `user.sub` carries, the role's display name (`role_label`, or `null`) and the permissions the role grants (`role_permissions`; the owner's is `["all"]`). Without the scope, the call answers `403 insufficient_scope`.
 
 ```typescript
 const { members } = await merchant.gcConnect.getConnectTeam();
-// members: [{ sub, email, name, role }] where role is "owner" or the member's role, such as "manager" or "cashier"
+// members: [{ sub, email, name, role, role_label, role_permissions }] where role is "owner" or the member's role, such as "manager" or "cashier"
 ```
 
 ---

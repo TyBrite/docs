@@ -462,6 +462,15 @@ const result = await client.cms.subscribeNewsletter({
 
 It is **safe to call repeatedly** — re-subscribing the same email returns `200` with `already_subscribed: true` and never creates a duplicate; a brand-new signup returns `201`. This endpoint accepts both **publishable** and **secret** keys (it's a storefront write, like cart), so you can call it directly from the browser.
 
+**Subscribing again after an unsubscribe.** An address that unsubscribed is subscribed again only with the shopper's own sign-in token (`xAuthToken`, or `xExternalAuth` / `xIdpToken`; send exactly one) for the customer who owns that address. Without it the call returns `403 resubscribe_requires_login`; with another shopper's token it returns `403 forbidden`. A publishable key alone never subscribes again an address that opted out.
+
+```typescript
+await client.cms.subscribeNewsletter({
+  xAuthToken: shopperSession.access_token,
+  requestBody: { email: 'shopper@tybritelabs.com' },
+});
+```
+
 ---
 
 ## Lead Forms
@@ -560,7 +569,8 @@ The read endpoints (posts, lookbooks, `getLeadForm`) are `GET`; `subscribeNewsle
 | `200` | Success. |
 | `400` | Empty slug, invalid slug format, malformed query parameters, or a lead form submission that fails validation. |
 | `401` | Invalid or missing API key. |
-| `403` | The store's plan does not include lead forms (`submitLeadForm`). |
+| `402` | `subscription_expired` — the store's subscription is not active. |
+| `403` | The store's plan does not include lead forms (`submitLeadForm`); `resubscribe_requires_login` or `forbidden` on `subscribeNewsletter` for an address that opted out (see above); `insufficient_scope` for a GC Connect key without the operation's scope. |
 | `404` | Post, lookbook or lead form not found. |
 | `409` | `Idempotency-Key` reused with a different submission (`submitLeadForm`). |
 | `429` | Rate limit exceeded. |

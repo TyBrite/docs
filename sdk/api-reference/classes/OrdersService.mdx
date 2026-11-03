@@ -6,8 +6,10 @@ description: "Reference for the OrdersService class in the Tybrite SDK."
 The `OrdersService` class (accessed via `client.orders`) covers the order lifecycle: reserving stock at checkout, creating an order, retrieving and listing orders, and moving one through its payment and fulfilment states. Creating and updating an order additionally carry an **HMAC signature** over the request body, so the server can confirm the payload was not altered in transit.
 
 <Note>
-  **Sandbox isolation:** Orders created with a `tybrite_sk_test_*` key are stored in the sandbox environment and are never visible to production keys, and vice versa. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment your key resolved to.
+  **Sandbox isolation:** Orders created with a `tybrite_sk_test_*` key are stored in the sandbox environment and are never visible to production keys, and vice versa. Every response, including error responses, carries a `Tybrite-Environment: sandbox | production` header confirming which environment your key resolved to, and each order records the same value in its `environment` field.
 </Note>
+
+Responses common to every service, such as `402 subscription_expired` and `403 insufficient_scope`, are described under [Response Codes](/sdk/introduction#response-codes).
 
 ## 🔐 Security & Signing (HMAC)
 
@@ -67,7 +69,7 @@ The listing returns the order rows themselves. Line items, status notes and cust
 per order and belong to `getOrder`; asking for one of them in `?fields=` here returns `400` naming
 the field rather than omitting it silently.
 
-The list returns order summaries **without line items** (to keep responses fast). When you need the full order including its items, call [`getOrder`](#getorder) with the order's `id`.
+The list returns order summaries (`OrderSummary`) **without line items, status notes or custom fields** (to keep responses fast). When you need the full order including its items, call [`getOrder`](#getorder) with the order's `id`.
 
 <Warning>
   Reading orders requires a **Secret Key**. Publishable keys receive `403 Forbidden`. Order data contains customer details, addresses, and payment status — it must never be exposed to browsers.
@@ -123,9 +125,10 @@ do {
       payment_status: 'paid',
       order_status: 'processing',
       total_amount: 2520,
+      tax_source: 'automatic',
       environment: 'production',
       created_at: '2026-02-19T10:30:00Z'
-      // ...other order header fields (no `items`)
+      // ...other order header fields, including `tax_amount`, `tax_breakdown` and `tax_source` (no `items`)
     }
   ],
   pagination: {
@@ -145,6 +148,8 @@ do {
 Use it when there's a gap between "customer commits to buy" and "payment confirms" — card redirects, 3-D Secure, mobile-money prompts — so the stock is claimed *before* the customer pays. For instant-capture or synchronous flows you can skip it and call `createOrder` directly; Galactic Core still prevents stock from going negative at order time. Reserving is a stronger guarantee for async payments, **not** a mandatory step before every order.
 
 Reservations are all-or-nothing: if any item lacks available stock, nothing is reserved and you get `409 insufficient_stock`. Each hold expires automatically (15 minutes by default), so an abandoned checkout lets the hold lapse without an explicit release call. Works with publishable or secret keys.
+
+`ttl_seconds` below 60 is raised to 60, and values above 1800 (publishable key) or 3600 (secret key) are capped to those values; `expires_in_seconds` in the response is the value applied. The per-key hourly limit depends on the store's plan, and with a publishable key each visitor address is also limited to 60 requests per hour.
 
 Each request is bounded. With a publishable key it can hold at most 25 items and 25 units of any one variant; with a secret key, 100 items and 1,000 units of any one variant. Quantities for a variant that appears on several lines are added together. A request over a limit returns `400` and reserves nothing. Reservations are rate limited to 300 requests an hour per API key and, with a publishable key, 60 an hour per visitor. `customer_id` is recorded on the hold only when the call is made with a secret key; from a publishable key the hold is kept without a customer. A key issued through GC Connect needs the `orders:write` scope to reserve stock, and returns `403` without it.
 
@@ -194,11 +199,13 @@ The `reserveStock` call itself returns:
 
 Place a new order. Returns **`201 Created`** (semantic create) with the new order resource. Requires verified signatures and idempotency protection.
 
-*   **Retrying is safe.** The first request with a given `Idempotency-Key` returns `201` with the order nested under an `order` property. Any later request carrying that same key — a retry, a double-submit, or two requests racing each other — returns **`200 OK`** with the order that was already created, as a bare order resource (the same shape `getOrder` returns). Exactly one order is ever created for a key, so a client that retries on a timeout cannot double-order.
+*   **Retrying is safe.** The first request with a given `Idempotency-Key` returns `201` with the order nested under an `order` property. Any later request carrying that same key and the same body — a retry, a double-submit, or two requests racing each other — returns **`200 OK`** with the order that was already created, as a bare order resource (the same shape `getOrder` returns). Exactly one order is ever created for a key, so a client that retries on a timeout cannot double-order. The same key sent with a different body returns `409 idempotency_key_reused`.
 
 *   **`202 Accepted` under heavy load.** Some deployments defer order writes during a sustained order surge to keep the storefront responsive — the order is accepted and created a moment later rather than synchronously. On those deployments, and only while under that load, `createOrder` returns **`202`** with `{ status: 'accepted', idempotency_key, message }` and **no order in the body**. Treat it as success-in-progress: fetch the order once it exists by replaying `createOrder` with the same `Idempotency-Key` (which returns `200` with the order), or by polling `getOrder` if you have the id. Below that load — and on deployments that do not defer writes — creation is synchronous and returns `201` as above. A client that cannot handle a `202` (does not poll) should only be used against deployments where deferral is off.
 
 *   **Required body fields**: `customer_email`, `customer_name`, `billing_address`, `shipping_address` (except on a pickup order), `subtotal`, `total_amount`, `payment_method`, and a non-empty `items` array of at most 100 lines (more answers `400`). Each item must include **`variant_id` or `product_id`** (at least one).
+*   **`payment_method`** is one of `card`, `stripe`, `paypal`, `paystack`, `mpesa`, `mpesa_c2b`, `cash`, `bank_transfer` or `free`, or the identifier of one of the store's own payment providers as listed by `PaymentsService.getPaymentMethods`. Any other value returns `400`.
+*   **States on create**: `payment_status` accepts `pending` (the default) or `paid`, and `order_status` accepts `pending` (the default), `confirmed` or `processing`. Later states are reached with `updateOrder`. An order created with `payment_status: 'paid'` needs the `payment_reference` of the payment that settled it, otherwise the call returns `400 payment_reference_required`. Counter-settled `cash` and `card` orders and free orders are exempt.
 *   **`variant_id` vs `product_id` per item** — prefer **`variant_id`** (the exact variant the shopper chose; pass the same one you put in the cart straight through). If you send only `product_id`, the order is placed against the product's **default** variant — fine for single-variant products, but for a multi-variant product it may not be the one the shopper selected. Sending both is fine: `variant_id` wins and `product_id` is resolved from it. See [Products and variants — which ID to send where](/concepts#products-and-variants-which-id-to-send-where) for the full picture.
 *   **Item prices** — the price of a line is the price of its variant: the variant's online sale price when it has one, otherwise its online price (its in-store price when no online price is set). This is the `unit_price` the cart returns and the `price` / `sale_price` pair the product endpoints return. A `unit_price` or `total_price` that differs from it is refused with `400 price_mismatch`. Promotions, gift cards and other discounts apply on top, through `discount_amount`.
 *   **Optional**: `customer_id` (guest checkout is supported — pass customer details without a `customer_id`), `customer_phone`, `product_name` per item (resolved from the product if omitted), `tax_amount`, `shipping_amount`, `shipping_rate_id` + `shipping_rate_source` (a carrier option from `calculateShipping`), `shipping_option_id` (a delivery or pickup option from `calculateShipping`), `fulfillment_method` + `pickup_location_id` (collection at one of the store's locations), `shipping_parcel` (required with `shipping_rate_source: custom`), `shipping_address_from`, `discount_amount`, `notes`, `gift_card_redemption`, `promotion_usages`, and `reservation_ids` (from `reserveStock` — converts a checkout hold into the stock deduction instead of a fresh decrement). On a `pending` order the reservation ids are kept with the order: they are committed when the order is marked paid and released when it is cancelled or its payment fails. Only holds on the order's own items are committed, and at most 100 ids are accepted.
@@ -220,7 +227,7 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
 *   **Store credit**: pass `apply_store_credit: true` (optionally with `store_credit_amount` to cap it) to spend the customer's redeemable store-credit balance against this order. Requires a `customer_id`. The amount actually applied — capped at the order total and the available balance — is returned as `store_credit_applied`.
 *   **Ad conversion tracking (optional)**: if the shopper arrived from a paid ad, pass the click id — **`gclid`** (Google) and/or **`fbclid`** (Meta / Facebook & Instagram) — and their privacy-consent state as **`ad_consent: { ad_user_data, ad_personalization, jurisdiction }`** (each consent value `'granted' | 'denied' | 'unspecified'`; `jurisdiction` is the shopper's region, e.g. `EEA`/`UK`/`CH`/`US`). On a paid order this lets the merchant's advertising get credit for the sale on each platform. Galactic Core records the consent state with the order and only reports the conversion to the ad platform where the shopper's consent and region allow it — so always forward the true captured values (never guess). The Meta conversion is sent server-side and de-duplicated against the storefront's Meta Pixel using the order id, so it counts even when the browser blocks the Pixel. A storefront should wire this alongside a consent banner for EEA, UK, and Swiss visitors. The click id is also kept on the order itself, so the merchant's own reports can attribute revenue and profit to the ad that earned it rather than reading it back from the ad platform.
 *   Missing a required field returns `400` with a message naming the field.
-*   **Replay Protection**: The `X-Timestamp` must be within **5 minutes** of the server time.
+*   **Replay Protection**: The `X-Timestamp` is a Unix time in seconds or milliseconds and must be within **5 minutes** of the server time.
 *   **Post-processing**: When `payment_status: "paid"` is set, Galactic Core applies gift card redemption, stock reduction, and customer metrics updates. See [Post-Processing Warnings](#post-processing-warnings) below — the response may include a `post_processing_warnings` array that you **must** check.
 
 ```typescript
@@ -299,15 +306,18 @@ const pickup = await client.orders.createOrder({
     "payment_method": "card",
     "payment_status": "paid",
     "order_status": "pending",
+    "environment": "production",
     "created_at": "2026-06-20T11:37:50.273614+00:00",
     "items": [
       {
         "id": "d72a3cbe-2232-4e84-a25c-fe1245c5e5e0",
+        "order_id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
         "product_id": "product-uuid",
         "product_name": "Samsung Galaxy Watch 6",
         "quantity": 2,
         "unit_price": 299,
-        "total_price": 598
+        "total_price": 598,
+        "product_options": null
       }
     ]
   }
@@ -438,6 +448,7 @@ for (const note of order.status_notes ?? []) {
   "payment_method": "card",
   "payment_status": "paid",
   "order_status": "pending",
+  "environment": "production",
   "notes": "Leave with front desk",
   "tracking_number": null,
   "created_at": "2026-06-20T11:37:50.273614+00:00",
@@ -538,6 +549,8 @@ If the update marked the order paid and a follow-up step did not complete, the r
 | `401 Unauthorized` | Missing X-Timestamp | Ensure the `X-Timestamp` header is sent. |
 | `401 Unauthorized` | Expired Timestamp | Ensure your server clock is synced (5-min window). |
 | `403 Forbidden` | Publishable Key Used | Create orders using a **Secret Key** only. |
+| `403 insufficient_scope` | A Galactic Connect key without `orders:read` or `orders:write` | Request the scope at consent. |
+| `402 subscription_expired` | The store's subscription is not active | Renew the subscription; every call for the store answers `402` until then. |
 
 ## Side Effects of `payment_status: 'paid'`
 
@@ -555,9 +568,10 @@ Transitioning an order to the **paid** state automatically triggers:
 | :--- | :--- | :--- |
 | `200` | `GET /v1/orders`, `GET /v1/orders/{id}`, `PATCH /v1/orders/{id}`, `POST /v1/orders` | Success. `GET /v1/orders` returns a paginated list; `PATCH` returns the updated order. On `POST`, a reused `Idempotency-Key` returns the order already created for it, as a bare order resource. |
 | `201` | `POST /v1/orders` | Order created (first use of the `Idempotency-Key`). The order is nested under an `order` property, and the response includes `post_processing_warnings?` if any post-paid step failed. |
-| `400` | All | Invalid request — bad pagination/filter value, missing `total_amount` / `payment_method` / `items`, an item with neither `variant_id` nor `product_id`, or invalid tax/subtotal for a tax-exclusive store. |
-| `401` | All | Invalid API key, or invalid / expired HMAC signature. |
-| `403` | Read & write | Publishable key used on an order endpoint. Orders are secret-key only. |
+| `400` | All | Invalid request — bad pagination/filter value, missing `total_amount` / `payment_method` / `items`, an unknown `payment_method`, a `paid` order without a `payment_reference` (`payment_reference_required`), a `payment_status` or `order_status` that cannot be set on create, an item with neither `variant_id` nor `product_id`, or invalid tax/subtotal for a tax-exclusive store. |
+| `401` | All | Invalid API key, or an HMAC signature that is missing or fails verification (`signature_missing`, `timestamp_missing`, `timestamp_malformed`, `timestamp_out_of_window`, `signature_invalid`). |
+| `402` | All | `subscription_expired` — the store's subscription is not active. |
+| `403` | Read & write | Publishable key used on an order endpoint (`forbidden`), or a Galactic Connect key without the operation's scope (`insufficient_scope`). |
 | `400` | `POST /v1/orders` | `price_mismatch` (a price, tax, shipping or total that does not match the server's figure), `shipping_rate_invalid` (a carrier option that cannot be used), `shipping_not_deliverable` (the store does not deliver to the address), `shipping_option_unavailable` (the chosen delivery option does not apply to the order), `pickup_unavailable` (the store does not offer pickup at the location, or the order is below its minimum). |
 | `404` | `GET /v1/orders/{id}`, `PATCH`, `POST` | Order not found, or a `product_id` referenced in `items` not found. |
 | `409` | `POST /v1/orders` | `idempotency_key_reused` — the key was already used with a different request body; send a new key for a different request. Also returned for an order-number collision between two orders created in the same instant — retry the request. |
@@ -567,5 +581,5 @@ Transitioning an order to the **paid** state automatically triggers:
 | `503` | `PATCH /v1/orders/{id}` | `verification_unavailable` — the payment reference could not be checked at that moment. The order is left unchanged; retry shortly. |
 | `502` | `POST /v1/orders` | `shipping_unavailable` — the order's shipping could not be checked right now. No order is created; retry. |
 | `429` | All | Rate limit exceeded. |
-| `500` | All | Server error. |
+| `500` | All | Server error. A `500` response never carries `details`; a store with no signing secret configured answers `config_error` on a signed write. |
 

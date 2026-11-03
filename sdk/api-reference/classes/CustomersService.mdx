@@ -72,7 +72,7 @@ const customer = result.customer;
 ```
 
 <Note>
-  A newly created customer starts at the `bronze` `tier` with no purchase history, so `last_purchase` and `store_metrics` are `null` until their first order. The `tier` rises through `silver`, `gold`, and `platinum` as the customer's lifetime spend grows.
+  A newly created customer starts at the `bronze` `tier` with no purchase history, so `last_purchase` and `store_metrics` are `null` until their first order. `tier` is the pricing tier the merchant assigned to the customer, and is returned by the authentication endpoints.
 </Note>
 
 <Note>
@@ -151,7 +151,7 @@ const customer = await client.customers.getCustomer({
 ```
 
 <Note>
-  `address`, `last_purchase`, and `store_metrics` are `null` until the customer has supplied an address and made a purchase. `tier` is one of `bronze` / `silver` / `gold` / `platinum`, derived from purchase history.
+  `address`, `last_purchase`, and `store_metrics` are `null` until the customer has supplied an address and made a purchase. `tier` is the pricing tier the merchant assigned to the customer; new customers start at `bronze`.
 </Note>
 
 ---
@@ -1153,6 +1153,7 @@ const profile = await client.customers.getCustomer({
 | `201` | Customer created successfully (`createCustomer`) |
 | `400` | Invalid request — malformed body or missing required fields |
 | `401` | Invalid API key, or missing/invalid `xAuthToken` |
+| `402` | `subscription_expired` — the store's subscription is not active |
 | `403` | Forbidden — the customer token does not match the `customer_id` in the path |
 | `404` | Customer not found |
 | `409` | Duplicate email at this store (on `createCustomer`, or an `email` change on `updateCustomer`) |

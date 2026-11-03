@@ -53,6 +53,7 @@ const authUrl = `https://gc.tybritelabs.com/connect/authorize?${params}`;
 | `customers:read` | Read customer profiles |
 | `customers:write` | Create and update customer records |
 | `payments:read` | Read payment status and history |
+| `payments:write` | Initiate payments. Without it (or `write`), initializing a payment returns `403 forbidden` |
 | `cart:write` | Cart operations (browser-safe) |
 | `cms:read` | Read blog posts and lookbooks |
 | `shipping:read` | Read delivery zones and rates |
@@ -63,6 +64,15 @@ const authUrl = `https://gc.tybritelabs.com/connect/authorize?${params}`;
 | `messaging:write` | Send messages in conversation threads |
 | `returns:read` | Read returns and their status |
 | `returns:write` | Lodge and update returns |
+| `disputes:read` | Read disputes (marketplaces only) |
+| `disputes:write` | Open and cancel disputes (marketplaces only) |
+| `b2b:read` | Read wholesale quotes, orders and invoices (wholesale stores only) |
+| `b2b:write` | Act on wholesale quotes, orders and invoices (wholesale stores only) |
+| `agent:read` | Use the shopping-assistant tools that read the store |
+| `agent:write` | Use the shopping-assistant tools that act for a shopper |
+| `shopper_subscriptions:read` | Read shoppers' subscriptions |
+| `shopper_subscriptions:write` | Change shoppers' subscriptions |
+| `fulfilment:read` | Read digital fulfilment of orders |
 | `promotions:read` | Read promotions and discounts |
 | `recommendations:read` | Read AI product recommendations |
 | `search:read` | Run catalog and semantic search |
@@ -71,6 +81,8 @@ const authUrl = `https://gc.tybritelabs.com/connect/authorize?${params}`;
 | `email` | Add the person's `email` and `email_verified` to `user` |
 | `profile` | Add the person's `name` to `user` |
 | `team:read` | Read the store's owner and team members with `getConnectTeam`; accompanies another store scope |
+
+The key pair's publishable key never carries `write`, `orders:*`, `customers:*`, `payments:*` or `b2b:write`; those belong to its secret key. A store whose subscription is not active answers every request with `402 subscription_expired`.
 
 The sign-in scopes `openid`, `email` and `profile` return the signed-in person in the token response. A request made of those scopes alone is identity-only: any Galactic Core user can approve it, no store is linked and no keys are issued. Combined with store scopes, the person must own the store they link; a person who owns none is redirected with `error=access_denied` and `error_description=no_owned_store`. `team:read` must accompany another store scope. An optional `store_hint` (a store UUID) preselects a store on the consent screen when the signed-in person owns it.
 
@@ -291,7 +303,7 @@ for (const session of sessions) {
 
 ## `getConnectTeam`
 
-Returns the owner and the active team members of the store the key belongs to, each with a role.
+Returns the owner and the active team members of the store the key belongs to, each with a role, the role's display name and the permissions it grants.
 
 **Requires the connection's secret key (`tybrite_sk_*`) and the `team:read` scope.** Without the scope the call answers `403 insufficient_scope`. Rate limit: 120 requests per hour per API key.
 
@@ -301,8 +313,11 @@ const { members } = await client.gcConnect.getConnectTeam();
 for (const member of members) {
   console.log(member.sub);   // stable user id, equal to `user.sub` in the token response
   console.log(member.role);  // "owner", or the member's role such as "manager" or "cashier"
+  console.log(member.role_label, member.role_permissions); // e.g. "Cashier", ["view_sales", "create_sales", "view_inventory"]
 }
 ```
+
+`role_label` is the role's display name on the store, or `null` when the role has none. `role_permissions` lists the permissions the role grants on the store; the owner's is `["all"]`. A member's rights map into an application from this list rather than from the role name.
 
 ```json Response
 {
@@ -311,13 +326,17 @@ for (const member of members) {
       "sub": "2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11",
       "email": "john.doe@example.com",
       "name": "John Doe",
-      "role": "owner"
+      "role": "owner",
+      "role_label": "Owner",
+      "role_permissions": ["all"]
     },
     {
       "sub": "9d3e7a10-4b6c-4c1f-9a77-3e55c0d2a8b4",
       "email": "jane.doe@example.com",
       "name": "Jane Doe",
-      "role": "cashier"
+      "role": "cashier",
+      "role_label": "Cashier",
+      "role_permissions": ["view_sales", "create_sales", "view_inventory"]
     }
   ]
 }

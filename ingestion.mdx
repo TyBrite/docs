@@ -378,7 +378,7 @@ await fetch('https://api.tybritelabs.com/v1/ingest/products', {
 
 | Header | Required | Purpose |
 | :--- | :--- | :--- |
-| `Idempotency-Key` | Yes | Unique key per batch. Retrying with the same key returns the original result instead of re-processing. |
+| `Idempotency-Key` | Yes | Unique key per batch. Retrying the same batch with the same key returns the original result instead of re-processing; the same key with a different batch returns `409 idempotency_key_reused`, and a first run still in progress returns `409 idempotency_in_progress`. |
 | `X-Timestamp` | Yes | Unix time in seconds, within 5 minutes of server time. |
 | `X-Signature` | Yes | Base64 HMAC-SHA256 of `` `${X-Timestamp}.${raw_body}` ``. |
 
@@ -550,7 +550,7 @@ A token added in the dashboard and appended as `?token=…` keeps a feed semi-pr
 | `400` | Unparseable body, unknown format, or no rows. |
 | `401` | Missing/invalid secret key, or a missing/invalid request signature. |
 | `403` | A publishable key was used — ingestion requires a secret key. An operator key is refused here too: ingestion is store-scoped. |
-| `409` | `Idempotency-Key` reused with a different request body. |
+| `409` | `idempotency_key_reused` (the key was used for a different batch) or `idempotency_in_progress` (the first run with this key is still being processed). |
 | `422` | Every row failed validation; nothing was written. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |

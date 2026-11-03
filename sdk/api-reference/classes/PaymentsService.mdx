@@ -3,7 +3,7 @@ title: "Payments"
 description: "Reference for the PaymentsService class in the Tybrite SDK."
 ---
 
-The `PaymentsService` class (accessed via `client.payments`) handles the core initialization and status verification for diverse payment providers including Stripe, PayPal, Paystack, and M-Pesa.
+The `PaymentsService` class (accessed via `client.payments`) handles the core initialization and status verification for diverse payment providers including Stripe, PayPal, Paystack, and M-Pesa, and for payment providers a store has added itself.
 
 <Note>
   **Sandbox test mode:** When you use a `tybrite_sk_test_*` key, all payment providers are automatically switched to their test/sandbox credentials — regardless of what your store's payment settings show. Stripe uses test mode, PayPal uses its sandbox, Paystack uses test keys, and M-Pesa targets the Safaricom sandbox. No code changes are needed between sandbox and production; swap the key and the right environment follows. Every response includes a `Tybrite-Environment: sandbox | production` header confirming which environment resolved.
@@ -101,10 +101,10 @@ Each method in the returned list includes:
 
 | Field | Description |
 | :--- | :--- |
-| `provider` | Provider identifier (e.g. `stripe`, `paypal`, `paystack`, `mpesa`). Not a fixed set — see the note below. |
+| `provider` | Provider identifier (e.g. `stripe`, `paypal`, `paystack`, `mpesa`, or the identifier of a store's own provider). Not a fixed set — see the note below. `initializePayment` and `verifyPayment` take the same value. |
 | `display_name` | Human-friendly label to show at checkout. |
 | `type` | How the buyer completes payment: `redirect`, `popup`, `stk_push`, or `manual`. |
-| `environment` | `sandbox` or `production`, matching the key you used. |
+| `environment` | `sandbox` or `production`, matching the key you used. A live provider reports `production`. |
 | `is_configured` | `true` when the provider is fully set up and ready to accept payments. |
 | `custom_provider` | Present and `true` when the store offers its own payment provider rather than a built-in one. |
 | `modes` | Stripe only. How a payment can be taken: `redirect` (a hosted checkout page) and, when the store's publishable key is set, `embedded`. |
@@ -341,11 +341,21 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 ```json PayPal
 {
   "provider": "paypal",
-  "reference": "5O190127TN364715T",
+  "reference": "PAY-12345678-ABC123",
+  "paypal_order_id": "5O190127TN364715T",
   "status": "success",
   "amount": 49.99,
   "currency": "USD",
   "capture_id": "3C679366HH908993F"
+}
+```
+
+```json Store's own payment provider
+{
+  "provider": "bank_transfer_co",
+  "reference": "PAY-12345678-ABC123",
+  "status": "success",
+  "custom_provider": true
 }
 ```
 
@@ -356,7 +366,8 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 - **Stripe** — `success` when the Checkout Session is paid, otherwise Stripe's own `payment_status` (`unpaid`, `no_payment_required`, etc.). `amount` is in major currency units; `order_id` is `null` when the payment was initialized without an order.
 - **Paystack** — Mirrors Paystack's `status` field (`success`, `failed`, `abandoned`).
 - **M-Pesa** — Enum: `pending | success | cancelled | failed`. Result code `1032` (user cancelled on phone) maps to `cancelled`.
-- **PayPal** — `verify` captures the buyer-approved order and returns `success` once the capture completes. The `reference` you pass is the PayPal order id returned at initialization.
+- **PayPal** — `verify` captures the buyer-approved order and returns `success` once the capture completes. The `reference` you pass is the PayPal order id returned at initialization; the response returns the payment `reference` the order was initialized with and the captured id in `paypal_order_id`.
+- **A store's own payment provider** — `provider` is the identifier listed by `getPaymentMethods`, the same one `initializePayment` accepts. The response carries the `reference`, the `status` the provider reported (`unknown` when it reported none) and `custom_provider: true`.
 
 ## Provider Support Matrix
 
@@ -384,12 +395,13 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 | `201` | Payment session created (new on first call with idempotency key). |
 | `200` | Idempotent replay — same key and identical payload, original initialization returned. |
 | `400` | Invalid request (missing `provider`/`amount`, invalid phone format for mpesa). |
-| `401` | Invalid API key, or invalid/expired HMAC signature (5-minute replay window). |
-| `403` | Publishable key supplied — initialize requires a secret key. |
+| `401` | Invalid API key, or a missing or failed HMAC signature (`signature_missing`, `timestamp_missing`, `timestamp_malformed`, `timestamp_out_of_window`, `signature_invalid`; 5-minute replay window). |
+| `402` | `subscription_expired` — the store's subscription is not active. |
+| `403` | Publishable key supplied — initialize requires a secret key (`forbidden`); a GC Connect key needs the `payments:write` scope (`insufficient_scope`). |
 | `404` | `order_id` provided but no matching order exists. |
 | `409` | `provider_not_live` — the payment method is still configured with test credentials, so it cannot take a real payment. The merchant switches it to live mode in their dashboard. Sandbox requests are unaffected. |
 | `409` | `idempotency_in_progress` — another request with the same `Idempotency-Key` is still being initialized. Retry shortly with the same key. |
-| `429` | Rate limit exceeded (100 / hour per API key on initialize). |
+| `429` | Rate limit exceeded. A publishable key is limited to 100 initializations per hour per shopper address within a store; a secret key is limited per key, at the plan's key limit. |
 | `500` | Upstream payment provider error or server configuration error. |
 | `502` | `provider_unavailable` — a payment method the merchant added themselves did not complete the request. Retry, or offer another method. |
 | `504` | `provider_timeout` — the provider did not respond in time. Safe to retry. |
@@ -401,7 +413,8 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 | `200` | Verification result returned. `status` field varies per provider — see shapes above. |
 | `400` | Invalid request, or provider returned a validation error. |
 | `401` | Invalid API key. |
-| `403` | Publishable key supplied — verify requires a secret key. |
+| `402` | `subscription_expired` — the store's subscription is not active. |
+| `403` | Publishable key supplied — verify requires a secret key (`forbidden`); a GC Connect key without the operation's scope (`insufficient_scope`). |
 | `404` | No payment matches the `reference`. |
 | `429` | Rate limit exceeded. |
 | `500` | Server error. |
@@ -415,5 +428,6 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 | `200` | List of configured payment methods. |
 | `400` | Invalid `fields` parameter. |
 | `401` | Invalid API key. |
+| `402` | `subscription_expired` — the store's subscription is not active. |
 | `429` | Rate limit exceeded. |
 | `500` | Server error. |

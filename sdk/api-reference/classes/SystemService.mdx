@@ -452,7 +452,7 @@ if (features.gift_cards) {
 
 ### `getApiInfo`
 
-Retrieve basic information about the API, including the current version and list of available endpoint prefixes.
+Retrieve basic information about the API, including the current version and list of available endpoint prefixes. The list covers every public route family, including the marketplace routes under `/v1/marketplace`, discovery, the shopper agent tools, sandbox tools, brands, campaigns, newsletter and lead forms, and store profile and policies.
 
 ```typescript
 const info = await client.system.getApiInfo();
@@ -553,6 +553,7 @@ Requires authentication. Both **publishable** and **secret** keys are accepted.
 | `200` | Store info returned (possibly served from cache). |
 | `400` | Invalid `sections` parameter (unknown section name). |
 | `401` | Invalid or missing API key. |
+| `402` | `subscription_expired` — the store's subscription is not active. |
 | `403` | Forbidden — a marketplace operator key was used (use `getMarketplaceInfo` instead), or the key is disabled / store suspended. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |

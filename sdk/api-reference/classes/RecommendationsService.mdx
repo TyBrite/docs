@@ -6,7 +6,7 @@ description: "Reference for the RecommendationsService class in the Tybrite SDK.
 The `RecommendationsService` class (accessed via `client.recommendations`) returns product suggestions for a storefront — products similar to one a shopper is viewing, products frequently bought together, and the item a shopper is most likely to look at next.
 
 <Warning>
-  **Secret Key Required.** This service requires a **Secret Key** (`tybrite_sk_live_*` / `tybrite_sk_test_*`). AI inference is computationally expensive and consumes AI recommendation quota — gating to `sk` prevents abuse from scraped publishable keys. Requests authenticated with a publishable key receive `403 Forbidden`.
+  **Secret Key Required.** This service requires a **Secret Key** (`tybrite_sk_live_*` / `tybrite_sk_test_*`). AI inference is computationally expensive and consumes AI recommendation quota — gating to `sk` prevents abuse from scraped publishable keys. Requests authenticated with a publishable key receive `403 Forbidden`; a key issued through GC Connect also needs the `recommendations:read` scope (`403 insufficient_scope` without it).
 </Warning>
 
 ## Methods

@@ -68,10 +68,14 @@ const result = await client.sandbox.advanceSandboxTime({
 
 ### `replaySandboxWebhook`
 
-Re-send a previously-recorded sandbox webhook event to all your matching, enabled webhook endpoints —
+Re-send a previously-recorded sandbox webhook event to your matching, enabled webhook endpoints —
 so you can re-test your handler without recreating the order/customer/etc. Identify the event by
 `event_id`, or by `type` to replay the most recent sandbox event of that type. The original event is
 unchanged.
+
+A call delivers to at most 10 endpoints. `total_endpoints` reports how many enabled endpoints are
+subscribed to the event, and `next_offset` is the `offset` that continues the replay (`null` once every
+endpoint has been reached). A replay with no enabled, subscribed endpoint returns `400`.
 
 <CodeGroup>
 
@@ -79,7 +83,8 @@ unchanged.
 const res = await client.sandbox.replaySandboxWebhook({
   requestBody: { type: 'order.created' }
 });
-// returns { replayed_event_id: '…', results: [ { endpoint_id, success, status_code }, … ] }
+// returns { replayed_event_id, event_id, retried, total_endpoints, next_offset,
+//           results: [ { endpoint_id, success, status_code }, … ] }
 ```
 
 ```typescript By event id
@@ -88,7 +93,30 @@ await client.sandbox.replaySandboxWebhook({
 });
 ```
 
+```typescript Every endpoint, page by page
+let offset = 0;
+while (offset !== null) {
+  const page = await client.sandbox.replaySandboxWebhook({
+    requestBody: { type: 'order.created', offset }
+  });
+  offset = page.next_offset ?? null;
+}
+```
+
 </CodeGroup>
+
+```json Response
+{
+  "replayed_event_id": "5b1c9f0e-3a2d-4e7b-8c11-0d9a6f4e2b33",
+  "event_id": "9c2f1a44-77bd-4e10-a3c6-1b8e5d0f7a22",
+  "retried": 1,
+  "total_endpoints": 1,
+  "next_offset": null,
+  "results": [
+    { "endpoint_id": "d1f6a0b2-52c4-4b0e-9d7a-3c8e1f2a4b55", "success": true, "status_code": 200 }
+  ]
+}
+```
 
 ### `seedSandboxPromotion`
 

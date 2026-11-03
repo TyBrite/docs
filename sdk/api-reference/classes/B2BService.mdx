@@ -190,7 +190,7 @@ Returns one of your purchase orders by `id`, including its status (`issued`, `co
 
 ### `listInvoices(options)`
 
-Returns your own invoices, newest first (`{ data: B2bInvoice[] }`). Each carries its status (`issued`, `partially_paid`, `paid`, `overdue`, `void`), amount, amount paid, and due date.
+Returns your own invoices, newest first (`{ data: B2bInvoice[] }`). Each carries its status (`issued`, `partially_paid`, `paid`, `overdue`, `void`), amount, amount paid, and due date. Amounts are in major currency units (`200` is 200.00 in the invoice currency), as on every other B2B figure.
 
 ### `getInvoice(options)`
 
@@ -234,7 +234,7 @@ A supplier can hold a wholesale purchase above an approval threshold until someo
 
 ### `listB2BApprovals(options)`
 
-Returns the purchases waiting for a decision on the wholesale accounts the signed-in person approves for, newest first (`{ data: B2bApproval[] }`). Each entry carries the amount in cents, the currency, the status and `can_decide`, which is `false` for an order this person placed. Requires exactly one of `xAuthToken`, `xExternalAuth` or `xIdpToken`.
+Returns the purchases waiting for a decision on the wholesale accounts the signed-in person approves for, newest first (`{ data: B2bApproval[] }`). Each entry carries the `amount` in major currency units (`2500` is 2500.00 in `currency`), the currency, the status and `can_decide`, which is `false` for an order this person placed. Requires exactly one of `xAuthToken`, `xExternalAuth` or `xIdpToken`.
 
 ```typescript
 const { data: approvals } = await client.b2B.listB2BApprovals({ xAuthToken: session });
@@ -249,7 +249,7 @@ const waiting = approvals.filter((a) => a.can_decide);
       "subject_type": "purchase_order",
       "subject_id": "7761b763-224b-43f2-a3f0-01139159b430",
       "po_number": "PO-20260711-47cc6c",
-      "amount_cents": 250000,
+      "amount": 2500,
       "currency": "USD",
       "status": "pending",
       "requested_at": "2026-07-11T13:32:07.271Z",

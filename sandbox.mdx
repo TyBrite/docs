@@ -148,7 +148,7 @@ read live stock.
 ### Webhook replay
 
 Re-sends a recorded sandbox webhook event to your sandbox endpoints (those created with a test key) without recreating the underlying order
-or customer, so a handler can be iterated on against the same payload.
+or customer, so a handler can be iterated on against the same payload. Each call delivers to at most 10 subscribed endpoints; the response's `total_endpoints` and `next_offset` allow the remaining endpoints to be reached by sending the same request with `offset` set to `next_offset`. A replay with no enabled, subscribed endpoint returns `400`.
 
 ```typescript
 // Replay the most recent sandbox event of a type, or pass { event_id } for a specific one.

@@ -307,8 +307,9 @@ its `agent.json`.
 | `200` | Batch processed — may be a full or partial success. Inspect `summary` and `errors`. |
 | `400` | Unparseable body, unknown format, or no rows. |
 | `401` | Missing/invalid secret key, or a missing/invalid request signature. |
+| `402` | `subscription_expired` — the store's subscription is not active. |
 | `403` | A publishable key was used — ingestion requires a secret key. |
-| `409` | `Idempotency-Key` reused with a different request body. |
-| `422` | Every row failed validation; nothing was written. |
+| `409` | `idempotency_key_reused` — the `Idempotency-Key` was already used for a different batch. `idempotency_in_progress` — the first run with this key is still being processed; retry with the same key. |
+| `422` | Every row failed validation; nothing was written. A retry with the same `Idempotency-Key` replays this `422`. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error. |

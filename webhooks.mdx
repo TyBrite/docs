@@ -136,6 +136,7 @@ fiscal reporting, loyalty — subscribes to both families.
 | `customer.created` | `POST /v1/customers` succeeds |
 | `customer.updated` | `PATCH /v1/customers/:id` succeeds |
 | `customer.deleted` | A customer is soft-deleted |
+| `customer.restored` | A deleted customer is brought back |
 
 ### Inventory & catalog
 
@@ -270,7 +271,7 @@ Deleting is reversible for 90 days, so each of these has a matching `.restored` 
 | `lookbook.deleted` / `lookbook.restored` | A lookbook is deleted or brought back |
 | `pricing_rule.deleted` / `pricing_rule.restored` | A dynamic-pricing rule is deleted — the prices it produced revert — or brought back |
 | `subcategory.deleted` / `subcategory.restored` | A subcategory is deleted or brought back |
-| `customer.deleted` | A customer record is deleted. Their orders, returns and invoices are unaffected and keep resolving |
+| `customer.deleted` / `customer.restored` | A customer record is deleted or brought back. Their orders, returns and invoices are unaffected and keep resolving |
 
 ### Visibility
 
@@ -285,7 +286,7 @@ A category that is switched off is filtered out of every catalog read, so it dis
 
 | Event | Fired when |
 | :--- | :--- |
-| `store.updated` | The store's name, logo, branding, contact details, base currency, or its shopping assistant's name or logo changes. Carries a `changed_fields` list of which of those changed; the assistant appears as `agent_assistant_name` and `agent_assistant_logo_url` |
+| `store.updated` | The store's name, logo, branding, contact details, address, base currency, store settings, or its shopping assistant's name or logo changes. Carries a `changed_fields` list of which of those changed; the assistant appears as `agent_assistant_name` and `agent_assistant_logo_url` |
 | `store.profile_updated` | The store's support contact details, addresses, legal identity or social profiles change. Carries `changed_fields`; the new values are read from `GET /v1/store/profile` |
 | `store.policy_published` | A legal document is published, or a new version of one is. Carries `slug`, `title`, `version`, `effective_date`, `published_at` and `external_url` |
 | `store.policy_unpublished` | A published document is taken down; `GET /v1/store/policies/{slug}` returns `404` from then on. Carries `slug`, `title`, `version` and `unpublished_at` |
@@ -321,8 +322,8 @@ connection itself rather than the merchant's store.
 
 | Event | Fired when |
 | :--- | :--- |
-| `feed.sync.completed` | A scheduled inbound feed-pull finishes. Payload carries `status` and `rows_created` / `rows_updated` / `rows_failed` (plus a sample of per-row errors). |
-| `channel.sync.completed` | A push of your catalog to a sales channel (Google, Meta, …) finishes. Payload carries `provider`, `status`, and `items_total` / `items_pushed` / `items_rejected`. |
+| `feed.sync.completed` | A scheduled inbound feed-pull finishes. Payload carries `source_id`, `source_name`, `format`, `status`, `rows_total`, `rows_created`, `rows_updated`, `rows_skipped`, `rows_failed` and an `errors` list. |
+| `channel.sync.completed` | A push of your catalog to a sales channel (Google, Meta, …) finishes. Payload carries `channel_id`, `provider`, `status`, `items_total`, `items_pushed` and `items_rejected`. |
 
 ### Wholesale (B2B)
 

@@ -39,7 +39,7 @@ const { threads, pagination } = await client.messaging.listThreads({
   status: 'active',           // active | resolved | closed | escalated | pending
   priority: 'high',           // low | normal | high | urgent
   archived: false,            // Filter by archive state
-  unread: true,               // Only show threads with unread messages
+  unread: true,               // Only show threads with unread messages for the shopper
   limit: 20,
   fields: 'id,subject,status,is_pinned,unread_count_store'
 });
@@ -83,7 +83,11 @@ const totalUnread = threads.reduce((sum, t) => sum + (t.unread_count_customer ||
 // returns e.g. 3   (each thread carries its own unread_count_customer)
 ```
 
-To fetch only threads with unread messages, pass `?unread=true` as a filter.
+To fetch only threads with unread messages for the shopper (`unread_count_customer` greater than 0), pass `?unread=true` as a filter.
+
+#### Read receipts
+
+Each thread records when each side last read it. A storefront shows a message the shopper sent as read once `store_last_read_at` is later than the message's `created_at`, and a store message as read once `customer_last_read_at` is later than its `created_at`. Both fields are `null` until that side has read the thread.
 
 ---
 
@@ -118,6 +122,8 @@ const thread = await client.messaging.getThread({
   "last_message_by": "customer",
   "unread_count_customer": 0,
   "unread_count_store": 1,
+  "customer_last_read_at": "2026-06-20T11:30:02.114+00:00",
+  "store_last_read_at": null,
   "is_archived": false,
   "is_muted": false,
   "is_pinned": false
@@ -175,7 +181,7 @@ Fetch paginated history for a thread. Deleted messages are automatically exclude
 | Param | Type | Description |
 | :--- | :--- | :--- |
 | `limit` | `number` | Max messages per page (default 50). |
-| `cursor` | `string` | Base64-encoded `created_at` for next page. |
+| `cursor` | `string` | Opaque cursor from `pagination.next_cursor`. An invalid cursor returns `400 invalid_cursor`. |
 | `order` | `string` | `asc` (oldest first) or `desc` (newest first). |
 
 ```typescript
@@ -324,7 +330,7 @@ const { thread, message } = await client.messaging.createConversation({
 
 <Note>Whenever `body.customer_id` is supplied, it must match the `customer_id` on `xAuthToken`. Returns `201` with both the new `thread` and the initial `message`.</Note>
 
-`thread_type` is inferred when it is not supplied: `order_inquiry` when `order_id` is present,
+`thread_type` may be `dispute` for a conversation about a dispute over an order, including one opened from an existing thread about the same product, so the store has the history in one place. `thread_type` is inferred when it is not supplied: `order_inquiry` when `order_id` is present,
 `product_inquiry` when `product_id` is present, and `general` otherwise. The response echoes the
 resolved `thread_type` along with `order_id` and `product_id`, so a storefront can confirm the
 classification its own request produced without a follow-up read.
@@ -377,7 +383,11 @@ await client.messaging.replyToGuestThread({
 | `is_archived`| `boolean`| Hidden from main list. |
 | `is_muted`| `boolean`| Notifications disabled. |
 | `is_pinned`| `boolean`| Always at top of list. |
+| `thread_type` | `enum` | `general`, `order_inquiry`, `product_inquiry`, `support`, `complaint`, `delivery`, `return`, `refund`, `technical`, `dispute`. `dispute` is a conversation about a dispute over an order. |
+| `unread_count_customer`| `number`| Store messages the shopper has not read. |
 | `unread_count_store`| `number`| Messages awaiting store reply. |
+| `customer_last_read_at`| `datetime \| null`| When the shopper last read the thread. Messages the store sent before this time have been read. |
+| `store_last_read_at`| `datetime \| null`| When the store last read the thread. Messages the shopper sent before this time have been read by the store. |
 
 ### `Message` Structure
 | Field | Type | Description |
@@ -504,9 +514,10 @@ bubble from `presence.typing`, and read ticks from `presence.read`.
 | :--- | :--- |
 | `200` | Success on reads, `updateThread` patches, and `markThreadRead`. |
 | `201` | Success on `createConversation` and `sendMessage` — a new resource was persisted. |
-| `400` | Invalid request body, or a malformed UUID supplied to `markThreadRead` (or any thread/message ID path param). |
+| `400` | Invalid request body, a malformed UUID supplied to `markThreadRead` (or any thread/message ID path param), or a `cursor` that is not one returned by a previous page (`invalid_cursor`). |
 | `401` | Missing or invalid `xAuthToken`, or missing/invalid API key. |
-| `403` | Customer token does not own the target thread or message. |
+| `402` | `subscription_expired` — the store's subscription is not active. |
+| `403` | Customer token does not own the target thread or message, or a GC Connect key without `messaging:read` or `messaging:write` (`insufficient_scope`). |
 | `404` | Thread or message not found (or filtered out by store scoping). |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error — safe to retry idempotent reads. |

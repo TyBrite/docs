@@ -147,12 +147,17 @@ Every service in the SDK follows the same response-code contract, so you can cen
 | `200` | Successful `GET`, `PATCH`, or `DELETE` |
 | `201` | `POST` that creates a new resource (orders, customers, register, addToWishlist, payment init, messaging threads/messages) |
 | `400` | Invalid request body, missing required field, invalid UUID/slug, or invalid query parameter |
-| `401` | Missing or invalid API key or customer JWT |
-| `403` | Valid auth but wrong key type for the operation, OR customer JWT does not match the `customer_id` in the request |
+| `401` | Missing or invalid API key or customer JWT; on signed writes, a missing or failed request signature (`signature_missing`, `timestamp_missing`, `timestamp_malformed`, `timestamp_out_of_window`, `signature_invalid`) |
+| `402` | `subscription_expired` — the store's subscription is not active, or the store is deactivated. Every API-keyed request for that store answers `402` until the subscription is renewed. |
+| `403` | Valid auth but wrong key type for the operation (`forbidden`), a Galactic Connect key that was not granted the operation's scope (`insufficient_scope`), OR customer JWT does not match the `customer_id` in the request |
 | `404` | Resource not found by id/slug, OR a referenced resource (e.g. `product_id` on an order) is missing |
 | `409` | Uniqueness conflict (duplicate email on register/customer, duplicate wishlist item, idempotency key reused with a different body) |
 | `429` | Too many requests — `rate_limited` (abuse throttle; carries `X-RateLimit-Scope: abuse`, not counted against the monthly quota) or `quota_exceeded` (monthly plan allowance reached) |
-| `500` | Server error |
+| `500` | Server error. A `5xx` response never carries `details`. |
+
+Every response, including each error above, carries a `Tybrite-Environment` header (`production` or `sandbox`) naming the environment the key resolved to. The `environment` field on records takes the same two values; a live key always reports `production`.
+
+Cacheable reads report their cache state in `X-Cache` (`HIT`, `MISS`, `HIT-304`, or `STALE` when a stored copy is served because the live read failed; `Warning: 110` and `Age` then accompany it).
 
 All errors share a single response shape:
 

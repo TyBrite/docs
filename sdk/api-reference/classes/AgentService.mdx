@@ -269,6 +269,8 @@ const { data: placed } = await marketplace.agent.confirmCheckoutIntent({
 
 The tool manifest for the store: every tool with its HTTP operation, a JSON Schema for its request and for its response `data`, the credential it needs, and its cost class (`deterministic` or `hosted_helper`). An assistant can register its tools from this manifest instead of from a hand-written list.
 
+On a marketplace key the manifest also carries `guest_person_proof_required`, whether a guest's checkout confirmation needs the six-digit code emailed to them (`person_proof`); it reflects the marketplace's setting.
+
 `hosted_helpers_available` says whether the two hosted helpers can be called now. When it is `false`, calling one with a publishable key returns `403 helpers_unavailable`, the same answer whatever the reason; a secret key receives the reason. The deterministic tools are always available. `assistant` carries the name and logo the merchant has given their shopping assistant (`name` and `logo_url`, each `null` when not set), so an assistant shopping the store can present itself the way the store does. The response below shows one entry from the manifest's `tools` array, with its request schema shortened to three properties.
 
 ```typescript
@@ -1282,7 +1284,7 @@ const { data } = await client.agent.getCartDraft({ id: draftId });
 
 ### `applyCartDraft`
 
-Adds each of the draft's items to the shopper's live cart and returns the cart. `applied` reports the outcome per item. A draft is applied once. Requires the shopper's credential.
+Adds each of the draft's items to the shopper's live cart and returns the cart. `applied` reports the outcome per item. A draft is applied once. Requires the shopper's credential: exactly one of `xAuthToken`, `xExternalAuth` or `xIdpToken`. A draft already applied returns `409 conflict`. When no item can be added, the call returns `409` with the same envelope as a success: `applied[].error` gives the cart's reason for each refused line and `cart` is `null`.
 
 ```typescript
 const { data } = await client.agent.applyCartDraft({ id: draftId, xAuthToken: shopperToken });
@@ -1476,7 +1478,7 @@ const { data } = await client.agent.setConsent({
 
 ### `getShopperContext`
 
-From the shopper's own data only: sizes they have ordered, the price band of what they buy, their recent orders, and their wishlist with availability. Requires consent. The example is a shopper with no orders yet.
+From the shopper's own data only: sizes they have ordered, the price band of what they buy, their recent orders, and their wishlist with availability. Requires consent. `recent_order_count` is the number of the shopper's most recent non-cancelled orders the other figures are computed from, at most 50; it is not a lifetime count. The example is a shopper with no orders yet.
 
 ```typescript
 const { data } = await client.agent.getShopperContext({ xAuthToken: shopperToken });
@@ -1488,7 +1490,7 @@ const { data } = await client.agent.getShopperContext({ xAuthToken: shopperToken
     "sizes": [],
     "price_band": null,
     "recent_orders": [],
-    "order_count": 0,
+    "recent_order_count": 0,
     "wishlist": []
   },
   "evidence": [
@@ -3255,10 +3257,10 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | `201` | A cart draft, checkout intent, return or standing instruction was created. |
 | `400` | Invalid body or parameter — for example `compare` with fewer than two products, a `limit` out of range, or a standing instruction outside its bounds. |
 | `401` | Invalid or missing API key; a shopper tool called without a shopper credential; or an intent created for a signed-in shopper confirmed without their credential. |
-| `402` | `insufficient_credits` — a hosted helper was called with a secret key and no AI credits available (a publishable key receives `403 helpers_unavailable`). |
-| `403` | `helpers_unavailable`, `consent_required`, `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
+| `402` | `subscription_expired` — the store's subscription is not active; every call answers `402` until it is renewed. Also `insufficient_credits` — a hosted helper was called with a secret key and no AI credits available (a publishable key receives `403 helpers_unavailable`). |
+| `403` | `insufficient_scope` (a GC Connect key without the tool's `agent:read` or `agent:write` scope), `helpers_unavailable`, `consent_required` (including on pausing, skipping, cancelling or updating a shopper subscription), `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
 | `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
-| `409` | `quote_changed`, `intent_not_pending`, `items_unavailable`, `out_of_stock`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |
+| `409` | `conflict` (a draft already applied), `quote_changed`, `intent_not_pending`, `items_unavailable`, `out_of_stock`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |
 | `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. |
 
 ```json

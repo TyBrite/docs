@@ -190,20 +190,19 @@ info:
 
     Your plan includes a monthly request allowance, reset on the 1st of each month (UTC):
 
-    - **Starter:** 100,000 requests/month
+    - **Starter:** 200,000 requests/month
     - **Growth:** 1,000,000 requests/month
     - **Premium:** 5,000,000 requests/month
     - **Enterprise:** unmetered
 
-    (During a free trial the allowance is one-fifth of the plan.) Abuse-throttled requests are **not**
+    (During a free trial the allowance is a flat 40,000 requests/month on every plan.) Abuse-throttled requests are **not**
     counted against this allowance, so a traffic spike or scraping attempt can't quietly burn through
     your plan.
 
     ### Endpoint-Specific Limits
 
     **Payment Operations** (Additional limit on top of the above):
-    - `POST /v1/payments/initialize`: 100 requests/hour per API key
-    - Applies to both publishable and secret keys
+    - `POST /v1/payments/initialize`: 100 requests per hour per shopper address within a store (publishable keys). Secret-key calls are limited per key, at the plan's key limit.
     - Prevents payment spam and fraud attempts
     - Returns `429 rate_limited` if exceeded
 
@@ -341,7 +340,7 @@ info:
 
     - `ETag`: Resource version identifier
     - `Cache-Control`: Caching directives
-    - `X-Cache`: Cache status (HIT, MISS, HIT-304)
+    - `X-Cache`: Cache status (HIT, MISS, HIT-304, or STALE when a stored copy is served because the live read failed; `Warning: 110` and `Age` then accompany it)
 
     ## Field Filtering
 
@@ -907,6 +906,8 @@ paths:
                 endpoints:
                   - prefix: /v1/products
                     description: Product catalog
+                  - prefix: /v1/brands
+                    description: Brand list for navigation
                   - prefix: /v1/feeds
                     description: Public outbound catalog feed (no key)
                   - prefix: /v1/product-specifications
@@ -925,12 +926,18 @@ paths:
                     description: Checkout stock reservation
                   - prefix: /v1/returns
                     description: Returns
+                  - prefix: /v1/disputes
+                    description: Marketplace disputes (shopper-lodged)
                   - prefix: /v1/payments
                     description: Payments
                   - prefix: /v1/customers
                     description: Customers
                   - prefix: /v1/promotions
                     description: Promotions
+                  - prefix: /v1/campaigns
+                    description: Campaigns
+                  - prefix: /v1/subscribe-save
+                    description: Subscribe & Save offers and quotes
                   - prefix: /v1/gift-cards
                     description: Gift cards
                   - prefix: /v1/messaging
@@ -939,26 +946,40 @@ paths:
                     description: Shopping cart
                   - prefix: /v1/wishlist
                     description: Wishlist
+                  - prefix: /v1/variants
+                    description: Back-in-stock requests
                   - prefix: /v1/prices
                     description: Dynamic pricing
                   - prefix: /v1/posts
                     description: Blog posts
                   - prefix: /v1/lookbooks
                     description: Lookbooks
+                  - prefix: /v1/newsletter
+                    description: Newsletter signup
+                  - prefix: /v1/lead-forms
+                    description: Lead forms
                   - prefix: /v1/auth
                     description: Authentication
                   - prefix: /v1/recommendations
                     description: Product recommendations
+                  - prefix: /v1/discovery
+                    description: Storefront discovery reads
                   - prefix: /v1/events
                     description: Clickstream event capture
                   - prefix: /v1/analytics
                     description: Store analytics (traffic, funnel, revenue)
+                  - prefix: /v1/agent
+                    description: Shopper agent tools
                   - prefix: /v1/search
                     description: Semantic search
                   - prefix: /v1/shipping
                     description: Shipping zones and cost calculation
                   - prefix: /v1/store/info
                     description: Store metadata and configuration
+                  - prefix: /v1/store/profile
+                    description: 'Store profile: contact, addresses, business identity, social'
+                  - prefix: /v1/store/policies
+                    description: Published store policies (privacy, terms, returns, ...)
                   - prefix: /v1/webhook_endpoints
                     description: Webhook endpoint management
                   - prefix: /v1/webhook_events
@@ -969,8 +990,16 @@ paths:
                     description: Product reviews and ratings
                   - prefix: /v1/marketplace/info
                     description: Marketplace + per-merchant store info
+                  - prefix: /v1/marketplace/collections
+                    description: Operator-curated marketplace collections
+                  - prefix: /v1/marketplace/ad-slots
+                    description: Sponsored placement serving
+                  - prefix: /v1/marketplace/ad-events
+                    description: Ad impression/click beacons
                   - prefix: /v1/ingest
                     description: Merchant product ingestion (write)
+                  - prefix: /v1/sandbox
+                    description: Sandbox developer tools (reset, time-travel, replay)
   /v1/health:
     get:
       operationId: healthCheck
@@ -2348,8 +2377,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -2406,8 +2437,10 @@ paths:
                 total: 3
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -2723,8 +2756,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -3021,8 +3056,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: |
             Product or variant not found for the given ID.
@@ -3275,8 +3312,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: |
             Product not found for the given slug.
@@ -3386,6 +3425,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: No specifications found for this product
           content:
@@ -3459,6 +3502,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -3594,6 +3641,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -3706,6 +3757,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -3765,6 +3820,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -3866,6 +3925,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -3967,8 +4030,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -4017,8 +4082,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -4159,8 +4226,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -4265,8 +4334,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -4370,7 +4441,7 @@ paths:
                   orders:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Order'
+                      $ref: '#/components/schemas/OrderSummary'
                   pagination:
                     type: object
                     properties:
@@ -4402,8 +4473,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -4424,7 +4497,7 @@ paths:
         2. **Create Payload**: Concatenate `timestamp + "." + JSON_body`
         3. **Sign Payload**: `HMAC-SHA256(hmac_secret, payload)` → base64 encode
         4. **Include Headers**:
-           - `X-Timestamp`: Unix timestamp (must be within 5 minutes)
+           - `X-Timestamp`: Unix time in seconds or milliseconds (within 5 minutes of server time)
            - `X-Signature`: Base64-encoded HMAC signature
           
         **Example (Node.js):**
@@ -4432,7 +4505,7 @@ paths:
         **🔄 Idempotency Protection**
           
         Include `Idempotency-Key` header to prevent duplicate orders on retry. 
-        If the same key is used, the original order is returned (not counted against rate limit).
+        A replay with the same key and body returns the original order (200) and creates no second order.
           
         **⚠️ Security Notes:**
         - HMAC secret is displayed in the Integrations page (Developer section)
@@ -4530,7 +4603,7 @@ paths:
           in: header
           required: true
           description: |
-            Unix timestamp in seconds (current time). Must be within 5 minutes of server time.
+            Unix time in seconds or milliseconds, within 5 minutes of server time.
             Used to prevent replay attacks.
           schema:
             type: integer
@@ -4720,35 +4793,22 @@ paths:
                           - Alan Turing
                 payment_method:
                   type: string
-                  description: Payment method identifier (required). `free` is for an order whose `total_amount` is 0 and whose items are all downloads or event tickets; the order is created paid, for a signed-in shopper (see `x-auth-token`). It may be omitted on such an order. Any other zero-total order is refused.
+                  description: 'Payment method identifier (required): one of `card`, `stripe`, `paypal`, `paystack`, `mpesa`, `mpesa_c2b`, `cash`, `bank_transfer`, `free`, or the identifier of one of the store''s own payment providers as listed by `GET /v1/payments/methods`. Any other value answers 400. `free` is for an order whose `total_amount` is 0 and whose items are all downloads or event tickets; the order is created paid, for a signed-in shopper (see `x-auth-token`). It may be omitted on such an order. Any other zero-total order is refused.'
                   example: card
-                  enum:
-                    - card
-                    - stripe
-                    - paypal
-                    - paystack
-                    - mpesa
-                    - cash
-                    - free
                 payment_status:
                   type: string
-                  description: Payment status (defaults to pending)
+                  description: Payment status on create (defaults to pending). Only `pending` and `paid` are accepted; later states are reached by `PATCH /v1/orders/{id}`. An order created as `paid` needs the `payment_reference` of the payment that settled it (counter-settled `cash` and `card`, and a free order, are exempt); without it the call answers 400 `payment_reference_required`.
                   enum:
                     - pending
                     - paid
-                    - failed
-                    - refunded
                   example: pending
                 order_status:
                   type: string
-                  description: Order fulfillment status (defaults to pending)
+                  description: Order status on create (defaults to pending). Only `pending`, `confirmed` and `processing` are accepted; later states are reached by `PATCH /v1/orders/{id}`.
                   enum:
                     - pending
                     - confirmed
                     - processing
-                    - shipped
-                    - delivered
-                    - cancelled
                   example: pending
                 subtotal:
                   type: number
@@ -5291,7 +5351,7 @@ paths:
                       product_name: Apple MacBook Pro
                       quantity: 2
                       unit_price: 1000
-                      subtotal: 2000
+                      total_price: 2000
                   created_at: '2026-02-19T10:30:00Z'
         '202':
           description: |
@@ -5448,50 +5508,11 @@ paths:
                       message: shipping_amount must be 0 for an order with free Subscribe & Save shipping
                       details: expected 0.00, got 5.99
         '401':
-          description: Unauthorized - Invalid or missing authentication credentials, or HMAC signature verification failed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                invalid_api_key:
-                  summary: Invalid API key
-                  value:
-                    error:
-                      code: unauthorized
-                      message: Invalid API key
-                missing_api_key:
-                  summary: Missing API key
-                  value:
-                    error:
-                      code: unauthorized
-                      message: Missing authorization header
-                invalid_hmac_signature:
-                  summary: Invalid HMAC signature
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                missing_timestamp:
-                  summary: Missing X-Timestamp header
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                expired_timestamp:
-                  summary: Expired timestamp (>5 minutes old)
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                wrong_hmac_secret:
-                  summary: Wrong HMAC secret used
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
+          $ref: '#/components/responses/SignedRequestUnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -5583,7 +5604,15 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal error, or `config_error` when the store has no HMAC secret configured ("Store HMAC secret not configured. Contact support.").
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: config_error
+                  message: Store HMAC secret not configured. Contact support.
         '502':
           description: Shipping could not be checked right now (`shipping_unavailable`). No order is created.
           content:
@@ -5679,15 +5708,17 @@ paths:
                   - product_name: Apple MacBook Pro
                     quantity: 2
                     unit_price: 1999
-                    subtotal: 1999
+                    total_price: 3998
                 created_at: '2026-02-03T10:30:00Z'
                 updated_at: '2026-02-03T10:35:00Z'
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -5710,7 +5741,7 @@ paths:
         2. **Create Payload**: Concatenate `timestamp + "." + JSON_body`
         3. **Sign Payload**: `HMAC-SHA256(hmac_secret, payload)` → base64 encode
         4. **Include Headers**:
-           - `X-Timestamp`: Unix timestamp (must be within 5 minutes)
+           - `X-Timestamp`: Unix time in seconds or milliseconds (within 5 minutes of server time)
            - `X-Signature`: Base64-encoded HMAC signature
 
         **🔄 Idempotency Protection**
@@ -5789,7 +5820,7 @@ paths:
           in: header
           required: true
           description: |
-            Unix timestamp in seconds (current time). Must be within 5 minutes of server time.
+            Unix time in seconds or milliseconds, within 5 minutes of server time.
             Used to prevent replay attacks.
           schema:
             type: integer
@@ -5965,50 +5996,11 @@ paths:
                       code: invalid_request
                       message: Invalid order_status value
         '401':
-          description: Unauthorized - Invalid or missing authentication credentials, or HMAC signature verification failed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                invalid_api_key:
-                  summary: Invalid API key
-                  value:
-                    error:
-                      code: unauthorized
-                      message: Invalid API key
-                missing_api_key:
-                  summary: Missing API key
-                  value:
-                    error:
-                      code: unauthorized
-                      message: Missing authorization header
-                invalid_hmac_signature:
-                  summary: Invalid HMAC signature
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                missing_timestamp:
-                  summary: Missing X-Timestamp header
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                expired_timestamp:
-                  summary: Expired timestamp (>5 minutes old)
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                wrong_hmac_secret:
-                  summary: Wrong HMAC secret used
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
+          $ref: '#/components/responses/SignedRequestUnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -6089,8 +6081,8 @@ paths:
         with a secret key, at most 100 items and 1,000 units of any one variant. A
         request over a limit is refused with `400` and nothing is reserved.
 
-        **Rate limit:** 300 requests/hour per API key, and with a publishable key
-        60 requests/hour per visitor.
+        **Rate limit:** the per-key hourly limit depends on the store's plan. With a publishable key,
+        each visitor address is also limited to 60 requests per hour.
 
         A key issued through GC Connect needs the `orders:write` scope; without it
         the request returns `403`.
@@ -6127,7 +6119,8 @@ paths:
                   type: integer
                   description: |
                     Optional hold duration in seconds. Defaults to 900 (15 minutes);
-                    values below 60 are raised to 60.
+                    values below 60 are raised to 60. Values above 1800 (publishable key) or 3600 (secret key)
+                    are capped to those values. The `expires_in_seconds` in the response is the value applied.
                   example: 900
                 customer_id:
                   type: string
@@ -6190,8 +6183,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '409':
           description: Insufficient stock - nothing was reserved
           content:
@@ -6238,7 +6233,7 @@ paths:
               
             **Allowed Fields:**
             - `provider`, `display_name`, `type`
-            - `environment`, `is_configured`
+            - `environment`, `is_configured`, `custom_provider`, `modes`, `publishable_key`
           example: provider,display_name,type
       security:
         - BearerAuth: []
@@ -6291,6 +6286,10 @@ paths:
                       details: Use ?fields=provider,display_name,type to request specific fields
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -6312,7 +6311,7 @@ paths:
         2. **Create Payload**: Concatenate `timestamp + "." + JSON_body`
         3. **Sign Payload**: `HMAC-SHA256(hmac_secret, payload)` → base64 encode
         4. **Include Headers**:
-           - `X-Timestamp`: Unix timestamp (must be within 5 minutes)
+           - `X-Timestamp`: Unix time in seconds or milliseconds (within 5 minutes of server time)
            - `X-Signature`: Base64-encoded HMAC signature
            - `Idempotency-Key`: Unique key to prevent duplicate payments
 
@@ -6414,7 +6413,7 @@ paths:
           in: header
           required: true
           description: |
-            Unix timestamp in seconds (current time). Must be within 5 minutes of server time.
+            Unix time in seconds or milliseconds, within 5 minutes of server time.
             Used to prevent replay attacks.
           schema:
             type: integer
@@ -6800,50 +6799,11 @@ paths:
                       message: Idempotency-Key header required for payment initialization
                       hint: Include a unique Idempotency-Key header to prevent duplicate payments
         '401':
-          description: Unauthorized - Invalid or missing authentication credentials, or HMAC signature verification failed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                invalid_api_key:
-                  summary: Invalid API key
-                  value:
-                    error:
-                      code: unauthorized
-                      message: Invalid API key
-                missing_api_key:
-                  summary: Missing API key
-                  value:
-                    error:
-                      code: unauthorized
-                      message: Missing authorization header
-                invalid_hmac_signature:
-                  summary: Invalid HMAC signature
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                missing_timestamp:
-                  summary: Missing X-Timestamp header
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                expired_timestamp:
-                  summary: Expired timestamp (>5 minutes old)
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
-                wrong_hmac_secret:
-                  summary: Wrong HMAC secret used
-                  value:
-                    error:
-                      code: invalid_signature
-                      message: Request signature verification failed
+          $ref: '#/components/responses/SignedRequestUnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -6930,12 +6890,12 @@ paths:
         **Paystack:**
         - Queries Paystack Transaction Verification API
         - Returns payment status and transaction details
-        - Includes gateway response and fees
+        - Includes the channel, customer email and payment time.
 
         **M-Pesa:**
         - Queries M-Pesa STK Push Query API
-        - Returns transaction status from Safaricom
-        - Includes M-Pesa receipt number if successful
+        - Returns the transaction status from Safaricom
+        - Returns the STK query result code and description
 
         **Note:** Despite using POST method (for request body), this is a read operation for most
         providers; for PayPal it captures the approved order.
@@ -6957,12 +6917,7 @@ paths:
               properties:
                 provider:
                   type: string
-                  enum:
-                    - stripe
-                    - paypal
-                    - paystack
-                    - mpesa
-                  description: Payment provider used for initialization
+                  description: A built-in provider (`stripe`, `paypal`, `paystack`, `mpesa`) or the identifier of the store's own payment provider, as returned in the `provider` field by `GET /v1/payments/methods`.
                   example: stripe
                 reference:
                   type: string
@@ -7134,7 +7089,11 @@ paths:
                         example: paypal
                       reference:
                         type: string
-                        description: PayPal order id that was captured
+                        description: The payment reference the order was initialized with.
+                        example: PAY-12345678-ABC123
+                      paypal_order_id:
+                        type: string
+                        description: The PayPal order id that was captured.
                         example: 5O190127TN364715T
                       status:
                         type: string
@@ -7154,6 +7113,28 @@ paths:
                         type: string
                         description: PayPal capture id for the completed payment
                         example: 3C679366HH908993F
+                  - type: object
+                    description: Response for a store's own payment provider
+                    required:
+                      - provider
+                      - reference
+                      - status
+                      - custom_provider
+                    properties:
+                      provider:
+                        type: string
+                        example: bank_transfer_co
+                      reference:
+                        type: string
+                        example: PAY-12345678-ABC123
+                      status:
+                        type: string
+                        description: The status the provider reported, or `unknown` when it reported none
+                        example: success
+                      custom_provider:
+                        type: boolean
+                        description: Always `true` for a store's own payment provider.
+                        example: true
               examples:
                 stripe_success:
                   summary: Stripe payment successful
@@ -7241,6 +7222,8 @@ paths:
                       message: Failed to retrieve session
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: Forbidden - Publishable keys cannot verify payments. Use a secret key (tybrite_sk_*).
           content:
@@ -7423,8 +7406,12 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -7517,8 +7504,12 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -7709,8 +7700,10 @@ paths:
                   available_stock: 5
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Variant not found or not available
           content:
@@ -7866,8 +7859,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -7969,8 +7964,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -8103,8 +8100,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -8205,8 +8204,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -8319,8 +8320,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Variant not found
           content:
@@ -8412,8 +8415,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -8568,8 +8573,10 @@ paths:
                   available_stock: 3
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Wishlist item or variant not found
           content:
@@ -8691,8 +8698,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: The variant is not sold online by this store (`not_found`), or the store cannot send back-in-stock messages (`not_available`).
           headers:
@@ -8845,8 +8854,10 @@ paths:
                   message: recovery_url must be a link to this store's storefront.
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -8910,10 +8921,14 @@ paths:
                         name:
                           type: string
                         variant_name:
-                          type: string
-                          description: Absent when the product has a single variant.
+                          type:
+                            - string
+                            - 'null'
+                          description: The variant's name, or null when the product has a single variant.
                         sku:
-                          type: string
+                          type:
+                            - string
+                            - 'null'
                         quantity:
                           type: integer
                           description: The quantity in the original cart.
@@ -8921,7 +8936,9 @@ paths:
                           type: number
                           description: The current price of one unit.
                         image_url:
-                          type: string
+                          type:
+                            - string
+                            - 'null'
                           format: uri
                         available:
                           type: boolean
@@ -8940,8 +8957,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -9218,6 +9237,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MarketplaceCheckoutResponse'
+              example:
+                order_group_id: 44444444-4444-4444-4444-444444444444
+                group_number: MKT-100042
+                payment_intent_id: pi_3Pxxxxxxxxxxxx
+                client_secret: pi_3Pxxxxxxxxxxxx_secret_yyyyyyyy
+                currency: USD
+                subtotal: 245
+                total_amount: 235.99
+                shipping_total: 5.99
+                wallet_applied: 0
+                discount_total: 15
+                operator_funded_discount: 5
+                discount_breakdown:
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    merchant_discount: 10
+                    gift_card_amount: 0
+                    operator_funded_discount: 5
+                shipping_breakdown:
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    amount: 5.99
+                    pricing: seller_rate
+                    fulfilled_by: seller
+                    is_free: false
+                    free_threshold: null
+                    description: Local (within 10 km)
+                    selected_rate_id: null
+                merchant_breakdown:
+                  - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    gross_amount: 245
+                    discount_amount: 10
+                    merchant_gross: 235
+                    operator_funded_discount: 5
+                    fulfillment_mode: merchant
+                    shipping_charged: 5.99
+                    shipping_amount: 5.99
+                    shipping_retained: 0
+                    shipping_commission: 0
+                    shipping_pricing: seller_rate
+                    commission_amount: 23.5
+                    net_amount: 217.49
+                    commission_rule_id: 7e6d5c4b-1234-5678-9abc-def012345678
         '201':
           description: The multi-merchant order was created and is awaiting payment.
           headers:
@@ -9272,8 +9332,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -9470,8 +9532,10 @@ paths:
                   message: Add a shipping address (or shipping_destination) so shipping can be priced.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -9649,8 +9713,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -10189,6 +10255,19 @@ paths:
                           type: number
                           format: float
                           example: 26.91
+                        jurisType:
+                          type: string
+                          example: City
+                          description: Level of the jurisdiction.
+                        rateType:
+                          type: string
+                          example: General
+                          description: The kind of rate applied.
+                        exemption:
+                          type: number
+                          format: float
+                          example: 0
+                          description: Amount exempted from this jurisdiction's tax.
               examples:
                 usNewYork:
                   summary: New York combined tax on $598
@@ -10233,6 +10312,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '429':
           $ref: '#/components/responses/RateLimitError'
   /v1/analytics/collect:
@@ -10558,6 +10639,9 @@ paths:
                       hosted_helpers_available:
                         type: boolean
                         description: Whether the hosted helpers can be called right now.
+                      guest_person_proof_required:
+                        type: boolean
+                        description: Marketplace keys only. Whether a guest's checkout confirmation needs the six-digit code emailed to them (`person_proof`); the marketplace's setting.
                       assistant:
                         type: object
                         description: The shopping assistant as the merchant has named it. Null fields are not set.
@@ -10716,6 +10800,10 @@ paths:
                 environment: sandbox
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -11118,6 +11206,10 @@ paths:
                   message: price_min cannot exceed price_max
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -11673,6 +11765,10 @@ paths:
                   message: The id in the path must be a valid UUID
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -11896,6 +11992,10 @@ paths:
                   message: product_ids must be 2 to 5 product ids (uuid)
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -12138,6 +12238,10 @@ paths:
                   message: constraints must name at least one constraint
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -12284,19 +12388,7 @@ paths:
                               type:
                                 - string
                                 - 'null'
-                            category:
-                              type:
-                                - string
-                                - 'null'
-                            subcategory:
-                              type:
-                                - string
-                                - 'null'
                             price:
-                              type:
-                                - number
-                                - 'null'
-                            list_price:
                               type:
                                 - number
                                 - 'null'
@@ -12310,8 +12402,6 @@ paths:
                               type:
                                 - integer
                                 - 'null'
-                            has_variants:
-                              type: boolean
                             thumbnail_url:
                               type:
                                 - string
@@ -12329,11 +12419,6 @@ paths:
                                     type: string
                                   detail:
                                     type: string
-                            score:
-                              type:
-                                - number
-                                - 'null'
-                              description: Semantic similarity to `query`, when used.
                   evidence:
                     type: array
                     description: Where each figure in `data` was read from.
@@ -12417,6 +12502,10 @@ paths:
                   message: mode must be one of cheaper, similar, in_stock, same_spec
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -13029,6 +13118,10 @@ paths:
                   message: items must be a non-empty array of { variant_id, quantity }
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -13442,6 +13535,10 @@ paths:
                   message: items must be a non-empty array of { variant_id, quantity }
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -14100,6 +14197,24 @@ paths:
           schema:
             type: string
           description: Comma-separated top-level keys of `data` to return, e.g. `fields=grand_total,lines`.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`. With a publishable key, the draft's own customer's credential returns `quote.shipping_address`; any other caller gets null.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
       responses:
         '200':
           description: The draft, re-quoted
@@ -14453,6 +14568,10 @@ paths:
                   message: The id in the path must be a valid UUID
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -14671,6 +14790,10 @@ paths:
                   message: Provide exactly one of x-auth-token, x-external-auth, or x-idp-token
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -14704,37 +14827,89 @@ paths:
                   code: not_found
                   message: 'Cart draft not found: 00000000-0000-4000-8000-000000000000'
         '409':
-          description: Already applied, or no item could be added
+          description: Already applied (`conflict`), or no item could be added (an envelope whose `applied[].error` gives the cart's reason for each refused line).
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
+                oneOf:
+                  - $ref: '#/components/schemas/Error'
+                  - type: object
+                    description: No item was added. `applied[].error` is the cart's reason for each refused line.
                     required:
-                      - code
-                      - message
+                      - data
+                      - evidence
+                      - computed_at
+                      - environment
                     properties:
-                      code:
+                      data:
+                        type: object
+                        properties:
+                          draft_id:
+                            type: string
+                            format: uuid
+                          applied:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                variant_id:
+                                  type: string
+                                  format: uuid
+                                quantity:
+                                  type: integer
+                                added:
+                                  type: boolean
+                                error:
+                                  type: object
+                                  additionalProperties: true
+                          cart:
+                            type:
+                              - object
+                              - 'null'
+                      evidence:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+                      computed_at:
                         type: string
-                      message:
-                        type: string
-                      details:
-                        description: Context for the error. On `quote_changed`, `items_unavailable`, `shipping_not_deliverable` and `quote_incomplete` it carries the current `quote`.
+                        format: date-time
+                      currency:
                         type:
-                          - object
                           - string
-                          - array
-              example:
-                error:
-                  code: conflict
-                  message: This cart draft has already been added to a cart
+                          - 'null'
+                      environment:
+                        type: string
+                        enum:
+                          - production
+                          - sandbox
+              examples:
+                already_applied:
+                  summary: The draft was already applied
+                  value:
+                    error:
+                      code: conflict
+                      message: This draft was already applied to a cart.
+                nothing_added:
+                  summary: No line could be added
+                  value:
+                    data:
+                      draft_id: 9a47e047-b1b6-4c35-9617-820629e22e04
+                      applied:
+                        - variant_id: 0c7a1e0e-3b0b-4d6e-8a39-2f3d6e5f9a11
+                          quantity: 1
+                          added: false
+                          error:
+                            code: out_of_stock
+                            message: That item is out of stock.
+                      cart: null
+                    evidence: []
+                    computed_at: '2026-11-03T10:00:00.000Z'
+                    currency: USD
+                    environment: sandbox
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -14987,6 +15162,10 @@ paths:
                   message: Pass draft_id, a shopper credential, or x-session-id to name a cart
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -15162,6 +15341,10 @@ paths:
                   message: Provide exactly one of x-auth-token, x-external-auth, or x-idp-token
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -15320,6 +15503,10 @@ paths:
                   message: personalization (boolean) is required
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -15385,6 +15572,7 @@ paths:
                         items:
                           type: string
                       price_band:
+                        description: Computed from the same most recent orders.
                         type:
                           - object
                           - 'null'
@@ -15392,8 +15580,9 @@ paths:
                         type: array
                         items:
                           type: object
-                      order_count:
+                      recent_order_count:
                         type: integer
+                        description: The number of the shopper's most recent non-cancelled orders the other figures are computed from, at most 50. It is not a lifetime count.
                       wishlist:
                         type:
                           - array
@@ -15434,7 +15623,7 @@ paths:
                   sizes: []
                   price_band: null
                   recent_orders: []
-                  order_count: 0
+                  recent_order_count: 0
                   wishlist: []
                 evidence:
                   - source: orders
@@ -15483,6 +15672,8 @@ paths:
                   message: Provide exactly one of x-auth-token, x-external-auth, or x-idp-token
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The shopper has not granted personalisation
           headers:
@@ -15660,6 +15851,10 @@ paths:
                   message: Provide exactly one of x-auth-token, x-external-auth, or x-idp-token
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -15801,6 +15996,8 @@ paths:
                   message: Provide exactly one of x-auth-token, x-external-auth, or x-idp-token
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The shopper has not granted personalisation
           headers:
@@ -16036,6 +16233,10 @@ paths:
                   message: The id in the path must be a valid UUID
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -16240,6 +16441,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -16415,6 +16620,8 @@ paths:
                 environment: sandbox
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: Personalization consent has not been granted
           content:
@@ -16697,6 +16904,8 @@ paths:
                   message: A reorder needs interval_days from 7 to 365
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: Personalization consent has not been granted
           content:
@@ -16916,6 +17125,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -17128,6 +17341,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -17208,6 +17425,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The shopper has not granted personalization consent (`consent_required`), or the key lacks the `agent:read` scope.
           content:
@@ -17472,6 +17691,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The shopper has not granted personalization consent (`consent_required`), or the key lacks the `agent:write` scope.
           content:
@@ -17591,8 +17812,18 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: The shopper has not granted personalization consent (`consent_required`), or the key lacks the `agent:write` scope (`insufficient_scope`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: consent_required
+                  message: The shopper has not granted personalization. Ask them to, then call POST /v1/agent/me/consent.
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -17680,8 +17911,18 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: The shopper has not granted personalization consent (`consent_required`), or the key lacks the `agent:write` scope (`insufficient_scope`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: consent_required
+                  message: The shopper has not granted personalization. Ask them to, then call POST /v1/agent/me/consent.
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -17809,8 +18050,18 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: The shopper has not granted personalization consent (`consent_required`), or the key lacks the `agent:write` scope (`insufficient_scope`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: consent_required
+                  message: The shopper has not granted personalization. Ask them to, then call POST /v1/agent/me/consent.
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -17936,8 +18187,18 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: The shopper has not granted personalization consent (`consent_required`), or the key lacks the `agent:write` scope (`insufficient_scope`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: consent_required
+                  message: The shopper has not granted personalization. Ask them to, then call POST /v1/agent/me/consent.
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -19002,6 +19263,10 @@ paths:
                   message: Idempotency-Key header is required
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '409':
           description: The key was used with different items, or the basket cannot be bought as quoted
           headers:
@@ -19481,6 +19746,10 @@ paths:
                   message: The id in the path must be a valid UUID
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: Not found
           headers:
@@ -20333,6 +20602,8 @@ paths:
                   message: A guest confirmation needs contact.email
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The token does not match, or the emailed code does not (`invalid_token`, `invalid_person_proof`)
           headers:
@@ -20928,6 +21199,8 @@ paths:
                   message: The id in the path must be a valid UUID
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The intent needs its confirmation token or the shopper it was prepared for
           headers:
@@ -21197,6 +21470,10 @@ paths:
                 environment: sandbox
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -21311,8 +21588,10 @@ paths:
                 environment: sandbox
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -21425,6 +21704,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -21548,6 +21831,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -21652,6 +21939,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -22089,6 +22380,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ShopperSignedIn'
+              example:
+                message: Account created
+                user:
+                  id: 633e7cb6-00c6-4aac-b03c-c3d70d64e25c
+                  email: john.doe@example.com
+                  email_confirmed: true
+                  email_verified: true
+                  has_password: true
+                customer:
+                  id: de11e44b-78e5-4940-ad54-cac237d5d30d
+                  name: John Doe
+                  email: john.doe@example.com
+                  phone: '+12125550142'
+                  tier: bronze
+                  total_purchases: 0
+                  created_at: '2026-06-20T13:47:38.831799+00:00'
+                session:
+                  access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MzNlN2NiNiJ9.<redacted-signature>
+                  refresh_token: gcsr_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
+                  expires_in: 900
+                  expires_at: 1781967759
+                  token_type: shopper
         '400':
           description: '`invalid_request` for a missing field; `weak_password` when the password breaks the rule.'
           content:
@@ -22098,7 +22411,15 @@ paths:
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
-          $ref: '#/components/responses/NotFoundError'
+          description: A wrong, spent, expired or unknown `claim_token`, or an order for another store or environment. The answer is identical in every case.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: This account link is no longer valid.
         '409':
           description: '`account_exists` (the address already has an account here) or `claim_unavailable` (the address already has other orders here).'
           content:
@@ -22111,6 +22432,11 @@ paths:
                     error:
                       code: account_exists
                       message: An account already exists for this email address. Sign in to see this order.
+                claim_unavailable:
+                  value:
+                    error:
+                      code: claim_unavailable
+                      message: This email address already has orders with this store. Create an account with a confirmation code to see them together.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -23122,8 +23448,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -23224,8 +23552,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -23342,8 +23672,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -23449,8 +23781,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -23581,8 +23915,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -23674,10 +24010,14 @@ paths:
                     is_default_billing: true
                     created_at: '2026-06-20T13:47:46.210663+00:00'
                     updated_at: '2026-06-20T13:47:46.210663+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '500':
           $ref: '#/components/responses/ServerError'
     post:
@@ -23822,8 +24162,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/customers/{id}/addresses/{addressId}:
@@ -23955,8 +24297,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -24037,10 +24381,14 @@ paths:
               example:
                 success: true
                 message: Address deleted
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -24153,10 +24501,14 @@ paths:
                         quantity: 2
                         name: Colombian Roast 1 kg
                     pending_action: null
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -24272,10 +24624,14 @@ paths:
                       quantity: 2
                       name: Colombian Roast 1 kg
                   pending_action: null
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -24477,8 +24833,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -24625,8 +24983,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -24759,8 +25119,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -24894,8 +25256,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -25069,8 +25433,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -25172,8 +25538,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -25278,10 +25646,14 @@ paths:
                     exp_year: 2028
                     status: active
                     created_at: '2026-08-28T09:31:12+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -25367,10 +25739,14 @@ paths:
               example:
                 success: true
                 message: Saved card removed
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -25397,7 +25773,7 @@ paths:
 
         **Customer-self access.** Works with a publishable key (safe from the browser). Provide the
         shopper's session token in the `x-auth-token` header (or the store's bring-your-own-auth
-        assertion in `x-external-auth`, never both); it must resolve to the customer in the `{id}` path
+        assertion in `x-external-auth`, or the store's identity-provider token in `x-idp-token`; exactly one); it must resolve to the customer in the `{id}` path
         parameter, otherwise the request returns `403`. A Connect key needs the `fulfilment:read` scope.
       security:
         - BearerAuth: []
@@ -25490,8 +25866,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -25510,7 +25888,7 @@ paths:
 
         **Customer-self access.** Works with a publishable key (safe from the browser). Provide the
         shopper's session token in the `x-auth-token` header (or the store's bring-your-own-auth
-        assertion in `x-external-auth`, never both); it must resolve to the customer in the `{id}` path
+        assertion in `x-external-auth`, or the store's identity-provider token in `x-idp-token`; exactly one); it must resolve to the customer in the `{id}` path
         parameter, otherwise the request returns `403`. A Connect key needs the `fulfilment:read` scope.
       security:
         - BearerAuth: []
@@ -25585,8 +25963,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -25640,7 +26020,7 @@ paths:
           query parameter. No API key and no shopper header is sent; the token is the credential, and
           sending a shopper header with it returns `400`. Requests are limited per address and per entry.
         - **Shopper credentials.** Omit `t`, send the API key, and send the shopper's session token in
-          `x-auth-token` (or the store's assertion in `x-external-auth`, never both). The shopper must be
+          `x-auth-token` (or the store's assertion in `x-external-auth`, or the store's identity-provider token in `x-idp-token`; exactly one). The shopper must be
           the buyer of the entry. A Connect key needs the `fulfilment:read` scope.
 
         An entry or file that does not exist, a token that does not match and a shopper who is not the
@@ -25708,6 +26088,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: The link, the entry or the file is not valid.
           content:
@@ -25763,7 +26147,7 @@ paths:
         Only **active**, non-zero balance, non-expired gift cards are returned (sorted by balance descending).
         Accessible with both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
 
-        Responses are cached at the edge for ~60s and support ETag revalidation via `If-None-Match`.
+        Responses are not cached at the edge. The browser may reuse them for about 60 seconds (`Cache-Control: private, max-age=60`) and they support ETag revalidation via `If-None-Match`.
       security:
         - BearerAuth: []
       parameters:
@@ -25870,8 +26254,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -25890,8 +26276,8 @@ paths:
         The `valid` flag is `true` only when the gift card is active, has a
         positive balance, and has not expired.
 
-        Responses are cached at the edge for ~30s and support ETag revalidation
-        via `If-None-Match`.
+        Responses are not cached at the edge. The browser may reuse them for about 30 seconds
+        (`Cache-Control: private, max-age=30`) and they support ETag revalidation via `If-None-Match`.
       security:
         - BearerAuth: []
       parameters:
@@ -25975,6 +26361,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -26131,6 +26521,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -26243,8 +26637,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -26355,8 +26751,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -26445,8 +26843,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -26656,8 +27056,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -26775,8 +27177,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -26901,6 +27305,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -27067,6 +27475,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -27153,6 +27565,10 @@ paths:
                 window_days: 7
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -27269,6 +27685,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -27357,6 +27777,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -27452,6 +27876,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -27475,8 +27903,32 @@ paths:
 
         **Idempotent:** re-subscribing the same email is safe — it returns `200` with
         `already_subscribed: true` and never creates a duplicate. A fresh signup returns `201`.
+
+        **Subscribing again after an unsubscribe:** an address that unsubscribed is re-subscribed only with
+        the shopper's own sign-in token (`x-auth-token`) for the customer who owns that address. Without it
+        the call answers `403 resubscribe_requires_login`; with another shopper's token, `403 forbidden`.
+        A publishable key alone never re-subscribes an address that opted out.
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          description: The signed-in shopper's token. Required only to subscribe again an address that unsubscribed earlier. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: Bring-your-own-auth assertion identifying the customer. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: A raw token from the store's own identity provider. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -27534,6 +27986,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -27624,6 +28080,10 @@ paths:
                   message: The form address is not valid.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: The form does not exist or is not available.
           headers:
@@ -27712,6 +28172,10 @@ paths:
                   message: The form address is not valid.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           description: Too many requests from this address.
           headers:
@@ -27905,6 +28369,8 @@ paths:
                     reason: invalid_email
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The store's plan does not include lead forms (`details.reason` is `plan_required`).
           headers:
@@ -28398,8 +28864,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -29035,8 +29503,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -29616,8 +30086,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -29700,6 +30172,7 @@ paths:
               - return
               - refund
               - technical
+              - dispute
           description: Filter by thread type
         - name: archived
           in: query
@@ -29712,7 +30185,7 @@ paths:
           required: false
           schema:
             type: boolean
-          description: Set to true to return only threads with unread_count_store > 0
+          description: Set to true to return only threads with unread messages for the shopper (`unread_count_customer` > 0).
         - name: limit
           in: query
           schema:
@@ -29722,7 +30195,7 @@ paths:
             maximum: 200
         - name: cursor
           in: query
-          description: Cursor for pagination (base64-encoded last_message_at value)
+          description: Opaque cursor from `pagination.next_cursor`. An invalid cursor answers 400 `invalid_cursor`.
           schema:
             type: string
         - name: fields
@@ -29790,8 +30263,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -29887,8 +30362,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -30004,8 +30481,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -30152,8 +30631,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -30252,8 +30733,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -30291,7 +30774,7 @@ paths:
 
         **`thread_type`** classifies the inquiry: `general`, `order_inquiry`,
         `product_inquiry`, `support`, `complaint`, `delivery`, `return`, `refund`,
-        or `technical`.
+        `technical`, or `dispute` (a conversation about a dispute over an order).
 
         **SDK**
       security:
@@ -30384,6 +30867,7 @@ paths:
                     - return
                     - refund
                     - technical
+                    - dispute
       responses:
         '201':
           description: Conversation created
@@ -30420,6 +30904,7 @@ paths:
                           - return
                           - refund
                           - technical
+                          - dispute
                       order_id:
                         type:
                           - string
@@ -30454,8 +30939,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -30526,8 +31013,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -30632,8 +31121,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -30713,8 +31204,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -30833,8 +31326,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '426':
@@ -30924,8 +31419,29 @@ paths:
                         created_at:
                           type: string
                           format: date-time
+              example:
+                thread:
+                  subject: Question about my order
+                  status: active
+                  store_name: Acme Store
+                  store_logo: https://cdn.example.com/acme/logo.png
+                messages:
+                  - id: 5f0d2f66-2a52-4e0e-9a1c-0b7d9c6e3a11
+                    from: you
+                    sender_name: Alex
+                    message: Where is my parcel?
+                    created_at: '2026-11-02T09:15:00Z'
+                  - id: 8a1b6d14-7c3e-4f0a-b2d9-3e5f7a9c1b22
+                    from: store
+                    sender_name: Acme Support
+                    message: It left our warehouse today.
+                    created_at: '2026-11-02T11:40:00Z'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -30980,8 +31496,16 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+              example:
+                message:
+                  id: 8a1b6d14-7c3e-4f0a-b2d9-3e5f7a9c1b22
+                  created_at: '2026-11-02T12:05:00Z'
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -31128,8 +31652,10 @@ paths:
                     instructions: Collect from the counter at the back of the store.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -31523,8 +32049,10 @@ paths:
                       message: order_total must be a number of zero or more.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -31622,6 +32150,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: With a publishable key, the tracking number is not on any of this store's orders.
           content:
@@ -31688,11 +32220,17 @@ paths:
             endpoint it wasn't granted the matching scope for. Request only what your app needs.
 
             Available scopes: `read`, `write`, `products:read`, `categories:read`, `pricing:read`,
-            `orders:read`, `orders:write`, `customers:read`, `customers:write`, `payments:read`,
-            `cart:write`, `cms:read`, `shipping:read`, `reviews:read`, `reviews:write`,
-            `gift_cards:read`, `messaging:read`, `messaging:write`, `returns:read`, `returns:write`,
-            `promotions:read`, `recommendations:read`, `search:read`, `store:read`,
-            `shopper_subscriptions:read`, `shopper_subscriptions:write`, `fulfilment:read`
+            `cms:read`, `shipping:read`, `search:read`, `recommendations:read`, `promotions:read`,
+            `gift_cards:read`, `store:read`, `orders:read`, `orders:write`, `customers:read`,
+            `customers:write`, `payments:read`, `payments:write`, `cart:write`, `reviews:read`,
+            `reviews:write`, `messaging:read`, `messaging:write`, `returns:read`, `returns:write`,
+            `disputes:read`, `disputes:write`, `b2b:read`, `b2b:write`, `agent:read`, `agent:write`,
+            `shopper_subscriptions:read`, `shopper_subscriptions:write`, `fulfilment:read`, `team:read`
+
+            `payments:write` is required to initiate a payment; without it (or `write`) the call returns
+            `403 forbidden`. `b2b:*` is offered only for wholesale stores and `disputes:*` only for
+            marketplaces. The app's publishable key never carries `write`, `orders:*`, `customers:*`,
+            `payments:*` or `b2b:write`; those belong to its secret key.
 
             Sign-in scopes: `openid`, `email`, `profile` return the signed-in person in the token
             response. With no other scope the request is identity-only: any user can approve it, no store
@@ -32144,7 +32682,8 @@ paths:
       summary: List the linked store's team
       description: |
         Returns the owner and the active team members of the store the key belongs to, with each person's
-        role. Use it to offer the store's team a place in your application.
+        role, its label and the permissions it grants. Use it to offer the store's team a place in your
+        application with access that matches their role on the store.
 
         **Authentication:** The connection's secret key (`tybrite_sk_*`). The connection must have been
         granted the `team:read` scope at consent; otherwise `403 insufficient_scope` is returned.
@@ -32188,16 +32727,36 @@ paths:
                         role:
                           type: string
                           description: '`owner`, or the member''s role on the store (for example `manager` or `cashier`).'
+                        role_label:
+                          type:
+                            - string
+                            - 'null'
+                          description: The role's display name on the store, or null when the role has none.
+                        role_permissions:
+                          type: array
+                          items:
+                            type: string
+                          description: |
+                            The permissions the role grants on the store. The owner's is `["all"]`. Use it to map a
+                            member's rights into your application rather than inferring them from the role name.
               example:
                 members:
                   - sub: 2c1b0b0e-7a53-4a55-8c52-0f0a7f2f6d11
                     email: owner@store.com
                     name: Jane Doe
                     role: owner
+                    role_label: Owner
+                    role_permissions:
+                      - all
                   - sub: 9d3e7a10-4b6c-4c1f-9a77-3e55c0d2a8b4
                     email: till@store.com
                     name: Sam Till
                     role: cashier
+                    role_label: Cashier
+                    role_permissions:
+                      - view_sales
+                      - create_sales
+                      - view_inventory
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -32369,8 +32928,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -32513,8 +33074,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -32595,8 +33158,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -32679,8 +33244,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -32737,6 +33304,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -32795,6 +33366,10 @@ paths:
                     label: Other
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -32916,6 +33491,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: No such order for this customer.
           content:
@@ -33011,8 +33590,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -33144,8 +33725,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -33364,8 +33947,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '422':
@@ -33487,8 +34072,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -33587,8 +34174,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -33687,8 +34276,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -33751,6 +34342,10 @@ paths:
                     label: Other (please describe)
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/disputes:
@@ -33858,8 +34453,10 @@ paths:
                     resolved_at: null
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -33984,8 +34581,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -34072,6 +34671,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -34155,8 +34758,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -34255,6 +34860,10 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -34318,6 +34927,8 @@ paths:
                       $ref: '#/components/schemas/B2bRfq'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '500':
@@ -34415,6 +35026,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '500':
@@ -34475,6 +35088,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/B2bRfq'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -34542,6 +35159,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/B2bQuote'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -34611,6 +35232,10 @@ paths:
                         type: string
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -34674,6 +35299,10 @@ paths:
                   status: rejected
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -34734,6 +35363,8 @@ paths:
                       $ref: '#/components/schemas/B2bPurchaseOrder'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '500':
@@ -34796,6 +35427,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/B2bPurchaseOrder'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -34856,6 +35491,8 @@ paths:
                       $ref: '#/components/schemas/B2bInvoice'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '500':
@@ -34918,6 +35555,10 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/B2bInvoice'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -35017,6 +35658,8 @@ paths:
                 $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The key is publishable, or the customer has no wholesale account with this store.
           content:
@@ -35087,7 +35730,7 @@ paths:
                     subject_type: purchase_order
                     subject_id: 7761b763-224b-43f2-a3f0-01139159b430
                     po_number: PO-20260711-47cc6c
-                    amount_cents: 250000
+                    amount: 2500
                     currency: USD
                     status: pending
                     requested_at: '2026-07-11T13:32:07.271Z'
@@ -35100,6 +35743,8 @@ paths:
                 $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The key is publishable, or the wholesale feature is not enabled for this store.
           content:
@@ -35197,6 +35842,8 @@ paths:
                 $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           description: The key is publishable, the person is not an approver of this account, or they placed the order themselves.
           content:
@@ -35365,6 +36012,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '500':
@@ -35568,7 +36217,7 @@ paths:
                     render navigation, a category strip, or any layout built from the taxonomy.
 
                     **Store lifecycle & configuration:** `store.updated` (the store's name,
-                    logo, branding, contact, base currency, or the shopping assistant's name or
+                    logo, branding, contact details, address, base currency, store settings, or the shopping assistant's name or
                     logo changed — carries a `changed_fields` list, which names
                     `agent_assistant_name` and `agent_assistant_logo_url` for the assistant),
                     `payment_provider.connected` (a payment provider was
@@ -35599,9 +36248,12 @@ paths:
                     `automation-webhooks` guide.
 
                     **Catalog sync & syndication:** `feed.sync.completed` (a scheduled
-                    inbound feed-pull finished — carries created/updated/failed counts),
+                    inbound feed-pull finished — carries `source_id`, `source_name`, `format`,
+                    `status`, `rows_total`, `rows_created`, `rows_updated`, `rows_skipped`,
+                    `rows_failed` and an `errors` list),
                     `channel.sync.completed` (a sales-channel push to Google/Meta/… finished —
-                    carries pushed/rejected counts)
+                    carries `channel_id`, `provider`, `status`, `items_total`, `items_pushed` and
+                    `items_rejected`)
 
                     **Wholesale (B2B):** for stores with wholesale enabled — the trade itself:
                     `b2b.rfq.created`, `b2b.quote.sent`, `b2b.quote.accepted`, `b2b.quote.rejected`,
@@ -35673,6 +36325,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -35741,6 +36395,8 @@ paths:
                   has_more: false
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -35801,6 +36457,8 @@ paths:
                     failed: 0
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -35880,6 +36538,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -35925,6 +36585,8 @@ paths:
                 message: Webhook endpoint deleted
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -36061,6 +36723,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -36159,6 +36823,8 @@ paths:
                   has_more: true
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -36229,6 +36895,8 @@ paths:
                       attempted_at: '2026-06-20T11:37:56.496+00:00'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -36301,6 +36969,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -36359,7 +37029,7 @@ paths:
         - name: Idempotency-Key
           in: header
           required: true
-          description: Unique key per batch; retrying with the same key returns the original result instead of re-importing.
+          description: Unique key per batch. Retrying the same batch with the same key returns the original result instead of re-importing; the same key with a different batch answers `409 idempotency_key_reused`, and a first run still in progress answers `409 idempotency_in_progress`.
           schema:
             type: string
           example: ingest-1771523993-abc123
@@ -36501,12 +37171,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '409':
-          $ref: '#/components/responses/ConflictError'
+          description: The `Idempotency-Key` was already used for a different batch (`idempotency_key_reused`), or the first run with this key is still being processed (`idempotency_in_progress`; retry with the same key).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                idempotency_key_reused:
+                  summary: Key used for a different batch
+                  value:
+                    error:
+                      code: idempotency_key_reused
+                      message: This Idempotency-Key was already used with a different request. Send a new key for a different request.
+                idempotency_in_progress:
+                  summary: First run still in progress
+                  value:
+                    error:
+                      code: idempotency_in_progress
+                      message: A request with this Idempotency-Key is still being processed. Retry shortly.
         '422':
-          description: Every row failed validation; nothing was written.
+          description: Every row failed validation; nothing was written. A retry with the same `Idempotency-Key` replays this 422.
           content:
             application/json:
               schema:
@@ -36591,6 +37280,8 @@ paths:
             application/xml:
               schema:
                 type: string
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '429':
           $ref: '#/components/responses/RateLimitError'
   /v1/ingest/test:
@@ -36680,6 +37371,8 @@ paths:
                     stock: 3
         '400':
           $ref: '#/components/responses/BadRequestError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '429':
           $ref: '#/components/responses/RateLimitError'
   /v1/feeds/{store}/products.json:
@@ -36698,6 +37391,7 @@ paths:
         `{store}` is the store's id or its short store code. If the store set a private token,
         append `?token=…`. The feed shape matches what the ingestion endpoints accept, so a
         store-to-store sync is a direct pull-and-ingest with no field mapping.
+      security: []
       parameters:
         - name: store
           in: path
@@ -36771,6 +37465,7 @@ paths:
       description: |
         XML form of the public catalog feed. See the JSON variant for the opt-in and token rules.
         No API key required.
+      security: []
       parameters:
         - name: store
           in: path
@@ -36831,6 +37526,7 @@ paths:
 
         AI assistants look for `/llms.txt` at the root of a site, so a storefront typically forwards its
         own `/llms.txt` to this address.
+      security: []
       parameters:
         - name: store
           in: path
@@ -36873,6 +37569,7 @@ paths:
         storefront link, category, brand and description, and one line per variant giving its SKU,
         price, any previous price and whether it is in stock. Published under the same rules as the
         summary. No API key required.
+      security: []
       parameters:
         - name: store
           in: path
@@ -37438,6 +38135,8 @@ paths:
           description: Sandbox data wiped.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -37460,6 +38159,8 @@ paths:
           description: Sandbox data wiped.
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -37527,6 +38228,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -37540,9 +38243,9 @@ paths:
         - Sandbox
       summary: Replay a sandbox webhook event
       description: |
-        Re-sends a previously-recorded **sandbox** webhook event to all of your matching, enabled
-        webhook endpoints — so you can re-test your handler without recreating the underlying order,
-        customer, etc. Identify the event either by `event_id`, or by `type` to replay the most
+        Re-sends a previously-recorded **sandbox** webhook event to your matching, enabled
+        webhook endpoints, ten per call (page through them with `offset` and `next_offset`). So you can re-test your handler without recreating the underlying order,
+        customer, etc. A replay with no enabled or subscribed endpoint returns 400. Identify the event either by `event_id`, or by `type` to replay the most
         recent sandbox event of that type for your store. The original event is unchanged.
 
         Requires a secret test key (`tybrite_sk_test_*`).
@@ -37561,31 +38264,72 @@ paths:
                 type:
                   type: string
                   description: Replay the most recent sandbox event of this type (e.g. `order.created`). Provide this or `event_id`.
+                offset:
+                  type: integer
+                  minimum: 0
+                  description: Where to continue when an event has more than 10 subscribed endpoints; use the `next_offset` of the previous response. Defaults to 0.
       responses:
         '200':
-          description: Replay delivered (per-endpoint results returned).
+          description: Replay delivered to one page of up to 10 endpoints (per-endpoint results returned). When `next_offset` is not null, send the same request with `offset` set to it to reach the next page.
           content:
             application/json:
               schema:
                 type: object
+                required:
+                  - replayed_event_id
+                  - event_id
+                  - retried
+                  - results
                 properties:
                   replayed_event_id:
                     type: string
+                  event_id:
+                    type: string
+                  retried:
+                    type: integer
+                    description: Number of endpoints delivered to in this page (at most 10).
+                  total_endpoints:
+                    type: integer
+                    description: Number of enabled endpoints subscribed to the event.
+                  next_offset:
+                    type:
+                      - integer
+                      - 'null'
+                    description: The `offset` for the next page, or null when every endpoint has been reached.
                   results:
                     type: array
                     items:
                       type: object
+                      required:
+                        - endpoint_id
+                        - success
+                        - status_code
+                      properties:
+                        endpoint_id:
+                          type: string
+                          format: uuid
+                        success:
+                          type: boolean
+                        status_code:
+                          type:
+                            - integer
+                            - 'null'
               example:
                 replayed_event_id: 9c2f1a44-77bd-4e10-a3c6-1b8e5d0f7a22
+                event_id: 9c2f1a44-77bd-4e10-a3c6-1b8e5d0f7a22
+                retried: 1
+                total_endpoints: 1
+                next_offset: null
                 results:
                   - endpoint_id: 3e7a9c10-45bf-4a2e-9f88-6d2c1b4e0a35
-                    url: https://example.com/webhooks/gc
-                    status: delivered
-                    response_status: 200
+                    success: true
+                    status_code: 200
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -37686,6 +38430,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -37758,6 +38504,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -37866,6 +38614,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -37960,6 +38710,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -38088,6 +38840,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -38131,6 +38885,8 @@ paths:
                     updated_at: '2026-10-03T23:14:17.072238+00:00'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -38224,6 +38980,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -38273,6 +39031,8 @@ paths:
                 removed: 2
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '429':
@@ -38321,6 +39081,8 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
@@ -40624,6 +41386,15 @@ components:
         id:
           type: string
           format: uuid
+        order_id:
+          type: string
+          format: uuid
+        product_options:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+          description: The options the shopper chose on this line.
         custom_fields:
           type: array
           description: |
@@ -40656,10 +41427,11 @@ components:
           type: number
           format: float
           example: 999.99
-        subtotal:
+        total_price:
           type: number
           format: float
           example: 1999.98
+          description: '`unit_price` × `quantity`, in the order''s currency.'
     OrderStatusNote:
       type: object
       description: |
@@ -40724,14 +41496,7 @@ components:
           example: pending
         payment_method:
           type: string
-          enum:
-            - stripe
-            - paypal
-            - paystack
-            - mpesa
-            - cash
-            - bank_transfer
-          description: Method used for payment
+          description: 'Method used for payment: a built-in method (`card`, `stripe`, `paypal`, `paystack`, `mpesa`, `mpesa_c2b`, `cash`, `bank_transfer`, `free`) or the identifier of one of the store''s own payment providers.'
           example: stripe
         payment_reference:
           type: string
@@ -40967,6 +41732,10 @@ components:
                 - none
               description: Which of the store's rates priced the address, as returned by `POST /v1/shipping/calculate`.
               example: distance
+    OrderSummary:
+      description: An order as listed. The list omits `items`, `status_notes` and `custom_fields`; fetch one order for those.
+      allOf:
+        - $ref: '#/components/schemas/Order'
     PaymentMethod:
       type: object
       properties:
@@ -40989,11 +41758,11 @@ components:
           example: redirect
         environment:
           type: string
+          description: The provider's mode. A live provider reports `production`.
           enum:
             - production
             - test
             - sandbox
-            - staging
           example: test
         is_configured:
           type: boolean
@@ -41170,7 +41939,7 @@ components:
           type: number
           format: float
           description: unit_price × quantity
-          example: 69998
+          example: 699.98
         stock_available:
           type:
             - integer
@@ -41186,13 +41955,6 @@ components:
         updated_at:
           type: string
           format: date-time
-        environment:
-          type: string
-          enum:
-            - production
-            - sandbox
-          description: Whether this cart item belongs to the live or test environment.
-          example: production
     WishlistItem:
       type: object
       properties:
@@ -41487,10 +42249,11 @@ components:
           type: string
           enum:
             - seller_rate
+            - operator_rate
             - carrier_rate
             - flat
             - free
-          description: 'How the shipping was priced: the merchant''s own delivery rates, a carrier option the shopper chose, the marketplace''s flat rate, or free under the marketplace''s free-shipping threshold.'
+          description: 'How the shipping was priced: the merchant''s own delivery rates, the marketplace operator''s rates, a carrier option the shopper chose, the marketplace''s flat rate, or free under the marketplace''s free-shipping threshold.'
           example: seller_rate
         commission_amount:
           type: number
@@ -41506,6 +42269,42 @@ components:
             - 'null'
           format: uuid
           description: Identifier of the commission rule applied to this merchant, or null if none matched.
+        seller_currency:
+          type: string
+          description: The currency this seller prices in (ISO 4217, upper case).
+          example: GBP
+        currency_rate:
+          type: number
+          description: Rate used to convert the seller's prices into the cart currency.
+          example: 1.27
+        gross_seller_amount:
+          type: number
+          description: '`gross_amount` in the seller''s currency.'
+          example: 120
+        merchant_gross_seller:
+          type: number
+          description: '`merchant_gross` in the seller''s currency.'
+          example: 114
+        shipping_description:
+          type:
+            - string
+            - 'null'
+          description: Human label of the shipping applied, for example `Flat rate`.
+          example: Flat rate
+        shipping_rate:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+          description: The carrier option chosen; null unless `shipping_pricing` is `carrier_rate`.
+        gift_card_amount:
+          type: number
+          description: Gift card value applied to this merchant's share, in the cart currency.
+          example: 0
+        gift_card_amount_seller:
+          type: number
+          description: The same gift card amount in the seller's currency.
+          example: 0
     MarketplaceCheckoutResponse:
       type: object
       description: |
@@ -42133,14 +42932,7 @@ components:
             $ref: '#/components/schemas/CustomFieldValue'
         tier:
           type: string
-          description: |
-            The customer's loyalty/spend tier, derived from their purchase history. New
-            customers start at `bronze`.
-          enum:
-            - bronze
-            - silver
-            - gold
-            - platinum
+          description: The pricing tier the merchant assigned to this customer. New customers start at `bronze`. Returned by the authentication endpoints only.
           example: bronze
         join_date:
           type: string
@@ -42212,13 +43004,6 @@ components:
               type: string
             preferred_store:
               type: string
-        environment:
-          type: string
-          enum:
-            - production
-            - sandbox
-          description: Whether this customer record belongs to the live or test environment.
-          example: production
     ShopperSession:
       type: object
       description: 'A shopper''s session with the store: a short-lived sign-in token and a refresh token. Store both values and replace them on every refresh.'
@@ -44171,6 +44956,8 @@ components:
             - return
             - refund
             - technical
+            - dispute
+          description: '`dispute` is a conversation about a dispute over an order.'
         status:
           type: string
           enum:
@@ -44199,18 +44986,27 @@ components:
           type: integer
         unread_count_store:
           type: integer
+        customer_last_read_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the shopper last read the thread. Messages the store sent before this time have been read.
+        store_last_read_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the store last read the thread. Messages the shopper sent before this time have been read by the store.
+        store_id:
+          type: string
+          format: uuid
         is_archived:
           type: boolean
         is_muted:
           type: boolean
         is_pinned:
           type: boolean
-        environment:
-          type: string
-          enum:
-            - production
-            - sandbox
-          description: Whether this conversation belongs to live or test data. Test API keys only see `sandbox`; live keys only see `production`.
         created_at:
           type: string
           format: date-time
@@ -44280,12 +45076,6 @@ components:
             - string
             - 'null'
           format: date-time
-        environment:
-          type: string
-          enum:
-            - production
-            - sandbox
-          description: Whether this message belongs to live or test data. Test API keys only see `sandbox`; live keys only see `production`.
         created_at:
           type: string
           format: date-time
@@ -44805,7 +45595,9 @@ components:
             - fallback: the store's "everywhere else" rate
             - none: the store has no delivery rates (fee 0), or a carrier-options-only request
         coordinates:
-          type: object
+          type:
+            - object
+            - 'null'
           description: The address's coordinates (geocoded when a place_name was sent), with the country and postcode used to match zones when known.
           properties:
             latitude:
@@ -44850,12 +45642,10 @@ components:
           items:
             $ref: '#/components/schemas/ShippingOption'
         cheapest_option:
-          type:
-            - object
-            - 'null'
           description: The lowest-fee available entry of `options` (the delivery options; the pickup options when there is no delivery), in the shape of a `ShippingOption`. Null when nothing is available, and null when the request named only a country and the store's rules are map zones and distance rates (a price would be a guess); show no delivery price then. Use it for "Delivery from £3.95" on a product page.
-          allOf:
+          oneOf:
             - $ref: '#/components/schemas/ShippingOption'
+            - type: 'null'
         delivery:
           type:
             - object
@@ -45929,10 +46719,13 @@ components:
           example: USD
         amount:
           type: number
+          description: 'Major currency units: 200 is 200.00 in `currency`.'
         amount_paid:
           type: number
+          description: Major currency units.
         tax_amount:
           type: number
+          description: Major currency units.
         due_date:
           type:
             - string
@@ -46000,10 +46793,12 @@ components:
           type:
             - string
             - 'null'
-        amount_cents:
+        amount:
           type:
-            - integer
+            - number
             - 'null'
+          description: 'Major currency units: 2500 is 2500.00 in `currency`.'
+          example: 2500
         currency:
           type:
             - string
@@ -47140,7 +47935,7 @@ components:
         Tybrite-Environment:
           $ref: '#/components/headers/TybriteEnvironment'
         Retry-After:
-          description: Seconds until the limit that refused the request resets. Sent with `rate_limited`.
+          description: Seconds until the limit that refused the request resets. Sent with `rate_limited` and with `quota_exceeded` (for the latter, the seconds until the monthly reset). Not sent when no reset time is known.
           schema:
             type: integer
           example: 540
@@ -47155,7 +47950,7 @@ components:
               remaining: 0
               reset: 1706198400
     ServerError:
-      description: Internal server error
+      description: Internal server error. A 5xx response never carries `details`.
       headers:
         Tybrite-Environment:
           $ref: '#/components/headers/TybriteEnvironment'
@@ -47180,6 +47975,100 @@ components:
             error:
               code: not_found
               message: Resource not found
+    SubscriptionExpiredError:
+      description: The store's subscription is not active, or the store is deactivated. Every API-keyed request for that store answers `402` with `subscription_expired` until the subscription is renewed.
+      headers:
+        Tybrite-Environment:
+          $ref: '#/components/headers/TybriteEnvironment'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: subscription_expired
+              message: This store's subscription is not active
+    ScopeForbiddenError:
+      description: Insufficient permissions for this key. A GC Connect key that was not granted the operation's scope (for example `agent:read` or `orders:write`) receives `insufficient_scope`; a request that needs a secret key, or a marketplace operator key calling a single-store operation, receives `forbidden`.
+      headers:
+        Tybrite-Environment:
+          $ref: '#/components/headers/TybriteEnvironment'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            insufficient_scope:
+              summary: Connect key without the operation's scope
+              value:
+                error:
+                  code: insufficient_scope
+                  message: This connected app was not granted the 'agent:read' scope.
+            forbidden:
+              summary: Secret key required
+              value:
+                error:
+                  code: forbidden
+                  message: This operation requires a secret key. Publishable keys cover catalogue reads and the actions a shopper takes for themselves.
+    SignedRequestUnauthorizedError:
+      description: Authentication failed. Either the API key is missing, invalid or expired (`unauthorized`), or the request signature failed verification (`signature_missing`, `timestamp_missing`, `timestamp_malformed`, `timestamp_out_of_window`, `signature_invalid`). `X-Timestamp` is Unix time in seconds or milliseconds, within 5 minutes of server time.
+      headers:
+        Tybrite-Environment:
+          $ref: '#/components/headers/TybriteEnvironment'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_api_key:
+              summary: Invalid or expired API key
+              value:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired API key
+            missing_api_key:
+              summary: Missing API key
+              value:
+                error:
+                  code: unauthorized
+                  message: Missing or invalid Authorization header
+            expired_api_key:
+              summary: API key past its expiry
+              value:
+                error:
+                  code: unauthorized
+                  message: API key has expired
+            signature_missing:
+              summary: Missing X-Signature header
+              value:
+                error:
+                  code: signature_missing
+                  message: Missing X-Signature header. Sign the request as base64(HMAC-SHA256("{timestamp}.{body}")).
+            timestamp_missing:
+              summary: Missing X-Timestamp header
+              value:
+                error:
+                  code: timestamp_missing
+                  message: Missing X-Timestamp header. Send the Unix time in seconds or milliseconds.
+            timestamp_malformed:
+              summary: X-Timestamp is not a number
+              value:
+                error:
+                  code: timestamp_malformed
+                  message: X-Timestamp must be a Unix timestamp in seconds or milliseconds.
+            timestamp_out_of_window:
+              summary: X-Timestamp more than 5 minutes from server time
+              value:
+                error:
+                  code: timestamp_out_of_window
+                  message: X-Timestamp is outside the accepted window. Check the sending clock and re-sign.
+                  details: The timestamp was 412s away from server time.
+            signature_invalid:
+              summary: Signature does not match
+              value:
+                error:
+                  code: signature_invalid
+                  message: Signature does not match. Sign the exact bytes sent as "{timestamp}.{body}", using the same timestamp as the X-Timestamp header, and encode the digest as base64.
     CustomerAuthError:
       description: 'Authentication failed. `unauthorized` means the API key is missing or invalid, or the `x-auth-token` header is absent. `invalid_token` means the `x-auth-token` is not a valid sign-in token for this store and environment: expired, revoked, issued by another store, or malformed. A storefront refreshes the session once with `POST /v1/auth/refresh` and treats the shopper as signed out if that fails.'
       headers:

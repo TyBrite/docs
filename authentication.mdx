@@ -55,7 +55,7 @@ The key prefix determines which environment your requests target — there is no
 
 - Orders, customers, cart items, wishlist entries, product reviews, and messaging conversations created with a `test` key are stored in the sandbox partition and are never returned to `live` key requests.
 - Payment providers switch to test mode automatically when a `test` key is used — Stripe test mode, PayPal sandbox, Paystack test keys, M-Pesa sandbox — regardless of what your store's payment settings show.
-- Every authenticated response includes a `Tybrite-Environment: production | sandbox` header so you can confirm which partition resolved.
+- Every authenticated response, including error responses, includes a `Tybrite-Environment: production | sandbox` header so you can confirm which partition resolved. A live key always reports `production`; no other value stands for live data.
 
 <Tip>
   Build and test your entire integration with `tybrite_sk_test_*` keys. When you're ready for production, swap to `tybrite_sk_live_*` and the right environment follows automatically — no code changes needed.
@@ -101,7 +101,7 @@ const signature = createHmac('sha256', process.env.TYBRITE_HMAC_SECRET)
 ```
 
 The timestamp may be sent in seconds or milliseconds — both are accepted — and a signature is valid
-for five minutes either side of it. Sign the exact bytes you send: re-serializing the body after
+for five minutes either side of it. A request that fails verification returns `401` with a code naming the cause: `signature_missing`, `timestamp_missing`, `timestamp_malformed`, `timestamp_out_of_window` or `signature_invalid`. A store with no signing secret configured returns `500 config_error`. Sign the exact bytes you send: re-serializing the body after
 signing it produces a different string and the signature will not match.
 
 Endpoints requiring HMAC signing:
@@ -127,6 +127,8 @@ failure resolves to the original charge or order rather than a second one.
 
 *   **Mechanism**: The server tracks these keys. If a request is retried with the same key, the server returns the original response with an `idempotent: true` flag.
 *   **Choosing a key**: A unique UUID, or a hash of the transaction details (e.g., `payment-order_123-ts_456`).
+
+A retry with the same key and the same body returns the original result. The same key with a different body returns `409` with the code `idempotency_key_reused`; payment initialisation, catalog ingestion and marketplace checkout also return `409 idempotency_in_progress` while the first request with the key is still being processed, and the same request can be sent again shortly.
 
 Endpoints requiring an Idempotency Key:
 *   `POST /v1/payments/initialize`
@@ -213,7 +215,7 @@ Every endpoint accepts one of the credentials above, or a combination of them. T
 | Search — text & semantic (`client.search.*`) | `pk` or `sk` |
 | Tax preview (`client.tax.previewTax`) | `pk` or `sk` (browser) |
 | Recommendations (`client.recommendations.*`) | **`sk` only** |
-| Discovery — most-viewed / most-added-to-cart / best-converting (`client.discovery.*`) | `pk` or `sk` (browser) |
+| Discovery — most-viewed / most-added-to-cart / best-converting (`client.discovery.*`) | `pk` or `sk` (browser); a GC Connect key needs `recommendations:read` |
 | Event capture (`client.events.recordEvent`) | `pk` (browser) |
 | Blog posts & lookbooks (`client.cms.*`) | `pk` or `sk` |
 | Store info (`client.system.getStoreInfo`) | `pk` or `sk` |
@@ -257,7 +259,7 @@ Every endpoint accepts one of the credentials above, or a combination of them. T
 | Gift card check by code (`checkGiftCard`) | `pk` or `sk` |
 | List my gift cards (`listGiftCards`) | `pk` (browser) **+ session** |
 | Promotions — list & calculate (`client.promotions.*`) | `pk` or `sk` |
-| Shipping — zones, calculate, track (`getShippingZones`, `calculateShipping`, `trackShipment`) | `pk` or `sk` |
+| Shipping — zones, calculate, track (`getShippingZones`, `calculateShipping`, `trackShipment`) | `pk` or `sk`; a GC Connect key needs `shipping:read`, including for `calculateShipping` |
 
 ### Platform & integrations
 
@@ -293,6 +295,12 @@ When building authenticated customer experiences (like "My Account" or "Quick Ch
 <Tip>
   Our TypeScript SDK exposes `refreshToken` so you can wire up a scheduled rotation. See the [Authentication Service](/sdk/api-reference/classes/AuthenticationService) for the full method reference and lifecycle diagram.
 </Tip>
+
+## Subscription status and key scope
+
+A store whose subscription is not active, or that has been deactivated, answers every API-keyed request with `402` and the code `subscription_expired` until the subscription is renewed. The response carries the usual `Tybrite-Environment` header.
+
+A key issued through [GC Connect](/gc-connect#scopes) carries only the scopes the merchant approved. A request outside them returns `403` with the code `insufficient_scope`, and a request that needs a secret key returns `403 forbidden`.
 
 ## Keys limited to a list of endpoints
 

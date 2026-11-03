@@ -9,7 +9,7 @@ the highest view→purchase conversion over a time window. They back storefront 
 "Popular now" homepage shelf, a "Trending in carts" section, or a product-page "hot" badge.
 
 All three reads are publishable-key accessible, so they are safe to call from a browser or app, and
-they are available on every plan. Each returns product ids and a `score`; the product details come
+they are available on every plan. A key issued through GC Connect also needs the `recommendations:read` scope; without it each read returns `403 insufficient_scope`. Each returns product ids and a `score`; the product details come
 from [Products](/sdk/api-reference/classes/ProductsService).
 
 <Note>

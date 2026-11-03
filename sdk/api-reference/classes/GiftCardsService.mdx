@@ -161,6 +161,8 @@ const { gift_cards } = await client.giftCards.listGiftCards({
 
 The resolved customer identity must match the requested `customerId` before any gift cards are returned.
 
+Gift card reads are not cached at the edge. A browser may reuse `listGiftCards` for about 60 seconds and `checkGiftCard` for about 30 seconds (`Cache-Control: private`), and both support ETag revalidation with `If-None-Match`.
+
 ### Response Codes
 
 | Code | Meaning |
@@ -168,5 +170,6 @@ The resolved customer identity must match the requested `customerId` before any 
 | `200` | Success. |
 | `400` | Missing required `customer_id` (on `listGiftCards`). |
 | `401` | Missing or invalid `xAuthToken` or API key. |
-| `403` | Customer token does not match the `customer_id`. |
+| `402` | `subscription_expired` — the store's subscription is not active. |
+| `403` | Customer token does not match the `customer_id`, or a GC Connect key lacks the `gift_cards:read` scope (`insufficient_scope`). |
 | `404` | Gift card not found (on `checkGiftCard`). |
