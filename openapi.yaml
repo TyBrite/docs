@@ -6477,8 +6477,8 @@ paths:
                   description: |
                     Payment amount in MAJOR currency units — `100.00` is one hundred dollars, not one
                     dollar. This matches every other amount in the API: catalog prices, order totals
-                    and refunds are all major units. Conversion to a processor's minor units (Stripe
-                    cents, Paystack kobo) happens server-side; never send minor units here.
+                    and refunds are all major units. The processor's own smallest-denomination amounts (Stripe
+                    cents, Paystack kobo) are converted server-side; never send those here.
 
                     When `order_id` is supplied the amount must equal that order's total to the cent,
                     or the request is rejected with `amount_mismatch`. Sending `10000` for a `100.00`
@@ -7013,7 +7013,7 @@ paths:
                           - number
                           - 'null'
                         format: float
-                        description: Amount in major currency units (converted from Stripe's minor units)
+                        description: Amount in major currency units
                         example: 100
                       currency:
                         type: string
@@ -9074,7 +9074,7 @@ paths:
         Currency: every price is charged in the marketplace's currency. A merchant who prices in
         another currency is converted with the exchange rate the marketplace sets for that currency —
         items, the merchant's discounts, gift-card amounts and delivery fees alike, each rounded to
-        the marketplace currency's minor units. A merchant whose currency has no rate in the
+        the marketplace currency's decimal places. A merchant whose currency has no rate in the
         marketplace cannot be bought from there (`400 item_currency_unsupported`).
 
         Shipping: each merchant's items are priced by that merchant's delivery rates, converted to
@@ -27804,7 +27804,7 @@ paths:
       description: |
         Returns what a set of items costs under one Subscribe & Save offer: the price of the first
         delivery, the price of each later delivery, the discount on each, and whether shipping is free.
-        Amounts are in the smallest unit of the store's currency.
+        Amounts are in major currency units of the store's currency (`8.0` is eight dollars).
 
         Prices come from the store's catalogue; a price in the request is not read. An item without a
         `variant_id` is priced at the product's default variant. Only the items the offer covers are
@@ -41761,7 +41761,7 @@ components:
           example: SNY-WH1002
         price:
           type: number
-          description: The variant's online price in major currency units (369.99 = $369.99), not minor units. It is the in-store price when no online price is set.
+          description: The variant's online price in major currency units (369.99 = $369.99), never a whole-number count of cents. It is the in-store price when no online price is set.
           example: 369.99
         sale_price:
           type:
@@ -42079,7 +42079,7 @@ components:
           type:
             - number
             - 'null'
-          description: The online price in major currency units (369.99 = $369.99), not minor units. It is the variant's online price, or its in-store price when no online price is set. On the list endpoint it is the price of the product's lowest-priced variant. Only present for simple products or the list endpoint.
+          description: The online price in major currency units (369.99 = $369.99), never a whole-number count of cents. It is the variant's online price, or its in-store price when no online price is set. On the list endpoint it is the price of the product's lowest-priced variant. Only present for simple products or the list endpoint.
           example: 369.99
         sale_price:
           type:
@@ -43587,8 +43587,8 @@ components:
         delivery of the product at a discount. Only the fields a storefront shows are returned.
 
         `discount_value` depends on `discount_type`. For `percentage` it is in hundredths of a percent
-        (`1500` is 15%). For `fixed_per_item` it is in the smallest unit of the store's currency taken
-        off each item (`200` is 2.00 in a two-decimal currency). For `none` it is `0` and the offer's
+        (`1500` is 15%). For `fixed_per_item` it is an amount in major currency units taken off each
+        item (`2.5` is 2.50 in the store's currency). For `none` it is `0` and the offer's
         benefit is its free shipping.
       required:
         - id
@@ -43621,14 +43621,14 @@ components:
             - none
           example: percentage
         discount_value:
-          type: integer
+          type: number
           description: The discount on every delivery after the first, in the units described above.
           example: 1500
         first_order_discount_value:
           type:
-            - integer
+            - number
             - 'null'
-          description: The discount on the first delivery, when it differs from `discount_value`; otherwise `null`.
+          description: The discount on the first delivery, when it differs from `discount_value`, in the same units; otherwise `null`.
           example: 2000
         min_cycles:
           type: integer
@@ -45113,8 +45113,8 @@ components:
     SubscribeSaveQuote:
       type: object
       description: |
-        The price per delivery of a set of items under one Subscribe & Save offer. All amounts are in the
-        smallest unit of the store's currency (cents for a two-decimal currency).
+        The price per delivery of a set of items under one Subscribe & Save offer. All amounts are in major currency units
+        of `currency` (`8.0` is eight dollars), like every other price in the API.
 
         `available` is `false` when the offer is not live or covers none of the items; no prices are returned
         then. Only the items the offer covers are listed in `covered_items` and priced; the other items of a

@@ -15,7 +15,7 @@ Subscribe & Save lets a shopper buy a product on a schedule and pay less for it.
 
 ## Offers
 
-An offer carries a `label` to show on the subscribe option, the `intervals` the shopper can choose from, a `discount_type` and `discount_value`, an optional `first_order_discount_value`, `min_cycles` (the deliveries the shopper commits to before cancelling takes effect), `max_skips_per_year`, `free_shipping` and `stacks_with_promotions`. `discount_value` is in hundredths of a percent for `percentage` (`1500` is 15%) and in the smallest currency unit taken off each item for `fixed_per_item`; it is `0` for `none`, where the benefit is free shipping.
+An offer carries a `label` to show on the subscribe option, the `intervals` the shopper can choose from, a `discount_type` and `discount_value`, an optional `first_order_discount_value`, `min_cycles` (the deliveries the shopper commits to before cancelling takes effect), `max_skips_per_year`, `free_shipping` and `stacks_with_promotions`. `discount_value` is in hundredths of a percent for `percentage` (`1500` is 15%) and an amount in major currency units taken off each item for `fixed_per_item` (`2.5` is 2.50); it is `0` for `none`, where the benefit is free shipping.
 
 The list is empty when the product has no live offer, or when the store's plan does not include Subscribe & Save. An offer that is paused, archived, scheduled or past its end is not returned. The response is cached for a short time, so an offer paused in that window may still be listed; the quote and the order both check that it is live.
 
