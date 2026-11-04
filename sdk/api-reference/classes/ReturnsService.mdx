@@ -236,6 +236,8 @@ const { data: lodged } = await client.returns.createReturn({
 
 Lists the authenticated customer's own returns, newest first.
 
+A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a signing secret, so a server can confirm the refund amount, method and status of each return. A call made with a marketplace key is not signed. See [Verify a response](/verify-response).
+
 ```typescript
 const { data: myReturns } = await client.returns.listReturns({
   xAuthToken: customerSessionToken,
@@ -301,6 +303,8 @@ const { data: myReturns } = await client.returns.listReturns({
 ## `getReturn`
 
 Returns a single return by ID, including its line items and current status. A return that does not exist or does not belong to the authenticated customer returns `404`.
+
+A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a signing secret, so a server can confirm the refund amount, method and status. A call made with a marketplace key is not signed. See [Verify a response](/verify-response).
 
 ```typescript
 const { data: detail } = await client.returns.getReturn({

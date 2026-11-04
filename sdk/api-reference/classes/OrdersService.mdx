@@ -71,6 +71,8 @@ the field rather than omitting it silently.
 
 The list returns order summaries (`OrderSummary`) **without line items, status notes or custom fields** (to keep responses fast). When you need the full order including its items, call [`getOrder`](#getorder) with the order's `id`.
 
+A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a signing secret, so a server can confirm that the list is the one Galactic Core produced. See [Verify a response](/verify-response).
+
 <Warning>
   Reading orders requires a **Secret Key**. Publishable keys receive `403 Forbidden`. Order data contains customer details, addresses, and payment status — it must never be exposed to browsers.
 </Warning>
@@ -405,6 +407,8 @@ Retrieve complete details for a specific order.
 const client = new Tybrite({ apiKey: process.env.TYBRITE_SECRET_KEY });
 const order = await client.orders.getOrder({ id: 'order-uuid' });
 ```
+
+A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a signing secret, so a server can confirm that the order is the one Galactic Core produced and was not changed in transit. `X-Signature` is `base64(HMAC-SHA256(signing_secret, "{timestamp}.{body}"))` over the decoded response body, and a response whose timestamp is more than five minutes from the current time is rejected. A key issued to a connected application is signed with that application's own signing secret; any other key with the store's signing secret. A call made with a publishable key is not signed. The SDK method returns the parsed order, so a signature is verified on the raw response with `verifyResponseSignature`; the recipe, an example and the secret rotation behaviour are on [Verify a response](/verify-response).
 
 The response carries `status_notes` — customer-visible updates the merchant added as the order
 moved. These cover the stretch between payment and dispatch (preparation, checks, packing) that a

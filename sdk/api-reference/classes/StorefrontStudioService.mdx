@@ -1,0 +1,238 @@
+---
+title: "Storefront Studio"
+description: "Reference for the StorefrontStudioService class in the Tybrite SDK."
+---
+
+The `StorefrontStudioService` class (accessed via `client.storefrontStudio`) is for an application that builds a merchant's storefront and reports back to the store it builds for. It covers two capabilities:
+
+- **Site address and routes.** The application states where the storefront lives and which page templates it has, so the store can link to it.
+- **Experiments and their paid orders per variant.** The application registers its A/B experiments and reads the number and total of paid orders for each variant.
+
+<Warning>
+  **Secret key of a connection required.** Every method is called with the secret key (`tybrite_sk_*`) of the application's own connection to the store, issued when the merchant connects the application through [GC Connect](/gc-connect). A publishable key returns `403 forbidden`. The key fixes the store, the environment and the application; a request cannot name another. A revoked connection stops working immediately.
+</Warning>
+
+## Scopes
+
+| Scope | Methods |
+| :--- | :--- |
+| `storefront_site:write` | `putStorefrontSite`, `getStorefrontSite` |
+| `ab_attribution:write` | `listStorefrontExperiments`, `putStorefrontExperiment`, `getStorefrontExperimentConversions` |
+
+The merchant approves each scope at consent. A connection that was not granted the scope receives `403 insufficient_scope`. The consent screen tells the merchant that `ab_attribution:write` shows the application the sales of its own tests.
+
+A reported address is a proposal. The store does not use it for links, sign-in redirects or payment-wallet domains until the merchant accepts it, and `merchant_review` reports where that stands.
+
+A studio sees only its own experiments. Another application's experiments are never listed, and an experiment that belongs to another application returns the same `404` as one that does not exist.
+
+## Methods
+
+### `putStorefrontSite`
+
+Report the storefront's address and routes. The report replaces the application's previous one for the store and environment, so repeating a request is safe. A new address reported after the merchant accepted one is a new proposal. Sending `base_url: null` reports the storefront as taken down.
+
+```typescript
+const site = await client.storefrontStudio.putStorefrontSite({
+  requestBody: {
+    base_url: 'https://shop.example-store.com',
+    custom_domain: 'shop.example-store.com',
+    routes: {
+      product: '/p/{slug}',
+      collection: '/c/{slug}',
+      policy: '/policies/{slug}',
+      account: '/account'
+    }
+  }
+});
+```
+
+```json Response
+{
+  "base_url": "https://shop.example-store.com",
+  "platform_url": null,
+  "custom_domain": "shop.example-store.com",
+  "routes": {
+    "product": "/p/{slug}",
+    "collection": "/c/{slug}",
+    "policy": "/policies/{slug}",
+    "account": "/account"
+  },
+  "reported_at": "2026-11-04T10:15:00Z",
+  "merchant_review": "pending"
+}
+```
+
+**Parameters** (`requestBody`)
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `base_url` | yes | The storefront's public address: https, a domain name rather than an IP address, no user name or password, at most 2048 characters. `null` reports the storefront as taken down. |
+| `platform_url` | no | The address the storefront also answers on before a custom domain is connected. |
+| `custom_domain` | no | The host name of a custom domain connected to the storefront. |
+| `routes` | no | Page templates by purpose. The accepted keys are `product`, `collection`, `category`, `policy` and `account`. Each value is a relative path beginning with `/`, at most 512 characters, and may contain `{slug}`. `category` is read as the collection page when `collection` is not sent. Routes require a `base_url`. |
+
+**Response**
+
+| Field | Description |
+| :--- | :--- |
+| `base_url` | The reported address, or `null` when the storefront was reported as taken down. |
+| `platform_url` | The reported platform address, or `null`. |
+| `custom_domain` | The reported custom domain, or `null`. |
+| `routes` | The page templates as held. |
+| `reported_at` | When the report was received. |
+| `merchant_review` | Where the merchant's review of `base_url` stands: `pending` (the merchant is being asked), `accepted` (the merchant adopted it), `declined` (the merchant kept their own address), `matches_website` (it is the address the store already uses, so nothing is asked) or `unpublished` (the storefront was reported as taken down). |
+
+Requires the `storefront_site:write` scope. Limited to 300 requests per hour per key.
+
+### `getStorefrontSite`
+
+Read what the application last reported for the store and environment, with the state of the merchant's review. Returns `404` when no site has been reported.
+
+```typescript
+const site = await client.storefrontStudio.getStorefrontSite();
+```
+
+```json Response
+{
+  "base_url": "https://shop.example-store.com",
+  "platform_url": null,
+  "custom_domain": null,
+  "routes": {
+    "product": "/p/{slug}"
+  },
+  "reported_at": "2026-11-04T10:15:00Z",
+  "merchant_review": "accepted"
+}
+```
+
+The response fields are those of [`putStorefrontSite`](#putstorefrontsite). Requires the `storefront_site:write` scope. Limited to 300 requests per hour per key.
+
+### `listStorefrontExperiments`
+
+List the experiments the application registered for the store and environment, newest first.
+
+```typescript
+const { data } = await client.storefrontStudio.listStorefrontExperiments();
+```
+
+```json Response
+{
+  "data": [
+    {
+      "experiment_id": "hero-banner",
+      "name": "Hero banner",
+      "variants": ["control", "bold"],
+      "status": "active",
+      "created_at": "2026-11-04T10:15:00Z",
+      "updated_at": "2026-11-04T10:15:00Z"
+    }
+  ]
+}
+```
+
+**Response**
+
+| Field | Description |
+| :--- | :--- |
+| `data[].experiment_id` | The id the application chose. |
+| `data[].name` | The experiment's display name, or `null`. |
+| `data[].variants` | The variant ids. |
+| `data[].status` | `active` or `ended`. |
+| `data[].created_at` | When the experiment was registered. |
+| `data[].updated_at` | When it was last updated. |
+
+Requires the `ab_attribution:write` scope. Limited to 300 requests per hour per key.
+
+### `putStorefrontExperiment`
+
+Register an experiment and its variants, or update one the application already owns. The experiment is registered before it takes traffic: the first application to register an `experiment_id` in a store and environment owns it, a later request for the same id from another application returns `409 conflict`, and an id whose orders were already counted elsewhere cannot be registered. An application can register up to 100 experiments per store and environment.
+
+A shopper's order is attributed to a variant when its `attribution` carries the experiment id as `ab_test_id` and the variant id as `variation_id`. Only orders for the registered variants are counted.
+
+```typescript
+const experiment = await client.storefrontStudio.putStorefrontExperiment({
+  experimentId: 'hero-banner',
+  requestBody: {
+    name: 'Hero banner',
+    variants: ['control', 'bold']
+  }
+});
+```
+
+```json Response
+{
+  "experiment_id": "hero-banner",
+  "name": "Hero banner",
+  "variants": ["control", "bold"],
+  "status": "active",
+  "created_at": "2026-11-04T10:15:00Z",
+  "updated_at": "2026-11-04T10:15:00Z"
+}
+```
+
+**Parameters**
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `experimentId` | yes | The experiment id: 1 to 100 letters, digits, dots, dashes, colons or underscores, beginning with a letter or digit. |
+| `requestBody.variants` | yes | The variant ids an order's `attribution.variation_id` can carry. Between 2 and 20 unique ids, each in the same format as `experimentId`. |
+| `requestBody.name` | no | A display name of 1 to 200 characters. |
+| `requestBody.status` | no | `active` (the default) or `ended`. |
+
+The response has the fields listed under [`listStorefrontExperiments`](#liststorefrontexperiments). Requires the `ab_attribution:write` scope. Limited to 300 requests per hour per key.
+
+### `getStorefrontExperimentConversions`
+
+Read the paid orders for each variant of an experiment. Amounts are in the store's currency in major units (`12.50` means 12.50). Unpaid orders, orders for unregistered variants and orders outside the window are not counted. The window is the last 30 days unless `from` and `to` are sent, and spans at most 92 days. An experiment that does not exist, belongs to another application or was registered in the other environment returns the same `404`.
+
+```typescript
+const results = await client.storefrontStudio.getStorefrontExperimentConversions({
+  experimentId: 'hero-banner',
+  from: '2026-10-06',
+  to: '2026-11-04'
+});
+```
+
+```json Response
+{
+  "experiment_id": "hero-banner",
+  "name": "Hero banner",
+  "status": "active",
+  "currency": "USD",
+  "from": "2026-10-06",
+  "to": "2026-11-04",
+  "totals": [
+    { "variant": "control", "orders": 2, "revenue": 30.00 },
+    { "variant": "bold", "orders": 1, "revenue": 30.00 }
+  ],
+  "daily": [
+    {
+      "variant": "control",
+      "date": "2026-11-04",
+      "orders": 2,
+      "revenue": 30.00,
+      "revenue_sum_of_squares": 500.00
+    }
+  ]
+}
+```
+
+**Parameters**
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `experimentId` | yes | The id the application registered. |
+| `from` | no | First day of the window, UTC, as `YYYY-MM-DD`. Defaults to 29 days before `to`. |
+| `to` | no | Last day of the window, UTC. Defaults to today. |
+
+**Response**
+
+| Field | Description |
+| :--- | :--- |
+| `experiment_id`, `name`, `status` | The experiment, as in [`listStorefrontExperiments`](#liststorefrontexperiments). |
+| `currency` | The store's currency code. Every amount is in this currency, in major units. |
+| `from`, `to` | The window that was read. |
+| `totals[]` | One entry per registered variant, with zero when it has no paid orders in the window: `variant`, `orders` and `revenue` (the sum of the paid orders' totals). |
+| `daily[]` | The same figures by day: `variant`, `date`, `orders`, `revenue` and `revenue_sum_of_squares`, the sum of each order's total squared. With `orders` and `revenue` it gives the variance of the order value. |
+
+Requires the `ab_attribution:write` scope. Limited to 120 requests per hour per key.

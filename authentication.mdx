@@ -118,6 +118,9 @@ Most integrations sign with the store's own signing secret, shown above as `TYBR
 An application that connected through [GC Connect](/gc-connect#4-sign-write-requests) instead
 receives its own per-merchant `signing_secret` at the code exchange and signs with that.
 
+Responses to secret-key calls that read orders, payment status and returns carry a signature made
+with the same secret. See [Verify a response](/verify-response).
+
 ---
 
 ## Idempotency Protection

@@ -270,6 +270,8 @@ The order settles from the payment confirmation; `verifyPayment` accepts the `re
 
 Retrieve the absolute source of truth for a transaction. This is a read operation and does not require HMAC signing.
 
+A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a signing secret, so a server can confirm that the payment status is the one Galactic Core produced. See [Verify a response](/verify-response).
+
 <Warning>
   **Secret Key required.** `verifyPayment` will reject publishable keys with `403`. Verification responses include charge details (amounts, customer email, payment intents) and must not be exposed to untrusted clients.
 </Warning>

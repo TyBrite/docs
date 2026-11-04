@@ -1,0 +1,101 @@
+---
+title: "Verify a response"
+description: "Confirm that an order, a payment status or a return is the one Galactic Core produced and was not changed in transit, using the signature on the response."
+---
+
+Responses to secret-key calls that return money records carry a signature. A server that holds the signing secret recomputes it and confirms that the body is the one Galactic Core produced and was not altered on the way, for example by a proxy that terminates TLS in front of your server. The signature is the response-side counterpart of the [request signature](/authentication#advanced-security-hmac-signing) and uses the same recipe and the same secret.
+
+## Signed operations
+
+| Operation | Endpoint |
+| --- | --- |
+| `listOrders` | `GET /v1/orders` |
+| `getOrder` | `GET /v1/orders/{id}` |
+| `verifyPayment` | `POST /v1/payments/verify` |
+| `listReturns` | `GET /v1/returns` |
+| `getReturn` | `GET /v1/returns/{id}` |
+
+A return carries its refund amount, method and status, so `listReturns` and `getReturn` are the signed reads for refunds.
+
+A response is signed when the call is made with a secret key and the store has a signing secret. A call made with a publishable key is never signed, because a publishable key holds no secret to verify with. A call made with a marketplace key to the returns operations is not signed. Every other operation returns no signature headers.
+
+## Signature headers
+
+| Header | Value |
+| --- | --- |
+| `X-Signature-Timestamp` | The time the response was signed, in Unix seconds. |
+| `X-Signature` | `base64(HMAC-SHA256(signing_secret, "{timestamp}.{body}"))`. |
+
+`{timestamp}` is the value of `X-Signature-Timestamp` and `{body}` is the exact bytes of the response after transport decompression. The body is neither parsed nor re-serialised: a different key order or different whitespace is a different string and produces a different signature.
+
+## Signing secret
+
+The secret that signs a response is the one the caller uses to sign requests:
+
+- A key issued to an application connected through [Login with GC](/gc-connect) signs with that connection's own `signing_secret`.
+- Any other key signs with the store's signing secret, shown under **Integrations → API keys**.
+
+During a rotation, a verifier that holds both the old and the new secret accepts a response that verifies under either.
+
+## Verifying with the SDK
+
+`verifyResponseSignature` recomputes the signature with Web Crypto and compares it in constant time. It runs on Node.js 18 and later and on other server runtimes that provide Web Crypto.
+
+```typescript
+import { verifyResponseSignature } from '@tybrite-labs/sdk';
+
+const res = await fetch('https://api.tybritelabs.com/v1/orders/order-uuid', {
+  headers: { Authorization: `Bearer ${process.env.TYBRITE_SECRET_KEY}` },
+});
+
+// The raw text is verified first and parsed afterwards.
+const body = await res.text();
+
+const valid = await verifyResponseSignature(body, res.headers, [
+  process.env.TYBRITE_HMAC_SECRET!,
+  process.env.TYBRITE_HMAC_SECRET_PREVIOUS!,
+]);
+if (!valid) throw new Error('The order response failed signature verification');
+
+const order = JSON.parse(body);
+```
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `body` | `string \| Uint8Array` | The decoded response body as received. |
+| `headers` | `Headers \| Record<string, string>` | The response headers. Names are matched case-insensitively. |
+| `secret` | `string \| string[]` | The signing secret, or several during a rotation. |
+| `opts.toleranceSeconds` | `number` | The largest accepted difference between `X-Signature-Timestamp` and the current time, in either direction. Default: `300`. |
+
+The function returns `true` when the signature matches under any supplied secret and the timestamp is within tolerance. It returns `false` for a missing or malformed header, a stale timestamp, a changed body and a wrong secret. A response that carries no signature headers returns `false`.
+
+The generated service methods return parsed objects, so a response is verified on a direct `fetch` call as above.
+
+## Verifying without the SDK
+
+The recipe has four steps:
+
+1. Read `X-Signature-Timestamp` and `X-Signature` from the response.
+2. Take the decoded response body as received.
+3. Compute `HMAC-SHA256(signing_secret, "{timestamp}.{body}")` and encode the digest as base64.
+4. Compare it with `X-Signature` in constant time, and reject a response whose timestamp is more than five minutes from the current time.
+
+```javascript
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+function verifyResponse(body, headers, secret) {
+  const timestamp = headers.get('X-Signature-Timestamp');
+  const received = Buffer.from(headers.get('X-Signature') ?? '');
+  const expected = Buffer.from(
+    createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('base64'),
+  );
+  const fresh = Math.abs(Date.now() / 1000 - Number(timestamp)) <= 300;
+  return fresh && received.length === expected.length && timingSafeEqual(received, expected);
+}
+```
+
+## What a signature establishes
+
+A valid signature establishes that the body was produced by Galactic Core for a holder of the signing secret and that it has not changed since. The timestamp lets a verifier reject a response that is older than its tolerance. A signature is not authentication, is not a substitute for TLS, and says nothing about the request that was sent.
+
+A signing secret belongs on a server. A browser holds no secret and receives no signed responses.
