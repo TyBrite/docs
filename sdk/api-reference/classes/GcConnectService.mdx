@@ -81,6 +81,10 @@ const authUrl = `https://gc.tybritelabs.com/connect/authorize?${params}`;
 | `email` | Add the person's `email` and `email_verified` to `user` |
 | `profile` | Add the person's `name` to `user` |
 | `team:read` | Read the store's owner and team members with `getConnectTeam`; accompanies another store scope |
+| `storefront_site:write` | Report the storefront's address and routes for the merchant to accept (secret key only; see [Storefront Studio](/sdk/api-reference/classes/StorefrontStudioService)) |
+| `ab_attribution:write` | Register the application's own A/B experiments and read the paid orders and sales for each variant (secret key only) |
+| `support_tickets:write` | Open support requests for the merchant and read where each stands (secret key only) |
+| `storefront_template:write` | Offer templates the merchant accepts or declines (secret key only) |
 
 The key pair's publishable key never carries `write`, `orders:*`, `customers:*`, `payments:*` or `b2b:write`; those belong to its secret key. A store whose subscription is not active answers every request with `402 subscription_expired`.
 

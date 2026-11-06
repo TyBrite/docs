@@ -266,7 +266,16 @@ export class PaymentsService {
              */
             mode?: 'redirect' | 'embedded';
         },
-    }): CancelablePromise<(PaymentInitializeResponse | Record<string, any>)> {
+    }): CancelablePromise<(PaymentInitializeResponse | Record<string, any> | {
+        provider: string;
+        reference: string;
+        redirect_url?: string;
+        status?: string;
+        settled?: boolean;
+        settlement_code?: string;
+        order_id?: string;
+        custom_provider: boolean;
+    })> {
         return this.httpRequest.request({
             method: 'POST',
             url: '/v1/payments/initialize',
@@ -328,8 +337,22 @@ export class PaymentsService {
      * - Returns the transaction status from Safaricom
      * - Returns the STK query result code and description
      *
+     * **A store's own payment provider:**
+     * - Pass the `reference` returned by initialize
+     * - Asks the provider for the payment's status and relays it as `status`
+     * - When the provider reports the payment as paid, the order the reference was opened for is marked paid, exactly as for
+     * the built-in providers. The order is the one recorded when the payment was initialized, never one named by the
+     * provider. It is marked paid only when the provider confirms an amount that covers the order total in the order's
+     * currency; otherwise `status` is `amount_mismatch` and the order stays unpaid. Repeating the call changes nothing.
+     *
      * **Note:** Despite using POST method (for request body), this is a read operation for most
      * providers; for PayPal it captures the approved order.
+     *
+     * **Response signature**
+     *
+     * A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a
+     * signing secret, so the caller can verify that the payment status is the one the platform produced. Verification is described under
+     * Get order (`GET /v1/orders/{id}`).
      *
      * **Key Type Support:**
      * - ✅ Secret keys (full access)
@@ -355,9 +378,26 @@ export class PaymentsService {
         provider: string;
         reference: string;
         /**
-         * The status the provider reported, or `unknown` when it reported none
+         * The status the provider reported, or `unknown` when it reported none. A provider's `paid` is
+         * returned as `paid` only once the order it was opened for is paid. Otherwise: `amount_mismatch`
+         * (the provider confirmed less than the order total, another currency, or no amount), `pending`
+         * (the payment could not be confirmed yet; verify again), or `not_settled` (the order cannot be
+         * paid, for example because it was cancelled).
+         *
          */
         status: string;
+        /**
+         * Present when the provider reported the payment as paid for an order. `true` once that order is paid under this reference.
+         */
+        settled?: boolean;
+        /**
+         * Present with `settled: false`. Why the order was not marked paid.
+         */
+        settlement_code?: string;
+        /**
+         * The order this reference was opened for.
+         */
+        order_id?: string;
         /**
          * Always `true` for a store's own payment provider.
          */

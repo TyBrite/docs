@@ -662,6 +662,19 @@ tags:
 
       **To integrate**, your application must be approved by Galactic Core. Apply via the
       [Developer Portal](https://gc.tybritelabs.com/developers).
+  - name: Storefront Studio
+    description: |
+      What an application that builds a merchant's storefront reports back to the store, on the secret
+      key of its own connection (see GC Connect). Each capability has its own scope the merchant sees on
+      the consent screen:
+
+      - `storefront_site:write` — the storefront's public address and page templates.
+      - `ab_attribution:write` — the app's own A/B experiments and the paid orders and sales for each variant.
+      - `support_tickets:write` — support requests the app opens for the merchant, and where each stands.
+      - `storefront_template:write` — templates the app offers the merchant, and the merchant's answer.
+
+      The key fixes the store, the environment and the app, so an app reaches only its own reports,
+      experiments, requests and templates. A merchant who disconnects the app ends its access at once.
   - name: Reviews
     description: |
       Product reviews and ratings submitted by customers, moderated by merchants.
@@ -1756,6 +1769,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -2158,7 +2173,7 @@ paths:
             - **Nested:** `attributes.*`, `shipping_info.*`, `variant_attributes.*`
             - **Timestamps:** `created_at`, `updated_at`
             - **Flags:** `has_variants`
-            - **Delivery:** `fulfilment_kind`, `fulfilment`, `fulfilment.*`
+            - **Delivery:** `fulfilment_kind`, `fulfilment`, `fulfilment.*`, `preorder_ship_date`
             - **Reviews:** `average_rating`, `review_count` (list only)
               
             **Bandwidth Savings:**
@@ -2248,6 +2263,24 @@ paths:
           schema:
             type: boolean
           example: true
+        - name: x-auth-token
+          in: header
+          required: false
+          description: Galactic Core customer session access_token, used with `personalize=true` or `b2b=true` to identify the shopper. Provide at most one of `x-auth-token`, `x-external-auth` or `x-idp-token`. Without a valid credential the list is returned unpersonalised.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: Bring-your-own-auth assertion identifying the shopper for `personalize=true` or `b2b=true`. Provide at most one of `x-auth-token`, `x-external-auth` or `x-idp-token`. Without a valid credential the list is returned unpersonalised.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier, identifying the shopper for `personalize=true` or `b2b=true`. Provide at most one of `x-auth-token`, `x-external-auth` or `x-idp-token`. Without a valid credential the list is returned unpersonalised.
+          schema:
+            type: string
       responses:
         '200':
           description: |
@@ -2398,7 +2431,18 @@ paths:
                       next_cursor: null
                       has_more: false
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: '`invalid_request` when a `category_id` or `subcategory_id` value is not a UUID (a typo is refused rather than answered with an empty list), or when a price, `sort`, `include_total` or `spec[...]` value is not valid, or a listing filter is combined with a marketplace operator key, `personalize` or `b2b`.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_request
+                  message: category_id must be a valid UUID (or a comma-separated list of UUIDs).
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
@@ -2777,7 +2821,18 @@ paths:
                 display_currency: USD
                 currency_symbol: $
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: '`invalid_request` when a `category_id` or `subcategory_id` value is not a UUID, or when a listing parameter is not valid.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_request
+                  message: category_id must be a valid UUID (or a comma-separated list of UUIDs).
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
@@ -2869,7 +2924,7 @@ paths:
             - **Media:** `media`, `thumbnail_url`
             - **Metadata:** `brand`, `category_name`, `subcategory_name`, `attributes.*`
             - **Flags:** `has_variants`, `variant_count`
-            - **Delivery:** `fulfilment_kind`, `fulfilment`, `fulfilment.*`
+            - **Delivery:** `fulfilment_kind`, `fulfilment`, `fulfilment.*`, `preorder_ship_date`
             - **Variants:** `variants` (includes all variant fields)
               
             **Nested Variant Filtering (52% bandwidth reduction):**
@@ -3863,7 +3918,8 @@ paths:
       description: |
         Returns all items belonging to a product collection, ordered by `sort_order`.
         Each item contains the linked online product row along with its sort position.
-        If the collection has no items (or does not exist), an empty array is returned.
+        A collection with no items returns an empty array. A collection that does not exist,
+        is inactive or has been deleted answers `404`.
       security:
         - BearerAuth: []
       parameters:
@@ -3953,6 +4009,8 @@ paths:
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -4380,6 +4438,12 @@ paths:
         The list view returns order headers **without line items** for efficiency —
         fetch `GET /v1/orders/{id}` for the full order including its items.
 
+        **Response signature**
+
+        A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a
+        signing secret, so the caller can verify that the list is the one the platform produced. Verification is described under
+        Get order (`GET /v1/orders/{id}`).
+
         **Key Type Support:**
         - ✅ Secret keys (full access)
         - ❌ Publishable keys (forbidden — returns 403)
@@ -4457,6 +4521,10 @@ paths:
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
+            X-Signature:
+              $ref: '#/components/headers/ResponseSignature'
+            X-Signature-Timestamp:
+              $ref: '#/components/headers/ResponseSignatureTimestamp'
           content:
             application/json:
               schema:
@@ -5545,7 +5613,7 @@ paths:
             The `Idempotency-Key` was already used with a different request body (`idempotency_key_reused`), or the request conflicts with an existing order number (`conflict`). Send a new key for a different request.
             Creating an order as already paid also checks the payment: the verified payment belongs to another order, is in another currency, or its `payment_reference` is already attached to another order of the store (`payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use`). No order is created.
             A `subscribe_save` order without a `customer_id` is refused with `account_required`: a subscription needs a signed-in shopper, so have the shopper sign in or create an account and send their `customer_id`. A free order (`total_amount` 0) without a signed-in shopper is refused the same way.
-            An event ticket that cannot be bought is refused with `ticket_sale_closed` (sales not open or closed), `ticket_event_ended`, or `insufficient_stock` (the ticket type is sold out or the venue is full); `not_available` marks an item the store can no longer sell. A gift card that has less available than the order needs, because another checkout is using it, is refused with `gift_card_unavailable`; the card is held for an order until it is paid or closed unpaid.
+            An event ticket that cannot be bought is refused with `ticket_sale_closed` (sales not open or closed), `ticket_event_ended`, or `insufficient_stock` (the ticket type is sold out or the venue is full); `not_available` marks an item the store can no longer sell. A gift card that has less available than the order needs, because another checkout is using it, is refused with `gift_card_unavailable`; the card is held for an order until it is paid or closed unpaid. A campaign whose budget no longer covers the order's discount, because other open orders have reserved it, is refused with `campaign_budget_exhausted`; re-price the cart and send the order again.
           content:
             application/json:
               schema:
@@ -5605,6 +5673,12 @@ paths:
                     error:
                       code: gift_card_unavailable
                       message: This gift card has less available than the order needs because another checkout is using it. Try again in a moment.
+                campaign_budget_exhausted:
+                  summary: A campaign's budget no longer covers the order's discount
+                  value:
+                    error:
+                      code: campaign_budget_exhausted
+                      message: An offer on this order has just run out. Refresh the cart to see the current price and try again.
         '422':
           description: |-
             The store runs its own order-validation rule and that rule rejected the order (`order_rejected`). The `message` carries the reason the store gave. No order is created. This is also returned when the store requires validation but the rule could not be reached, so an order is never created unchecked.
@@ -5667,18 +5741,39 @@ paths:
       description: |
         Retrieve detailed information about a specific order including line items and status.
 
-        **HMAC Signature Verification (Optional)**
+        **Response signature**
 
-        For enhanced security, you can verify the authenticity of order data using HMAC signatures.
-        When enabled, the response includes an `X-Signature` header containing an HMAC-SHA256 signature
-        of the response body.
+        A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a
+        signing secret, so the caller can verify that the body is the one the platform produced and was not
+        changed in transit. A call made with a publishable key is not signed. A key issued to a connected app is
+        signed with that app's own signing secret; any other key with the store's signing secret.
 
         To verify:
-        1. Extract the `X-Signature` header from the response
-        2. Compute HMAC-SHA256 of the response body using your API secret key
-        3. Compare the computed signature with the header value
+        1. Read `X-Signature-Timestamp` (Unix seconds) and `X-Signature` from the response.
+        2. Take the decoded response body: the exact bytes received after transport decompression, without
+           parsing or re-serialising them.
+        3. Compute `HMAC-SHA256(signing_secret, "{timestamp}.{body}")` and encode the digest as base64.
+        4. Compare it with `X-Signature` in constant time, and reject a response whose timestamp is more than
+           five minutes from the current time.
+
+        This is the recipe used to sign requests, applied to the response.
 
         Example verification (Node.js):
+
+        ```js
+        import { createHmac, timingSafeEqual } from 'node:crypto';
+
+        const headers = { Authorization: `Bearer ${secretKey}` };
+        const res = await fetch(`${baseUrl}/v1/orders/${orderId}`, { headers });
+        const body = await res.text();
+        const timestamp = res.headers.get('X-Signature-Timestamp');
+        const received = Buffer.from(res.headers.get('X-Signature') ?? '');
+        const expected = Buffer.from(
+          createHmac('sha256', signingSecret).update(`${timestamp}.${body}`).digest('base64'),
+        );
+        const fresh = Math.abs(Date.now() / 1000 - Number(timestamp)) <= 300;
+        const valid = fresh && received.length === expected.length && timingSafeEqual(received, expected);
+        ```
       security:
         - BearerAuth: []
       parameters:
@@ -5715,10 +5810,9 @@ paths:
           description: Successfully retrieved order
           headers:
             X-Signature:
-              description: HMAC-SHA256 signature of response body (when signature verification is enabled)
-              schema:
-                type: string
-              example: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
+              $ref: '#/components/headers/ResponseSignature'
+            X-Signature-Timestamp:
+              $ref: '#/components/headers/ResponseSignatureTimestamp'
           content:
             application/json:
               schema:
@@ -6702,6 +6796,40 @@ paths:
                       environment:
                         type: string
                         example: sandbox
+                  - type: object
+                    description: |
+                      Response for a store's own payment provider. A provider that returns `redirect_url` is paid
+                      after the shopper returns: call verify. A provider that answers `paid` at once, with an
+                      `order_id`, marks that order paid before this response (`settled: true`) only when it confirms an
+                      amount that covers the order total in the order's currency; otherwise `status` is
+                      `amount_mismatch` and the order stays unpaid.
+                    required:
+                      - provider
+                      - reference
+                      - custom_provider
+                    properties:
+                      provider:
+                        type: string
+                        example: acme_pay
+                      reference:
+                        type: string
+                        example: PAY-12345678-ABC123
+                      redirect_url:
+                        type: string
+                        format: uri
+                      status:
+                        type: string
+                        example: paid
+                      settled:
+                        type: boolean
+                      settlement_code:
+                        type: string
+                      order_id:
+                        type: string
+                        format: uuid
+                      custom_provider:
+                        type: boolean
+                        example: true
               examples:
                 stripe:
                   summary: Stripe response
@@ -6922,8 +7050,22 @@ paths:
         - Returns the transaction status from Safaricom
         - Returns the STK query result code and description
 
+        **A store's own payment provider:**
+        - Pass the `reference` returned by initialize
+        - Asks the provider for the payment's status and relays it as `status`
+        - When the provider reports the payment as paid, the order the reference was opened for is marked paid, exactly as for
+          the built-in providers. The order is the one recorded when the payment was initialized, never one named by the
+          provider. It is marked paid only when the provider confirms an amount that covers the order total in the order's
+          currency; otherwise `status` is `amount_mismatch` and the order stays unpaid. Repeating the call changes nothing.
+
         **Note:** Despite using POST method (for request body), this is a read operation for most
         providers; for PayPal it captures the approved order.
+
+        **Response signature**
+
+        A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a
+        signing secret, so the caller can verify that the payment status is the one the platform produced. Verification is described under
+        Get order (`GET /v1/orders/{id}`).
 
         **Key Type Support:**
         - ✅ Secret keys (full access)
@@ -6976,6 +7118,10 @@ paths:
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
+            X-Signature:
+              $ref: '#/components/headers/ResponseSignature'
+            X-Signature-Timestamp:
+              $ref: '#/components/headers/ResponseSignatureTimestamp'
           content:
             application/json:
               schema:
@@ -7154,8 +7300,25 @@ paths:
                         example: PAY-12345678-ABC123
                       status:
                         type: string
-                        description: The status the provider reported, or `unknown` when it reported none
-                        example: success
+                        description: |
+                          The status the provider reported, or `unknown` when it reported none. A provider's `paid` is
+                          returned as `paid` only once the order it was opened for is paid. Otherwise: `amount_mismatch`
+                          (the provider confirmed less than the order total, another currency, or no amount), `pending`
+                          (the payment could not be confirmed yet; verify again), or `not_settled` (the order cannot be
+                          paid, for example because it was cancelled).
+                        example: paid
+                      settled:
+                        type: boolean
+                        description: Present when the provider reported the payment as paid for an order. `true` once that order is paid under this reference.
+                        example: true
+                      settlement_code:
+                        type: string
+                        description: 'Present with `settled: false`. Why the order was not marked paid.'
+                        example: amount_mismatch
+                      order_id:
+                        type: string
+                        format: uuid
+                        description: The order this reference was opened for.
                       custom_provider:
                         type: boolean
                         description: Always `true` for a store's own payment provider.
@@ -9681,7 +9844,7 @@ paths:
                 productId:
                   type: string
                   format: uuid
-                  description: Required when type is `similar`, `also-bought`, or `bundle`. For `next`, an optional explicit anchor. Must reference an existing product in the store; otherwise 404 is returned.
+                  description: Required when type is `similar`, `also-bought`, or `bundle`. For `next`, an optional explicit anchor. When sent, for any type, it must be a UUID (otherwise `400 invalid_request`) and name an active product of the store (otherwise `404 not_found`).
                 sessionId:
                   type: string
                   description: Used with type `next`. The shopper's current session identifier; the most recent product viewed/added in that session is used as the anchor when `productId` is not supplied.
@@ -9735,7 +9898,27 @@ paths:
                 fromCache: true
                 computedAt: '2026-06-20T10:30:00Z'
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: '`invalid_request` when the body is not a JSON object, `type` is unknown, `limit` is not a whole number from 1 to 50, `productId` is not a UUID, or `productId` is missing for a type that needs one.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_product_id:
+                  summary: productId is not a UUID
+                  value:
+                    error:
+                      code: invalid_request
+                      message: productId must be a valid UUID
+                invalid_limit:
+                  summary: limit outside 1 to 50
+                  value:
+                    error:
+                      code: invalid_request
+                      message: limit must be a whole number from 1 to 50
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
@@ -9743,7 +9926,18 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '404':
-          $ref: '#/components/responses/NotFoundError'
+          description: The `productId` sent does not name an active product of this store.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: 'Product not found: 7d425c0a-50e7-4e39-af79-6f7945f9dfa8'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -10499,7 +10693,7 @@ paths:
                 customer_id:
                   type: string
                   format: uuid
-                  description: The signed-in shopper, when known.
+                  description: The signed-in shopper, when known. A value that is not a UUID answers `400 invalid_request`.
                 content_id:
                   type: string
                   description: For `post_view` / `lookbook_view` / `content_click` — the CMS post or lookbook id. (Also accepted as `cms_content_id`.)
@@ -10591,7 +10785,18 @@ paths:
                   value:
                     recorded: false
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: '`invalid_request` when `event_type` is missing or not an accepted type, a search event has no `search_query`, `search_result_click` has no valid `search_result_product_id`, `content_click` lacks `content_id` or a valid `content_product_id`, `customer_id` is not a UUID, or `visitor_id` or `session_id` is missing.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_request
+                  message: customer_id must be a valid UUID
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '404':
@@ -16725,6 +16930,19 @@ paths:
                 computed_at: '2026-10-01T11:25:07.476Z'
                 currency: null
                 environment: sandbox
+        '400':
+          description: More than one shopper credential was sent
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_request
+                  message: Provide exactly one of x-auth-token, x-external-auth, or x-idp-token
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
@@ -22712,14 +22930,13 @@ paths:
         One account exists per email address at a store. The same address can hold accounts at several
         stores, each with its own password and sessions.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** with a secret key, past 5 attempts for one email address from one store in
         15 minutes, the call is slowed to one attempt every 60 seconds; other calls for that address
         answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
-        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
-        and 60 per address, in 15 minutes. Across every store and address, past 20 attempts for one
+        accepted. Across every store and address, past 20 attempts for one
         email the call is slowed to one every 60 seconds. Every attempt counts, successful or not,
         and an address with no account is treated identically.
       security:
@@ -22856,14 +23073,13 @@ paths:
         A refused call states why in `details.reason`: `expired`, `too_many_attempts` or `wrong`. The
         reason reveals nothing about the address, because a code exists for every address that registers.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** with a secret key, past 10 attempts for one email address from one store in
         15 minutes, the call is slowed to one attempt every 30 seconds; other calls for that address
         answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
-        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
-        and 60 per address, in 15 minutes. Across every store and address, past 20 attempts for one
+        accepted. Across every store and address, past 20 attempts for one
         email the call is slowed to one every 30 seconds. Every attempt counts, successful or not,
         and an address with no account is treated identically.
       security:
@@ -22978,14 +23194,13 @@ paths:
         At most one email per address is sent every 60 seconds and five an hour; a call past that is
         answered `202` and sends nothing.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** with a secret key, past 5 attempts for one email address from one store in
         15 minutes, the call is slowed to one attempt every 60 seconds; other calls for that address
         answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
-        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
-        and 60 per address, in 15 minutes. Across every store and address, past 10 attempts for one
+        accepted. Across every store and address, past 10 attempts for one
         email the call is slowed to one every 60 seconds. Every attempt counts, successful or not,
         and an address with no account is treated identically.
       security:
@@ -23064,7 +23279,7 @@ paths:
         Only the order for this token is claimed. Other guest orders for the same address are not linked.
 
         **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`), called from the
-        storefront's server. Publishable keys answer `403 forbidden`.
+        storefront's server. A publishable key answers `403 forbidden`.
 
         **Attempt limits:** 10 attempts per order per hour and 600 per store per hour; past either, the call
         answers `429 rate_limited` with a `Retry-After` header. After 10 wrong tokens an order's token is
@@ -23192,14 +23407,13 @@ paths:
         Repeated wrong passwords on one account lock it for a short period, during which every call for that
         account answers `429 rate_limited` with a `Retry-After` header.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** with a secret key, past 10 attempts for one email address from one store in
         15 minutes, the call is slowed to one attempt every 15 seconds; other calls for that address
         answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
-        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
-        and 60 per address, in 15 minutes. Across every store and address, past 50 attempts for one
+        accepted. Across every store and address, past 50 attempts for one
         email the call is slowed to one every 10 seconds. Every attempt counts, successful or not,
         and an address with no account is treated identically.
       security:
@@ -23305,8 +23519,8 @@ paths:
 
         An access token already issued remains valid until its `expires_at` (at most 15 minutes).
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** 20 requests per refresh token per 15 minutes. Beyond that the call returns
         `429 rate_limited` with a `Retry-After` header.
@@ -23361,14 +23575,13 @@ paths:
         At most one email per address is sent every 60 seconds and five an hour; a call past that is
         answered `202` and sends nothing.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** with a secret key, past 5 attempts for one email address from one store in
         15 minutes, the call is slowed to one attempt every 60 seconds; other calls for that address
         answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
-        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
-        and 60 per address, in 15 minutes. Across every store and address, past 10 attempts for one
+        accepted. Across every store and address, past 10 attempts for one
         email the call is slowed to one every 60 seconds. Every attempt counts, successful or not,
         and an address with no account is treated identically.
       security:
@@ -23446,14 +23659,13 @@ paths:
         `400 invalid_code` with no reason, and an address without an account answers the same way. This
         endpoint never creates an account.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** with a secret key, past 10 attempts for one email address from one store in
         15 minutes, the call is slowed to one attempt every 30 seconds; other calls for that address
         answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
-        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
-        and 60 per address, in 15 minutes. Across every store and address, past 20 attempts for one
+        accepted. Across every store and address, past 20 attempts for one
         email the call is slowed to one every 30 seconds. Every attempt counts, successful or not,
         and an address with no account is treated identically.
       security:
@@ -23566,14 +23778,13 @@ paths:
         `?link_token=<token>` to it. It must be on one of the store's allowed storefront origins; otherwise
         it is ignored and the email carries the code only.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** with a secret key, past 5 attempts for one email address from one store in
         15 minutes, the call is slowed to one attempt every 60 seconds; other calls for that address
         answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
-        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
-        and 60 per address, in 15 minutes. Across every store and address, past 10 attempts for one
+        accepted. Across every store and address, past 10 attempts for one
         email the call is slowed to one every 60 seconds. Every attempt counts, successful or not,
         and an address with no account is treated identically.
       security:
@@ -23639,14 +23850,13 @@ paths:
         `POST /v1/auth/register`; a password that breaks it is refused with `400 weak_password`. The reset
         also clears a `password_reset_required` state.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** with a secret key, past 10 attempts for one email address from one store in
         15 minutes, the call is slowed to one attempt every 30 seconds; other calls for that address
         answer `429 rate_limited` with a `Retry-After` header giving the seconds until the next attempt is
-        accepted. With a publishable key, attempts are limited per calling address: 20 per address and email,
-        and 60 per address, in 15 minutes. Across every store and address, past 20 attempts for one
+        accepted. Across every store and address, past 20 attempts for one
         email the call is slowed to one every 30 seconds. Every attempt counts, successful or not,
         and an address with no account is treated identically.
       security:
@@ -23770,8 +23980,8 @@ paths:
         `current_password`. The new password follows the password rule of `POST /v1/auth/register`; a
         password that breaks it is refused with `400 weak_password`.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** 5 password changes per sign-in token per 15 minutes. Beyond that the call
         returns `429 rate_limited` with a `Retry-After` header.
@@ -23927,8 +24137,8 @@ paths:
         with the same token at once therefore leave one of them refused, so a storefront serialises
         refreshes per session. On `invalid_refresh_token` the shopper is signed out.
 
-        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). Publishable keys
-        answer `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
+        **Secret key required.** This endpoint requires a secret key (`tybrite_sk_*`). A publishable key
+        answers `403 forbidden`. Account calls are made from a server, which then holds the shopper's session.
 
         **Attempt limits:** 20 refreshes per refresh token per 15 minutes. Beyond that the call returns
         `429 rate_limited` with a `Retry-After` header.
@@ -28621,40 +28831,50 @@ paths:
       description: |
         Capture a storefront newsletter signup. Email is the identity — this works for anonymous
         visitors and signed-in shoppers alike (a signed-in storefront simply prefills the email
-        field). When the store has connected a marketing tool, the new subscriber is automatically
-        synced to the merchant's chosen list.
+        field). When the store has connected a marketing tool, a subscriber is synced to the
+        merchant's chosen list once the subscription is confirmed.
 
         **Auth:** accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys, so
         it can be called directly from the storefront. No customer session required.
 
-        **Idempotent:** re-subscribing the same email is safe — it returns `200` with
-        `already_subscribed: true` and never creates a duplicate. A fresh signup returns `201`.
+        **Confirmation by email:** by default (the merchant can switch it off) the address is recorded as
+        awaiting confirmation and receives an email, in the store's name, with a link that is valid for
+        seven days and works once. The address joins the list, and receives the store's emails, only when
+        its owner follows the link. The call answers `202` with
+        `pending_confirmation: true`, and the answer is the same whether the address is new, already
+        waiting, already subscribed or had unsubscribed, so it does not reveal who is on the list. An
+        address already subscribed is sent nothing. A repeat request for an address inside ten minutes sends
+        no second email, and a store that is sent a very large number of confirmation emails in an hour is
+        answered `429` until the hour passes.
 
-        **Subscribing again after an unsubscribe:** an address that unsubscribed is re-subscribed only with
-        the shopper's own sign-in token (`x-auth-token`, `x-external-auth` or `x-idp-token`) for the customer who
-        owns that address, which re-subscribes at once (`200`); another shopper's token answers `403 forbidden`.
-        Without a token the call answers `202` with `pending_confirmation: true` and the address receives a
-        confirmation link; the subscription returns when its owner follows the link. A repeat request within ten
-        minutes sends no second email. A publishable key alone never re-subscribes an address that opted out.
+        **Signed-in shoppers:** a request that carries the shopper's own sign-in token (`x-auth-token`,
+        `x-external-auth` or `x-idp-token`) for the customer who owns that address subscribes at once and
+        sends no email: `201` for a new subscription, `200` with `already_subscribed: true` when the
+        address was already on the list or had unsubscribed. A token that does not belong to the owner of
+        the address is treated as no token: the address is sent the confirmation email.
+
+        **Confirmation switched off:** a new address is subscribed at once (`201`) and a repeat returns `200`
+        with `already_subscribed: true`. An address that had unsubscribed is still sent a confirmation
+        email (`202`), and a publishable key alone never re-subscribes an address that opted out.
       security:
         - BearerAuth: []
       parameters:
         - name: x-auth-token
           in: header
           required: false
-          description: The signed-in shopper's token. Required only to subscribe again an address that unsubscribed earlier. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          description: The signed-in shopper's token. Optional; it lets a signed-in shopper subscribe their own address without a confirmation email. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
         - name: x-external-auth
           in: header
           required: false
-          description: Bring-your-own-auth assertion identifying the customer. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          description: Bring-your-own-auth assertion identifying the customer. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
         - name: x-idp-token
           in: header
           required: false
-          description: A raw token from the store's own identity provider. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          description: A raw token from the store's own identity provider. Provide at most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
           schema:
             type: string
       requestBody:
@@ -28679,7 +28899,7 @@ paths:
                   example: post:summer-style-guide
       responses:
         '200':
-          description: Already subscribed (idempotent re-subscribe), or an address that had unsubscribed was re-subscribed with the owner's own sign-in token.
+          description: The address is already subscribed (confirmation switched off, or the request carried the owner's own sign-in token), or an address that had unsubscribed was subscribed again with the owner's own sign-in token.
           content:
             application/json:
               schema:
@@ -28711,7 +28931,7 @@ paths:
                 subscribed: true
                 already_subscribed: false
         '202':
-          description: The address had unsubscribed and no sign-in token was sent. A confirmation link was emailed to it; the subscription returns when the owner follows it.
+          description: The address is awaiting confirmation. A confirmation link was emailed to it (none if one was sent in the last ten minutes, or if the address is already subscribed); the subscription starts when the owner follows the link. The answer is identical for every address.
           content:
             application/json:
               schema:
@@ -28736,15 +28956,15 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: A GC Connect key without the operation's scope (`insufficient_scope`), or a sign-in token that belongs to a different shopper than the address (`forbidden`).
+          description: A GC Connect key without the operation's scope (`insufficient_scope`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
                 error:
-                  code: forbidden
-                  message: The signed-in shopper is not the owner of this address.
+                  code: insufficient_scope
+                  message: This connected app was not granted the required scope.
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -30947,9 +31167,10 @@ paths:
               
             **Allowed Fields:**
             - `id`, `customer_id`, `customer_name`, `customer_email`, `customer_phone`
-            - `store_name`, `store_avatar`, `order_id`, `product_id`
+            - `store_name`, `store_avatar`, `order_id`, `product_id`, `source_thread_id`
             - `subject`, `thread_type`, `status`, `priority`
             - `last_message_at`, `last_message_by`, `unread_count_customer`, `unread_count_store`
+            - `customer_last_read_at`, `store_last_read_at`
             - `is_archived`, `is_muted`, `is_pinned`
             - `created_at`, `updated_at`
           example: subject,status,last_message_at,is_pinned
@@ -31000,7 +31221,27 @@ paths:
                   next_cursor: null
                   has_more: false
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: '`invalid_request` when `customer_id` is missing or not a UUID, or when `status`, `priority`, `thread_type`, `archived` or `unread` is not one of its listed values; `invalid_cursor` when `cursor` is not one this endpoint issued.'
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_filter:
+                  summary: A filter value outside its list
+                  value:
+                    error:
+                      code: invalid_request
+                      message: 'status must be one of: active, resolved, closed, escalated, pending'
+                invalid_customer_id:
+                  summary: customer_id is not a UUID
+                  value:
+                    error:
+                      code: invalid_request
+                      message: customer_id must be a valid UUID
         '401':
           $ref: '#/components/responses/CustomerAuthError'
         '402':
@@ -31059,9 +31300,10 @@ paths:
               
             **Allowed Fields:**
             - `id`, `customer_id`, `customer_name`, `customer_email`, `customer_phone`
-            - `store_name`, `store_avatar`, `order_id`, `product_id`
+            - `store_name`, `store_avatar`, `order_id`, `product_id`, `source_thread_id`
             - `subject`, `thread_type`, `status`, `priority`
             - `last_message_at`, `last_message_by`, `unread_count_customer`, `unread_count_store`
+            - `customer_last_read_at`, `store_last_read_at`
             - `is_archived`, `is_muted`, `is_pinned`
             - `created_at`, `updated_at`
           example: subject,status,customer_name,is_pinned
@@ -32507,8 +32749,7 @@ paths:
             enum:
               - provider
               - neutral
-            default: provider
-          description: How `rate_source` names a carrier-account source. `provider` (the default) uses `shippo`; `neutral` uses `carrier`. A request may send either spelling wherever a rate source is accepted.
+          description: How `rate_source` names a carrier-account source. `provider` uses `shippo`; `neutral` uses `carrier`. When omitted, the store's own setting applies (`provider` unless the merchant chose `neutral`). A request may send either spelling wherever a rate source is accepted.
       requestBody:
         required: true
         content:
@@ -33015,7 +33256,9 @@ paths:
             `customers:write`, `payments:read`, `payments:write`, `cart:write`, `reviews:read`,
             `reviews:write`, `messaging:read`, `messaging:write`, `returns:read`, `returns:write`,
             `disputes:read`, `disputes:write`, `b2b:read`, `b2b:write`, `agent:read`, `agent:write`,
-            `shopper_subscriptions:read`, `shopper_subscriptions:write`, `fulfilment:read`, `team:read`
+            `shopper_subscriptions:read`, `shopper_subscriptions:write`, `fulfilment:read`, `team:read`,
+            `storefront_site:write`, `ab_attribution:write`, `support_tickets:write`,
+            `storefront_template:write`
 
             `payments:write` is required to initiate a payment; without it (or `write`) the call returns
             `403 forbidden`. `b2b:*` is offered only for wholesale stores and `disputes:*` only for
@@ -33028,6 +33271,14 @@ paths:
             they link, and a user who owns none is redirected with `error=access_denied` and
             `error_description=no_owned_store`. `team:read` lets the key pair call `GET /v1/connect/team`
             and must accompany another store scope.
+
+            `storefront_site:write` lets the key pair report the storefront's address and routes with
+            `PUT /v1/storefront/site`. `ab_attribution:write` lets it register its own A/B experiments and
+            read the paid orders and sales for each variant under `/v1/storefront/experiments`; the consent
+            screen states this to the merchant in its own line. `support_tickets:write` lets it open support
+            requests for the merchant with `POST /v1/storefront/tickets` and read where each stands;
+            `storefront_template:write` lets it offer templates under `/v1/storefront/templates`, which the
+            merchant accepts or declines. All four are for the secret key only.
           example: products:read orders:read customers:read
         - name: state
           in: query
@@ -33570,6 +33821,800 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/storefront/site:
+    put:
+      operationId: putStorefrontSite
+      tags:
+        - Storefront Studio
+      summary: Report the storefront's address and routes
+      description: |
+        Tells the store where its website lives and which pages it has. The report replaces the app's
+        previous one for this store and environment, so repeating a request is safe.
+
+        The store never starts using a reported address on its own. The merchant is asked to accept it;
+        until they do, `merchant_review` is `pending` and the address is not used for links, sign-in
+        redirects or payment-wallet domains. A new address reported after an acceptance is a new
+        request. Send `base_url: null` when the storefront has been taken down.
+
+        `routes` names the page templates by purpose. `product`, `collection` (or `category`), `policy`
+        and `account` are accepted. Each is a relative path beginning with `/` and may contain
+        `{slug}`. `category` is understood as the collection page when `collection` is not sent.
+
+        **Authentication:** the connection's secret key (`tybrite_sk_*`). The connection must have been
+        granted the `storefront_site:write` scope at consent; otherwise `403 insufficient_scope` is
+        returned. A publishable key is refused with `403 forbidden`.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StorefrontSiteReport'
+            example:
+              base_url: https://shop.example-store.com
+              custom_domain: shop.example-store.com
+              routes:
+                product: /p/{slug}
+                collection: /c/{slug}
+                policy: /policies/{slug}
+                account: /account
+      responses:
+        '200':
+          description: The report as GC now holds it
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontSite'
+              example:
+                base_url: https://shop.example-store.com
+                platform_url: null
+                custom_domain: shop.example-store.com
+                routes:
+                  product: /p/{slug}
+                  collection: /c/{slug}
+                  policy: /policies/{slug}
+                  account: /account
+                reported_at: '2026-11-04T10:15:00Z'
+                merchant_review: pending
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: getStorefrontSite
+      tags:
+        - Storefront Studio
+      summary: Read the reported storefront address and routes
+      description: |
+        Returns what the app last reported for this store and environment, with where the merchant's
+        review of the address stands. `404` means the app has not reported a site yet.
+
+        **Authentication:** the connection's secret key, with the `storefront_site:write` scope.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The app's current report
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontSite'
+              example:
+                base_url: https://shop.example-store.com
+                platform_url: null
+                custom_domain: null
+                routes:
+                  product: /p/{slug}
+                reported_at: '2026-11-04T10:15:00Z'
+                merchant_review: accepted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/storefront/experiments:
+    get:
+      operationId: listStorefrontExperiments
+      tags:
+        - Storefront Studio
+      summary: List the app's A/B experiments
+      description: |
+        Returns the experiments this app registered for the store and environment. Another app's
+        experiments are never listed.
+
+        **Authentication:** the connection's secret key. The connection must have been granted the
+        `ab_attribution:write` scope at consent; otherwise `403 insufficient_scope` is returned. The
+        merchant is told on the consent screen that this scope shows the app the sales of its own tests.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The app's experiments, newest first
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StorefrontExperiment'
+              example:
+                data:
+                  - experiment_id: hero-banner
+                    name: Hero banner
+                    variants:
+                      - control
+                      - bold
+                    status: active
+                    created_at: '2026-11-04T10:15:00Z'
+                    updated_at: '2026-11-04T10:15:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/storefront/experiments/{experiment_id}:
+    put:
+      operationId: putStorefrontExperiment
+      tags:
+        - Storefront Studio
+      summary: Register or update an A/B experiment
+      description: |
+        Registers an experiment and its variants, or updates one the app already owns. Register it
+        before it takes traffic: the first app to register an `experiment_id` in a store and environment
+        owns it, and a later request for the same id from another app returns `409 conflict`. An id whose
+        orders were already counted elsewhere cannot be registered.
+
+        A shopper's order is attributed to a variant when it carries the experiment id and the variant id
+        in its `attribution` (`ab_test_id` and `variation_id`). Only orders for the variants registered
+        here are counted.
+
+        An app can register up to 100 experiments per store and environment, each with 2 to 20 variants.
+
+        **Authentication:** the connection's secret key, with the `ab_attribution:write` scope.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: experiment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$
+          description: The experiment id you chose, 1 to 100 letters, digits, dots, dashes, colons or underscores.
+          example: hero-banner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StorefrontExperimentInput'
+            example:
+              name: Hero banner
+              variants:
+                - control
+                - bold
+      responses:
+        '200':
+          description: The experiment as registered
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontExperiment'
+              example:
+                experiment_id: hero-banner
+                name: Hero banner
+                variants:
+                  - control
+                  - bold
+                status: active
+                created_at: '2026-11-04T10:15:00Z'
+                updated_at: '2026-11-04T10:15:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/storefront/experiments/{experiment_id}/conversions:
+    get:
+      operationId: getStorefrontExperimentConversions
+      tags:
+        - Storefront Studio
+      summary: Read the paid orders for each variant of an experiment
+      description: |
+        Returns, for each variant the app registered, the number of paid orders and their total, in the
+        store's currency and in major units (12.50 means 12.50). `daily` breaks the same figures down by
+        day, with the sum of each order's squared value so the variance of the order value can be
+        computed. Unpaid orders, orders for unregistered variants and orders outside the window are not
+        counted.
+
+        The window is the last 30 days unless `from` and `to` are sent, and is at most 92 days.
+
+        An experiment that does not exist, belongs to another app or was registered in the other
+        environment returns the same `404`.
+
+        **Authentication:** the connection's secret key, with the `ab_attribution:write` scope.
+
+        **Rate limit:** 120 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: experiment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$
+          description: The experiment id you registered.
+          example: hero-banner
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: First day of the window (UTC). Defaults to 29 days before `to`.
+          example: '2026-10-05'
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Last day of the window (UTC). Defaults to today.
+          example: '2026-11-04'
+      responses:
+        '200':
+          description: Paid orders per variant
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontExperimentConversions'
+              example:
+                experiment_id: hero-banner
+                name: Hero banner
+                status: active
+                currency: USD
+                from: '2026-10-06'
+                to: '2026-11-04'
+                totals:
+                  - variant: control
+                    orders: 2
+                    revenue: 30
+                  - variant: bold
+                    orders: 1
+                    revenue: 30
+                daily:
+                  - variant: control
+                    date: '2026-11-04'
+                    orders: 2
+                    revenue: 30
+                    revenue_sum_of_squares: 500
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/storefront/tickets:
+    post:
+      operationId: createStorefrontSupportRequest
+      tags:
+        - Storefront Studio
+      summary: Open a support request for the store
+      description: |
+        Opens a support request with the merchant's support team on the merchant's behalf, for something
+        the app cannot resolve itself. The request appears in the merchant's Support list marked with the
+        app's name, the merchant is told by email and in the app, and the support team's replies go to the
+        merchant, not to the app.
+
+        Send an idempotency key (`idempotency_key` in the body or the `Idempotency-Key` header). Repeating
+        a request with the same key returns the request already opened with `200` and notifies no one; a new
+        key opens a new request with `201`.
+
+        An app can open 5 requests an hour and 20 a day per store. Beyond that the call returns `429` with
+        `Retry-After`. A sandbox connection records the request and returns it but reaches no support team
+        and no merchant.
+
+        **Authentication:** the connection's secret key (`tybrite_sk_*`). The connection must have been
+        granted the `support_tickets:write` scope at consent; otherwise `403 insufficient_scope` is
+        returned. A publishable key is refused with `403 forbidden`.
+
+        **Rate limit:** 30 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          description: Names this attempt. Required here or as `idempotency_key` in the body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StorefrontSupportRequestInput'
+            example:
+              subject: Checkout button does nothing on the cart page
+              body: Shoppers who press Pay on the cart page see no response. It started after the 3 November publish.
+              support_type: integrations_sync
+              idempotency_key: pay-button-2026-11-04
+      responses:
+        '200':
+          description: The request this key already opened
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontSupportRequest'
+              example:
+                id: 3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11
+                subject: Checkout button does nothing on the cart page
+                status: Open
+                support_type: integrations_sync
+                last_reply_at: null
+                resolved_at: null
+                created_at: '2026-11-04T10:15:00Z'
+                updated_at: '2026-11-04T10:15:00Z'
+        '201':
+          description: The request was opened
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontSupportRequest'
+              example:
+                id: 3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11
+                subject: Checkout button does nothing on the cart page
+                status: Open
+                support_type: integrations_sync
+                last_reply_at: null
+                resolved_at: null
+                created_at: '2026-11-04T10:15:00Z'
+                updated_at: '2026-11-04T10:15:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: listStorefrontSupportRequests
+      tags:
+        - Storefront Studio
+      summary: List the support requests the app opened
+      description: |
+        Returns the requests this app opened for the store and environment, newest first. Requests the
+        merchant or another app opened are never listed, and a reply from the support team is not
+        returned: the app sees only where each request stands.
+
+        **Authentication:** the connection's secret key, with the `support_tickets:write` scope.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+          description: Only requests with this status, for example `Open` or `Resolved`.
+          example: Open
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          description: Requests per page.
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: The `next_cursor` of the previous page.
+      responses:
+        '200':
+          description: A page of requests
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontSupportRequestList'
+              example:
+                data:
+                  - id: 3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11
+                    subject: Checkout button does nothing on the cart page
+                    status: Open
+                    support_type: integrations_sync
+                    last_reply_at: null
+                    resolved_at: null
+                    created_at: '2026-11-04T10:15:00Z'
+                    updated_at: '2026-11-04T10:15:00Z'
+                next_cursor: null
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/storefront/tickets/{ticket_id}:
+    get:
+      operationId: getStorefrontSupportRequest
+      tags:
+        - Storefront Studio
+      summary: Read one support request the app opened
+      description: |
+        Returns where one of the app's requests stands. A request that does not exist, was opened by the
+        merchant or another app, or belongs to the other environment returns the same `404`.
+
+        **Authentication:** the connection's secret key, with the `support_tickets:write` scope.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The `id` returned when the request was opened.
+          example: 3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11
+      responses:
+        '200':
+          description: The request
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontSupportRequest'
+              example:
+                id: 3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11
+                subject: Checkout button does nothing on the cart page
+                status: Replied
+                support_type: integrations_sync
+                last_reply_at: '2026-11-04T11:02:00Z'
+                resolved_at: null
+                created_at: '2026-11-04T10:15:00Z'
+                updated_at: '2026-11-04T11:02:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/storefront/templates:
+    get:
+      operationId: listStorefrontTemplates
+      tags:
+        - Storefront Studio
+      summary: List the templates the app offered
+      description: |
+        Returns the templates this app offered the store in this environment, newest first, including
+        withdrawn ones. Another app's templates are never listed.
+
+        **Authentication:** the connection's secret key. The connection must have been granted the
+        `storefront_template:write` scope at consent; otherwise `403 insufficient_scope` is returned.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The app's templates
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StorefrontTemplate'
+              example:
+                data:
+                  - template_id: summer-sale
+                    name: Summer Sale
+                    summary: A bright seasonal layout.
+                    version: 1.2.0
+                    preview_url: https://preview.example-studio.com/summer-sale
+                    status: accepted
+                    confirmed_version: 1.2.0
+                    decided_at: '2026-11-04T12:30:00Z'
+                    offered_at: '2026-11-04T10:15:00Z'
+                    updated_at: '2026-11-04T12:30:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/storefront/templates/{template_id}:
+    put:
+      operationId: putStorefrontTemplate
+      tags:
+        - Storefront Studio
+      summary: Offer a template for the store
+      description: |
+        Offers a template to the merchant, or updates one the app already offered. The merchant is told
+        and chooses to accept or decline; nothing changes in the store until they accept, and GC does not
+        move the template itself. `status` reports the merchant's answer, and `confirmed_version` is the
+        version they accepted.
+
+        A new `template_id`, a new `version` of an existing one, or a template the app had withdrawn is
+        offered to the merchant again. Repeating the same `version` only refreshes the name, summary and
+        preview, and the merchant's answer to that version stands.
+
+        An app can have up to 50 templates on offer per store and environment. A sandbox connection records
+        the offer but no merchant is asked.
+
+        **Authentication:** the connection's secret key, with the `storefront_template:write` scope.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$
+          description: The template id you chose, 1 to 100 letters, digits, dots, dashes, colons or underscores.
+          example: summer-sale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StorefrontTemplateInput'
+            example:
+              name: Summer Sale
+              summary: A bright seasonal layout.
+              version: 1.2.0
+              preview_url: https://preview.example-studio.com/summer-sale
+      responses:
+        '200':
+          description: The template as GC now holds it
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontTemplate'
+              example:
+                template_id: summer-sale
+                name: Summer Sale
+                summary: A bright seasonal layout.
+                version: 1.2.0
+                preview_url: https://preview.example-studio.com/summer-sale
+                status: offered
+                confirmed_version: null
+                decided_at: null
+                offered_at: '2026-11-04T10:15:00Z'
+                updated_at: '2026-11-04T10:15:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: getStorefrontTemplate
+      tags:
+        - Storefront Studio
+      summary: Read a template the app offered
+      description: |
+        Returns the template and the merchant's answer. A template that does not exist, belongs to another
+        app or to the other environment returns the same `404`.
+
+        **Authentication:** the connection's secret key, with the `storefront_template:write` scope.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$
+          description: The template id you offered.
+          example: summer-sale
+      responses:
+        '200':
+          description: The template
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontTemplate'
+              example:
+                template_id: summer-sale
+                name: Summer Sale
+                summary: A bright seasonal layout.
+                version: 1.2.0
+                preview_url: https://preview.example-studio.com/summer-sale
+                status: accepted
+                confirmed_version: 1.2.0
+                decided_at: '2026-11-04T12:30:00Z'
+                offered_at: '2026-11-04T10:15:00Z'
+                updated_at: '2026-11-04T12:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      operationId: withdrawStorefrontTemplate
+      tags:
+        - Storefront Studio
+      summary: Withdraw a template offer
+      description: |
+        Takes the offer back. The merchant is no longer asked about it, and the record stays with
+        `status: withdrawn`. Withdrawing twice is the same as once. Offering the template again asks the
+        merchant again.
+
+        **Authentication:** the connection's secret key, with the `storefront_template:write` scope.
+
+        **Rate limit:** 300 requests/hour per API key.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$
+          description: The template id you offered.
+          example: summer-sale
+      responses:
+        '200':
+          description: The template, withdrawn
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorefrontTemplate'
+              example:
+                template_id: summer-sale
+                name: Summer Sale
+                summary: A bright seasonal layout.
+                version: 1.2.0
+                preview_url: https://preview.example-studio.com/summer-sale
+                status: withdrawn
+                confirmed_version: null
+                decided_at: null
+                offered_at: '2026-11-04T10:15:00Z'
+                updated_at: '2026-11-04T13:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -34423,6 +35468,12 @@ paths:
 
         A customer only ever sees their own returns; there is no way to read another
         shopper's returns through this API.
+
+        **Response signature**
+
+        A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a
+        signing secret, so the caller can verify the refund amount, method and status of each return. Verification is
+        described under Get order (`GET /v1/orders/{id}`). A call made with a marketplace key is not signed.
       security:
         - BearerAuth: []
       parameters:
@@ -34490,6 +35541,10 @@ paths:
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
+            X-Signature:
+              $ref: '#/components/headers/ResponseSignature'
+            X-Signature-Timestamp:
+              $ref: '#/components/headers/ResponseSignatureTimestamp'
           content:
             application/json:
               schema:
@@ -34789,6 +35844,12 @@ paths:
 
         **Authentication:** API key in the `Authorization: Bearer` header **and** a
         customer session — either `x-auth-token` or `x-external-auth`.
+
+        **Response signature**
+
+        A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a
+        signing secret, so the caller can verify the refund amount, method and status of the return. Verification is
+        described under Get order (`GET /v1/orders/{id}`). A call made with a marketplace key is not signed.
       security:
         - BearerAuth: []
       parameters:
@@ -34839,6 +35900,10 @@ paths:
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
+            X-Signature:
+              $ref: '#/components/headers/ResponseSignature'
+            X-Signature-Timestamp:
+              $ref: '#/components/headers/ResponseSignatureTimestamp'
           content:
             application/json:
               schema:
@@ -37012,15 +38077,30 @@ paths:
                     **Order lifecycle:** `order.created`, `order.paid`, `order.fulfilled`,
                     `order.shipped`, `order.cancelled`, `order.refunded`, `order.updated`
 
+                    Order status events fire whoever changes the status: `order.paid` when the
+                    payment status becomes `paid` (including an order created unpaid and later
+                    confirmed by the payment provider, a subscription renewal or a wholesale
+                    payment), `order.fulfilled` when the order status becomes `shipped` or
+                    `delivered`, `order.cancelled` when it becomes `cancelled`, and `order.updated`
+                    for any other status change or an edit that changes neither status.
+                    `order.refunded` and `payment.refunded` fire when an order is refunded in full
+                    and its payment status becomes `refunded`; a return that refunds only part of an
+                    order sends `order.refunded` with `partial: true`, `refund_amount` (this
+                    return), `refunded_to_date` and `return_id`, and the payment status stays `paid`.
+
                     **Card disputes:** `order.disputed` (the shopper's bank disputed the card payment
-                    for an order or an in-store sale) and `order.dispute_closed` (the dispute ended).
+                    for an order or an in-store sale), `order.dispute_updated` (an open dispute moved to
+                    another status, for example from `needs_response` to `under_review`; the payload
+                    carries the new status and `previous_attributes.status`) and
+                    `order.dispute_closed` (the dispute ended).
                     The order stays `paid`: a dispute does not change its payment status. The payload
                     object carries `id`, `order_id`, `sale_id` (one of the two is set), `amount`,
                     `currency`, `reason`, `status` (`needs_response` or `under_review` while open,
                     `won`, `lost` or `closed` once ended), `evidence_due_at` (when the evidence is due,
                     or `null`), `opened_at`, `closed_at` and `outcome` (`won`, `lost` or `closed`, or
-                    `null` while open). A dispute on a marketplace order is announced to the
-                    marketplace only.
+                    `null` while open). A dispute on a marketplace order is also announced to each
+                    seller's own endpoints for that seller's share, with `marketplace: true`,
+                    `split_id` and `share_ratio` on the payload object.
 
                     **In-store sales:** `sale.completed`, `sale.refunded` — a sale rung up at the
                     point of sale rather than online. Subscribe to these alongside the order events
@@ -37030,6 +38110,19 @@ paths:
                     for this store was revoked, rotated, deactivated or expired. Only reaches
                     applications connected through Login with GC, and carries `pair_id` so you revoke
                     the affected connection rather than every one you hold for the store.
+
+                    **Store access:** `store.access_suspended` (the store's API access was paused: the
+                    store was deactivated, suspended by an operator, or its subscription lapsed past
+                    the grace period) and `store.access_restored` (access is back). Requests made with
+                    the store's keys are refused while access is suspended; no key is revoked or
+                    changed, so treat it as a pause and resume on `store.access_restored`, unlike
+                    `connection.revoked`, which ends the connection. The payload object carries
+                    `store_id`, `reason` and `occurred_at`. On `store.access_suspended`, `reason` is
+                    `deactivated` (the store was switched off), `subscription_lapsed` (the
+                    subscription ended or payment was not recovered) or `super_admin` (suspended or
+                    banned by the platform operator); on `store.access_restored` it names the reason
+                    that was lifted. One event is sent per change, never repeated while the state
+                    holds.
 
                     **Payment lifecycle:** `payment.succeeded`, `payment.failed`, `payment.refunded`
 
@@ -37058,12 +38151,18 @@ paths:
                     Endpoints opt in explicitly to the newsletter and lead form events; they are not
                     part of the default subscription.
 
-                    **Inventory & catalog:** `product.created`, `product.updated`,
+                    **Inventory & catalog:** `product.created`, `product.updated` (including a
+                    product switched off, with `is_active: false`),
                     `product.stock_low`, `product.out_of_stock`
 
-                    **Cart & checkout:** `cart.created`, `cart.updated`, `cart.abandoned`, `checkout.abandoned`, `wishlist.added`
+                    **Cart & checkout:** `cart.created`, `cart.updated`, `cart.abandoned` (a signed-in
+                    shopper's cart left idle for three hours; sent once per abandonment, so a cart
+                    that is changed and abandoned again is announced again), `checkout.abandoned`
+                    (not sent when the shopper went on to pay for an order), `wishlist.added`
 
-                    **Gift cards:** `gift_card.issued`, `gift_card.redeemed`, `gift_card.expired`
+                    **Gift cards:** `gift_card.issued`, `gift_card.redeemed` (each time the card is
+                    used, with the new `balance`, `redemption_count` and `amount_redeemed`),
+                    `gift_card.expired`
 
                     **Promotions:** `promotion.applied` (a promotion was applied to a checkout),
                     `promotion.created`, `promotion.activated` (a promotion went live or was
@@ -37072,8 +38171,9 @@ paths:
                     while it is a draft, and `promotion.created` arrives when it is approved.
 
                     **Pricing:** `pricing_rule.created`, `pricing_rule.activated` (a dynamic-pricing
-                    rule went live), `pricing_rule.updated` (a live rule's discount, scope, priority,
-                    or window changed — the prices it produces are now different), and
+                    rule went live), `pricing_rule.updated` (a live rule's discount, scope, targets,
+                    priority, hours, weekdays, channel, currency, conditions or window changed — the
+                    prices it produces are now different), and
                     `pricing_rule.deactivated`. Like promotions, a rule awaiting approval emits
                     nothing until it goes live. Subscribe to these if you render prices and need to
                     re-read when the rules behind them change.
@@ -37613,6 +38713,8 @@ paths:
                     - sale.completed
                     - sale.refunded
                     - connection.revoked
+                    - store.access_suspended
+                    - store.access_restored
                     - shopper_subscription.created
                     - shopper_subscription.renewed
                     - shopper_subscription.renewal_failed
@@ -37624,6 +38726,7 @@ paths:
                     - event_ticket.checked_in
                     - code_pool.low
                     - order.disputed
+                    - order.dispute_updated
                     - order.dispute_closed
       responses:
         '200':
@@ -38235,6 +39338,16 @@ paths:
             application/xml:
               schema:
                 type: string
+        '400':
+          description: The `format` parameter is not `json`, `xml` or `csv`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_request
+                  message: format must be json, xml, or csv
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '429':
@@ -38985,7 +40098,7 @@ paths:
                 product_id:
                   type: string
                   format: uuid
-                  description: Optional — the specific product within the placement the event relates to.
+                  description: Optional — the specific product within the placement the event relates to. A value that is not a UUID answers `400 invalid_request`.
                 session_id:
                   type: string
                   description: Optional — an opaque storefront session identifier used to de-duplicate events.
@@ -39115,7 +40228,7 @@ paths:
         - name: limit
           in: query
           required: false
-          description: Maximum number of members to return. Values above 50 are capped at 50. Defaults to 24.
+          description: Maximum number of members to return. Values above 50 are capped at 50. Defaults to 24. A value that is not a whole number (`abc`, `-1`, `1.5`) answers `400 invalid_request`.
           schema:
             type: integer
             minimum: 1
@@ -39144,11 +40257,42 @@ paths:
                   - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
                     product_id: 9cd6e472-de84-435c-be43-957b56682f43
         '400':
-          $ref: '#/components/responses/BadRequestError'
+          description: The `slug` is not a valid section slug (letters, digits, `-` and `_`, up to 80 characters), or `limit` is not a whole number.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_limit:
+                  summary: limit is not a whole number
+                  value:
+                    error:
+                      code: invalid_request
+                      message: limit must be a whole number
+                invalid_slug:
+                  summary: slug has characters a section slug cannot hold
+                  value:
+                    error:
+                      code: invalid_request
+                      message: Invalid collection slug
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '404':
-          $ref: '#/components/responses/NotFoundError'
+          description: No section has this slug in the marketplace.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: 'Collection not found: trending-now'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/sandbox/reset:
@@ -40184,7 +41328,7 @@ components:
           reviews, storefront events, and the Agent API's quotes, cart drafts and checkout intents
             
         **Endpoint-Specific Requirements:**
-        - **Authentication endpoints** (`/v1/auth/*`): state-changing `POST` calls require a secret key (marketplace keys excepted); `GET /v1/auth/me` accepts either key
+        - **Authentication endpoints** (`/v1/auth/*`): state-changing `POST` calls require a secret key, for store and marketplace keys alike; `GET /v1/auth/me` accepts either key
         - **Payment verification** (`POST /v1/payments/verify`): Secret key required
         - **AI Recommendations** (`POST /v1/recommendations`): Secret key required
         - **Semantic Search** (`POST /v1/search`): Both key types allowed (read-only operation)
@@ -42022,6 +43166,13 @@ components:
             - 'null'
           description: The product's category in the Meta commerce taxonomy. The Meta counterpart of `google_product_category`, set separately because the two taxonomies do not share category names.
           example: apparel & accessories > clothing
+        preorder_ship_date:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: The date the merchant expects a pre-order of this product to ship, as `YYYY-MM-DD`. `null` when the merchant has not set one. It applies to every variant of the product.
+          example: '2026-12-15'
         attributes:
           type:
             - object
@@ -46826,7 +47977,7 @@ components:
             - custom
             - none
           example: tier
-          description: Which source produced the result — the store's `zone`, distance `tier` or `fallback` rate, a connected carrier account (`shippo`, or `carrier` when `rate_source_format=neutral` is sent), the store's custom shipping extension (`custom`), or `none`.
+          description: Which source produced the result — the store's `zone`, distance `tier` or `fallback` rate, a connected carrier account (`shippo`, or `carrier` when `rate_source_format=neutral` is sent or the store's setting is neutral), the store's custom shipping extension (`custom`), or `none`.
         rates:
           type: array
           description: Carrier options, present when the store has a carrier account or a custom shipping extension AND a destination address + parcel were sent. Each is a real quote. To order with one, pass its `rate_id` and `source` as `shipping_rate_id` / `shipping_rate_source` on createOrder, where the option is fetched again from its source before it is charged.
@@ -47174,6 +48325,397 @@ components:
           format: uuid
           description: Key pair identifier. Use this to revoke via `POST /v1/connect/revoke`.
           example: 550e8400-e29b-41d4-a716-446655440000
+    StorefrontSite:
+      type: object
+      required:
+        - base_url
+        - routes
+        - reported_at
+        - merchant_review
+      properties:
+        base_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        platform_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        custom_domain:
+          type:
+            - string
+            - 'null'
+        routes:
+          type: object
+          additionalProperties:
+            type: string
+        reported_at:
+          type: string
+          format: date-time
+        merchant_review:
+          type: string
+          enum:
+            - pending
+            - accepted
+            - declined
+            - matches_website
+            - unpublished
+          description: |
+            Where the merchant's review of `base_url` stands. `pending`: the merchant is being asked.
+            `accepted`: the merchant adopted it. `declined`: the merchant kept their own address.
+            `matches_website`: it is the address the store already uses, so nothing is asked.
+            `unpublished`: the storefront was reported as taken down.
+    StorefrontSiteReport:
+      type: object
+      required:
+        - base_url
+      additionalProperties: false
+      properties:
+        base_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          maxLength: 2048
+          description: |
+            The storefront's public address: https, a domain name (not an IP address), no user name or password.
+            `null` reports the storefront as taken down.
+          example: https://shop.example-store.com
+        platform_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          maxLength: 2048
+          description: The address the storefront also answers on before a custom domain is connected, if any.
+        custom_domain:
+          type:
+            - string
+            - 'null'
+          maxLength: 253
+          description: The host name of a custom domain connected to the storefront, if any.
+          example: shop.example-store.com
+        routes:
+          type:
+            - object
+            - 'null'
+          description: |
+            Page templates by purpose. Allowed keys: `product`, `collection`, `category`, `policy`, `account`.
+            Each value is a relative path beginning with `/`, at most 512 characters, and may contain `{slug}`.
+            Routes require a `base_url`.
+          additionalProperties:
+            type: string
+          example:
+            product: /p/{slug}
+            collection: /c/{slug}
+    StorefrontExperiment:
+      type: object
+      required:
+        - experiment_id
+        - variants
+        - status
+        - created_at
+        - updated_at
+      properties:
+        experiment_id:
+          type: string
+        name:
+          type:
+            - string
+            - 'null'
+        variants:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum:
+            - active
+            - ended
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    StorefrontExperimentInput:
+      type: object
+      required:
+        - variants
+      additionalProperties: false
+      properties:
+        name:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 200
+          example: Hero banner
+        variants:
+          type: array
+          minItems: 2
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$
+          description: The variant ids an order's `attribution.variation_id` can carry.
+          example:
+            - control
+            - bold
+        status:
+          type: string
+          enum:
+            - active
+            - ended
+          default: active
+    StorefrontExperimentConversions:
+      type: object
+      required:
+        - experiment_id
+        - status
+        - currency
+        - from
+        - to
+        - totals
+        - daily
+      properties:
+        experiment_id:
+          type: string
+        name:
+          type:
+            - string
+            - 'null'
+        status:
+          type: string
+          enum:
+            - active
+            - ended
+        currency:
+          type: string
+          description: The store's currency code. Every amount below is in this currency, in major units.
+          example: USD
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        totals:
+          type: array
+          description: One entry per registered variant, with zero when it has no paid orders in the window.
+          items:
+            type: object
+            required:
+              - variant
+              - orders
+              - revenue
+            properties:
+              variant:
+                type: string
+              orders:
+                type: integer
+              revenue:
+                type: number
+                description: The sum of the paid orders' totals, in major units.
+        daily:
+          type: array
+          items:
+            type: object
+            required:
+              - variant
+              - date
+              - orders
+              - revenue
+              - revenue_sum_of_squares
+            properties:
+              variant:
+                type: string
+              date:
+                type: string
+                format: date
+              orders:
+                type: integer
+              revenue:
+                type: number
+                description: The sum of the day's paid orders' totals, in major units.
+              revenue_sum_of_squares:
+                type: number
+                description: The sum of each order's total squared. With `orders` and `revenue` it gives the variance of the order value.
+    StorefrontSupportRequest:
+      type: object
+      required:
+        - id
+        - subject
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        subject:
+          type: string
+        status:
+          type: string
+          description: Where the request stands with the support team, for example `Open`, `Replied`, `Resolved` or `Closed`.
+          example: Open
+        support_type:
+          type:
+            - string
+            - 'null'
+        last_reply_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the support team last replied. The reply itself is for the merchant and is not returned.
+        resolved_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    StorefrontSupportRequestList:
+      type: object
+      required:
+        - data
+        - next_cursor
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorefrontSupportRequest'
+        next_cursor:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Pass as `cursor` for the next page; `null` on the last page.
+    StorefrontSupportRequestInput:
+      type: object
+      required:
+        - subject
+        - body
+      additionalProperties: false
+      properties:
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: One line, as the merchant will read it in their Support list.
+          example: Checkout button does nothing on the cart page
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: What happened and what the app already tried. The merchant's support team reads it.
+          example: Shoppers who press Pay on the cart page see no response. It started after the 3 November publish.
+        support_type:
+          type: string
+          enum:
+            - payments_billing
+            - orders_fulfilment
+            - products_catalogue
+            - integrations_sync
+            - account_access
+            - something_else
+          description: What the request is about. Omit it when none fits.
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Names this attempt, so a retry returns the request already opened instead of opening another. Required, here or in the `Idempotency-Key` header (the same value if both are sent).
+          example: pay-button-2026-11-04
+    StorefrontTemplate:
+      type: object
+      required:
+        - template_id
+        - name
+        - version
+        - status
+        - offered_at
+        - updated_at
+      properties:
+        template_id:
+          type: string
+        name:
+          type: string
+        summary:
+          type:
+            - string
+            - 'null'
+        version:
+          type: string
+          description: The version most recently offered.
+        preview_url:
+          type:
+            - string
+            - 'null'
+        status:
+          type: string
+          enum:
+            - offered
+            - accepted
+            - declined
+            - withdrawn
+          description: '`offered` awaits the merchant. `accepted` and `declined` are the merchant''s answer to the version offered. `withdrawn` means the app took the offer back.'
+        confirmed_version:
+          type:
+            - string
+            - 'null'
+          description: The version the merchant last accepted. It stays the same while a newer version awaits an answer.
+        decided_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the merchant answered the current offer.
+        offered_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    StorefrontTemplateInput:
+      type: object
+      required:
+        - name
+        - version
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: What the merchant sees when asked to accept it.
+          example: Summer Sale
+        summary:
+          type:
+            - string
+            - 'null'
+          maxLength: 500
+          description: One line about the template.
+          example: A bright seasonal layout with a hero banner and a featured collection.
+        version:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$
+          description: The version being offered. A new version is a new offer the merchant is asked about again; repeating the same version does not ask again.
+          example: 1.2.0
+        preview_url:
+          type:
+            - string
+            - 'null'
+          maxLength: 500
+          description: An `https` address where the merchant can look at the template before deciding.
+          example: https://preview.example-studio.com/summer-sale
     Review:
       type: object
       required:
@@ -49251,3 +50793,24 @@ components:
           - production
           - sandbox
       example: sandbox
+    ResponseSignature:
+      description: |
+        Base64-encoded HMAC-SHA256 of the string `{X-Signature-Timestamp}.{body}`, where `{body}` is the exact
+        bytes of the response body after any transport compression has been removed.
+
+        Present on a `200` response to a call made with a secret key, when the store has a signing secret.
+        A call made with a publishable key is never signed. The signing secret is the one the key signs
+        requests with: the store's signing secret, or, for a key issued to a connected app, that app's own
+        signing secret.
+      schema:
+        type: string
+      example: 3q2+7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    ResponseSignatureTimestamp:
+      description: |
+        The time the response was signed, in Unix seconds. It is the `{timestamp}` of the string that
+        `X-Signature` signs, and the value to compare with the current time to reject a stale response.
+
+        Present whenever `X-Signature` is present.
+      schema:
+        type: string
+      example: '1762300000'

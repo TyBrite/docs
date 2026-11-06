@@ -1,0 +1,385 @@
+---
+title: "Storefront Studio"
+description: "Reference for the StorefrontStudioService class in the Tybrite SDK."
+---
+
+The `StorefrontStudioService` class (accessed via `client.storefrontStudio`) is how an application that builds a merchant's storefront reports back to the store: the storefront's address and routes, its own A/B experiments with the sales each variant produced, support requests it opens for the merchant, and templates it offers the merchant.
+
+## Authentication and scopes
+
+Every method takes the **secret key** of the application's GC Connect connection (`tybrite_sk_*`). A publishable key is refused with `403 forbidden`. The key fixes the store, the environment and the application, so an application reaches only its own reports, experiments, requests and templates, and a merchant who disconnects the application ends its access at once.
+
+Each capability has its own scope, shown to the merchant on the consent screen. A connection that was not granted the scope receives `403 insufficient_scope`.
+
+| Scope | Methods |
+| :--- | :--- |
+| `storefront_site:write` | `putStorefrontSite`, `getStorefrontSite` |
+| `ab_attribution:write` | `listStorefrontExperiments`, `putStorefrontExperiment`, `getStorefrontExperimentConversions` |
+| `support_tickets:write` | `createStorefrontSupportRequest`, `listStorefrontSupportRequests`, `getStorefrontSupportRequest` |
+| `storefront_template:write` | `listStorefrontTemplates`, `putStorefrontTemplate`, `getStorefrontTemplate`, `withdrawStorefrontTemplate` |
+
+A sandbox connection records what it sends and returns it, but reaches no merchant and no support team.
+
+## The storefront's address and routes
+
+The store learns where a storefront lives from the application, and the merchant decides whether to use it. A reported address is not used for links, sign-in redirects or payment-wallet domains until the merchant accepts it; until then `merchant_review` is `pending`. An address reported after an acceptance is a new request.
+
+### `putStorefrontSite({ requestBody })`
+
+Replaces the application's report for this store and environment, so repeating a request is safe. `base_url` is an `https` address on a domain name, without a user name or password; `null` reports the storefront as taken down. `routes` names page templates by purpose: `product`, `collection` (or `category`, understood as the collection page when `collection` is not sent), `policy` and `account`. Each is a relative path beginning with `/`, at most 512 characters, and may contain `{slug}`. Routes require a `base_url`. Limit: 300 requests per hour per key.
+
+```typescript
+const site = await client.storefrontStudio.putStorefrontSite({
+  requestBody: {
+    base_url: 'https://shop.example-store.com',
+    custom_domain: 'shop.example-store.com',
+    routes: {
+      product: '/p/{slug}',
+      collection: '/c/{slug}',
+      policy: '/policies/{slug}',
+      account: '/account',
+    },
+  },
+});
+```
+
+```json Response
+{
+  "base_url": "https://shop.example-store.com",
+  "platform_url": null,
+  "custom_domain": "shop.example-store.com",
+  "routes": {
+    "product": "/p/{slug}",
+    "collection": "/c/{slug}",
+    "policy": "/policies/{slug}",
+    "account": "/account"
+  },
+  "reported_at": "2026-11-04T10:15:00Z",
+  "merchant_review": "pending"
+}
+```
+
+`merchant_review` is one of `pending` (the merchant is being asked), `accepted`, `declined` (the merchant kept their own address), `matches_website` (the address is the one the store already uses, so nothing is asked) and `unpublished` (the storefront was reported as taken down).
+
+### `getStorefrontSite()`
+
+Returns what the application last reported for this store and environment, with where the merchant's review stands. `404` means no site has been reported. Limit: 300 requests per hour per key.
+
+```typescript
+const site = await client.storefrontStudio.getStorefrontSite();
+```
+
+```json Response
+{
+  "base_url": "https://shop.example-store.com",
+  "platform_url": null,
+  "custom_domain": null,
+  "routes": {
+    "product": "/p/{slug}"
+  },
+  "reported_at": "2026-11-04T10:15:00Z",
+  "merchant_review": "accepted"
+}
+```
+
+## A/B experiments
+
+An experiment is registered with its variants before it takes traffic. A shopper's order is attributed to a variant when its `attribution` carries the experiment id as `ab_test_id` and the variant id as `variation_id`; only orders for the variants registered here are counted. An application can register up to 100 experiments per store and environment, each with 2 to 20 variants.
+
+### `listStorefrontExperiments()`
+
+Returns the experiments the application registered for the store and environment, newest first. Another application's experiments are never listed. Limit: 300 requests per hour per key.
+
+```typescript
+const { data } = await client.storefrontStudio.listStorefrontExperiments();
+```
+
+```json Response
+{
+  "data": [
+    {
+      "experiment_id": "hero-banner",
+      "name": "Hero banner",
+      "variants": ["control", "bold"],
+      "status": "active",
+      "created_at": "2026-11-04T10:15:00Z",
+      "updated_at": "2026-11-04T10:15:00Z"
+    }
+  ]
+}
+```
+
+### `putStorefrontExperiment({ experimentId, requestBody })`
+
+Registers an experiment and its variants, or updates one the application already owns. `experimentId` is chosen by the application: 1 to 100 letters, digits, dots, dashes, colons or underscores. The first application to register an id in a store and environment owns it, and a later request for the same id from another application returns `409 conflict`. An id whose orders were already counted elsewhere cannot be registered. `status` is `active` or `ended`. Limit: 300 requests per hour per key.
+
+```typescript
+const experiment = await client.storefrontStudio.putStorefrontExperiment({
+  experimentId: 'hero-banner',
+  requestBody: {
+    name: 'Hero banner',
+    variants: ['control', 'bold'],
+  },
+});
+```
+
+```json Response
+{
+  "experiment_id": "hero-banner",
+  "name": "Hero banner",
+  "variants": ["control", "bold"],
+  "status": "active",
+  "created_at": "2026-11-04T10:15:00Z",
+  "updated_at": "2026-11-04T10:15:00Z"
+}
+```
+
+### `getStorefrontExperimentConversions({ experimentId, from?, to? })`
+
+Returns, for each registered variant, the number of paid orders and their total, in the store's currency and in major units (`12.50` means 12.50). `daily` breaks the same figures down by day and adds the sum of each order's squared value, so the variance of the order value can be computed. Unpaid orders, orders for unregistered variants and orders outside the window are not counted. The window is the last 30 days unless `from` and `to` (UTC dates) are sent, and is at most 92 days. An experiment that does not exist, belongs to another application or was registered in the other environment returns the same `404`. Limit: 120 requests per hour per key.
+
+```typescript
+const conversions = await client.storefrontStudio.getStorefrontExperimentConversions({
+  experimentId: 'hero-banner',
+  from: '2026-10-06',
+  to: '2026-11-04',
+});
+```
+
+```json Response
+{
+  "experiment_id": "hero-banner",
+  "name": "Hero banner",
+  "status": "active",
+  "currency": "USD",
+  "from": "2026-10-06",
+  "to": "2026-11-04",
+  "totals": [
+    { "variant": "control", "orders": 2, "revenue": 30 },
+    { "variant": "bold", "orders": 1, "revenue": 30 }
+  ],
+  "daily": [
+    {
+      "variant": "control",
+      "date": "2026-11-04",
+      "orders": 2,
+      "revenue": 30,
+      "revenue_sum_of_squares": 500
+    }
+  ]
+}
+```
+
+## Support requests
+
+A support request is opened with the merchant's support team on the merchant's behalf, for something the application cannot resolve itself. It appears in the merchant's Support list marked with the application's name, the merchant is told by email and in the app, and the support team's replies go to the merchant. The application sees only where each request stands.
+
+### `createStorefrontSupportRequest({ requestBody, idempotencyKey? })`
+
+Opens a request. `subject` is one line as the merchant reads it in their Support list, and `body` states what happened and what the application already tried. `support_type` is optional: `payments_billing`, `orders_fulfilment`, `products_catalogue`, `integrations_sync`, `account_access` or `something_else`.
+
+An idempotency key is required, as `idempotency_key` in the body or the `Idempotency-Key` header (the same value if both are sent). Repeating a request with the same key returns the request already opened with `200` and notifies no one; a new key opens a new request with `201`. An application can open 5 requests an hour and 20 a day per store; beyond that the call returns `429` with `Retry-After`. Limit: 30 requests per hour per key.
+
+```typescript
+const request = await client.storefrontStudio.createStorefrontSupportRequest({
+  idempotencyKey: 'checkout-button-2026-11-04',
+  requestBody: {
+    subject: 'Checkout button does nothing on the cart page',
+    body: 'The button stays disabled after the cart loads. The storefront was redeployed twice with the same result.',
+    support_type: 'integrations_sync',
+  },
+});
+```
+
+```json Response
+{
+  "id": "3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11",
+  "subject": "Checkout button does nothing on the cart page",
+  "status": "Open",
+  "support_type": "integrations_sync",
+  "last_reply_at": null,
+  "resolved_at": null,
+  "created_at": "2026-11-04T10:15:00Z",
+  "updated_at": "2026-11-04T10:15:00Z"
+}
+```
+
+### `listStorefrontSupportRequests({ status?, limit?, cursor? })`
+
+Returns the requests the application opened for the store and environment, newest first. Requests the merchant or another application opened are never listed. `status` filters by the request's status, for example `Open` or `Resolved`; `limit` sets the page size (default 20); `cursor` takes the previous page's `next_cursor`, which is `null` on the last page. Limit: 300 requests per hour per key.
+
+```typescript
+const page = await client.storefrontStudio.listStorefrontSupportRequests({
+  status: 'Open',
+  limit: 20,
+});
+```
+
+```json Response
+{
+  "data": [
+    {
+      "id": "3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11",
+      "subject": "Checkout button does nothing on the cart page",
+      "status": "Open",
+      "support_type": "integrations_sync",
+      "last_reply_at": null,
+      "resolved_at": null,
+      "created_at": "2026-11-04T10:15:00Z",
+      "updated_at": "2026-11-04T10:15:00Z"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+### `getStorefrontSupportRequest({ ticketId })`
+
+Returns where one request stands. `status` is the request's state with the support team, for example `Open`, `Replied`, `Resolved` or `Closed`; `last_reply_at` is when the team last replied, and the reply itself is not returned. A request that does not exist, was opened by the merchant or another application, or belongs to the other environment returns the same `404`. Limit: 300 requests per hour per key.
+
+```typescript
+const request = await client.storefrontStudio.getStorefrontSupportRequest({
+  ticketId: '3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11',
+});
+```
+
+```json Response
+{
+  "id": "3f1c6a0e-8f6b-4a53-9d0a-5b5f7e2c1a11",
+  "subject": "Checkout button does nothing on the cart page",
+  "status": "Replied",
+  "support_type": "integrations_sync",
+  "last_reply_at": "2026-11-04T11:02:00Z",
+  "resolved_at": null,
+  "created_at": "2026-11-04T10:15:00Z",
+  "updated_at": "2026-11-04T11:02:00Z"
+}
+```
+
+## Templates
+
+An application offers a template to the merchant, who accepts or declines it. Nothing changes in the store until the merchant accepts, and Galactic Core does not move the template itself. `status` is `offered` (awaiting the merchant), `accepted` or `declined` (the merchant's answer to the version offered) or `withdrawn` (the application took the offer back). `confirmed_version` is the version the merchant last accepted and stays the same while a newer version awaits an answer.
+
+### `listStorefrontTemplates()`
+
+Returns the templates the application offered the store in this environment, newest first, including withdrawn ones. Another application's templates are never listed. Limit: 300 requests per hour per key.
+
+```typescript
+const { data } = await client.storefrontStudio.listStorefrontTemplates();
+```
+
+```json Response
+{
+  "data": [
+    {
+      "template_id": "summer-sale",
+      "name": "Summer Sale",
+      "summary": "A bright seasonal layout.",
+      "version": "1.2.0",
+      "preview_url": "https://preview.example-studio.com/summer-sale",
+      "status": "accepted",
+      "confirmed_version": "1.2.0",
+      "decided_at": "2026-11-04T12:30:00Z",
+      "offered_at": "2026-11-04T10:15:00Z",
+      "updated_at": "2026-11-04T12:30:00Z"
+    }
+  ]
+}
+```
+
+### `putStorefrontTemplate({ templateId, requestBody })`
+
+Offers a template to the merchant, or updates one the application already offered. `templateId` is chosen by the application: 1 to 100 letters, digits, dots, dashes, colons or underscores. `name` is what the merchant sees when asked to accept it, `summary` is one line about the template, `version` is the version being offered, and `preview_url` is an `https` address where the merchant can look at the template before deciding.
+
+A new `templateId`, a new `version` of an existing one, or a template the application had withdrawn is offered to the merchant again. Repeating the same `version` only refreshes the name, summary and preview, and the merchant's answer to that version stands. An application can have up to 50 templates on offer per store and environment. Limit: 300 requests per hour per key.
+
+```typescript
+const template = await client.storefrontStudio.putStorefrontTemplate({
+  templateId: 'summer-sale',
+  requestBody: {
+    name: 'Summer Sale',
+    summary: 'A bright seasonal layout.',
+    version: '1.2.0',
+    preview_url: 'https://preview.example-studio.com/summer-sale',
+  },
+});
+```
+
+```json Response
+{
+  "template_id": "summer-sale",
+  "name": "Summer Sale",
+  "summary": "A bright seasonal layout.",
+  "version": "1.2.0",
+  "preview_url": "https://preview.example-studio.com/summer-sale",
+  "status": "offered",
+  "confirmed_version": null,
+  "decided_at": null,
+  "offered_at": "2026-11-04T10:15:00Z",
+  "updated_at": "2026-11-04T10:15:00Z"
+}
+```
+
+### `getStorefrontTemplate({ templateId })`
+
+Returns a template and the merchant's answer. A template that does not exist, belongs to another application or to the other environment returns the same `404`. Limit: 300 requests per hour per key.
+
+```typescript
+const template = await client.storefrontStudio.getStorefrontTemplate({
+  templateId: 'summer-sale',
+});
+```
+
+```json Response
+{
+  "template_id": "summer-sale",
+  "name": "Summer Sale",
+  "summary": "A bright seasonal layout.",
+  "version": "1.2.0",
+  "preview_url": "https://preview.example-studio.com/summer-sale",
+  "status": "accepted",
+  "confirmed_version": "1.2.0",
+  "decided_at": "2026-11-04T12:30:00Z",
+  "offered_at": "2026-11-04T10:15:00Z",
+  "updated_at": "2026-11-04T12:30:00Z"
+}
+```
+
+### `withdrawStorefrontTemplate({ templateId })`
+
+Takes the offer back. The merchant is no longer asked about it, and the record stays with `status: "withdrawn"`. Withdrawing twice is the same as once, and offering the template again asks the merchant again. Limit: 300 requests per hour per key.
+
+```typescript
+const template = await client.storefrontStudio.withdrawStorefrontTemplate({
+  templateId: 'summer-sale',
+});
+```
+
+```json Response
+{
+  "template_id": "summer-sale",
+  "name": "Summer Sale",
+  "summary": "A bright seasonal layout.",
+  "version": "1.2.0",
+  "preview_url": "https://preview.example-studio.com/summer-sale",
+  "status": "withdrawn",
+  "confirmed_version": null,
+  "decided_at": null,
+  "offered_at": "2026-11-04T10:15:00Z",
+  "updated_at": "2026-11-04T13:00:00Z"
+}
+```
+
+## Response codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Success. A repeated support request with the same idempotency key also returns `200`. |
+| `201` | A support request was opened. |
+| `400` | Invalid request: a malformed body, an address or route that is not allowed, or a missing idempotency key. |
+| `401` | Invalid or missing API key. |
+| `403` | A publishable key (`forbidden`), or a connection without the method's scope (`insufficient_scope`). |
+| `404` | The resource does not exist for this application, store and environment. |
+| `409` | `conflict` on an experiment id another application owns. |
+| `429` | Rate limit exceeded, or the support-request allowance is used up (`Retry-After` states when to retry). |
+| `500` | Server error. |
