@@ -181,7 +181,6 @@ info:
     | Starter | 10,000 | 50,000 | 2,000 |
     | Growth | 30,000 | 150,000 | 5,000 |
     | Premium | 150,000 | 750,000 | 25,000 |
-    | Enterprise | By agreement | By agreement | By agreement |
 
     `Retry-After` on a `rate_limited` response is the end of the current hour (hourly and per-network
     limits) or UTC day (daily limit).
@@ -193,7 +192,8 @@ info:
     - **Starter:** 200,000 requests/month
     - **Growth:** 1,000,000 requests/month
     - **Premium:** 5,000,000 requests/month
-    - **Enterprise:** unmetered
+
+    Dedicated infrastructure is arranged through sales and is not a plan; its limits are agreed individually.
 
     (During a free trial the allowance is a flat 40,000 requests/month on every plan.) Abuse-throttled requests are **not**
     counted against this allowance, so a traffic spike or scraping attempt can't quietly burn through
@@ -6727,9 +6727,10 @@ paths:
                         type: string
                         example: john.doe@example.com
                       amount:
-                        type: integer
-                        description: Amount in kobo (smallest currency unit)
-                        example: 5000000
+                        type: number
+                        format: float
+                        description: 'Amount in major currency units, as for every other amount in the API. When you open the Paystack widget, pass the widget its own unit: multiply by the currency''s subdivision (100 for NGN, GHS, ZAR, KES and USD; 1 for a currency with no subdivision such as XOF or RWF).'
+                        example: 50000
                       currency:
                         type: string
                         example: NGN
@@ -42378,7 +42379,7 @@ components:
             - **Plan-gated** — `ai_recommendations`, `semantic_search`, `dynamic_pricing`, `cms`,
               `lookbooks`, `returns`. `true` requires the store's plan to include the feature AND it to
               be configured. By plan: Starter includes none of these; Growth adds content
-              pages/lookbooks (`cms`, `lookbooks`) and `returns`; Premium and Enterprise add smart
+              pages/lookbooks (`cms`, `lookbooks`) and `returns`; Premium adds smart
               search & recommendations (`ai_recommendations`, `semantic_search`) and `dynamic_pricing`.
 
             - **Data-presence (every plan)** — `multi_currency`, `gift_cards`, `promotions`,
@@ -47168,7 +47169,7 @@ components:
           example: true
         pending_confirmation:
           type: boolean
-          description: True when the signup is waiting for the shopper to confirm from an email.
+          description: True when the signup is waiting for the shopper to confirm from an email. A form that asks for confirmation answers true for every address, including one that is already subscribed (which is sent no email), so the reply never reveals who is on the list.
           example: false
         message:
           type: string
@@ -49894,6 +49895,16 @@ components:
             Barcode symbology. Common spellings are normalized (e.g. `UPC` → `UPC_A`). Unknown
             values fall back to `CODE128`.
           example: EAN13
+        fulfilment_kind:
+          type: string
+          enum:
+            - shipped
+            - digital
+            - code
+            - event_ticket
+            - service
+          description: 'How the product is delivered. Optional: a row that omits it takes the store''s default, which is `shipped` unless the store does not offer shipped products, in which case it is the first type the store offers. A row that names a type the store does not offer is rejected for that row.'
+          example: digital
     IngestSummary:
       type: object
       description: Per-batch counts.
