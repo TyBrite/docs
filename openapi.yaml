@@ -373,13 +373,22 @@ info:
     ### Common Error Codes
 
     - `unauthorized` (401): Invalid or missing API key
-    - `forbidden` (403): API key lacks required permissions
+    - `forbidden` (403): The operation needs a secret key, and the key used is a publishable key
+    - `insufficient_scope` (403): A GC Connect key was not granted the scope the operation needs; the message names the scope
+    - `feature_not_available` (403): The store's plan does not include the feature the route belongs to
+    - `subscription_expired` (402): The store's subscription is not active
+    - `invalid_token` (401): The `x-auth-token` sign-in token is not valid for this store and environment
+    - `invalid_confirmation_token` (403): The confirmation token sent with an agent checkout intent does not match the intent
     - `endpoint_not_allowed` (403): The key is limited to an approved list of endpoints and this request is not on it
     - `not_found` (404): Resource not found
     - `invalid_request` (400): Malformed request or missing fields
+    - `method_not_allowed` (405): The route does not accept the HTTP method used
     - `rate_limited` (429): Abuse throttle tripped — too many requests too fast (carries `X-RateLimit-Scope: abuse`; not counted against your monthly quota)
     - `quota_exceeded` (429): Monthly plan request allowance reached
     - `server_error` (500): Internal server error
+    - `config_error` (500): A setting the operation depends on is missing for this store, for example the store's request-signing secret
+    - `provider_error` (502): A payment provider refused or failed a call made on the store's behalf; the message is a fixed sentence and the provider's own text is never returned
+    - `provider_timeout` (504): A payment provider did not respond in time
     - `service_unavailable` (503): Service temporarily unavailable
 
     ## Idempotency
@@ -6990,15 +6999,24 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
         '502':
-          description: A payment method the merchant added themselves did not complete the request. Retry, or fall back to another method.
+          description: 'The payment provider refused or failed the request (`provider_error`: a rejected credential, a rejected payload or an outage at the provider), or a payment method the merchant added themselves did not complete it (`provider_unavailable`). The `provider_error` message is a fixed sentence; the provider''s own text is never returned. Retry, or fall back to another method.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: provider_unavailable
-                  message: custom payment provider failed to initialize
+              examples:
+                provider_error:
+                  summary: The provider refused or failed the request
+                  value:
+                    error:
+                      code: provider_error
+                      message: The payment provider could not complete this request. Try again, or contact the store if it keeps happening.
+                provider_unavailable:
+                  summary: A merchant-added payment method failed
+                  value:
+                    error:
+                      code: provider_unavailable
+                      message: custom payment provider failed to initialize
         '504':
           description: The payment provider did not respond in time. Safe to retry.
           content:
@@ -7433,15 +7451,24 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
         '502':
-          description: A payment method the merchant added themselves did not complete the verification. The payment's real state is unchanged; retry.
+          description: The payment provider refused or failed the lookup (`provider_error`, with a fixed sentence), or a payment method the merchant added themselves did not complete the verification (`provider_unavailable`). The payment's real state is unchanged; retry.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: provider_unavailable
-                  message: custom payment provider failed to verify
+              examples:
+                provider_error:
+                  summary: The provider refused or failed the lookup
+                  value:
+                    error:
+                      code: provider_error
+                      message: The payment provider could not complete this request. Try again, or contact the store if it keeps happening.
+                provider_unavailable:
+                  summary: A merchant-added payment method failed
+                  value:
+                    error:
+                      code: provider_unavailable
+                      message: custom payment provider failed to verify
         '504':
           description: The payment provider did not respond in time. Safe to retry.
           content:
@@ -20728,7 +20755,7 @@ paths:
         `POST /v1/payments/initialize` needs to take payment, plus the store's payment methods.
 
         The token is single use: a second confirmation returns `409 intent_not_pending`. A wrong token returns
-        `403 invalid_token` and discloses nothing about the intent.
+        `403 invalid_confirmation_token` and discloses nothing about the intent.
 
         **Guest confirmations ask for a code.** Unless the merchant has turned the setting off, a confirmation with
         no shopper credential and an intent that was not prepared for a signed-in shopper is completed only with a
@@ -21528,7 +21555,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The token does not match, or the emailed code does not (`invalid_token`, `invalid_person_proof`)
+          description: The token does not match, or the emailed code does not (`invalid_confirmation_token`, `invalid_person_proof`)
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -21557,7 +21584,7 @@ paths:
                           - array
               example:
                 error:
-                  code: invalid_token
+                  code: invalid_confirmation_token
                   message: The confirmation token does not match this checkout intent
         '404':
           description: Not found
@@ -21705,14 +21732,14 @@ paths:
         Who may cancel: a secret key may cancel any intent. An intent prepared for a signed-in shopper, and an
         intent created with `confirmation_mode` `hosted`, is cancelled with a publishable key only by sending its
         `confirmation_token` in the body or the credential of the shopper it was prepared for; anything else returns
-        `403 forbidden` (a wrong token returns `403 invalid_token`). A guest intent in `token` mode is cancelled with a
+        `403 forbidden` (a wrong token returns `403 invalid_confirmation_token`). A guest intent in `token` mode is cancelled with a
         publishable key and its id.
 
         A marketplace intent holds no stock before confirmation, so cancelling it only closes it. A marketplace
         key finds only its own marketplace's intents. A marketplace secret key cancels any of them. A publishable
         marketplace key cancels an intent only by sending its `confirmation_token` in the body: a marketplace intent
         is never prepared for a signed-in shopper, so no shopper credential takes the token's place, and the id
-        alone returns `403 forbidden` (a wrong token returns `403 invalid_token`).
+        alone returns `403 forbidden` (a wrong token returns `403 invalid_confirmation_token`).
       security:
         - BearerAuth: []
       parameters:
@@ -32025,7 +32052,8 @@ paths:
 
         This is a customer-self write: it works with a **publishable** key plus the customer's session
         token in `x-auth-token` (the same browser-origin pattern as cart/wishlist writes). The session
-        token proves ownership of the message; a customer can only edit messages they sent.
+        token proves ownership of the message; a customer can only edit messages they sent. A message
+        sent by someone else answers `404 not_found`, exactly as a message that does not exist does.
       security:
         - BearerAuth: []
       parameters:
@@ -32214,7 +32242,8 @@ paths:
       description: |
         Opens a **WebSocket** connection that streams a conversation's new messages to you live, with
         no polling. As soon as either side posts a message, every connected subscriber of that thread
-        receives it.
+        receives it. A thread that belongs to another customer answers `404 not_found`, exactly as a
+        thread that does not exist does.
 
         This is a WebSocket upgrade, not a normal request — send the standard upgrade headers
         (`Upgrade: websocket`). The connection is served on the API's own domain; the server responds
@@ -50667,7 +50696,7 @@ components:
               code: subscription_expired
               message: This store's subscription is not active
     ScopeForbiddenError:
-      description: Insufficient permissions for this key. A GC Connect key that was not granted the operation's scope (for example `agent:read` or `orders:write`) receives `insufficient_scope`; a request that needs a secret key, or a marketplace operator key calling a single-store operation, receives `forbidden`.
+      description: Insufficient permissions for this key. A GC Connect key that was not granted the operation's scope (for example `agent:read` or `orders:write`) receives `insufficient_scope`, and the message names the scope. A request that needs a secret key (a publishable key on a write, whatever scopes it holds), or a marketplace operator key calling a single-store operation, receives `forbidden`. A store whose plan does not include the feature the route belongs to receives `feature_not_available`, whatever the key.
       headers:
         Tybrite-Environment:
           $ref: '#/components/headers/TybriteEnvironment'
@@ -50688,6 +50717,12 @@ components:
                 error:
                   code: forbidden
                   message: This operation requires a secret key. Publishable keys cover catalogue reads and the actions a shopper takes for themselves.
+            feature_not_available:
+              summary: The store's plan does not include the feature
+              value:
+                error:
+                  code: feature_not_available
+                  message: Smart Search is not available for this store.
     SignedRequestUnauthorizedError:
       description: Authentication failed. Either the API key is missing, invalid or expired (`unauthorized`), or the request signature failed verification (`signature_missing`, `timestamp_missing`, `timestamp_malformed`, `timestamp_out_of_window`, `signature_invalid`). `X-Timestamp` is Unix time in seconds or milliseconds, within 5 minutes of server time.
       headers:

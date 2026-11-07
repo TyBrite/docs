@@ -404,6 +404,7 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 | `429` | Rate limit exceeded. A publishable key is limited to 100 initializations per hour per shopper address within a store; a secret key is limited per key, at the plan's key limit. |
 | `500` | Upstream payment provider error or server configuration error. |
 | `502` | `provider_unavailable` — a payment method the merchant added themselves did not complete the request. Retry, or offer another method. |
+| `502` | `provider_error` — the payment provider (Stripe, PayPal, Paystack or M-Pesa) refused or failed the request; the message is a fixed sentence. Retry, or offer another method. |
 | `504` | `provider_timeout` — the provider did not respond in time. Safe to retry. |
 
 #### `verifyPayment`
@@ -419,6 +420,7 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 | `429` | Rate limit exceeded. |
 | `500` | Server error. |
 | `502` | `provider_unavailable` — a payment method the merchant added themselves did not complete the verification. The payment's real state is unchanged; retry. |
+| `502` | `provider_error` — the payment provider (Stripe, PayPal, Paystack or M-Pesa) refused or failed the request; the message is a fixed sentence. Retry, or offer another method. |
 | `504` | `provider_timeout` — the provider did not respond in time. Safe to retry. |
 
 #### `getPaymentMethods`

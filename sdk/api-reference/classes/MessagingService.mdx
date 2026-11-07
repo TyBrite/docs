@@ -518,7 +518,7 @@ bubble from `presence.typing`, and read ticks from `presence.read`.
 | `400` | Invalid request body, a malformed UUID supplied to `markThreadRead` (or any thread/message ID path param), or a `cursor` that is not one returned by a previous page (`invalid_cursor`). |
 | `401` | Missing or invalid `xAuthToken`, or missing/invalid API key. |
 | `402` | `subscription_expired` — the store's subscription is not active. |
-| `403` | Customer token does not own the target thread or message, or a GC Connect key without `messaging:read` or `messaging:write` (`insufficient_scope`). |
-| `404` | Thread or message not found (or filtered out by store scoping). |
+| `403` | A GC Connect key without `messaging:read` or `messaging:write` (`insufficient_scope`). |
+| `404` | Thread or message not found, filtered out by store scoping, or owned by another customer (the same answer, so a thread's existence is not revealed). |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error — safe to retry idempotent reads. |
