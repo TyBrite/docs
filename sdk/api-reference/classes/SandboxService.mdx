@@ -19,7 +19,7 @@ sold-out behaviour can be exercised.
 
 <Note>
   Every Sandbox method requires a **secret test key** (`tybrite_sk_test_*`). Publishable keys and
-  live keys are rejected with `403`. These operations only ever touch your **sandbox** data — your
+  live keys are rejected with `403 forbidden`. A key held by a connected app (GC Connect), or one minted without the `write` scope, is rejected with `403 insufficient_scope`. These operations only ever touch your **sandbox** data — your
   live data and store configuration are never affected.
 </Note>
 
@@ -395,7 +395,7 @@ const { removed } = await client.sandbox.clearSandboxStockLevels();
 | `200` | Time-travel / replay succeeded (summary returned), or sandbox stock levels were set, listed or removed. |
 | `400` | Invalid request — `advance_days` out of 1–3650, neither `event_id` nor `type`, an unknown promotion `type` or campaign `discount_type`, a non-positive value, a `start_date` in the past, or a stock level that is not a whole number from 0 to 1,000,000. |
 | `401` | Missing or invalid API key. |
-| `403` | Not a secret **test** key — Sandbox tools require `tybrite_sk_test_*`. |
+| `403` | Not a secret **test** key — Sandbox tools require `tybrite_sk_test_*` (`forbidden`). A GC Connect key, or a test key without the `write` scope, receives `insufficient_scope`. |
 | `404` | No matching sandbox webhook event to replay, no sandbox customer with that id, a variant that does not belong to your store, or no stock level set for that variant. |
 | `409` | That sandbox customer already has a B2B buyer account. |
 | `429` | Rate limit exceeded. |

@@ -15,6 +15,8 @@ Messaging threads carry sensitive customer information — order inquiries, comp
 | Thread reads & writes | The thread must belong to the customer on the session token. Applies to `getThread`, `updateThread`, `getThreadMessages`, `sendMessage`, and `markThreadRead`. |
 | Per-message edit & delete | You can only edit or delete messages the customer personally authored — not store or system messages. |
 
+The publishable key is read from the `Authorization` header on every messaging route. The WebSocket handshake is the one request that also reads it from an `api_key` query parameter, because a browser `WebSocket` cannot set headers; a secret key in the query string is refused with `400 invalid_request`.
+
 Obtain a customer session via `client.authentication.login(...)` or `client.authentication.verifyOtp(...)` and pass `customerSession.access_token` as `xAuthToken` on every call below.
 
 If you authenticate shoppers with your own identity provider rather than through Galactic Core, send
@@ -515,8 +517,8 @@ bubble from `presence.typing`, and read ticks from `presence.read`.
 | :--- | :--- |
 | `200` | Success on reads, `updateThread` patches, and `markThreadRead`. |
 | `201` | Success on `createConversation` and `sendMessage` — a new resource was persisted. |
-| `400` | Invalid request body, a malformed UUID supplied to `markThreadRead` (or any thread/message ID path param), or a `cursor` that is not one returned by a previous page (`invalid_cursor`). |
-| `401` | Missing or invalid `xAuthToken`, or missing/invalid API key. |
+| `400` | A secret key supplied in the `api_key` query parameter of the WebSocket handshake (`invalid_request`), an invalid request body, a malformed UUID supplied to `markThreadRead` (or any thread/message ID path param), or a `cursor` that is not one returned by a previous page (`invalid_cursor`). |
+| `401` | Missing or invalid `xAuthToken`, or missing/invalid API key. A request outside the WebSocket handshake that carries the key only in the query string has no key. |
 | `402` | `subscription_expired` — the store's subscription is not active. |
 | `403` | Customer token does not own the target thread or message, or a GC Connect key without `messaging:read` or `messaging:write` (`insufficient_scope`). |
 | `404` | Thread or message not found (or filtered out by store scoping). |

@@ -401,7 +401,7 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 | `402` | `subscription_expired` — the store's subscription is not active. |
 | `403` | Publishable key supplied — initialize requires a secret key (`forbidden`); a GC Connect key needs the `payments:write` scope (`insufficient_scope`). |
 | `404` | `order_id` provided but no matching order exists. |
-| `409` | `provider_not_live` — the payment method is still configured with test credentials, so it cannot take a real payment. The merchant switches it to live mode in their dashboard. Sandbox requests are unaffected. |
+| `409` | `provider_not_live` — the payment method is still configured with test credentials, so it cannot take a real payment. The merchant switches it to live mode in their dashboard. `provider_not_test_mode` — a test key names a payment method connected with live credentials, so a test payment never reaches the live account. |
 | `409` | `idempotency_in_progress` — another request with the same `Idempotency-Key` is still being initialized. Retry shortly with the same key. |
 | `429` | Rate limit exceeded. A publishable key is limited to 100 initializations per hour per shopper address within a store; a secret key is limited per key, at the plan's key limit. |
 | `500` | Upstream payment provider error or server configuration error. |
@@ -418,6 +418,7 @@ The response shape depends on the `provider` field. The Stripe shape is shown ab
 | `402` | `subscription_expired` — the store's subscription is not active. |
 | `403` | Publishable key supplied — verify requires a secret key (`forbidden`); a GC Connect key without the operation's scope (`insufficient_scope`). |
 | `404` | No payment matches the `reference`. |
+| `409` | `provider_not_live` — a live key names a payment method configured with test credentials. `provider_not_test_mode` — a test key names a payment method connected with live credentials. The provider is not asked in either case. |
 | `429` | Rate limit exceeded. |
 | `500` | Server error. |
 | `502` | `provider_unavailable` — a payment method the merchant added themselves did not complete the verification. The payment's real state is unchanged; retry. |

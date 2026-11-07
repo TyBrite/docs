@@ -6,7 +6,7 @@ description: "Reference for the WebhooksService class in the Tybrite SDK."
 The `WebhooksService` class (accessed via `client.webhooks`) manages outbound webhook endpoints and provides access to the event delivery log.
 
 <Warning>
-  **Secret key required.** All webhook management endpoints require a secret key (`tybrite_sk_*`). Publishable keys return `403 Forbidden`.
+  **Secret key required.** All webhook management endpoints require a secret key (`tybrite_sk_*`). Publishable keys return `403 Forbidden`. A key held by a connected app (GC Connect) returns `403 insufficient_scope` on every webhook endpoint, whatever scopes it was granted, because the event log carries every subscriber's customer and order payloads.
 </Warning>
 
 ## Overview
@@ -541,7 +541,7 @@ await processEvent(event);
 | `201` | New endpoint created. |
 | `400` | Invalid URL (must be HTTPS), empty event list, invalid event type, or disabled endpoint on test. |
 | `401` | Missing or invalid API key. |
-| `403` | Publishable key used — all webhook operations require a secret key. Also returned by `listWebhookEvents` when `environment` names the other environment than the calling key. |
+| `403` | Publishable key used — all webhook operations require a secret key. A GC Connect key is refused with `insufficient_scope`. Also returned by `listWebhookEvents` when `environment` names the other environment than the calling key. |
 | `404` | Endpoint or event not found, including one that belongs to the other environment than the calling key. |
 | `429` | Rate limit exceeded (500 req/hr per secret key). |
 | `500` | Internal server error. |
