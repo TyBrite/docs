@@ -26722,6 +26722,384 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/customers/{id}/data-requests:
+    get:
+      operationId: listCustomerDataRequests
+      tags:
+        - Customers
+      summary: List a shopper's data requests
+      description: |
+        Return the signed-in shopper's requests for a copy of their data and for the deletion of their account, newest
+        first (at most 50), with where each one stands. A declined request carries the store's reason; an approved export
+        shows when its download window ends.
+
+        **Customer-self access.** Works with a publishable key (safe from the
+        browser). Provide the shopper's session token in the `x-auth-token`
+        header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+        it must resolve to the customer in the `{id}` path parameter, otherwise the
+        request returns `403`. A sandbox key sees sandbox requests only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Resolves the shopper whose data requests are managed.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; resolves the shopper whose data requests are managed.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The shopper's data requests.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data_requests
+                properties:
+                  data_requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomerDataRequest'
+              example:
+                data_requests:
+                  - id: 7c1e0f52-3a9b-4d8e-9f60-2b1c3d4e5f60
+                    kind: export
+                    status: approved
+                    handling: request
+                    requested_at: '2026-11-07T09:12:00+00:00'
+                    decided_at: '2026-11-07T15:40:00+00:00'
+                    completed_at: null
+                    decline_reason: null
+                    download_expires_at: '2026-11-14T15:40:00+00:00'
+                    download_available: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: createCustomerDataRequest
+      tags:
+        - Customers
+      summary: Ask for a copy of my data, or for my account to be deleted
+      description: |
+        Make a request on behalf of the signed-in shopper: `export` for a copy of the personal data the store holds
+        about them, or `erasure` for the deletion of their account and that data. An erasure must carry
+        `confirm: true`, sent only after the shopper has confirmed in the storefront.
+
+        What happens next is the store's choice:
+        - **The store reviews each request** (the default). The request is `requested` until the store approves or
+          declines it. An approved export can be downloaded for seven days from
+          `GET /v1/customers/{id}/data-requests/{request_id}/export`; an approved erasure is carried out by the store.
+        - **Shoppers complete their own requests.** An export is `approved` at once and can be downloaded straight
+          away; an erasure is carried out at once and the request is `completed`.
+
+        An erasure is refused with `409` while the shopper has a Subscribe & Save subscription still running, paid
+        orders not yet shipped, or a business buyer account; the message says which. After an erasure, records the store
+        must keep (such as sales) remain with the personal details removed, and the shopper's sign-in no longer
+        resolves to a customer.
+
+        Each shopper has one open request of each kind: asking again while one is waiting, or while an export is still
+        downloadable, returns that request with `created: false` and status `200`. A repeated `Idempotency-Key`
+        returns the request it first created.
+
+        **Customer-self access.** Works with a publishable key (safe from the
+        browser). Provide the shopper's session token in the `x-auth-token`
+        header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+        it must resolve to the customer in the `{id}` path parameter, otherwise the
+        request returns `403`. Limited to 5 requests per shopper per hour.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Resolves the shopper whose data requests are managed.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; resolves the shopper whose data requests are managed.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: A key of up to 255 characters; a retry with the same key returns the request it created.
+          schema:
+            type: string
+            maxLength: 255
+          example: dsr-1771523993-abc123
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - kind
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - export
+                    - erasure
+                confirm:
+                  type: boolean
+                  description: Required, and must be `true`, when `kind` is `erasure`. Not accepted with `export`.
+            examples:
+              export:
+                value:
+                  kind: export
+              erasure:
+                value:
+                  kind: erasure
+                  confirm: true
+      responses:
+        '200':
+          description: An open request of this kind already exists (or the Idempotency-Key was used before); it is returned unchanged.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data_request
+                  - created
+                properties:
+                  data_request:
+                    $ref: '#/components/schemas/CustomerDataRequest'
+                  created:
+                    type: boolean
+                    description: False when an open request of this kind already existed and was returned instead.
+              example:
+                data_request:
+                  id: 7c1e0f52-3a9b-4d8e-9f60-2b1c3d4e5f60
+                  kind: export
+                  status: requested
+                  handling: request
+                  requested_at: '2026-11-07T09:12:00+00:00'
+                  decided_at: null
+                  completed_at: null
+                  decline_reason: null
+                  download_expires_at: null
+                  download_available: false
+                created: false
+        '201':
+          description: The request was made.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data_request
+                  - created
+                properties:
+                  data_request:
+                    $ref: '#/components/schemas/CustomerDataRequest'
+                  created:
+                    type: boolean
+                    description: False when an open request of this kind already existed and was returned instead.
+              example:
+                data_request:
+                  id: 7c1e0f52-3a9b-4d8e-9f60-2b1c3d4e5f60
+                  kind: export
+                  status: requested
+                  handling: request
+                  requested_at: '2026-11-07T09:12:00+00:00'
+                  decided_at: null
+                  completed_at: null
+                  decline_reason: null
+                  download_expires_at: null
+                  download_available: false
+                created: true
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/customers/{id}/data-requests/{request_id}/export:
+    get:
+      operationId: downloadCustomerDataExport
+      tags:
+        - Customers
+      summary: Download a copy of my data
+      description: |
+        Return the shopper's data as JSON for an export request the store approved (or that completed at once), during
+        its seven-day download window. The copy is built when it is downloaded, so it reflects the store's records at
+        that moment. The response is sent as an attachment and is never cached.
+
+        `409` when the request is still waiting, was declined, or its download window has ended (make a new request
+        for a fresh copy). Another shopper's request, an erasure request, or an id from the other environment returns
+        `404`.
+
+        **Customer-self access.** Works with a publishable key (safe from the
+        browser). Provide the shopper's session token in the `x-auth-token`
+        header (or the store's bring-your-own-auth assertion in `x-external-auth`);
+        it must resolve to the customer in the `{id}` path parameter, otherwise the
+        request returns `403`. Limited to 10 downloads per shopper per hour.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: request_id
+          in: path
+          required: true
+          description: The export request's id.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: |
+            Bring-your-own-auth assertion for stores that manage authentication in an external identity provider (Auth0, Clerk, Cognito, Firebase, NextAuth, SSO). Resolves the shopper whose data requests are managed.
+
+            Format: `<base64url(JSON)>.<base64url(HMAC-SHA256(JSON))>` where the JSON is `{ "external_id": "...", "iat": <unix>, "exp": <unix> }` and the HMAC is keyed on the store's `hmac_secret`. Claim lifetime capped at 300 seconds. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: |
+            A raw token from the store's own identity provider (e.g. a Firebase ID token). Galactic Core forwards it to the store's configured Auth verifier, which validates it against the provider and returns the identity; resolves the shopper whose data requests are managed.
+
+            Use this when the store wants Galactic Core to verify tokens on its behalf rather than signing an assertion itself. Verification is fail-closed: if the verifier rejects the token or is unreachable, the request is unauthenticated (`401`). Requires an Auth verifier to be configured for the store. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The shopper's data.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+            Content-Disposition:
+              description: '`attachment; filename="my-data-<request_id>.json"`'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDataExport'
+              example:
+                format: customer-data-export
+                version: 1
+                generated_at: '2026-11-07T16:02:11+00:00'
+                store_name: Fernhill Goods
+                customer_id: 2b9d4c1a-6e7f-4a3b-8c2d-1e0f9a8b7c6d
+                environment: production
+                tables:
+                  customers:
+                    - id: 2b9d4c1a-6e7f-4a3b-8c2d-1e0f9a8b7c6d
+                      name: Ada Shopper
+                      email: ada@example.com
+                  online_orders:
+                    - id: 9f8e7d6c-5b4a-4321-8fed-cba987654321
+                      order_number: '1042'
+                      total_amount: 54.5
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/customers/{id}/fulfilments:
     get:
       operationId: listShopperFulfilments
@@ -45668,6 +46046,116 @@ components:
         created_at:
           type: string
           format: date-time
+    CustomerDataRequest:
+      type: object
+      description: |
+        A shopper's request for a copy of their data (`export`) or for the deletion of their account and the personal
+        data the store holds about them (`erasure`). The store decides how requests are handled: either each request
+        waits for the store to approve or decline it, or it completes as soon as it is made.
+      required:
+        - id
+        - kind
+        - status
+        - handling
+        - requested_at
+        - download_available
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - export
+            - erasure
+        status:
+          type: string
+          enum:
+            - requested
+            - approved
+            - declined
+            - completed
+            - failed
+          description: |
+            `requested` waits for the store. `approved` (export) means the copy is ready to download. `completed` means
+            the copy was downloaded at least once, or the erasure has been carried out. `declined` carries the store's
+            reason in `decline_reason`.
+        handling:
+          type: string
+          enum:
+            - request
+            - self_service
+          description: How the store handled requests when this one was made. `self_service` requests complete at once.
+        requested_at:
+          type: string
+          format: date-time
+        decided_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        completed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        decline_reason:
+          type:
+            - string
+            - 'null'
+          description: The store's reason, written for the shopper. Present only when the request was declined.
+        download_expires_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: For an export, the end of the download window (seven days after approval).
+        download_available:
+          type: boolean
+          description: True while an approved export can be downloaded.
+    CustomerDataExport:
+      type: object
+      description: |
+        A copy of the personal data a store holds about one shopper, as JSON. `tables` maps each kind of record to the
+        shopper's rows (their profile, addresses, orders and their lines, returns, reviews, messages, wishlist, store
+        credit, consents and the store's custom fields about them). Secrets, access tokens and the store's own cost
+        figures are not included.
+      required:
+        - format
+        - version
+        - generated_at
+        - customer_id
+        - tables
+      properties:
+        format:
+          type: string
+          enum:
+            - customer-data-export
+        version:
+          type: integer
+          example: 1
+        generated_at:
+          type: string
+          format: date-time
+        store_name:
+          type:
+            - string
+            - 'null'
+        customer_id:
+          type: string
+          format: uuid
+        environment:
+          type: string
+          enum:
+            - production
+            - sandbox
+        tables:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              additionalProperties: true
     ShopperFulfilment:
       type: object
       description: 'One delivered unit of a purchase: a download, a code, an event ticket or a service. An order line with a quantity above one has one entry per unit. Fields beyond the common ones appear when the unit is `delivered` and are chosen by `kind`.'

@@ -1157,3 +1157,133 @@ const profile = await client.customers.getCustomer({
 | `403` | Forbidden — the customer token does not match the `customer_id` in the path |
 | `404` | Customer not found |
 | `409` | Duplicate email at this store (on `createCustomer`, or an `email` change on `updateCustomer`) |
+
+## Data requests
+
+A signed-in shopper can ask the store for a copy of the personal data it holds about them (`export`), or for their
+account and that data to be deleted (`erasure`). The store chooses how requests are handled:
+
+- **The store reviews each request** (the default). A request stays `requested` until the store approves or declines
+  it. An approved export can be downloaded for seven days; an approved erasure is carried out by the store. A declined
+  request carries the store's reason in `decline_reason`.
+- **Shoppers complete their own requests.** An export is ready to download at once, and an erasure is carried out at
+  once.
+
+Each method is customer-self: call it from the browser with the publishable key and the shopper's credential in
+exactly one of `xAuthToken`, `xExternalAuth` or `xIdpToken`. The credential must resolve to the customer in `id`,
+otherwise the request returns `403`. A sandbox key reaches sandbox requests only.
+
+A shopper has one open request of each kind. Asking again while one is waiting, or while an export is still
+downloadable, returns that request with `created: false`.
+
+After an erasure, records the store must keep, such as sales, remain with the personal details removed. The shopper's
+sign-in no longer resolves to a customer, so a storefront signs the shopper out once the request is `completed`.
+
+### listCustomerDataRequests
+
+Lists the shopper's data requests, newest first (at most 50).
+
+```typescript
+const { data_requests } = await client.customers.listCustomerDataRequests({
+  id: customerId,
+  xAuthToken: sessionToken,
+});
+```
+
+```json Response
+{
+  "data_requests": [
+    {
+      "id": "7c1e0f52-3a9b-4d8e-9f60-2b1c3d4e5f60",
+      "kind": "export",
+      "status": "approved",
+      "handling": "request",
+      "requested_at": "2026-11-07T09:12:00+00:00",
+      "decided_at": "2026-11-07T15:40:00+00:00",
+      "completed_at": null,
+      "decline_reason": null,
+      "download_expires_at": "2026-11-14T15:40:00+00:00",
+      "download_available": true
+    }
+  ]
+}
+```
+
+### createCustomerDataRequest
+
+Makes a request for the shopper. An erasure must carry `confirm: true`, sent only after the shopper has confirmed in
+the storefront. Pass an `idempotencyKey` so a retried request returns the one it created. Limited to 5 requests per
+shopper per hour.
+
+```typescript
+// A copy of my data
+await client.customers.createCustomerDataRequest({
+  id: customerId,
+  xAuthToken: sessionToken,
+  requestBody: { kind: 'export' },
+});
+
+// Delete my account, after the shopper confirmed
+await client.customers.createCustomerDataRequest({
+  id: customerId,
+  xAuthToken: sessionToken,
+  idempotencyKey: crypto.randomUUID(),
+  requestBody: { kind: 'erasure', confirm: true },
+});
+```
+
+```json Response
+{
+  "data_request": {
+    "id": "7c1e0f52-3a9b-4d8e-9f60-2b1c3d4e5f60",
+    "kind": "export",
+    "status": "requested",
+    "handling": "request",
+    "requested_at": "2026-11-07T09:12:00+00:00",
+    "decided_at": null,
+    "completed_at": null,
+    "decline_reason": null,
+    "download_expires_at": null,
+    "download_available": false
+  },
+  "created": true
+}
+```
+
+`201` when the request is made, `200` with `created: false` when an open request of that kind is returned instead. An
+erasure answers `409` while the shopper has a Subscribe & Save subscription still running, paid orders not yet shipped,
+or a business buyer account; `error.message` says which, in words a shopper can read.
+
+### downloadCustomerDataExport
+
+Returns the shopper's data as JSON for an approved export, during its download window. The copy is built when it is
+downloaded. It is sent as an attachment and never cached. Limited to 10 downloads per shopper per hour.
+
+```typescript
+const copy = await client.customers.downloadCustomerDataExport({
+  id: customerId,
+  requestId: request.id,
+  xAuthToken: sessionToken,
+});
+const url = URL.createObjectURL(new Blob([JSON.stringify(copy, null, 2)], { type: 'application/json' }));
+```
+
+```json Response
+{
+  "format": "customer-data-export",
+  "version": 1,
+  "generated_at": "2026-11-07T16:02:11+00:00",
+  "store_name": "Fernhill Goods",
+  "customer_id": "2b9d4c1a-6e7f-4a3b-8c2d-1e0f9a8b7c6d",
+  "environment": "production",
+  "tables": {
+    "customers": [{ "id": "2b9d4c1a-6e7f-4a3b-8c2d-1e0f9a8b7c6d", "name": "Ada Shopper", "email": "ada@example.com" }],
+    "online_orders": [{ "id": "9f8e7d6c-5b4a-4321-8fed-cba987654321", "order_number": "1042", "total_amount": 54.5 }]
+  }
+}
+```
+
+`409` when the request is still waiting, was declined, or its download window has ended; a new request gives a fresh
+copy. `tables` holds the shopper's profile, addresses, orders and their lines, returns, reviews, messages, wishlist,
+store credit, consents and the store's custom fields about them. Secrets, access tokens and the store's own cost
+figures are not included. Amounts are in major currency units.
