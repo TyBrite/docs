@@ -101,6 +101,15 @@ if (pagination.next_cursor) {
 }
 ```
 
+#### Searching in a sentence
+
+`search` matches product names and SKUs. When no name or SKU contains the text, and no `sort`, price or
+specification filter is set, the text is read the way the store's search reads it: words that carry no
+product meaning are set aside, and the rest are matched against names, brands, categories,
+subcategories, SKUs and tags, using the store's synonyms, together with the products of a collection
+the text names. `search: 'best products for summer'` lists the summer range, the same products the
+store's search returns for that text.
+
 #### Personalized ordering
 
 Pass `personalize: true` together with a signed-in customer's session token (the `x-auth-token`

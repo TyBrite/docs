@@ -10,10 +10,10 @@ The tools fall into three kinds:
 | Kind | Methods | Cost |
 | :--- | :--- | :--- |
 | **Deterministic tools** | Everything except the two below. Structured input, structured output, read from the store's own data. | The same as any storefront request, counted against the plan's normal request allowance. |
-| **Hosted helpers** | `interpret`, `draftCartFromIntent` | Run a language model and are paid for with the store's **AI credits**. Optional. |
+| **Hosted helpers** | `interpret`, `draftCartFromIntent` | Run a language model and are paid for with the store's **AI credits**. Optional. `interpret` also works without them: fixed rules read the message at no cost. |
 | **Checkout intents** | `createCheckoutIntent`, `confirmCheckoutIntent`, `getCheckoutIntent`, `cancelCheckoutIntent` | Deterministic. An assistant creates the intent; the shopper confirms it. |
 
-An assistant built on your own model uses only the deterministic tools and never touches the credit balance. The hosted helpers exist for integrations without a model of their own, or that would rather not spend one on turning a sentence into search filters.
+An assistant built on your own model uses only the deterministic tools and never touches the credit balance. The hosted helpers exist for integrations without a model of their own, or that would rather not spend one on turning a sentence into search filters. `interpret` answers whether or not the hosted helpers are on, so an integration without a model of its own can always call it.
 
 <Note>
   An assistant never places an order or takes payment by itself. It can price a basket and hold the stock with a checkout intent; the order is placed only when the shopper confirms, and payment then follows the store's normal payment flow.
@@ -57,7 +57,7 @@ What changes with a marketplace key:
 
 - **Discovery.** `search`, `compare` and `getAlternatives` read every active seller of the marketplace. Each result names its seller in `merchant_store_id` and `merchant_name`, prices are in the marketplace's own currency, and `search` reports `sellers_matched`. A product that is not sold on the marketplace answers `404` in `compare` and `getAlternatives`.
 - **Quote.** `quote` returns what the marketplace checkout will charge: each line, a `sellers` breakdown with each seller's merchandise total and shipping, marketplace-wide promotions in `discount.amount`, and the `grand_total`. Tax is not added (`tax.status: 'not_charged'`, with `amount: 0`): the marketplace checkout charges no tax, so `grand_total` is exactly the amount the shopper pays. A line may name its seller with `merchant_store_id`; a variant not sold on the marketplace is flagged `not_available_on_this_marketplace`, and one sold by a different seller than named is flagged `not_sold_by_that_seller`. `shipping_selections` chooses a carrier option a seller offered in an earlier quote.
-- **Hosted helpers.** `interpret` and `draftCartFromIntent` are paid from the marketplace operator's own AI credits, never a seller's. With a secret key they answer `403 helpers_unavailable` when the operator has not switched hosted helpers on, and `402 insufficient_credits` when the operator's credits are exhausted; a publishable key receives `403 helpers_unavailable` whatever the reason, as on a single store. A draft from `draftCartFromIntent` holds only that marketplace's items, each naming its seller, and is priced with the marketplace quote; `getCartDraft` with the same key re-quotes it, and its items go straight into `createCheckoutIntent`.
+- **Hosted helpers.** `interpret` and `draftCartFromIntent` are paid from the marketplace operator's own AI credits, never a seller's. `interpret` reads the message by rules when the operator has not switched hosted helpers on or its credits are exhausted. `draftCartFromIntent` with a secret key answers `403 helpers_unavailable` when the operator has not switched hosted helpers on, and `402 insufficient_credits` when the operator's credits are exhausted; a publishable key receives `403 helpers_unavailable` whatever the reason, as on a single store. A draft from `draftCartFromIntent` holds only that marketplace's items, each naming its seller, and is priced with the marketplace quote; `getCartDraft` with the same key re-quotes it, and its items go straight into `createCheckoutIntent`.
 - **Checkout intents.** An intent records each seller's lines in `sellers`. Only token confirmation is available. Stock is held when the shopper confirms, for the payment window. Confirming requires `contact.email` and `contact.name`, and a shopper credential, when sent, is recorded on the purchase. Confirmation places one marketplace order across the sellers and returns a single payment: the storefront confirms `payment.client_secret` with the payment provider's own card form. Once paid, each seller receives their own order, marked as placed through a shopping assistant.
 
 ```typescript
@@ -271,7 +271,7 @@ The tool manifest for the store: every tool with its HTTP operation, a JSON Sche
 
 On a marketplace key the manifest also carries `guest_person_proof_required`, whether a guest's checkout confirmation needs the six-digit code emailed to them (`person_proof`); it reflects the marketplace's setting.
 
-`hosted_helpers_available` says whether the two hosted helpers can be called now. When it is `false`, calling one with a publishable key returns `403 helpers_unavailable`, the same answer whatever the reason; a secret key receives the reason. The deterministic tools are always available. `assistant` carries the name and logo the merchant has given their shopping assistant (`name` and `logo_url`, each `null` when not set), so an assistant shopping the store can present itself the way the store does. The response below shows one entry from the manifest's `tools` array, with its request schema shortened to three properties.
+`hosted_helpers_available` says whether the two hosted helpers can be called now. When it is `false`, `interpret` reads messages by rules at no cost, and `draftCartFromIntent` called with a publishable key returns `403 helpers_unavailable`, the same answer whatever the reason; a secret key receives the reason. The deterministic tools are always available. `assistant` carries the name and logo the merchant has given their shopping assistant (`name` and `logo_url`, each `null` when not set), so an assistant shopping the store can present itself the way the store does. The response below shows one entry from the manifest's `tools` array, with its request schema shortened to three properties.
 
 ```typescript
 const { data } = await client.agent.getCapabilities();
@@ -398,9 +398,13 @@ const tools = data.tools!.filter(
 
 ### `search`
 
-Constraint search over the store's catalogue, ranked by the store's own search. With a `query`, results keep the order the store's search gives that query, with the merchant's search rules applied: a product pinned for the query is shown first, a boosted one is lifted and a buried one is shown last. The other constraints only remove results, so what remains keeps the store's order (`ranking: "store_search"`). A direct match on brand, category, SKU or tags, and the products of a collection the query names, follow the store's results; the collections are listed in `collections`, so "summer" finds the store's Summer collection. Without a `query` the most-added-to-cart products come first, then products on sale or in an offer, then the rest by name (`ranking: "catalogue"`).
+Constraint search over the store's catalogue, ranked by the store's own search. With a `query`, results keep the order the store's search gives that query, with the merchant's search rules applied: a product pinned for the query is shown first, a boosted one is lifted and a buried one is shown last. The store's synonyms apply, so a search for a word the merchant treats as a synonym also finds the alternatives. The store's ranking by popularity, promotions and stock applies when the merchant has turned it on, and a sentence that matches no product name ("best products for summer") is read for its meaning, as in the store's own search, so the storefront's search and this one return the same products. The other constraints only remove results, so what remains keeps the store's order (`ranking: "store_search"`). A direct match on brand, category, SKU or tags, and the products of a collection the query names, follow the store's results; the collections are listed in `collections`, so "summer" finds the store's Summer collection. Without a `query` the most-added-to-cart products come first, then products on sale or in an offer, then the rest by name (`ranking: "catalogue"`).
 
 Each result carries `match_reasons`, naming which constraints it satisfied in words a shopper can read, and `badges`, short labels for display. A result carries no score.
+
+**Paging.** `limit` results are returned from `offset` (default 0) of one ordered set: the store's search order, then what this search adds, then what a rule buried. `next_cursor`, or `next_offset`, continues it; `has_more` is `false` on the last page and `total_matched` is the size of the whole set. A cursor is valid only for the constraints and personalisation it was issued for; a mismatched one is refused with `400`. The order is computed the same way for every page, so a page repeats nothing and skips nothing unless the catalogue changes between requests. Paging applies to a store key; a marketplace search returns one page.
+
+**Summary and redirect.** `summary` is a one- or two-sentence lead-in to show above the results, built from facts the search computed: the matches, the collection the words named, how many of the results shown are on sale and in stock, their price range and the filters applied. It is always present. `redirect` names where the merchant sends the query (a page address, a collection, a category or a product) with the same shape as the [store search's `redirect`](/sdk/api-reference/classes/SearchService); it is a suggestion to offer beside the results, nothing navigates on its own, and it is `null` when there is none.
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
@@ -410,6 +414,8 @@ Each result carries `match_reasons`, naming which constraints it satisfied in wo
 | `requestBody.attributes` | `Record<string, string>` | Attribute name to wanted value, such as `{ "color": "black" }`, matched against variant attributes, product attributes, brand and category. |
 | `requestBody.in_stock_only` | `boolean` | Excludes a product only when no variant is in stock. The variants of up to 20 multi-variant products are checked per request; a product beyond that is excluded unless its default variant is in stock. |
 | `requestBody.limit` | `number` | 1–50, default 10. |
+| `requestBody.offset` | `number` | 0–1000, default 0. Skips this many results of the ordered set. Send `offset` or `cursor`, not both. |
+| `requestBody.cursor` | `string` | The `next_cursor` of the previous page, sent with the same constraints. |
 | `xAuthToken` / `xExternalAuth` / `xIdpToken` | `string` | Optional. For a shopper who has granted personalisation, the store's search ranks toward that shopper's taste and `personalised` is `true`. A credential that does not verify is refused with `401`. |
 
 | Badge `code` | Shown when | `label` |
@@ -482,6 +488,13 @@ for (const r of data.results!) {
       }
     ],
     "total_matched": 1,
+    "offset": 0,
+    "limit": 2,
+    "has_more": false,
+    "next_offset": null,
+    "next_cursor": null,
+    "redirect": null,
+    "summary": "Here is 1 pick for hoodie; it is in stock.",
     "scanned": 216,
     "catalog_truncated": false,
     "semantic_search": "used",
@@ -524,7 +537,7 @@ for (const r of data.results!) {
 
 ### `interpret`
 
-A hosted helper. It reads one message from a shopper and says what kind of message it is. A request for products becomes the exact constraint object `search` accepts, with the parts it could not map to a constraint — a recipient, an occasion — in `unresolved`, so the assistant can ask a follow-up question or carry them into its own reply.
+It reads one message from a shopper and says what kind of message it is. It works with or without the hosted helpers. A request for products becomes the exact constraint object `search` accepts, with the parts it could not map to a constraint — a recipient, an occasion — in `unresolved`, so the assistant can ask a follow-up question or carry them into its own reply.
 
 | `intent` | The message | `constraints` | `reply` |
 | :--- | :--- | :--- | :--- |
@@ -545,7 +558,13 @@ Only a `shop` message carries constraints, so a greeting is never searched for. 
 
 With `conversation_id`, the request is read as a follow-up: the conversation's last six turns, the prices of the results last shown and the constraints the previous call returned. A new value replaces the old one, a new attribute is added, "cheaper" sets `price_max` just below the lowest price last shown and "more expensive" sets `price_min` just above the highest. The constraints are kept on the conversation for the next follow-up; no turn is added, and only a `shop` message updates them. The call is refused as the conversation endpoints are (`403 shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed`), and a conversation that is not the caller's answers `404 not_found`.
 
-It debits the store's AI credits at the true cost of the call and reports the amount in `usage`. A call that fails keeps no credits. With a publishable key, helper calls count against a daily spend cap the merchant sets (USD 10 a store by default, up to USD 1,000; 0 turns publishable-key helper calls off). Over the cap the answer is `403 helpers_unavailable`. Secret keys are not capped. A shopper who passes the store's fair-use budget for the helpers receives `429 agent_rate_limited` (see [Response codes](#response-codes)).
+**Without the hosted helpers.** A greeting, a thank-you, a goodbye, a question about an order and a plain question about the store (delivery with an optional place, returns, opening hours, payment, contact) are read by fixed rules and cost nothing, whether or not the store has the hosted helpers on; a message that asks several of those is answered for each. Every other message is read by the hosted helper when the store has it on, and by the same rules over the store's own vocabulary when it does not: a price limit ("under 50", "between 20 and 40"), `in stock`, a colour that is one of the store's own colour values and a category named as the store names it become constraints; any other words stay in `query`, and a word the rules cannot turn into a filter is listed in `unresolved`. `classified_by` is `rules` or `helper` and says which read the message. The call never answers `403 helpers_unavailable`.
+
+A message read by the hosted helper debits the store's AI credits at the true cost of the call and reports the amount in `usage` (`credits_debited` is `0` for a message read by rules). A helper call that fails keeps no credits, and the message is read by the rules instead. With a publishable key, helper reads count against a daily spend cap the merchant sets (USD 10 a store by default, up to USD 1,000; 0 turns publishable-key helper reads off); over the cap, or when the helpers are off, paused or out of credits, the rules read the message and nothing is debited. Secret keys are not capped.
+
+**Naming a conversation.** With a `conversation_id` whose conversation has no title, the first shopping request names it: `conversation_title` returns a short noun phrase such as `Summer Essentials` or `Blue lamps`. A title already set is never changed, and the field is absent otherwise.
+
+A shopper who passes the store's fair-use budget for the helpers receives `429 agent_rate_limited` (see [Response codes](#response-codes)).
 
 ```typescript
 const { data } = await client.agent.interpret({
@@ -574,6 +593,7 @@ if (data.intent === 'shop') {
     "unresolved": [
       "for my brother"
     ],
+    "classified_by": "helper",
     "suggestions": [
       {
         "text": "Show me Summer Essentials",
@@ -3525,9 +3545,9 @@ const { data } = await server.agent.getUsage();
 
 ### AI credits
 
-The hosted helpers are paid for from the store's **AI credit** balance, which the merchant funds. The shopper never pays for them. Each call is debited at its true cost, reported in `usage.credits_debited`; a call that fails keeps no credits.
+The hosted helpers are paid for from the store's **AI credit** balance, which the merchant funds. The shopper never pays for them. Each call the helper handles is debited at its true cost, reported in `usage.credits_debited`; a call that fails keeps no credits. An `interpret` message read by rules debits nothing.
 
-Hosted helpers are off until the merchant turns them on, which requires automatic recharge with a monthly limit, so the balance does not run out mid-conversation. When the helpers cannot run, a publishable key receives `403 helpers_unavailable` with no reason, whatever the cause, so no store reads publicly as switched off or out of credits. A secret key receives the reason: `403 helpers_unavailable` with `details.reason` (`disabled`, `paused` or `unavailable`), or `402 insufficient_credits`. Every deterministic tool keeps working — an assistant can fall back to building constraints itself and calling `search`. Calls made with a test key run the model too and debit the same balance; `getUsage` reports that spend separately.
+Hosted helpers are off until the merchant turns them on, which requires automatic recharge with a monthly limit, so the balance does not run out mid-conversation. When the helpers cannot run, `interpret` reads the message by rules and debits nothing. `draftCartFromIntent` called with a publishable key receives `403 helpers_unavailable` with no reason, whatever the cause, so no store reads publicly as switched off or out of credits; a secret key receives the reason: `403 helpers_unavailable` with `details.reason` (`disabled`, `paused` or `unavailable`), or `402 insufficient_credits`. Every deterministic tool keeps working — an assistant can fall back to building constraints itself and calling `search`. Calls made with a test key run the model too and debit the same balance; `getUsage` reports that spend separately.
 
 The hosted helpers carry an additional rate limit of 60 calls a minute per client and 1,000 an hour per key, on top of the standard limits.
 
@@ -3552,13 +3572,13 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | :--- | :--- |
 | `200` | Success. |
 | `201` | A cart draft, checkout intent, return or standing instruction was created. |
-| `400` | Invalid body or parameter — for example `compare` with fewer than two products, a `limit` out of range, or a standing instruction outside its bounds. |
+| `400` | Invalid body or parameter — for example `compare` with fewer than two products, a `limit` out of range, a `cursor` sent with different constraints than it was issued for, or a standing instruction outside its bounds. |
 | `401` | Invalid or missing API key; a shopper tool called without a shopper credential; or an intent created for a signed-in shopper confirmed without their credential. |
-| `402` | `subscription_expired` — the store's subscription is not active; every call answers `402` until it is renewed. Also `insufficient_credits` — a hosted helper was called with a secret key and no AI credits available (a publishable key receives `403 helpers_unavailable`). |
+| `402` | `subscription_expired` — the store's subscription is not active; every call answers `402` until it is renewed. Also `insufficient_credits` — `draftCartFromIntent` was called with a secret key and no AI credits available (a publishable key receives `403 helpers_unavailable`). |
 | `403` | `shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed` on the conversation calls, `insufficient_scope` (a GC Connect key without the tool's `agent:read` or `agent:write` scope), `helpers_unavailable`, `consent_required` (including on pausing, skipping, cancelling or updating a shopper subscription), `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
 | `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
 | `409` | `conflict` (a draft already applied), `quote_changed`, `intent_not_pending`, `items_unavailable`, `out_of_stock`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |
-| `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. `agent_rate_limited` when one shopper (their sign-in or guest session, with their network address, at this store) or one network address at this store passes the store's fair-use budget. There are two budgets: the tools (search, compare, product context, fit, alternatives, cart insights, quotes and drafts) and the hosted helpers (`interpret`, `draftCartFromIntent`), which have a tighter one. Other shoppers at the store are unaffected. `details` names the budget, the window and when it resets; wait `Retry-After` seconds and retry. It is not counted against the monthly quota. |
+| `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. `agent_rate_limited` when one shopper (their sign-in or guest session, with their network address, at this store) or one network address at this store passes the store's fair-use budget. There are two budgets: the tools (search, compare, product context, fit, alternatives, cart insights, quotes and drafts) and the hosted helpers (`interpret`, `draftCartFromIntent`), which have a tighter one. Guests and signed-in shoppers have separate budgets, the guest one smaller. A guest who reaches the guest budget receives `guest_limit_reached` instead, with `details.scope` `guest`, `details.signed_in_limit` and `details.sign_in_raises_limit: true`: signing in raises the limit. Other shoppers at the store are unaffected. `details` names the budget, the window and when it resets; wait `Retry-After` seconds and retry. It is not counted against the monthly quota. |
 
 ```json
 {

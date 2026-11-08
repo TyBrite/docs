@@ -56,6 +56,55 @@ const result = await client.search.searchProducts({ q: 'snoboard' });
 }
 ```
 
+#### Synonyms
+
+A merchant can declare words that mean the same ("sofa", "couch", "settee") or a one-way pairing
+("trainers" also finds "sneakers", not the reverse). A query containing one of those words is also
+searched with each alternative: matches for the words typed rank first, followed by the matches each
+synonym adds.
+
+#### Sentences
+
+When neither the typed words, their synonyms nor the spelling match reach a product name, the query is
+read for its meaning. Words that carry none ("best", "products", "for") are set aside, and the rest
+are matched against product names, brands, categories, subcategories, SKUs and tags, together with the
+products of a collection the query names. `best products for summer` finds the summer range.
+
+Those results carry a `matchReason` of `Related to your search` or `In the <name> collection`.
+`client.products.listProducts({ search })` reads text the same way when its own name and SKU match
+finds nothing, so a search page and a product list agree.
+
+```typescript
+const result = await client.search.searchProducts({ q: 'best products for summer' });
+// result.results[0].matchReason === 'Related to your search'
+```
+
+#### Redirects
+
+A merchant can send a query to one place: a page address, a collection, a category or a product. The
+response carries `redirect` beside the results, or `null` when there is none. The results are still
+returned; the storefront decides whether to navigate or to offer the destination as a suggestion.
+
+| Field | Meaning |
+| :--- | :--- |
+| `type` | `url`, `collection`, `category` or `product`. |
+| `url` | For `url`: an `https://` address or a storefront path beginning with `/`. Otherwise `null`. |
+| `target_id`, `name`, `slug` | For a collection, category or product: the target, read when the search ran, so a renamed target carries its current name. |
+
+```json Response
+{
+  "query": "returns",
+  "results": [
+    { "productId": "69fbb1fe-6b96-4e7b-b86d-07c3799aa626", "score": 0.5, "matchReason": "Text match" }
+  ],
+  "totalResults": 1,
+  "redirect": { "type": "url", "url": "/pages/returns", "target_id": null, "name": null, "slug": null }
+}
+```
+
+Redirects apply to a store's own search. A search made with a marketplace operator key does not return
+`redirect`.
+
 **Searching as a wholesale buyer.** Pass `b2b: true` with a buyer's session token. A search result is
 a reference to a product — an id, a score and a match reason — and carries no price, so this does not
 price anything. What it does is keep the response out of the caches, because a buyer's results can be
@@ -145,6 +194,14 @@ result.results.forEach(r => console.log(`${r.productId} — score ${r.score}`));
 }
 ```
 
+#### Synonyms and redirects
+
+The store's synonyms apply to the query, so the meaning the merchant declared is part of the match, and
+the response carries `redirect` exactly as `searchProducts` does. When the query cannot be embedded, or
+no result scores above `minScore`, the keyword search answers instead, with its synonyms and its reading
+of a sentence (see `searchProducts`). The store's ranking by popularity, promotions and stock applies
+after the merchant's rules.
+
 #### Personalized results
 
 Pass `personalize: true` together with a credential identifying the shopper to nudge results toward
@@ -200,6 +257,12 @@ becomes visible through a pin.
 One consequence is worth building for: a pinned product is fetched and merged in even if it ranked
 below the page you asked for, because "float it to the top" would otherwise do nothing for exactly the
 products a merchant most wants pinned. The `limit` you asked for is still honoured.
+
+A merchant can also turn on a ranking that, after the rules, lifts the products shoppers add to their
+carts most this week and those in a live buy-one-get-one or bundle offer or on sale, nudges down a
+product at or below the store's low-stock level, and places sold-out products after the rest. Pinned
+results stay first and buried results stay last. This is also the merchant's setting; nothing is
+requested on the client.
 
 Pinned and boosted results carry a `matchReason` of **`Featured by the store`**. That is the signal to
 build against if you want to distinguish a deliberate placement from an earned one:

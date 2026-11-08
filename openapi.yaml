@@ -1976,7 +1976,12 @@ paths:
             - Searches both product name and SKU fields
             - Case-insensitive matching
             - Partial matches supported (e.g., "iphone" matches "iPhone 15 Pro")
-              
+            - When no name or SKU contains the text (and no `sort`, price or specification filter is set), the
+              text is read the way the store's search reads it (`searchProducts`, Understanding): words that carry
+              no product meaning are set aside, the rest are matched against names, brands, categories,
+              subcategories, SKUs and tags with the store's synonyms, and the products of a collection the text
+              names are included. `search=best products for summer` lists the summer range.
+
             **Examples:**
             - `search=macbook` - Matches "MacBook Pro", "MacBook Air", "macbook-case"
             - `search=APP-MBP` - Matches SKU "APP-MBP-13", "APP-MBP-14"
@@ -11157,6 +11162,22 @@ paths:
         Without a `query` the store's search has no order to give: the store's most-added-to-cart products come first,
         then products on sale or in an offer, then the rest by name (`ranking: catalogue`).
 
+        The store's search also applies the merchant's synonyms, its ranking by popularity, promotions and stock when the
+        store has turned it on, and its reading of a sentence that matches no product name (`searchProducts`): "best
+        products for summer" is read as "summer", so the storefront's search and this search return the same products. The
+        direct match here reads the query the same way, setting aside words that carry no product meaning.
+
+        **Redirects.** When the merchant sends the query somewhere (a page address, a collection, a category or a
+        product), `redirect` names it, with the same shape as the store search's `redirect`. It is a suggestion to offer
+        the shopper beside the results; nothing navigates on its own. Null when there is none.
+
+        **Paging.** `limit` results are returned from `offset` (default 0) of one ordered set: the store's search order,
+        then what this search adds, then what a rule buried. `next_cursor` (or `next_offset`) continues it; a cursor is
+        valid only for the constraints and personalisation it was issued for, and a mismatched one is refused with `400`.
+        `total_matched` is the size of the whole set; `has_more` is false on its last page. The order is recomputed the same
+        way for every page, so a page repeats nothing and skips nothing unless the catalogue changes between requests.
+        Paging is for store keys; a marketplace search returns one page.
+
         Every result carries `match_reasons` (why it is in the results, in words a shopper can read) and `badges` (short
         labels for display). A result never carries a score. A product a rule pins or boosts carries the `featured` badge,
         labelled "Featured"; which products a rule buries is not disclosed.
@@ -11248,6 +11269,16 @@ paths:
                   minimum: 1
                   maximum: 50
                   default: 10
+                offset:
+                  type: integer
+                  minimum: 0
+                  maximum: 1000
+                  default: 0
+                  description: Skip this many results of the ordered set. Send `offset` or `cursor`, not both.
+                cursor:
+                  type: string
+                  maxLength: 200
+                  description: The `next_cursor` of the previous page, sent with the same constraints. Send `offset` or `cursor`, not both.
             example:
               query: hoodie
               price_max: 60
@@ -11369,6 +11400,32 @@ paths:
                                     type: string
                       total_matched:
                         type: integer
+                        description: Results in the whole ordered set, across every page.
+                      offset:
+                        type: integer
+                        description: Where this page starts in the ordered set.
+                      limit:
+                        type: integer
+                      has_more:
+                        type: boolean
+                      next_offset:
+                        type:
+                          - integer
+                          - 'null'
+                        description: The `offset` of the next page; null on the last page.
+                      next_cursor:
+                        type:
+                          - string
+                          - 'null'
+                        description: Continues this search from the next result; null on the last page.
+                      redirect:
+                        description: Where the merchant sends this query, as a suggestion to offer beside the results; null when there is none.
+                        anyOf:
+                          - $ref: '#/components/schemas/SearchRedirect'
+                          - type: 'null'
+                      summary:
+                        type: string
+                        description: A one- or two-sentence lead-in to show above the results, built from facts this search computed (matches, the collection the words named, how many of the results shown are on sale and in stock, their price range, the filters applied). Always present, for example `Here are 25 picks for summer, led by the Summer Essentials collection; 4 are on sale and everything shown is in stock.`
                       sellers_matched:
                         type: integer
                         description: Marketplace key only — how many sellers the results come from.
@@ -11660,9 +11717,18 @@ paths:
         - Agent
       summary: Read a shopper's message
       description: |-
-        A hosted helper: a shopper's message in, what kind of message it is (`intent`) out, and for a product request the
-        exact constraint object `POST /v1/agent/search` accepts, plus `unresolved` — the parts of the request it could not
-        map to a constraint.
+        A shopper's message in, what kind of message it is (`intent`) out, and for a product request the exact constraint
+        object `POST /v1/agent/search` accepts, plus `unresolved` — the parts of the request it could not map to a
+        constraint.
+
+        **It works without the hosted helpers.** A greeting, a thank-you, a goodbye, a question about an order and a plain
+        question about the store (delivery with an optional place, returns, opening hours, payment, contact) are read by
+        fixed rules and cost nothing, whether or not the store has hosted helpers on; a message that asks several of those
+        is answered for each. Every other message is read by the hosted helper when the store has it on, and by the same
+        rules over the store's own vocabulary when it does not: a price limit ("under 50", "between 20 and 40"), `in stock`,
+        a colour that is one of the store's own colour values, and a category named as the store names it become
+        constraints; any other words stay in `query`; a word the rules cannot turn into a filter is listed in `unresolved`.
+        `classified_by` says which read the message. The call never answers `403 helpers_unavailable`.
 
         | `intent` | The message | `constraints` | `reply` |
         |---|---|---|---|
@@ -11682,21 +11748,20 @@ paths:
         `suggestions` holds two or three follow-up prompts drawn from the store's live collections and the categories its
         online products are in. Each `text` can be sent back to `interpret` as it is.
 
-        It runs a model and debits the store's AI credits at the true cost of the call; `usage`
-        reports what was debited. A failed call keeps no credits. It is limited to 60 calls a minute per client
-        and 1,000 an hour per key, in addition to the standard limits.
+        A message read by the hosted helper debits the store's AI credits at the true cost of the call; `usage` reports what
+        was debited (`credits_debited: 0` for a message read by rules). A failed helper call keeps no credits and the
+        message is read by the rules instead. The call is limited per shopper at the store as described under the agent
+        fair-use budgets, in addition to the standard limits.
 
-        **A publishable key spends the store's credits too.** A publishable key is public, so anyone holding it can
-        make these calls, and each one debits the merchant's balance (and can trigger the merchant's automatic
-        top-up). The merchant sets a daily limit on that spend, counted over the last 24 hours; once it is reached
-        the key receives `403 helpers_unavailable`, the same answer as any other refusal. A secret key is not
-        limited by it.
+        **A publishable key spends the store's credits too, when the helper reads the message.** A publishable key is
+        public, so anyone holding it can make these calls, and each one the helper reads debits the merchant's balance (and
+        can trigger the merchant's automatic top-up). The merchant sets a daily limit on that spend, counted over the last
+        24 hours; once it is reached, or when the helpers are off, paused or out of credits, the message is read by the
+        rules and nothing is debited.
 
-        **With a marketplace operator key** the call is paid from the marketplace operator's own AI
-        credits, never a seller's. A secret key receives the reason a call is refused: `403 helpers_unavailable`
-        with `details.reason` when the operator has not switched hosted helpers on, `402 insufficient_credits`
-        when the operator's credits are exhausted. A publishable key receives `403 helpers_unavailable` whatever
-        the reason, as on a single store.
+        **With a marketplace operator key** a message read by the helper is paid from the marketplace operator's own AI
+        credits, never a seller's; when the operator has not switched hosted helpers on or its credits are exhausted, the
+        rules read the message.
 
         **A follow-up in a saved conversation.** With `conversation_id`, the request is read in the context of that
         storefront conversation (`/v1/agent/me/conversations`): its last six turns, the prices of the results the storefront
@@ -11838,10 +11903,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      classified_by:
+                        type: string
+                        enum:
+                          - rules
+                          - helper
+                        description: '`rules`: read by fixed rules over the store''s own vocabulary, at no cost. `helper`: read by the hosted helper.'
                       conversation_id:
                         type: string
                         format: uuid
                         description: The conversation the request was read in, when `conversation_id` was sent.
+                      conversation_title:
+                        type: string
+                        description: Present when this call named the conversation, which had no title, with a short noun phrase from the first shopping request, such as `Summer Essentials`, `Blue lamps` or `Summer picks`. A title already set is never changed.
                   evidence:
                     type: array
                     description: Where each figure in `data` was read from.
@@ -12010,7 +12084,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
-          description: The store has no AI credits available. Returned to a secret key only; a publishable key receives `403 helpers_unavailable` instead.
+          description: Not returned by this endpoint. A store without AI credits has its messages read by the rules at no cost.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -12042,7 +12116,7 @@ paths:
                   code: insufficient_credits
                   message: This store has no AI credits available. The deterministic tools remain available.
         '403':
-          description: Hosted helpers are unavailable. To a publishable key this is the one answer for every reason and carries no `details`. A secret key receives `details.reason` (`disabled`, `paused` or `unavailable`), and `402 insufficient_credits` when the store is out of credits. With `conversation_id`, also `shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed` when the store's assistant settings do not allow the conversation to be read.
+          description: With `conversation_id`, `shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed` when the store's assistant settings do not allow the conversation to be read. Hosted helpers being off is never a refusal here.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -24295,9 +24369,33 @@ paths:
         requested or configured on the client: the ordering already reflects the rules, and a store with
         none behaves exactly as before.
 
+        **Synonyms.** A merchant can declare words that mean the same ("sofa", "couch", "settee") or a
+        one-way pairing ("trainers" also finds "sneakers", not the reverse). A query containing one of the
+        words is also searched with each alternative; matches for the words typed rank first, then the
+        matches each synonym adds.
+
+        **Understanding.** When neither the words, their synonyms nor the spelling fallback match a product
+        name, the query is read for its meaning: words that carry none ("best", "products", "for") are set
+        aside and the rest are matched against product names, brands, categories, subcategories, SKUs and
+        tags, together with the products of a collection the query names. "best products for summer" finds
+        the summer range. These results carry a `matchReason` of `Related to your search` or
+        `In the <name> collection`. `GET /v1/products?search=` applies the same reading when its own name
+        and SKU match finds nothing, so a search page and a product list agree.
+
+        **Redirects.** A merchant can send a query to one place: a page address, a collection, a category
+        or a product. The response carries `redirect` (null when there is none) beside the results, and the
+        storefront decides whether to navigate.
+
+        **Ranking by popularity, promotions and stock.** A store can turn on a ranking that, after its
+        rules, lifts the products shoppers add to their carts most this week and those in a live
+        buy-one-get-one or bundle offer or on sale, nudges down a product at or below the store's low-stock
+        level, and places sold-out products after the rest. Pinned results stay first and buried results
+        stay last. The setting is the merchant's; nothing is requested on the client.
+
         **Marketplace:** when called with a marketplace operator key, searches products across all
         merchants in the marketplace; pass `?store_id=<merchant>` to narrow results to a single
-        merchant.
+        merchant. Synonyms, understanding, redirects and the ranking setting belong to a store's own search
+        and do not apply to marketplace searches.
       security:
         - BearerAuth: []
       parameters:
@@ -24359,6 +24457,7 @@ paths:
                     score: 0.92
                     matchReason: Matched product name and description
                 totalResults: 1
+                redirect: null
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -24402,6 +24501,13 @@ paths:
         label a deliberate placement rather than presenting it as an earned one. Nothing needs to be
         requested or configured on the client: the ordering already reflects the rules, and a store with
         none behaves exactly as before.
+
+        **Synonyms, redirects and ranking.** The store's synonyms apply here too: a query containing a synonym
+        word is embedded with its alternatives, so the meaning the merchant declared is part of the match.
+        When the query cannot be embedded, or nothing scores above `minScore`, the keyword search answers
+        with its synonyms and its understanding of the query (see `searchProducts`). The response carries
+        `redirect` exactly as `searchProducts` does, and the store's ranking by popularity, promotions and
+        stock applies after the rules.
 
         **When to use:** prefer this over the text `GET /v1/search` (`searchProducts`) when the query
         is conversational or descriptive. Two tuning options:
@@ -47134,6 +47240,43 @@ components:
                   small ranking weight for a padded entry. Read `backfilled` before presenting a score
                   as a measurement.
                 example: 15
+    SearchRedirect:
+      type: object
+      description: Where the merchant sends this query instead of a result list. The search still returns its results; the storefront decides whether to navigate. `url` is set for type `url` (an `https://` address or a storefront path beginning with `/`); `target_id`, `name` and `slug` are set for a collection, category or product, read when the search ran, so a renamed target carries its current name.
+      required:
+        - type
+        - url
+        - target_id
+        - name
+        - slug
+      properties:
+        type:
+          type: string
+          enum:
+            - url
+            - collection
+            - category
+            - product
+        url:
+          type:
+            - string
+            - 'null'
+          example: /pages/returns
+        target_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        name:
+          type:
+            - string
+            - 'null'
+          example: Gift Guide
+        slug:
+          type:
+            - string
+            - 'null'
+          example: gift-guide
     SubscribeSaveInterval:
       type: object
       required:
@@ -47428,7 +47571,7 @@ components:
           example: 0.93
         matchReason:
           type: string
-          description: Why this product matched, in words a storefront can show. `Text match`, `Similar name` and `Similar brand` describe how the query was matched (the last two mean a spelling fallback was used). **`Featured by the store` means the merchant placed this result deliberately** rather than it earning its rank — worth labelling if you distinguish sponsored or featured placements.
+          description: Why this product matched, in words a storefront can show. `Text match`, `Similar name` and `Similar brand` describe how the query was matched (the last two mean a spelling fallback was used). **`Featured by the store` means the merchant placed this result deliberately** rather than it earning its rank — worth labelling if you distinguish sponsored or featured placements. `Related to your search` and `In the <name> collection` mean the words matched no product name, and the result was found by reading the query for its meaning (its brand, category and tag words, the store's synonyms, and a collection it names).
           example: Semantic match
     SearchResponse:
       type: object
@@ -47443,6 +47586,11 @@ components:
           type: integer
         message:
           type: string
+        redirect:
+          description: 'Store-scoped searches: the merchant''s redirect for this query, or null when there is none. Absent on a marketplace-wide search.'
+          anyOf:
+            - $ref: '#/components/schemas/SearchRedirect'
+            - type: 'null'
     RegisterPending:
       type: object
       description: 'The answer to a sign-up request. It is identical whether or not the address already has an account, and it carries no session: a session is issued by `POST /v1/auth/register/verify`.'
