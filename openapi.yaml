@@ -1329,6 +1329,7 @@ paths:
                             image: https://cdn.example.com/collections/featured-desktop.jpg
                             image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
                             video: null
+                            product_count: 12
                           - id: e9810818-5051-4b74-a53b-2ff843b4f435
                             name: New Arrivals
                             slug: new-arrivals
@@ -1338,6 +1339,7 @@ paths:
                             image: null
                             image_mobile: null
                             video: null
+                            product_count: 8
                       taxonomy:
                         categories:
                           total: 23
@@ -1545,6 +1547,7 @@ paths:
                             image: https://cdn.example.com/collections/featured-desktop.jpg
                             image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
                             video: null
+                            product_count: 12
                           - id: e9810818-5051-4b74-a53b-2ff843b4f435
                             name: New Arrivals
                             slug: new-arrivals
@@ -1554,6 +1557,7 @@ paths:
                             image: null
                             image_mobile: null
                             video: null
+                            product_count: 8
                       taxonomy:
                         categories:
                           total: 23
@@ -3947,10 +3951,15 @@ paths:
         - Products
       summary: Get items in a product collection
       description: |
-        Returns all items belonging to a product collection, ordered by `sort_order`.
-        Each item contains the linked online product row along with its sort position.
-        A collection with no items returns an empty array. A collection that does not exist,
-        is inactive or has been deleted answers `404`.
+        Returns the live members of a product collection, ordered by `sort_order`. Only active
+        products sold online are listed. Each item contains the linked product row along with its
+        sort position.
+
+        A manual collection returns the products the merchant placed in it. An automatic collection
+        (for example New Arrivals or Best Sellers) returns the products its rule selects at the time
+        of the request, ranked in the rule's order, so its list changes as the catalogue and orders
+        change. A collection with no members returns an empty array. A collection that does not
+        exist, is inactive or has been deleted answers `404`.
       security:
         - BearerAuth: []
       parameters:
@@ -11425,7 +11434,7 @@ paths:
                           - type: 'null'
                       summary:
                         type: string
-                        description: A one- or two-sentence lead-in to show above the results, built from facts this search computed (matches, the collection the words named, how many of the results shown are on sale and in stock, their price range, the filters applied). Always present, for example `Here are 25 picks for summer, led by the Summer Essentials collection; 4 are on sale and everything shown is in stock.`
+                        description: A one- or two-sentence lead-in to show above the results, built from facts this search computed over the whole result set, not the current page, so every page of one search reads the same (matches, the collection the words named, how many results are on sale and in stock, their price range, the filters applied). Amounts print in the store's currency, such as `$12.00`. Always present, for example `Here are 25 picks for summer, led by the Summer Essentials collection; 4 are on sale and everything is in stock; prices run from $12.00 to $80.00.`
                       sellers_matched:
                         type: integer
                         description: Marketplace key only — how many sellers the results come from.
@@ -11995,7 +12004,7 @@ paths:
                   value:
                     data:
                       intent: question
-                      reply: 'Delivery options: Local (within 10 km), 5.99 USD (free over 75.00 USD); Metro (10–50 km), 9.99 USD (free over 150.00 USD).'
+                      reply: 'Delivery options: Local (within 10 km), $5.99 (free over $75.00); Metro (10–50 km), $9.99 (free over $150.00).'
                       suggestions:
                         - text: Show me Out and About
                           kind: collection
@@ -44570,6 +44579,12 @@ components:
                           - string
                           - 'null'
                         format: uri
+                      product_count:
+                        type:
+                          - integer
+                          - 'null'
+                        minimum: 0
+                        description: 'Number of active products sold online that belong to the collection, whether or not they are in stock: the same products `GET /v1/product-collections/{id}/items` returns, the rule''s live members for an automatic collection. A storefront or assistant that links to collections skips any with a count of 0. Null when the count could not be read.'
             taxonomy:
               type: object
               properties:
@@ -53616,17 +53631,19 @@ components:
               code: conflict
               message: A customer with this email already exists for this store
     AgentRateLimitError:
-      description: 'Too many requests. Besides the two codes every endpoint can answer (`rate_limited`, `quota_exceeded`), the shopping assistant endpoints answer `agent_rate_limited` when one shopper (their sign-in or guest session, with their network address, at this store) or one network address at this store passes the store''s fair-use budget. There are two budgets: the tools (search, compare, product context, fit, alternatives, cart insights, quotes and drafts) and the AI helpers (`interpret`, `cart-drafts/from-intent`), which have a tighter one. Other shoppers at the store are unaffected. `details` names the budget, the window and when it resets; wait `Retry-After` seconds and retry. Not counted against the monthly quota.'
+      description: |-
+        Too many requests. Besides the two codes every endpoint can answer (`rate_limited`, `quota_exceeded`), the shopping assistant endpoints answer `agent_rate_limited` when one shopper (their sign-in or guest session, with their network address, at this store) or one network address at this store passes the store's fair-use budget. There are two budgets: the tools (search, compare, product context, fit, alternatives, cart insights, quotes and drafts) and the AI helpers (`interpret`, `cart-drafts/from-intent`), which have a tighter one. Other shoppers at the store are unaffected. `details` names the budget, the window and when it resets; wait `Retry-After` seconds and retry. Not counted against the monthly quota.
+        A guest (a session with no shopper credential) and a signed-in customer have separate budgets. When a guest reaches a guest budget that is lower than the signed-in budget, the code is `guest_limit_reached` instead: `details.scope` is `guest`, `details.signed_in_limit` is the signed-in shopper's budget for the same bucket and window, and `details.sign_in_raises_limit` is `true`. A storefront shows its sign-in prompt for this code and retries after sign-in, or after `Retry-After` seconds. A signed-in customer at their budget, and a guest stopped by a per-address or per-store ceiling, or whose budget is not lower than the signed-in one, still get `agent_rate_limited`. Both codes carry the same headers.
       headers:
         Tybrite-Environment:
           $ref: '#/components/headers/TybriteEnvironment'
         Retry-After:
-          description: Seconds until the window that refused the request resets. Sent with `agent_rate_limited` and `rate_limited`, and with `quota_exceeded` (the seconds until the monthly reset).
+          description: Seconds until the window that refused the request resets. Sent with `agent_rate_limited`, `guest_limit_reached` and `rate_limited`, and with `quota_exceeded` (the seconds until the monthly reset).
           schema:
             type: integer
           example: 23
         X-RateLimit-Limit:
-          description: For `agent_rate_limited`, the size of the budget that refused the request, in requests per window.
+          description: For `agent_rate_limited` and `guest_limit_reached`, the size of the budget that refused the request, in requests per window.
           schema:
             type: string
           example: '12'
@@ -53649,18 +53666,37 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-          example:
-            error:
-              code: agent_rate_limited
-              message: Too many shopping assistant questions from this shopper. Wait a moment and try again.
-              details:
-                bucket: helpers
-                scope: shopper
-                limit: 12
-                window_seconds: 60
-                remaining: 0
-                reset: 1794139260
-                retry_after: 23
+          examples:
+            agent_rate_limited:
+              summary: A signed-in customer reached their budget
+              value:
+                error:
+                  code: agent_rate_limited
+                  message: Too many shopping assistant questions from this shopper. Wait a moment and try again.
+                  details:
+                    bucket: helpers
+                    scope: shopper
+                    limit: 12
+                    window_seconds: 60
+                    remaining: 0
+                    reset: 1794139260
+                    retry_after: 23
+            guest_limit_reached:
+              summary: A guest reached a guest budget that signing in raises
+              value:
+                error:
+                  code: guest_limit_reached
+                  message: Sign in to keep going — signed-in shoppers get more.
+                  details:
+                    bucket: helpers
+                    scope: guest
+                    limit: 6
+                    window_seconds: 60
+                    remaining: 0
+                    reset: 1794139260
+                    retry_after: 23
+                    signed_in_limit: 12
+                    sign_in_raises_limit: true
   headers:
     TybriteEnvironment:
       description: |

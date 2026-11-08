@@ -810,7 +810,7 @@ Returns `404` when no collection matches the id.
 
 ```typescript
 
-// Get items in a specific collection (returns all items, ordered by sort_order)
+// Get the live members of a collection, ordered by sort_order
 // Each item has: product_id, sort_order, and an embedded product object
 const { items } = await client.products.getProductCollectionItems({
   id: '45e28d12-9381-45f6-98bb-cb3a34c0a215' // e.g. the "Featured" collection
@@ -840,7 +840,7 @@ for (const item of items) {
 }
 ```
 
-An empty collection returns `{ "items": [] }`.
+Only active products sold online are listed. A manual collection returns the products the merchant placed in it. An automatic collection (for example New Arrivals or Best Sellers) returns the products its rule selects at the time of the request, ranked in the rule's order, so the list changes as the catalogue and orders change. A collection with no members returns `{ "items": [] }`; a collection that does not exist, is inactive or has been deleted answers `404`.
 
 ---
 
