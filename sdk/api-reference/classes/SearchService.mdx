@@ -9,7 +9,7 @@ The `SearchService` class (accessed via `client.search`) provides keyword search
 
 ### `searchProducts`
 
-Fast, keyword-based search optimized for exact matches, SKUs, and product names. It uses case-insensitive partial matching to find relevant results quickly.
+Fast, keyword-based search optimized for exact matches, SKUs, and product names. It uses case-insensitive partial matching to find relevant results quickly. Keyword search is available on every plan.
 
 ```typescript
 const result = await client.search.searchProducts({
@@ -112,6 +112,8 @@ Requires a store-scoped key; marketplace operator keys are rejected.
 ### `semanticSearch`
 
 AI-powered, meaning-based search that understands intent and context. This allows customers to find products using natural language descriptions even if they don't know the exact product name.
+
+Semantic search belongs to the store's plan. A store whose plan does not include it answers `403` `feature_not_available`; `searchProducts` and `autocompleteSearch` answer on every plan, so a storefront can fall back to them.
 
 <Note>
   **Key Support:** Both **Secret Keys** and **Publishable Keys** are supported for semantic search, allowing you to implement AI-powered search directly in your frontend. With a marketplace operator key, `storeId` (also accepted as `store_id` in the body) narrows the search to one merchant of the marketplace; a store key ignores it.
@@ -249,5 +251,6 @@ All three methods accept **publishable** and **secret** keys. `searchProducts` a
 | `200` | Search results returned (may be empty — check `totalResults`). |
 | `400` | Missing `query`/`q` parameter, invalid `limit`, or malformed request body. |
 | `401` | Invalid or missing API key. |
+| `403` | `feature_not_available` from `semanticSearch` when the store's plan does not include semantic search. |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error, from any of the three methods. For `semanticSearch` it also means the query could not be converted for meaning-based matching. |

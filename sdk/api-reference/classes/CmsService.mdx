@@ -7,6 +7,8 @@ The `CmsService` class (accessed via `client.cms`) reads a store's editorial con
 
 ## Blog Posts
 
+Blog posts and lookbooks belong to the store's plan. When the plan does not include them, every post and lookbook method answers `403` `feature_not_available`. The content is kept, and is served again as it was when the plan includes it.
+
 A post's optional fields (`excerpt`, `featured_image`, the category fields, `author_name`, `author_avatar`, `seo_title` and `seo_description`) are `null` when not set, as is a lookbook's `description`.
 
 ### `listPosts`
@@ -572,7 +574,7 @@ The read endpoints (posts, lookbooks, `getLeadForm`) are `GET`; `subscribeNewsle
 | `400` | Empty slug, invalid slug format, malformed query parameters, or a lead form submission that fails validation. |
 | `401` | Invalid or missing API key. |
 | `402` | `subscription_expired` — the store's subscription is not active. |
-| `403` | `forbidden` on `subscribeNewsletter` for a sign-in token that belongs to a different shopper than the address; `insufficient_scope` for a GC Connect key without the operation's scope. |
+| `403` | `feature_not_available` on the post and lookbook methods when the store's plan does not include them; `forbidden` on `subscribeNewsletter` for a sign-in token that belongs to a different shopper than the address; `insufficient_scope` for a GC Connect key without the operation's scope. |
 | `404` | Post, lookbook or lead form not found. |
 | `409` | `Idempotency-Key` reused with a different submission (`submitLeadForm`). |
 | `429` | Rate limit exceeded. |

@@ -28,7 +28,9 @@ Push or sync a batch of products into your store.
 | `requestBody.products` | `IngestProduct[]` | Yes | The batch of products. Each row needs a unique `sku`. |
 | `format` | `'json' \| 'xml' \| 'csv'` | — | Overrides format detection. The SDK sends JSON, so you rarely set this. |
 | `strategy` | `'upsert_by_sku' \| 'create_only'` | — | `upsert_by_sku` (default) updates existing SKUs; `create_only` skips them. |
-| `dryRun` | `boolean` | — | When `true`, validate and report without writing anything. |
+| `dryRun` | `boolean` | — | When `true`, validate and report without writing anything. The report separates new rows (`rows_created`), rows that would update an existing SKU (`rows_updated`, or `rows_skipped` under `create_only`) and rows that would fail. A new row whose `fulfilment_kind` the store does not offer, or its plan does not include, is reported as failed with the sentence the real run would give. The response carries `delivery_types_checked`, which is `false` when the store's delivery types could not be read just now. |
+
+**Updates keep the merchant's edits.** When a row's SKU already exists, each field is written only if the API owns it. The store chooses, per field, whether the API or the merchant owns it (Settings, Catalog sync, Field ownership, API push). A field the merchant owns is refreshed until the merchant changes it, then left alone. By default the merchant owns names, descriptions, categories, images, SEO fields and tags, and the API owns price, cost, stock, barcodes and product identifiers. A new product always takes every field the row carries.
 
 **Product fields** (each entry in `products`):
 
@@ -170,7 +172,7 @@ console.log(result.errors);   // [] when everything imported cleanly
 
 ## `getIngestSample`
 
-Returns a valid sample product feed you can copy to model your own. **No API key required.** The sample includes a single-variant product and a multi-variant product so you can see exactly how `product_group` expresses variants. Rate-limited to 60 requests/hour per IP.
+Returns a valid sample product feed you can copy to model your own. **No API key required.** The sample includes a single-variant product and a multi-variant product so you can see exactly how `product_group` expresses variants. Rate-limited to 60 requests/hour per IP. With no store behind the request, the delivery types a store offers cannot be checked, so the response carries `delivery_types_checked: false`; a dry run with a key (`dryRun: true` on `ingestProducts`) checks them.
 
 **Parameters:**
 

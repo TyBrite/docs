@@ -3,10 +3,12 @@ title: "Storefront Studio"
 description: "Reference for the StorefrontStudioService class in the Tybrite SDK."
 ---
 
-The `StorefrontStudioService` class (accessed via `client.storefrontStudio`) is for an application that builds a merchant's storefront and reports back to the store it builds for. It covers two capabilities:
+The `StorefrontStudioService` class (accessed via `client.storefrontStudio`) is for an application that builds a merchant's storefront and reports back to the store it builds for. It covers four capabilities:
 
 - **Site address and routes.** The application states where the storefront lives and which page templates it has, so the store can link to it.
 - **Experiments and their paid orders per variant.** The application registers its A/B experiments and reads the number and total of paid orders for each variant.
+- **Support requests.** The application opens a request with the merchant's support team for something it cannot resolve itself, and reads where each request stands.
+- **Templates.** The application offers the merchant a storefront template, and the merchant accepts or declines it.
 
 <Warning>
   **Secret key of a connection required.** Every method is called with the secret key (`tybrite_sk_*`) of the application's own connection to the store, issued when the merchant connects the application through [GC Connect](/gc-connect). A publishable key returns `403 forbidden`. The key fixes the store, the environment and the application; a request cannot name another. A revoked connection stops working immediately.
@@ -18,6 +20,8 @@ The `StorefrontStudioService` class (accessed via `client.storefrontStudio`) is 
 | :--- | :--- |
 | `storefront_site:write` | `putStorefrontSite`, `getStorefrontSite` |
 | `ab_attribution:write` | `listStorefrontExperiments`, `putStorefrontExperiment`, `getStorefrontExperimentConversions` |
+| `support_tickets:write` | `createStorefrontSupportRequest`, `listStorefrontSupportRequests`, `getStorefrontSupportRequest` |
+| `storefront_template:write` | `listStorefrontTemplates`, `putStorefrontTemplate`, `getStorefrontTemplate`, `withdrawStorefrontTemplate` |
 
 The merchant approves each scope at consent. A connection that was not granted the scope receives `403 insufficient_scope`. The consent screen tells the merchant that `ab_attribution:write` shows the application the sales of its own tests.
 
@@ -236,3 +240,183 @@ const results = await client.storefrontStudio.getStorefrontExperimentConversions
 | `daily[]` | The same figures by day: `variant`, `date`, `orders`, `revenue` and `revenue_sum_of_squares`, the sum of each order's total squared. With `orders` and `revenue` it gives the variance of the order value. |
 
 Requires the `ab_attribution:write` scope. Limited to 120 requests per hour per key.
+
+### `createStorefrontSupportRequest`
+
+Opens a support request with the merchant's support team on the merchant's behalf. The request appears in the merchant's Support list marked with the application's name, the merchant is told by email and in the app, and the support team's replies go to the merchant, not to the application.
+
+```typescript
+const request = await client.storefrontStudio.createStorefrontSupportRequest({
+  idempotencyKey: 'sync-failure-2026-11-08',
+  requestBody: {
+    subject: 'Product feed stopped updating',
+    body: 'The feed has returned no changes since 5 November. We retried twice.',
+    support_type: 'integrations_sync',
+  },
+});
+```
+
+```json Response
+{
+  "id": "8d4a1c6e-2b57-4f39-a0e8-5c7b9d3f1a62",
+  "subject": "Product feed stopped updating",
+  "status": "Open",
+  "support_type": "integrations_sync",
+  "last_reply_at": null,
+  "resolved_at": null,
+  "created_at": "2026-11-08T10:15:00+00:00",
+  "updated_at": "2026-11-08T10:15:00+00:00"
+}
+```
+
+**Parameters**
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `requestBody.subject` | yes | One line, as the merchant reads it in their Support list. |
+| `requestBody.body` | yes | What happened and what the application already tried. |
+| `requestBody.support_type` | no | `payments_billing`, `orders_fulfilment`, `products_catalogue`, `integrations_sync`, `account_access` or `something_else`. Omit it when none fits. |
+| `idempotencyKey` | yes | Names this attempt. Send it here or as `idempotency_key` in the body (the same value if both are sent). |
+
+Repeating a request with the same key returns the request already opened with `200` and notifies no one; a new key opens a new request with `201`. An application can open 5 requests an hour and 20 a day per store; beyond that the call returns `429` with `Retry-After`. A sandbox connection records the request and returns it but reaches no support team and no merchant. Requires the `support_tickets:write` scope. Limited to 30 requests per hour per key.
+
+### `listStorefrontSupportRequests`
+
+The requests this application opened for the store and environment, newest first. Requests the merchant or another application opened are never listed, and a reply from the support team is not returned: the application sees only where each request stands.
+
+```typescript
+const { data, next_cursor } = await client.storefrontStudio.listStorefrontSupportRequests({
+  status: 'Open',
+  limit: 20,
+});
+```
+
+```json Response
+{
+  "data": [
+    {
+      "id": "8d4a1c6e-2b57-4f39-a0e8-5c7b9d3f1a62",
+      "subject": "Product feed stopped updating",
+      "status": "Open",
+      "support_type": "integrations_sync",
+      "last_reply_at": null,
+      "resolved_at": null,
+      "created_at": "2026-11-08T10:15:00+00:00",
+      "updated_at": "2026-11-08T10:15:00+00:00"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `status` | no | Only requests with this status, for example `Open` or `Resolved`. |
+| `limit` | no | Requests per page. |
+| `cursor` | no | The `next_cursor` of the previous page. |
+
+Requires the `support_tickets:write` scope. Limited to 300 requests per hour per key.
+
+### `getStorefrontSupportRequest`
+
+Where one of the application's requests stands. A request that does not exist, was opened by the merchant or another application, or belongs to the other environment returns the same `404`.
+
+```typescript
+const request = await client.storefrontStudio.getStorefrontSupportRequest({
+  ticketId: '8d4a1c6e-2b57-4f39-a0e8-5c7b9d3f1a62',
+});
+```
+
+The response has the shape shown for `createStorefrontSupportRequest`; `status` is one of `Open`, `Replied`, `Resolved` or `Closed`, and `last_reply_at` shows when the support team last replied. Requires the `support_tickets:write` scope. Limited to 300 requests per hour per key.
+
+### `listStorefrontTemplates`
+
+The templates this application offered the store in this environment, newest first, including withdrawn ones. Another application's templates are never listed.
+
+```typescript
+const { data } = await client.storefrontStudio.listStorefrontTemplates();
+```
+
+```json Response
+{
+  "data": [
+    {
+      "template_id": "summer-2026",
+      "name": "Summer 2026",
+      "summary": "A light, photo-led home page.",
+      "version": "1.2.0",
+      "preview_url": "https://preview.example.com/summer-2026",
+      "status": "accepted",
+      "confirmed_version": "1.2.0",
+      "decided_at": "2026-11-06T14:02:00+00:00",
+      "offered_at": "2026-11-05T09:00:00+00:00",
+      "updated_at": "2026-11-06T14:02:00+00:00"
+    }
+  ]
+}
+```
+
+Requires the `storefront_template:write` scope. Limited to 300 requests per hour per key.
+
+### `putStorefrontTemplate`
+
+Offers a template to the merchant, or updates one the application already offered. The merchant is told and chooses to accept or decline; nothing changes in the store until they accept, and the template is not moved for them. `status` reports the merchant's answer, and `confirmed_version` is the version they accepted.
+
+```typescript
+const template = await client.storefrontStudio.putStorefrontTemplate({
+  templateId: 'summer-2026',
+  requestBody: {
+    name: 'Summer 2026',
+    summary: 'A light, photo-led home page.',
+    version: '1.2.0',
+    preview_url: 'https://preview.example.com/summer-2026',
+  },
+});
+```
+
+```json Response
+{
+  "template_id": "summer-2026",
+  "name": "Summer 2026",
+  "summary": "A light, photo-led home page.",
+  "version": "1.2.0",
+  "preview_url": "https://preview.example.com/summer-2026",
+  "status": "offered",
+  "confirmed_version": null,
+  "decided_at": null,
+  "offered_at": "2026-11-08T10:30:00+00:00",
+  "updated_at": "2026-11-08T10:30:00+00:00"
+}
+```
+
+**Parameters**
+
+| Field | Required | Description |
+| :--- | :--- | :--- |
+| `templateId` | yes | The id you choose, 1 to 100 letters, digits, dots, dashes, colons or underscores. |
+| `requestBody.name` | yes | What the merchant sees when asked to accept it. |
+| `requestBody.version` | yes | The version offered. |
+| `requestBody.summary` | no | One line about the template. |
+| `requestBody.preview_url` | no | An `https` address where the merchant can look at the template before deciding. |
+
+A new `templateId`, a new `version` of an existing one, or a template the application had withdrawn is offered to the merchant again. Repeating the same `version` only refreshes the name, summary and preview, and the merchant's answer to that version stands. An application can have up to 50 templates on offer per store and environment. A sandbox connection records the offer but no merchant is asked. Requires the `storefront_template:write` scope. Limited to 300 requests per hour per key.
+
+### `getStorefrontTemplate`
+
+The template and the merchant's answer. A template that does not exist, belongs to another application or to the other environment returns the same `404`.
+
+```typescript
+const template = await client.storefrontStudio.getStorefrontTemplate({ templateId: 'summer-2026' });
+```
+
+The response has the shape shown for `putStorefrontTemplate`; `status` is `offered` (awaiting the merchant), `accepted` or `declined` (the merchant's answer to the version offered) or `withdrawn`. `confirmed_version` stays the same while a newer version awaits an answer. Requires the `storefront_template:write` scope. Limited to 300 requests per hour per key.
+
+### `withdrawStorefrontTemplate`
+
+Takes the offer back. The merchant is no longer asked about it, and the record stays with `status: "withdrawn"`. Withdrawing twice is the same as once, and offering the template again asks the merchant again.
+
+```typescript
+const template = await client.storefrontStudio.withdrawStorefrontTemplate({ templateId: 'summer-2026' });
+```
+
+The response has the shape shown for `putStorefrontTemplate`. Requires the `storefront_template:write` scope. Limited to 300 requests per hour per key.

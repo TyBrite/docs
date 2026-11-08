@@ -398,16 +398,31 @@ const tools = data.tools!.filter(
 
 ### `search`
 
-Constraint search over the catalogue. Every constraint is optional; each result carries `match_reasons` naming which constraints it satisfied, so an assistant can explain a recommendation from the data rather than from its own impression of the product.
+Constraint search over the store's catalogue, ranked by the store's own search. With a `query`, results keep the order the store's search gives that query, with the merchant's search rules applied: a product pinned for the query is shown first, a boosted one is lifted and a buried one is shown last. The other constraints only remove results, so what remains keeps the store's order (`ranking: "store_search"`). A direct match on brand, category, SKU or tags, and the products of a collection the query names, follow the store's results; the collections are listed in `collections`, so "summer" finds the store's Summer collection. Without a `query` the most-added-to-cart products come first, then products on sale or in an offer, then the rest by name (`ranking: "catalogue"`).
+
+Each result carries `match_reasons`, naming which constraints it satisfied in words a shopper can read, and `badges`, short labels for display. A result carries no score.
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| `requestBody.query` | `string` | Free text, matched by meaning where the store has semantic search, and against name, brand, category, SKU and tags. A direct text match ranks above a match by meaning alone. |
+| `requestBody.query` | `string` | Free text, matched by meaning where the store has semantic search, and against name, brand, category, SKU and tags. |
 | `requestBody.price_min` / `price_max` | `number` | Bounds on the product's price: the price of its lowest-priced variant, sale included. |
 | `requestBody.category` | `string` | A category or subcategory name, case-insensitive. |
 | `requestBody.attributes` | `Record<string, string>` | Attribute name to wanted value, such as `{ "color": "black" }`, matched against variant attributes, product attributes, brand and category. |
 | `requestBody.in_stock_only` | `boolean` | Excludes a product only when no variant is in stock. The variants of up to 20 multi-variant products are checked per request; a product beyond that is excluded unless its default variant is in stock. |
 | `requestBody.limit` | `number` | 1–50, default 10. |
+| `xAuthToken` / `xExternalAuth` / `xIdpToken` | `string` | Optional. For a shopper who has granted personalisation, the store's search ranks toward that shopper's taste and `personalised` is `true`. A credential that does not verify is refused with `401`. |
+
+| Badge `code` | Shown when | `label` |
+| :--- | :--- | :--- |
+| `featured` | A merchant search rule pins or boosts the product for this query. | Featured |
+| `collection` | The product is in a collection the query names. | The collection's name |
+| `on_sale` | The online sale price is below the online price. | On sale |
+| `offer` | The product is part of a live buy-one-get-one or bundle offer. | Buy one, get one, or Bundle deal |
+| `bestseller` | The product is among the store's most-added-to-cart products over the last 7 days. | Popular |
+| `in_your_size` | A size was asked for in `attributes` and the product has it. | In your size |
+| `in_stock_low` | The product is in stock at or below the store's low-stock threshold. | Only N left |
+
+Badges are listed in display order and are empty on a marketplace key. Which products a rule buries is not disclosed.
 
 `price` in a result is the shopper price of the product's default variant (its online sale price when one applies, otherwise its online price), and `list_price` is that variant's online price. What a shopper pays after dynamic pricing, promotions, shipping and tax comes from `quote`. `semantic_search` reports whether ranking by meaning was used for this call.
 
@@ -417,7 +432,7 @@ const { data } = await client.agent.search({
 });
 
 for (const r of data.results!) {
-  console.log(r.name, r.price, r.match_reasons!.map((m) => m.detail).join('; '));
+  console.log(r.name, r.price, r.badges!.map((b) => b.label).join(', '));
 }
 ```
 
@@ -447,7 +462,7 @@ for (const r of data.results!) {
         "match_reasons": [
           {
             "constraint": "query",
-            "detail": "semantic match (score 0.67) and text match"
+            "detail": "Close to what you searched for, \"hoodie\""
           },
           {
             "constraint": "price",
@@ -458,13 +473,21 @@ for (const r of data.results!) {
             "detail": "in stock"
           }
         ],
-        "score": 0.67
+        "badges": [
+          {
+            "code": "featured",
+            "label": "Featured"
+          }
+        ]
       }
     ],
     "total_matched": 1,
     "scanned": 216,
     "catalog_truncated": false,
     "semantic_search": "used",
+    "ranking": "store_search",
+    "personalised": false,
+    "collections": [],
     "constraints": {
       "query": "hoodie",
       "price_max": 60,
@@ -485,7 +508,7 @@ for (const r of data.results!) {
     {
       "source": "search",
       "operation": "POST /v1/search",
-      "field": "score"
+      "field": "ranking"
     },
     {
       "source": "products",
@@ -501,21 +524,45 @@ for (const r of data.results!) {
 
 ### `interpret`
 
-A hosted helper. It turns a request in plain language into the exact constraint object `search` accepts, and lists in `unresolved` the parts it could not map to a constraint — a recipient, an occasion — so the assistant can ask a follow-up question or carry them into its own reply.
+A hosted helper. It reads one message from a shopper and says what kind of message it is. A request for products becomes the exact constraint object `search` accepts, with the parts it could not map to a constraint — a recipient, an occasion — in `unresolved`, so the assistant can ask a follow-up question or carry them into its own reply.
 
-It debits the store's AI credits at the true cost of the call and reports the amount in `usage`. A call that fails keeps no credits. `query` is required, up to 500 characters. With a publishable key, helper calls count against a daily spend cap the merchant sets (USD 10 a store by default, up to USD 1,000; 0 turns publishable-key helper calls off). Over the cap the answer is `403 helpers_unavailable`. Secret keys are not capped.
+| `intent` | The message | `constraints` | `reply` |
+| :--- | :--- | :--- | :--- |
+| `shop` | Asks for products, or changes an earlier product request. | The search to run. | Absent. |
+| `question` | Asks about the store: delivery, returns, opening hours, contact, payment. | Empty. | The store's published answer. |
+| `small_talk` | A greeting, a thank-you or a goodbye. | Empty. | A short answer. |
+| `order_help` | Asks about an existing order. | Empty. | How to check an order, with the store's contact. |
+| `unclear` | Cannot be read as any of these. | Empty. | A request for more detail. |
+
+Only a `shop` message carries constraints, so a greeting is never searched for. A `reply` is composed from what the store has published; a fact the store has not published is never stated, and the reply gives the contact the store did publish. A greeting, a thank-you or a goodbye on its own debits nothing (`usage.credits_debited: 0`). `suggestions` holds two or three follow-up prompts drawn from the store's collections and categories; each `text` can be sent back to `interpret` as it is.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `requestBody.query` | `string` | Required, up to 500 characters. |
+| `requestBody.conversation_id` | `string` | Optional. A [saved conversation](#saved-conversations) whose context the request is read in. |
+| `xAuthToken` / `xExternalAuth` / `xIdpToken` | `string` | With `conversation_id`, the signed-in shopper who owns the conversation. |
+| `xSessionId` | `string` | With `conversation_id` and no shopper credential, the guest session that owns it. |
+
+With `conversation_id`, the request is read as a follow-up: the conversation's last six turns, the prices of the results last shown and the constraints the previous call returned. A new value replaces the old one, a new attribute is added, "cheaper" sets `price_max` just below the lowest price last shown and "more expensive" sets `price_min` just above the highest. The constraints are kept on the conversation for the next follow-up; no turn is added, and only a `shop` message updates them. The call is refused as the conversation endpoints are (`403 shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed`), and a conversation that is not the caller's answers `404 not_found`.
+
+It debits the store's AI credits at the true cost of the call and reports the amount in `usage`. A call that fails keeps no credits. With a publishable key, helper calls count against a daily spend cap the merchant sets (USD 10 a store by default, up to USD 1,000; 0 turns publishable-key helper calls off). Over the cap the answer is `403 helpers_unavailable`. Secret keys are not capped. A shopper who passes the store's fair-use budget for the helpers receives `429 agent_rate_limited` (see [Response codes](#response-codes)).
 
 ```typescript
 const { data } = await client.agent.interpret({
   requestBody: { query: 'a black hoodie under 60 for my brother' },
 });
 
-const { data: found } = await client.agent.search({ requestBody: data.constraints! });
+if (data.intent === 'shop') {
+  const { data: found } = await client.agent.search({ requestBody: data.constraints! });
+} else {
+  console.log(data.reply);
+}
 ```
 
 ```json Response
 {
   "data": {
+    "intent": "shop",
     "constraints": {
       "query": "hoodie",
       "price_max": 60,
@@ -526,6 +573,18 @@ const { data: found } = await client.agent.search({ requestBody: data.constraint
     },
     "unresolved": [
       "for my brother"
+    ],
+    "suggestions": [
+      {
+        "text": "Show me Summer Essentials",
+        "kind": "collection",
+        "collection_id": "9b1f4c7e-2d0a-4e53-8c1a-6a7d0f3b2e11"
+      },
+      {
+        "text": "Show me Wearables",
+        "kind": "category",
+        "category": "Wearables"
+      }
     ]
   },
   "evidence": [
@@ -3022,6 +3081,244 @@ const result = await client.agent.cancelAgentShopperSubscription({
 
 `POST /v1/agent/me/shopper-subscriptions/{id}/cancel`
 
+## Saved conversations
+
+A storefront's shopping assistant can keep its conversations so a shopper returns to them. The caller is a signed-in shopper (one of `xAuthToken`, `xExternalAuth` or `xIdpToken`) or, when the store allows guests, a guest session (`xSessionId`). A shopper credential wins when both are sent. Only conversations in the API key's environment are returned.
+
+The store's choices are published in the store information as `store.shopping_assistant`. While the assistant is off the calls answer `403 shopping_assistant_disabled`; while conversations are not saved, `403 history_disabled`; for a guest session while guests are not allowed, `403 guests_not_allowed`. Deleting is never refused by these settings. A shopper keeps at most 50 conversations and a guest session 10; starting one more deletes the least recently active. Money in a turn's results is in major units (12.50), as the storefront showed it.
+
+Every conversation call returns the standard envelope with `currency: null`.
+
+### `listAssistantConversations`
+
+The caller's saved conversations, most recently active first. Limited to 120 reads a minute per address and store.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `limit` | `number` | Conversations per page. |
+| `cursor` | `string` | `next_cursor` from the previous page. |
+
+```typescript
+const { data } = await client.agent.listAssistantConversations({ xAuthToken: shopperToken, limit: 20 });
+```
+
+```json Response
+{
+  "data": {
+    "conversations": [
+      {
+        "id": "c7d2b0f4-6a31-4f0e-9c52-1d8e3a47b9aa",
+        "title": "A black hoodie under 60",
+        "created_at": "2026-11-08T09:12:04.000Z",
+        "updated_at": "2026-11-08T09:14:31.000Z",
+        "turn_count": 4
+      }
+    ],
+    "next_cursor": null
+  },
+  "evidence": [{ "source": "agent_conversations", "field": "conversations" }],
+  "computed_at": "2026-11-08T09:15:00.000Z",
+  "currency": null,
+  "environment": "production"
+}
+```
+
+### `createAssistantConversation`
+
+Starts a saved conversation for the caller. Limited to 60 writes a minute per address and store.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `requestBody.title` | `string` | Optional. Without it, the title is the start of the first user turn. |
+
+```typescript
+const { data: conversation } = await client.agent.createAssistantConversation({
+  xSessionId: guestSessionId,
+  requestBody: {},
+});
+```
+
+```json Response
+{
+  "data": {
+    "id": "c7d2b0f4-6a31-4f0e-9c52-1d8e3a47b9aa",
+    "title": null,
+    "created_at": "2026-11-08T09:12:04.000Z",
+    "updated_at": "2026-11-08T09:12:04.000Z",
+    "turn_count": 0
+  },
+  "evidence": [{ "source": "agent_conversations", "field": "id" }],
+  "computed_at": "2026-11-08T09:12:04.000Z",
+  "currency": null,
+  "environment": "production"
+}
+```
+
+### `getAssistantConversation`
+
+One of the caller's conversations with every turn in order. A conversation that does not exist and one that belongs to someone else both answer `404 not_found`.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `string` | The conversation id. |
+
+```typescript
+const { data } = await client.agent.getAssistantConversation({ id: conversationId, xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": {
+    "id": "c7d2b0f4-6a31-4f0e-9c52-1d8e3a47b9aa",
+    "title": "A black hoodie under 60",
+    "created_at": "2026-11-08T09:12:04.000Z",
+    "updated_at": "2026-11-08T09:14:31.000Z",
+    "turn_count": 2,
+    "turns": [
+      {
+        "seq": 1,
+        "role": "user",
+        "text": "A black hoodie under 60",
+        "at": "2026-11-08T09:12:10.000Z",
+        "results": [],
+        "unresolved": [],
+        "draft_id": null
+      },
+      {
+        "seq": 2,
+        "role": "assistant",
+        "text": "Here is one that fits.",
+        "at": "2026-11-08T09:12:12.000Z",
+        "results": [
+          {
+            "product_id": "289533e8-f5b6-4d4f-bb23-2127875feb70",
+            "variant_id": "fbe89cdf-90a3-4050-a43b-e4c42302484a",
+            "name": "Galactic Zip Hoodie",
+            "price": 48,
+            "list_price": 48,
+            "currency": "USD",
+            "thumbnail_url": "https://cdn.example.com/hoodie.jpg",
+            "in_stock": true
+          }
+        ],
+        "unresolved": [],
+        "draft_id": null
+      }
+    ]
+  },
+  "evidence": [{ "source": "agent_conversations", "field": "turns" }],
+  "computed_at": "2026-11-08T09:15:00.000Z",
+  "currency": null,
+  "environment": "production"
+}
+```
+
+### `appendAssistantConversationTurn`
+
+Saves one turn exactly as the storefront showed it. Nothing is generated or changed. A conversation holds at most 200 turns (`409 conversation_full`); start a new one after that. Send `idempotencyKey` to make a retry safe: the same key on the same conversation returns the turn already saved, with `200`, instead of adding it twice.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `string` | The conversation id. |
+| `requestBody.role` | `'user' \| 'assistant'` | Who wrote the turn. |
+| `requestBody.text` | `string` | What was said. |
+| `requestBody.results` | `Array` | Optional. The products shown: `product_id`, `name`, and optionally `variant_id`, `price`, `list_price`, `currency`, `thumbnail_url` (an https URL) and `in_stock`. |
+| `requestBody.unresolved` | `string[]` | Optional. The parts of the request that could not be matched. |
+| `requestBody.draft_id` | `string \| null` | Optional. A cart draft that was offered. |
+| `idempotencyKey` | `string` | Optional. Up to 255 characters. |
+
+```typescript
+const { data } = await client.agent.appendAssistantConversationTurn({
+  id: conversationId,
+  xAuthToken: shopperToken,
+  idempotencyKey: 'turn-1',
+  requestBody: { role: 'user', text: 'A black hoodie under 60' },
+});
+```
+
+```json Response
+{
+  "data": {
+    "turn": {
+      "seq": 1,
+      "role": "user",
+      "text": "A black hoodie under 60",
+      "at": "2026-11-08T09:12:10.000Z",
+      "results": [],
+      "unresolved": [],
+      "draft_id": null
+    },
+    "turn_count": 1
+  },
+  "evidence": [{ "source": "agent_conversations", "field": "turns" }],
+  "computed_at": "2026-11-08T09:12:10.000Z",
+  "currency": null,
+  "environment": "production"
+}
+```
+
+### `deleteAssistantConversation`
+
+Deletes one of the caller's conversations and its turns. Someone else's conversation answers `404 not_found`.
+
+```typescript
+await client.agent.deleteAssistantConversation({ id: conversationId, xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": { "id": "c7d2b0f4-6a31-4f0e-9c52-1d8e3a47b9aa", "deleted": true },
+  "evidence": [{ "source": "agent_conversations", "field": "id" }],
+  "computed_at": "2026-11-08T09:20:00.000Z",
+  "currency": null,
+  "environment": "production"
+}
+```
+
+### `deleteAllAssistantConversations`
+
+Deletes every saved conversation of the caller in the API key's environment.
+
+```typescript
+const { data } = await client.agent.deleteAllAssistantConversations({ xAuthToken: shopperToken });
+```
+
+```json Response
+{
+  "data": { "deleted": 3 },
+  "evidence": [{ "source": "agent_conversations", "field": "deleted" }],
+  "computed_at": "2026-11-08T09:20:00.000Z",
+  "currency": null,
+  "environment": "production"
+}
+```
+
+### `adoptGuestAssistantConversations`
+
+Call once after a guest signs in, with the new shopper credential and the guest's `xSessionId`. Every saved conversation of that guest session becomes the shopper's and the guest session no longer reaches it. The shopper's 50-conversation limit then applies, and `pruned` counts any deleted to keep it. Calling it again moves nothing.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `xSessionId` | `string` | Required. The guest session whose conversations move. |
+| `xAuthToken` / `xExternalAuth` / `xIdpToken` | `string` | Exactly one is required: the signed-in shopper. |
+
+```typescript
+const { data } = await client.agent.adoptGuestAssistantConversations({
+  xSessionId: guestSessionId,
+  xAuthToken: shopperToken,
+});
+```
+
+```json Response
+{
+  "data": { "adopted": 2, "pruned": 0 },
+  "evidence": [{ "source": "agent_conversations", "field": "adopted" }],
+  "computed_at": "2026-11-08T09:25:00.000Z",
+  "currency": null,
+  "environment": "production"
+}
+```
+
 ## Store and usage
 
 ### `getStorePolicies`
@@ -3258,10 +3555,10 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | `400` | Invalid body or parameter — for example `compare` with fewer than two products, a `limit` out of range, or a standing instruction outside its bounds. |
 | `401` | Invalid or missing API key; a shopper tool called without a shopper credential; or an intent created for a signed-in shopper confirmed without their credential. |
 | `402` | `subscription_expired` — the store's subscription is not active; every call answers `402` until it is renewed. Also `insufficient_credits` — a hosted helper was called with a secret key and no AI credits available (a publishable key receives `403 helpers_unavailable`). |
-| `403` | `insufficient_scope` (a GC Connect key without the tool's `agent:read` or `agent:write` scope), `helpers_unavailable`, `consent_required` (including on pausing, skipping, cancelling or updating a shopper subscription), `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
+| `403` | `shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed` on the conversation calls, `insufficient_scope` (a GC Connect key without the tool's `agent:read` or `agent:write` scope), `helpers_unavailable`, `consent_required` (including on pausing, skipping, cancelling or updating a shopper subscription), `invalid_token`, an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
 | `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
 | `409` | `conflict` (a draft already applied), `quote_changed`, `intent_not_pending`, `items_unavailable`, `out_of_stock`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |
-| `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. |
+| `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. `agent_rate_limited` when one shopper (their sign-in or guest session, with their network address, at this store) or one network address at this store passes the store's fair-use budget. There are two budgets: the tools (search, compare, product context, fit, alternatives, cart insights, quotes and drafts) and the hosted helpers (`interpret`, `draftCartFromIntent`), which have a tighter one. Other shoppers at the store are unaffected. `details` names the budget, the window and when it resets; wait `Retry-After` seconds and retry. It is not counted against the monthly quota. |
 
 ```json
 {

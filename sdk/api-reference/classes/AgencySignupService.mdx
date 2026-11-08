@@ -1,0 +1,159 @@
+---
+title: "Agency Signup"
+description: "Reference for the AgencySignupService class in the Tybrite SDK: the pricing and signup calls an agency makes from its own pages."
+---
+
+The `AgencySignupService` class (accessed via `client.agencySignup`) holds the calls an agency makes from its own signup and pricing pages: the plans it sells, the offers running now, and the three steps that create a merchant's store under the agency.
+
+<Note>
+  **No API key.** The agency is resolved from the `Origin` or `Referer` of the browser call, where the host maps to exactly one agency, or from the `xAgencySignupKey` header on a server-side call. A request that resolves to no agency receives the same `404 not_found` whatever the reason. A storefront does not use this service.
+</Note>
+
+Every amount is a decimal in major units of the plan currency (`12.50`).
+
+### `getAgencyPricing`
+
+The plans a merchant can subscribe to under the calling agency, with the agency's active automatic offers. Call it from the agency's pricing page to show current prices and any running campaign without a rebuild.
+
+`plans` lists the agency's visible tiers. When the platform bills the agency's merchants, `billed_by` is `platform`, `plans` lists the platform plans and `offers` is empty. Each offer carries the discount, how long it lasts, its window, and for every plan and billing period the price, the discount and the final price. An offer that needs a code is never listed. The answer may be cached for up to a minute.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `xAgencySignupKey` | `string` | The agency's signup key, for a server-side call that has no browser `Origin`. |
+
+```typescript
+const pricing = await client.agencySignup.getAgencyPricing({});
+
+for (const plan of pricing.plans) {
+  console.log(plan.name, plan.monthly, plan.annual);
+}
+```
+
+```json Response
+{
+  "billed_by": "agency",
+  "plans": [
+    {
+      "slug": "growth",
+      "name": "Growth",
+      "currency": "USD",
+      "monthly": 49.0,
+      "annual": 490.0
+    }
+  ],
+  "offers": [
+    {
+      "id": "6c1e9a52-7d34-4b08-a1f6-3e8b2c5d9047",
+      "title": "Launch month",
+      "discount": { "type": "percent", "percent_off": 20 },
+      "duration": { "mode": "first_period", "periods": 1 },
+      "starts_at": "2026-11-01T00:00:00+00:00",
+      "ends_at": "2026-11-30T23:59:59+00:00",
+      "prices": [
+        { "plan": "growth", "period": "monthly", "price": 49.0, "discount": 9.8, "final": 39.2 }
+      ]
+    }
+  ]
+}
+```
+
+| Response field | Description |
+| :--- | :--- |
+| `billed_by` | `agency` or `platform`: who bills the agency's merchants for their plan. |
+| `plans[]` | `slug`, `name`, `currency`, `monthly` and `annual` (`null` when the plan has no annual option). |
+| `offers[]` | `id`, `title`, `discount` (`type` `percent` or `amount`, with `percent_off` for a percentage), `duration` (`mode` `first_period`, `n_periods` or `forever`, and `periods`), `starts_at`, `ends_at` and `prices[]`. Each price is `plan`, `period` (`monthly` or `annual`), `price`, `discount` and `final`, the amount payable for the first billing period. |
+
+### `getPlatformOffers`
+
+The active offers that apply automatically to the platform's own plans, so a pricing page can show the current price next to the list price. Offers that need a code are never listed. The answer may be cached for up to a minute.
+
+```typescript
+const { offers } = await client.agencySignup.getPlatformOffers();
+```
+
+```json Response
+{
+  "offers": [
+    {
+      "id": "6c1e9a52-7d34-4b08-a1f6-3e8b2c5d9047",
+      "title": "Launch month",
+      "discount": { "type": "percent", "percent_off": 20 },
+      "duration": { "mode": "first_period", "periods": 1 },
+      "starts_at": null,
+      "ends_at": null,
+      "prices": [
+        { "plan": "growth", "period": "annual", "price": 490.0, "discount": 98.0, "final": 392.0 }
+      ]
+    }
+  ]
+}
+```
+
+### `agencyMerchantSignup`
+
+The three steps an agency's signup page performs, selected by `requestBody.action`:
+
+1. `send` emails a six-digit code to the merchant's address.
+2. `verify` checks the code and confirms the address.
+3. `provision` creates the store with its defaults and returns a session, so the merchant lands in the admin signed in.
+
+A body-supplied agency id is ignored. A server-side call may also pass the end user's address in `xEndUserIp`, which is accepted only together with a valid signup key. The calls are rate limited per address, per mailbox and per agency; past the limit the answer is `429`.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `requestBody.action` | `'send' \| 'verify' \| 'provision'` | The step to run. |
+| `requestBody.email` | `string` | The merchant's address. |
+| `requestBody.password` | `string` | Required for `send` and `provision`. |
+| `requestBody.name` | `string` | The merchant's name. |
+| `requestBody.code` | `string` | The six-digit code, for `verify`. |
+| `requestBody.store_name` | `string` | Required for `provision`. |
+| `requestBody.store_code` | `string` | Six letters or digits; derived from the store name when omitted. |
+| `requestBody.business_type`, `country`, `currency`, `phone`, `address`, `store_email` | `string` | Optional store details for `provision`. |
+| `requestBody.plan` | `string` | Optional. One of the agency's plan or tier slugs, for `provision`. |
+| `requestBody.period` | `'monthly' \| 'annual'` | Optional, for `provision`. |
+| `requestBody.offer_code` | `string` | Optional. An offer code the merchant entered, for `provision`. |
+| `xAgencySignupKey` | `string` | The agency's signup key, for a server-side call. |
+| `xEndUserIp` | `string` | The end user's address, with a valid signup key. |
+
+`plan`, `period` and `offer_code` carry to the merchant's first checkout, which opens on that plan and period with the code applied. The price and any discount are resolved when the merchant checks out, and a value the agency does not sell is ignored. The response returns the values that were kept in `checkout_intent`.
+
+```typescript
+await client.agencySignup.agencyMerchantSignup({
+  requestBody: { action: 'send', email: 'john.doe@example.com', password: 'a-strong-passphrase' },
+});
+
+const { store, session, checkout_intent } = await client.agencySignup.agencyMerchantSignup({
+  requestBody: {
+    action: 'provision',
+    email: 'john.doe@example.com',
+    password: 'a-strong-passphrase',
+    store_name: 'Doe Goods',
+    plan: 'growth',
+    period: 'annual',
+  },
+});
+```
+
+```json Response
+{
+  "ok": true,
+  "store": {
+    "id": "b3f8d1a0-4c27-4e59-9a61-0d7e2c8f5b34",
+    "store_name": "Doe Goods",
+    "store_code": "DOEGDS"
+  },
+  "checkout_intent": { "plan": "growth", "period": "annual" },
+  "session": {}
+}
+```
+
+The `send` step answers `{ "ok": true }` and `verify` answers `{ "ok": true, "verified": true }`. `session` holds the signed-in session for the new merchant after `provision`.
+
+### Response codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | The call succeeded. |
+| `400` | The request was invalid: an unknown `action`, a missing field, or a wrong or expired code. |
+| `404` | `not_found`: the request resolves to no agency, or no pricing is available for it. |
+| `429` | Too many requests from this address, mailbox or agency. |

@@ -1112,6 +1112,117 @@ const result = await client.customers.downloadShopperFulfilmentFile({
 
 `GET /v1/fulfilment/downloads/{fulfilment_id}/{asset_id}`
 
+## Data requests
+
+A signed-in shopper can ask the store for a copy of their personal data (`export`) or for their account and that data to be deleted (`erasure`). The store chooses how requests are handled. By default the store reviews each one: the request is `requested` until the store approves or declines it. When shoppers complete their own requests, an export is `approved` at once and an erasure is carried out at once, so the request is `completed`.
+
+All three methods are customer-self calls: they work with a publishable key and the shopper's credential (`xAuthToken`, `xExternalAuth` or `xIdpToken`; send exactly one), which must resolve to the customer in `id`, otherwise the call returns `403`.
+
+### `listCustomerDataRequests`
+
+The shopper's requests, newest first (at most 50), with where each stands. A declined request carries the store's reason in `decline_reason`; an approved export shows when its download window ends in `download_expires_at`. A sandbox key sees sandbox requests only.
+
+```typescript
+const { data_requests } = await client.customers.listCustomerDataRequests({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  xAuthToken: shopperToken,
+});
+```
+
+```json Response
+{
+  "data_requests": [
+    {
+      "id": "5e0b7c1d-3a49-4f26-8d17-9b2c4a6e8f03",
+      "kind": "export",
+      "status": "approved",
+      "handling": "request",
+      "requested_at": "2026-11-05T09:12:00+00:00",
+      "decided_at": "2026-11-05T11:40:00+00:00",
+      "completed_at": null,
+      "decline_reason": null,
+      "download_expires_at": "2026-11-12T11:40:00+00:00",
+      "download_available": true
+    }
+  ]
+}
+```
+
+### `createCustomerDataRequest`
+
+Makes a request for the shopper. `requestBody.kind` is `export` or `erasure`. An erasure must carry `requestBody.confirm: true`, sent only after the shopper has confirmed in the storefront; `confirm` is not accepted with `export`.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `string` | The shopper's customer id. |
+| `requestBody.kind` | `'export' \| 'erasure'` | What the shopper asks for. |
+| `requestBody.confirm` | `boolean` | Required, and `true`, for `erasure`. |
+| `idempotencyKey` | `string` | Optional, up to 255 characters. A retry with the same key returns the request it first created. |
+
+Each shopper has one open request of each kind. Asking again while one is waiting, or while an export is still downloadable, returns that request with `created: false` and status `200`. A new request returns `201` with `created: true`. An erasure is refused with `409` while the shopper has a Subscribe & Save subscription still running, paid orders not yet shipped, or a business buyer account; the message says which. After an erasure, records the store must keep, such as sales, remain with the personal details removed, and the shopper's sign-in no longer resolves to a customer. A shopper is limited to 5 requests an hour.
+
+```typescript
+const { data_request, created } = await client.customers.createCustomerDataRequest({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  xAuthToken: shopperToken,
+  requestBody: { kind: 'export' },
+});
+```
+
+```json Response
+{
+  "data_request": {
+    "id": "5e0b7c1d-3a49-4f26-8d17-9b2c4a6e8f03",
+    "kind": "export",
+    "status": "requested",
+    "handling": "request",
+    "requested_at": "2026-11-05T09:12:00+00:00",
+    "decided_at": null,
+    "completed_at": null,
+    "decline_reason": null,
+    "download_expires_at": null,
+    "download_available": false
+  },
+  "created": true
+}
+```
+
+### `downloadCustomerDataExport`
+
+Returns the shopper's data as JSON for an export the store approved, or that completed at once, during its seven-day download window. The copy is built when it is downloaded, so it reflects the store's records at that moment. It is never cached. Secrets, access tokens and the store's own cost figures are not included. A shopper is limited to 10 downloads an hour.
+
+The call answers `409` when the request is still waiting, was declined, or its download window has ended; make a new request for a fresh copy. Another shopper's request, an erasure request, or an id from the other environment answers `404`.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `string` | The shopper's customer id. |
+| `requestId` | `string` | The export request's `id`. |
+
+```typescript
+const copy = await client.customers.downloadCustomerDataExport({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  requestId: '5e0b7c1d-3a49-4f26-8d17-9b2c4a6e8f03',
+  xAuthToken: shopperToken,
+});
+```
+
+```json Response
+{
+  "format": "customer-data-export",
+  "version": 1,
+  "generated_at": "2026-11-05T12:00:00+00:00",
+  "store_name": "Galactic Test Store",
+  "customer_id": "2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21",
+  "environment": "production",
+  "tables": {
+    "customers": [
+      { "id": "2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21", "email": "john.doe@example.com", "name": "John Doe" }
+    ],
+    "orders": []
+  }
+}
+```
+
 ## Customer Utilities
 
 <Tip>
@@ -1155,5 +1266,5 @@ const profile = await client.customers.getCustomer({
 | `401` | Invalid API key, or missing/invalid `xAuthToken` |
 | `402` | `subscription_expired` — the store's subscription is not active |
 | `403` | Forbidden — the customer token does not match the `customer_id` in the path |
-| `404` | Customer not found |
+| `404` | Customer not found, or a data request that is not the shopper's |
 | `409` | Duplicate email at this store (on `createCustomer`, or an `email` change on `updateCustomer`) |
