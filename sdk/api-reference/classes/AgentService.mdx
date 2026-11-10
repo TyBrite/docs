@@ -3261,7 +3261,7 @@ A store's [webhook endpoints](/sdk/api-reference/classes/WebhooksService) receiv
 | `403` | `insufficient_scope` (a GC Connect key without the tool's `agent:read` or `agent:write` scope), `helpers_unavailable`, `consent_required` (including on pausing, skipping, cancelling or updating a shopper subscription), `invalid_confirmation_token` (a wrong checkout-intent token), an intent confirmed by a different shopper than the one it was created for, or `getUsage` called with a publishable key. |
 | `404` | The product, draft, order or intent does not exist for this store, or no in-stock product matches an intent. |
 | `409` | `conflict` (a draft already applied), `quote_changed`, `intent_not_pending`, `items_unavailable`, `out_of_stock`, `shipping_not_deliverable`, `quote_incomplete`, `hold_limit_reached`, `mandate_limit`, a standing instruction that is no longer active, or an `Idempotency-Key` reused with a different basket. |
-| `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. |
+| `429` | Rate limit exceeded, including `rate_limited` with `Retry-After` when a publishable key creates more than 60 checkout intents an hour from one address. The assistant tools have their own budgets per shopper, per address and per store: `agent_rate_limited` when a signed-in shopper or an address reaches one, and `guest_limit_reached` when a guest reaches a guest budget lower than the signed-in shopper's, with `details.signed_in_limit` and `details.sign_in_raises_limit`. Both carry `Retry-After` and the `X-RateLimit-*` headers of the window that refused the request. See [Performance & rate limits](/concepts#performance-rate-limits). |
 
 ```json
 {

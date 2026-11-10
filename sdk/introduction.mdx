@@ -153,7 +153,7 @@ Every service in the SDK follows the same response-code contract, so you can cen
 | `404` | Resource not found by id/slug, OR a referenced resource (e.g. `product_id` on an order) is missing |
 | `405` | `method_not_allowed` — the path exists but does not accept the HTTP method |
 | `409` | Uniqueness conflict (duplicate email on register/customer, duplicate wishlist item, idempotency key reused with a different body) |
-| `429` | Too many requests — `rate_limited` (abuse throttle; carries `X-RateLimit-Scope: abuse`, not counted against the monthly quota) or `quota_exceeded` (monthly plan allowance reached) |
+| `429` | Too many requests — `rate_limited` (abuse throttle; carries `X-RateLimit-Scope: abuse`, not counted against the monthly quota), `guest_limit_reached` (the same throttle answered to a guest whose budget is lower than a signed-in shopper's; `details.signed_in_limit` and `details.sign_in_raises_limit`) or `quota_exceeded` (monthly plan allowance reached) |
 | `500` | Server error. A `5xx` response never carries `details`. |
 | `502` | `provider_error` — a payment, tax or shipping provider did not complete the request; the message is a fixed sentence and never the provider's own text |
 
@@ -187,6 +187,23 @@ try {
   throw err;
 }
 ```
+
+A `guest_limit_reached` refusal is not retried: its budget returns when the window ends, which can be up to an hour away, so the SDK throws the `ApiError` at once.
+
+```typescript
+import { ApiError } from '@tybrite-labs/sdk';
+
+try {
+  await client.products.listProducts({});
+} catch (err) {
+  if (err instanceof ApiError && err.status === 429 && err.body?.error?.code === 'guest_limit_reached') {
+    // err.body.error.details.signed_in_limit is the budget a signed-in shopper has
+  }
+  throw err;
+}
+```
+
+See [Performance & rate limits](/concepts#performance-rate-limits) for the budgets and headers.
 
 ## Post-Processing Warnings on Orders
 

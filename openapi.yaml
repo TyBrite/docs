@@ -375,8 +375,9 @@ info:
     - `unauthorized` (401): Invalid or missing API key
     - `forbidden` (403): The operation needs a secret key, and the key used is a publishable key
     - `insufficient_scope` (403): A GC Connect key was not granted the scope the operation needs; the message names the scope
-    - `feature_not_available` (403): The store's plan does not include the feature the route belongs to
+    - `feature_not_available` (403): The store's plan does not include the feature the route belongs to. A key made for one extension also receives it on every endpoint while the store's plan does not include extension keys; the key works again, unchanged, when the plan includes them
     - `subscription_expired` (402): The store's subscription is not active
+    - `store_suspended` (403): The store is suspended while a review is open
     - `invalid_token` (401): The `x-auth-token` sign-in token is not valid for this store and environment
     - `invalid_confirmation_token` (403): The confirmation token sent with an agent checkout intent does not match the intent
     - `endpoint_not_allowed` (403): The key is limited to an approved list of endpoints and this request is not on it
@@ -826,8 +827,11 @@ tags:
     description: |
       Outbound webhook management for merchant integrators.
 
-      **⚠️ SECRET KEY REQUIRED**: All webhook endpoints require a secret key (`tybrite_sk_*`).
-      Publishable keys will return 403 Forbidden.
+      **⚠️ SECRET KEY REQUIRED**: All webhook endpoints require the store's own secret key (`tybrite_sk_*`).
+      Publishable keys return `403 forbidden`. A key held by a connected app (GC Connect) returns
+      `403 insufficient_scope` on every webhook endpoint, whatever it was granted: the event log carries
+      every subscriber's customer and order payloads. A connected app that receives events is given its
+      endpoint when the merchant approves the connection.
 
       Webhooks allow your systems to receive real-time notifications when events occur in your
       store — eliminating the need to poll the API.
@@ -855,9 +859,10 @@ tags:
     description: |
       Developer tooling for the sandbox (test) environment — make your test runs fast and repeatable.
 
-      **⚠️ SECRET TEST KEY REQUIRED**: every Sandbox endpoint requires a `tybrite_sk_test_*` key and
-      only ever touches your sandbox data; publishable keys and live keys are rejected (403). Your
-      live data and store configuration are never affected.
+      **⚠️ SECRET TEST KEY REQUIRED**: every Sandbox endpoint requires the store's own `tybrite_sk_test_*` key
+      holding the `write` scope, and only ever touches your sandbox data; publishable keys and live keys are
+      rejected (`403 forbidden`), and a key held by a connected app (GC Connect) or one minted without `write`
+      is rejected with `403 insufficient_scope`. Your live data and store configuration are never affected.
 
       - **Reset** (`POST /v1/sandbox/reset`, or `DELETE /v1/sandbox/data`) — wipe all your sandbox
         test data instantly instead of waiting for the automatic 30-day cleanup.
@@ -876,6 +881,8 @@ tags:
       pricing quotes, confirming purchase orders, fulfilling, and credit decisions — are
       handled in the supplier's admin, never through this API. Available only on
       deployments with B2B enabled.
+  - name: Agency Signup
+    description: Keyless reads and the signup flow an agency calls from its own pages
 externalDocs:
   description: Galactic Core Documentation
   url: https://docs.tybritelabs.com/galactic-core
@@ -1291,6 +1298,11 @@ paths:
                       shopping_assistant:
                         name: null
                         logo_url: null
+                        enabled: false
+                        guests: false
+                        history: true
+                        retention_days: 90
+                        guest_retention_days: 7
                     catalog:
                       products:
                         total: 53
@@ -1317,6 +1329,7 @@ paths:
                             image: https://cdn.example.com/collections/featured-desktop.jpg
                             image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
                             video: null
+                            product_count: 12
                           - id: e9810818-5051-4b74-a53b-2ff843b4f435
                             name: New Arrivals
                             slug: new-arrivals
@@ -1326,6 +1339,7 @@ paths:
                             image: null
                             image_mobile: null
                             video: null
+                            product_count: 8
                       taxonomy:
                         categories:
                           total: 23
@@ -1502,6 +1516,11 @@ paths:
                       shopping_assistant:
                         name: null
                         logo_url: null
+                        enabled: false
+                        guests: false
+                        history: true
+                        retention_days: 90
+                        guest_retention_days: 7
                     catalog:
                       products:
                         total: 53
@@ -1528,6 +1547,7 @@ paths:
                             image: https://cdn.example.com/collections/featured-desktop.jpg
                             image_mobile: https://cdn.example.com/collections/featured-mobile.jpg
                             video: null
+                            product_count: 12
                           - id: e9810818-5051-4b74-a53b-2ff843b4f435
                             name: New Arrivals
                             slug: new-arrivals
@@ -1537,6 +1557,7 @@ paths:
                             image: null
                             image_mobile: null
                             video: null
+                            product_count: 8
                       taxonomy:
                         categories:
                           total: 23
@@ -1959,7 +1980,12 @@ paths:
             - Searches both product name and SKU fields
             - Case-insensitive matching
             - Partial matches supported (e.g., "iphone" matches "iPhone 15 Pro")
-              
+            - When no name or SKU contains the text (and no `sort`, price or specification filter is set), the
+              text is read the way the store's search reads it (`searchProducts`, Understanding): words that carry
+              no product meaning are set aside, the rest are matched against names, brands, categories,
+              subcategories, SKUs and tags with the store's synonyms, and the products of a collection the text
+              names are included. `search=best products for summer` lists the summer range.
+
             **Examples:**
             - `search=macbook` - Matches "MacBook Pro", "MacBook Air", "macbook-case"
             - `search=APP-MBP` - Matches SKU "APP-MBP-13", "APP-MBP-14"
@@ -3925,10 +3951,15 @@ paths:
         - Products
       summary: Get items in a product collection
       description: |
-        Returns all items belonging to a product collection, ordered by `sort_order`.
-        Each item contains the linked online product row along with its sort position.
-        A collection with no items returns an empty array. A collection that does not exist,
-        is inactive or has been deleted answers `404`.
+        Returns the live members of a product collection, ordered by `sort_order`. Only active
+        products sold online are listed. Each item contains the linked product row along with its
+        sort position.
+
+        A manual collection returns the products the merchant placed in it. An automatic collection
+        (for example New Arrivals or Best Sellers) returns the products its rule selects at the time
+        of the request, ranked in the rule's order, so its list changes as the catalogue and orders
+        change. A collection with no members returns an empty array. A collection that does not
+        exist, is inactive or has been deleted answers `404`.
       security:
         - BearerAuth: []
       parameters:
@@ -4894,7 +4925,7 @@ paths:
                           - Alan Turing
                 payment_method:
                   type: string
-                  description: 'Payment method identifier (required): one of `card`, `stripe`, `paypal`, `paystack`, `mpesa`, `mpesa_c2b`, `cash`, `bank_transfer`, `free`, or the identifier of one of the store''s own payment providers as listed by `GET /v1/payments/methods`. Any other value answers 400. `free` is for an order whose `total_amount` is 0 and whose items are all downloads or event tickets; the order is created paid, for a signed-in shopper (see `x-auth-token`). It may be omitted on such an order. Any other zero-total order is refused.'
+                  description: 'Payment method identifier (required): one of `card`, `stripe`, `paypal`, `paystack`, `mpesa`, `mpesa_c2b`, `cash`, `bank_transfer`, `free`, or the identifier of one of the store''s own payment providers as listed by `GET /v1/payments/methods`. On a live key the order may name only a method the store has switched on (`card` and `free` aside); any other value answers 400 with the list the store accepts. A test key is not held to the store''s switches. `free` is for an order whose `total_amount` is 0 and whose items are all downloads or event tickets; the order is created paid, for a signed-in shopper (see `x-auth-token`). It may be omitted on such an order. Any other zero-total order is refused.'
                   example: card
                 payment_status:
                   type: string
@@ -5620,7 +5651,7 @@ paths:
         '409':
           description: |-
             The `Idempotency-Key` was already used with a different request body (`idempotency_key_reused`), or the request conflicts with an existing order number (`conflict`). Send a new key for a different request.
-            Creating an order as already paid also checks the payment: the verified payment belongs to another order, is in another currency, or its `payment_reference` is already attached to another order of the store (`payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use`). No order is created.
+            Creating an order as already paid also checks the payment: the verified payment belongs to another order, is in another currency, or its `payment_reference` is already attached to another order of the store (`payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use`). No order is created. The payment method must also be in the mode of the key's environment: a live order is never marked paid by a payment made on test credentials (`provider_not_live`), and a sandbox order is never checked against live credentials (`provider_not_test_mode`).
             A `subscribe_save` order without a `customer_id` is refused with `account_required`: a subscription needs a signed-in shopper, so have the shopper sign in or create an account and send their `customer_id`. A free order (`total_amount` 0) without a signed-in shopper is refused the same way.
             An event ticket that cannot be bought is refused with `ticket_sale_closed` (sales not open or closed), `ticket_event_ended`, or `insufficient_stock` (the ticket type is sold out or the venue is full); `not_available` marks an item the store can no longer sell. A gift card that has less available than the order needs, because another checkout is using it, is refused with `gift_card_unavailable`; the card is held for an order until it is paid or closed unpaid. A campaign whose budget no longer covers the order's discount, because other open orders have reserved it, is refused with `campaign_budget_exhausted`; re-price the cart and send the order again.
           content:
@@ -5640,6 +5671,15 @@ paths:
                     error:
                       code: payment_reference_in_use
                       message: This payment reference is already attached to another order
+                provider_not_live:
+                  summary: A live order paid on test credentials
+                  value:
+                    error:
+                      code: provider_not_live
+                      message: stripe is connected with test credentials, so a payment made through it cannot mark a live order paid.
+                      details:
+                        provider: stripe
+                        configured_environment: test
                 account_required:
                   summary: Subscribe & Save needs a signed-in shopper
                   value:
@@ -6132,7 +6172,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
-          description: The requested status change is not allowed from the order's current state (`invalid_transition`), or the order changed while the request was being applied (`order_changed`), or the `Idempotency-Key` was already used with a different request body or for a different order (`idempotency_key_reused`), or the verified payment belongs to another order, is in another currency or is already attached to another order (`payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use`), or `shipping_metadata` tries to set purchased-label details (`shipping_label_locked`). The order is left as it was.
+          description: The requested status change is not allowed from the order's current state (`invalid_transition`), or the order changed while the request was being applied (`order_changed`), or the `Idempotency-Key` was already used with a different request body or for a different order (`idempotency_key_reused`), or the verified payment belongs to another order, is in another currency or is already attached to another order (`payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use`), or the payment method is in the other mode from the key's environment (`provider_not_live` for a live order on test credentials, `provider_not_test_mode` for a sandbox order on live credentials), or `shipping_metadata` tries to set purchased-label details (`shipping_label_locked`). The order is left as it was.
           content:
             application/json:
               schema:
@@ -7446,6 +7486,31 @@ paths:
                       message: Payment verification requires a secret key.
         '404':
           $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: 'The payment method is in the other mode from the key''s environment, so the provider is not asked. `provider_not_live`: a live key names a method configured with test credentials (a live order is never marked paid by a test payment). `provider_not_test_mode`: a test key names a method connected with live credentials (a test key never reads the live account).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                provider_not_live:
+                  summary: Live key, test credentials
+                  value:
+                    error:
+                      code: provider_not_live
+                      message: stripe is connected with test credentials, so a payment made through it cannot mark a live order paid.
+                      details:
+                        provider: stripe
+                        configured_environment: test
+                provider_not_test_mode:
+                  summary: Test key, live credentials
+                  value:
+                    error:
+                      code: provider_not_test_mode
+                      message: stripe is connected with live credentials, so a test key cannot use it. Use a live key, or connect stripe in test mode to test payments.
+                      details:
+                        provider: stripe
+                        configured_environment: live
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -11086,7 +11151,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/search:
@@ -11096,12 +11161,52 @@ paths:
         - Agent
       summary: Search by constraints
       description: |-
-        Constraint search over the store's catalogue. Every result carries `match_reasons` naming which of the
-        requested constraints it satisfied. With a `query`, the store's semantic search ranks results by meaning
-        where it is available (`semantic_search: used`); a direct match on name, brand, category, SKU or tags is
-        also admitted and ranked higher. `attributes` are matched against each product's variant attributes,
-        product attributes, brand and category — use `POST /v1/agent/fit` to check a product's published
-        specifications.
+        Constraint search over the store's catalogue, ranked by the store's own search. With a `query`, the order is the
+        order the store's search gives that query (`POST /v1/search` where the store's plan includes semantic search,
+        otherwise `GET /v1/search`), with the merchant's search rules applied: a product pinned for the query is shown
+        first in the merchant's order, a boosted one is lifted and a buried one is shown last. The constraints only remove
+        results, so what remains keeps the store's order (`ranking: store_search`). Products the store's search did not
+        return are added after its results and before any it buried: a direct match on brand, category, SKU or tags, and
+        the products of a collection the query names (`collections`), so "summer" finds the store's Summer collection.
+        Without a `query` the store's search has no order to give: the store's most-added-to-cart products come first,
+        then products on sale or in an offer, then the rest by name (`ranking: catalogue`).
+
+        The store's search also applies the merchant's synonyms, its ranking by popularity, promotions and stock when the
+        store has turned it on, and its reading of a sentence that matches no product name (`searchProducts`): "best
+        products for summer" is read as "summer", so the storefront's search and this search return the same products. The
+        direct match here reads the query the same way, setting aside words that carry no product meaning.
+
+        **Redirects.** When the merchant sends the query somewhere (a page address, a collection, a category or a
+        product), `redirect` names it, with the same shape as the store search's `redirect`. It is a suggestion to offer
+        the shopper beside the results; nothing navigates on its own. Null when there is none.
+
+        **Paging.** `limit` results are returned from `offset` (default 0) of one ordered set: the store's search order,
+        then what this search adds, then what a rule buried. `next_cursor` (or `next_offset`) continues it; a cursor is
+        valid only for the constraints and personalisation it was issued for, and a mismatched one is refused with `400`.
+        `total_matched` is the size of the whole set; `has_more` is false on its last page. The order is recomputed the same
+        way for every page, so a page repeats nothing and skips nothing unless the catalogue changes between requests.
+        Paging is for store keys; a marketplace search returns one page.
+
+        Every result carries `match_reasons` (why it is in the results, in words a shopper can read) and `badges` (short
+        labels for display). A result never carries a score. A product a rule pins or boosts carries the `featured` badge,
+        labelled "Featured"; which products a rule buries is not disclosed.
+
+        | Badge `code` | Shown when | `label` |
+        |---|---|---|
+        | `featured` | The merchant's search rule pins or boosts the product for this query | Featured |
+        | `collection` | The product is in a collection the query names | The collection's name |
+        | `on_sale` | The product's online sale price is below its online price | On sale |
+        | `offer` | The product is part of a live buy-one-get-one or bundle offer | Buy one, get one / Bundle deal |
+        | `bestseller` | The product is among the store's most-added-to-cart products over the last 7 days (a measured list only) | Popular |
+        | `in_your_size` | A size was asked for in `attributes` and the product has it | In your size |
+        | `in_stock_low` | The product is in stock at or below the store's low-stock threshold | Only N left |
+
+        With a shopper credential (`x-auth-token`, `x-external-auth` or `x-idp-token`) for a shopper who has granted
+        personalisation (`POST /v1/agent/me/consent`), the store's search ranks toward that shopper's taste, as it does on
+        the storefront (`personalised: true`). A credential that does not verify is refused with `401`.
+
+        `attributes` are matched against each product's variant attributes, product attributes, brand and category — use
+        `POST /v1/agent/fit` to check a product's published specifications.
 
         `price` is the shopper price of the product's default variant: its online sale price when one
         applies, otherwise its online price. `list_price` is that variant's online price. The amount a shopper
@@ -11123,6 +11228,24 @@ paths:
           schema:
             type: string
           description: Comma-separated top-level keys of `data` to return, e.g. `fields=grand_total,lines`.
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: The signed-in shopper, for a personalised ranking when they have granted personalisation. Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A bring-your-own-auth assertion identifying the shopper, for a personalised ranking. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider for the shopper, for a personalised ranking. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
       requestBody:
         required: true
         content:
@@ -11155,6 +11278,16 @@ paths:
                   minimum: 1
                   maximum: 50
                   default: 10
+                offset:
+                  type: integer
+                  minimum: 0
+                  maximum: 1000
+                  default: 0
+                  description: Skip this many results of the ordered set. Send `offset` or `cursor`, not both.
+                cursor:
+                  type: string
+                  maxLength: 200
+                  description: The `next_cursor` of the previous page, sent with the same constraints. Send `offset` or `cursor`, not both.
             example:
               query: hoodie
               price_max: 60
@@ -11245,6 +11378,7 @@ paths:
                                 type: string
                             match_reasons:
                               type: array
+                              description: Why the product is in the results, worded for a shopper. `constraint` is `query`, `price`, `category`, `attribute:<name>`, `in_stock_only`, `featured` or `collection`.
                               items:
                                 type: object
                                 properties:
@@ -11252,13 +11386,55 @@ paths:
                                     type: string
                                   detail:
                                     type: string
-                            score:
-                              type:
-                                - number
-                                - 'null'
-                              description: Semantic similarity to `query`, when used.
+                            badges:
+                              type: array
+                              description: Short display labels, in display order (see the table above). Empty on a marketplace operator key.
+                              items:
+                                type: object
+                                required:
+                                  - code
+                                  - label
+                                properties:
+                                  code:
+                                    type: string
+                                    enum:
+                                      - featured
+                                      - collection
+                                      - on_sale
+                                      - offer
+                                      - bestseller
+                                      - in_your_size
+                                      - in_stock_low
+                                  label:
+                                    type: string
                       total_matched:
                         type: integer
+                        description: Results in the whole ordered set, across every page.
+                      offset:
+                        type: integer
+                        description: Where this page starts in the ordered set.
+                      limit:
+                        type: integer
+                      has_more:
+                        type: boolean
+                      next_offset:
+                        type:
+                          - integer
+                          - 'null'
+                        description: The `offset` of the next page; null on the last page.
+                      next_cursor:
+                        type:
+                          - string
+                          - 'null'
+                        description: Continues this search from the next result; null on the last page.
+                      redirect:
+                        description: Where the merchant sends this query, as a suggestion to offer beside the results; null when there is none.
+                        anyOf:
+                          - $ref: '#/components/schemas/SearchRedirect'
+                          - type: 'null'
+                      summary:
+                        type: string
+                        description: A one- or two-sentence lead-in to show above the results, built from facts this search computed over the whole result set, not the current page, so every page of one search reads the same (matches, the collection the words named, how many results are on sale and in stock, their price range, the filters applied). Amounts print in the store's currency, such as `$12.00`. Always present, for example `Here are 25 picks for summer, led by the Summer Essentials collection; 4 are on sale and everything is in stock; prices run from $12.00 to $80.00.`
                       sellers_matched:
                         type: integer
                         description: Marketplace key only — how many sellers the results come from.
@@ -11270,10 +11446,35 @@ paths:
                         description: True when the catalogue is larger than one search considers (1,000 products).
                       semantic_search:
                         type: string
+                        description: Whether the store's semantic search ranked the results.
                         enum:
                           - used
                           - unavailable
                           - not_requested
+                      ranking:
+                        type: string
+                        description: '`store_search`: ordered by the store''s own search for `query`. `catalogue`: no query, or the store''s search could not be read, so the order is popularity, offers, then name.'
+                        enum:
+                          - store_search
+                          - catalogue
+                      personalised:
+                        type: boolean
+                        description: The store's search ranked toward the identified shopper's taste.
+                      collections:
+                        type: array
+                        description: The store's collections the query names, whose products are in the results.
+                        items:
+                          type: object
+                          properties:
+                            collection_id:
+                              type: string
+                              format: uuid
+                            name:
+                              type: string
+                            slug:
+                              type:
+                                - string
+                                - 'null'
                       constraints:
                         type: object
                         properties:
@@ -11351,16 +11552,25 @@ paths:
                             subcategory: Hoodies
                           match_reasons:
                             - constraint: query
-                              detail: semantic match (score 0.67) and text match
+                              detail: Close to what you searched for, "hoodie"
                             - constraint: price
-                              detail: price 48
+                              detail: Within your price range (48)
                             - constraint: in_stock_only
-                              detail: in stock
-                          score: 0.67
+                              detail: In stock
+                            - constraint: featured
+                              detail: Featured by the store
+                          badges:
+                            - code: featured
+                              label: Featured
+                            - code: bestseller
+                              label: Popular
                       total_matched: 1
                       scanned: 216
                       catalog_truncated: false
                       semantic_search: used
+                      ranking: store_search
+                      personalised: false
+                      collections: []
                       constraints:
                         query: hoodie
                         price_max: 60
@@ -11374,10 +11584,13 @@ paths:
                         field: stock
                       - source: search
                         operation: POST /v1/search
-                        field: score
+                        field: results (order)
                       - source: products
                         operation: GET /v1/products/{id}
                         field: variants.stock
+                      - source: recommendations
+                        operation: GET /v1/discovery/most-added-to-cart
+                        field: products
                     computed_at: '2026-09-28T21:53:25.353Z'
                     currency: EUR
                     environment: sandbox
@@ -11407,10 +11620,10 @@ paths:
                             subcategory: Hoodies
                           match_reasons:
                             - constraint: query
-                              detail: text match on "hoodie"
+                              detail: Matches "hoodie"
                             - constraint: in_stock_only
-                              detail: in stock
-                          score: null
+                              detail: In stock
+                          badges: []
                         - product_id: d31988d4-7b3e-49d0-afe0-8301a217fee1
                           variant_id: 7fbbd973-26cb-4451-b039-45e62f46d13c
                           merchant_store_id: ef7b07d3-424b-4b03-b1d4-30a2d2073b61
@@ -11432,10 +11645,10 @@ paths:
                             subcategory: Zip Hoodies
                           match_reasons:
                             - constraint: query
-                              detail: text match on "hoodie"
+                              detail: Matches "hoodie"
                             - constraint: in_stock_only
-                              detail: in stock
-                          score: null
+                              detail: In stock
+                          badges: []
                       total_matched: 3
                       scanned: 270
                       catalog_truncated: false
@@ -11493,7 +11706,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
         '502':
@@ -11511,28 +11724,93 @@ paths:
       operationId: interpret
       tags:
         - Agent
-      summary: Turn a request into search constraints
+      summary: Read a shopper's message
       description: |-
-        A hosted helper: natural language in, the exact constraint object `POST /v1/agent/search` accepts out,
-        plus `unresolved` — the parts of the request it could not map to a constraint.
+        A shopper's message in, what kind of message it is (`intent`) out, and for a product request the exact constraint
+        object `POST /v1/agent/search` accepts, plus `unresolved` — the parts of the request it could not map to a
+        constraint.
 
-        It runs a model and debits the store's AI credits at the true cost of the call; `usage`
-        reports what was debited. A failed call keeps no credits. It is limited to 60 calls a minute per client
-        and 1,000 an hour per key, in addition to the standard limits.
+        **It works without the hosted helpers.** A greeting, a thank-you, a goodbye, a question about an order and a plain
+        question about the store (delivery with an optional place, returns, opening hours, payment, contact) are read by
+        fixed rules and cost nothing, whether or not the store has hosted helpers on; a message that asks several of those
+        is answered for each. Every other message is read by the hosted helper when the store has it on, and by the same
+        rules over the store's own vocabulary when it does not: a price limit ("under 50", "between 20 and 40"), `in stock`,
+        a colour that is one of the store's own colour values, and a category named as the store names it become
+        constraints; any other words stay in `query`; a word the rules cannot turn into a filter is listed in `unresolved`.
+        `classified_by` says which read the message. The call never answers `403 helpers_unavailable`.
 
-        **A publishable key spends the store's credits too.** A publishable key is public, so anyone holding it can
-        make these calls, and each one debits the merchant's balance (and can trigger the merchant's automatic
-        top-up). The merchant sets a daily limit on that spend, counted over the last 24 hours; once it is reached
-        the key receives `403 helpers_unavailable`, the same answer as any other refusal. A secret key is not
-        limited by it.
+        | `intent` | The message | `constraints` | `reply` |
+        |---|---|---|---|
+        | `shop` | Asks for products, or changes an earlier product request | The search to run | Absent |
+        | `question` | Asks about the store: delivery, returns, opening hours, contact, payment | Empty | The store's published answer |
+        | `small_talk` | A greeting, a thank-you or a goodbye | Empty | A short answer |
+        | `order_help` | Asks about an existing order | Empty | How to check an order, with the store's contact |
+        | `unclear` | Cannot be read as any of these | Empty | A request for more detail |
 
-        **With a marketplace operator key** the call is paid from the marketplace operator's own AI
-        credits, never a seller's. A secret key receives the reason a call is refused: `403 helpers_unavailable`
-        with `details.reason` when the operator has not switched hosted helpers on, `402 insufficient_credits`
-        when the operator's credits are exhausted. A publishable key receives `403 helpers_unavailable` whatever
-        the reason, as on a single store.
+        Only a `shop` message carries constraints, so a greeting is never searched for. A `reply` is composed from what the
+        store has published: its shipping zones and distance tiers, its returns setting and window, its payment methods,
+        its profile (contact, support hours) and the opening of its published shipping or returns policy. A fact the store
+        has not published is never stated; the reply says the store has not published it and gives the contact the store
+        did publish. A greeting, a thank-you or a goodbye on its own is recognised without a model and debits nothing
+        (`usage.credits_debited: 0`).
+
+        `suggestions` holds two or three follow-up prompts drawn from the store's live collections and the categories its
+        online products are in. Each `text` can be sent back to `interpret` as it is.
+
+        A message read by the hosted helper debits the store's AI credits at the true cost of the call; `usage` reports what
+        was debited (`credits_debited: 0` for a message read by rules). A failed helper call keeps no credits and the
+        message is read by the rules instead. The call is limited per shopper at the store as described under the agent
+        fair-use budgets, in addition to the standard limits.
+
+        **A publishable key spends the store's credits too, when the helper reads the message.** A publishable key is
+        public, so anyone holding it can make these calls, and each one the helper reads debits the merchant's balance (and
+        can trigger the merchant's automatic top-up). The merchant sets a daily limit on that spend, counted over the last
+        24 hours; once it is reached, or when the helpers are off, paused or out of credits, the message is read by the
+        rules and nothing is debited.
+
+        **With a marketplace operator key** a message read by the helper is paid from the marketplace operator's own AI
+        credits, never a seller's; when the operator has not switched hosted helpers on or its credits are exhausted, the
+        rules read the message.
+
+        **A follow-up in a saved conversation.** With `conversation_id`, the request is read in the context of that
+        storefront conversation (`/v1/agent/me/conversations`): its last six turns, the prices of the results the storefront
+        last showed, and the constraints the previous `interpret` on it returned. "cheaper ones" or "in blue" then refine
+        the earlier request. The call names the conversation's owner the way the conversation endpoints do (a shopper
+        credential, or `x-session-id` for a guest), and is refused with the same codes when the store's assistant settings
+        do not allow it (`403 shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`) or when the
+        conversation is not the caller's (`404 not_found`). The constraints returned are kept on the conversation for the
+        next follow-up; no turn is added. Only a `shop` message updates them, so "cheaper ones" after "thanks" still refines
+        the last product request. A follow-up keeps the earlier request and applies the change: a new value replaces the old
+        one, a new attribute is added, "cheaper" sets `price_max` just below the lowest price last shown, and "more expensive"
+        sets `price_min` just above the highest.
       security:
         - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: With `conversation_id`, the signed-in shopper who owns it. Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: With `conversation_id`, a bring-your-own-auth assertion identifying the shopper who owns it. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: With `conversation_id`, a raw token from the store's own identity provider for the shopper who owns it. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9._:-]{16,128}$
+          description: With `conversation_id` and no shopper credential, the guest session that owns it.
       requestBody:
         required: true
         content:
@@ -11545,6 +11823,10 @@ paths:
                 query:
                   type: string
                   maxLength: 500
+                conversation_id:
+                  type: string
+                  format: uuid
+                  description: A saved storefront conversation whose context the request is read in. Needs the conversation's owner (a shopper credential or `x-session-id`).
             example:
               query: a black hoodie under 60 for my brother
       responses:
@@ -11566,8 +11848,45 @@ paths:
                   data:
                     type: object
                     properties:
+                      intent:
+                        type: string
+                        description: What kind of message it is (see the table above).
+                        enum:
+                          - shop
+                          - question
+                          - small_talk
+                          - order_help
+                          - unclear
+                      reply:
+                        type: string
+                        description: Present when `intent` is not `shop`. Composed only from what the store has published.
+                      suggestions:
+                        type: array
+                        description: Two or three follow-up prompts from the store's live collections and categories; empty when the store has neither.
+                        items:
+                          type: object
+                          required:
+                            - text
+                            - kind
+                          properties:
+                            text:
+                              type: string
+                              description: A prompt the shopper can send back to `interpret`, e.g. `Show me Summer Essentials`.
+                            kind:
+                              type: string
+                              enum:
+                                - collection
+                                - category
+                            collection_id:
+                              type: string
+                              format: uuid
+                              description: With `kind` `collection`.
+                            category:
+                              type: string
+                              description: With `kind` `category`.
                       constraints:
                         type: object
+                        description: The search for a `shop` message; empty otherwise.
                         properties:
                           query:
                             type: string
@@ -11593,6 +11912,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      classified_by:
+                        type: string
+                        enum:
+                          - rules
+                          - helper
+                        description: '`rules`: read by fixed rules over the store''s own vocabulary, at no cost. `helper`: read by the hosted helper.'
+                      conversation_id:
+                        type: string
+                        format: uuid
+                        description: The conversation the request was read in, when `conversation_id` was sent.
+                      conversation_title:
+                        type: string
+                        description: Present when this call named the conversation, which had no title, with a short noun phrase from the first shopping request, such as `Summer Essentials`, `Blue lamps` or `Summer picks`. A title already set is never changed.
                   evidence:
                     type: array
                     description: Where each figure in `data` was read from.
@@ -11636,26 +11968,96 @@ paths:
                         enum:
                           - fast
                           - null
-              example:
-                data:
-                  constraints:
-                    query: hoodie
-                    price_max: 60
-                    attributes:
-                      color: black
-                    in_stock_only: true
-                  unresolved:
-                    - for my brother
-                evidence:
-                  - source: hosted_helper
-                    operation: interpret
-                    field: constraints
-                computed_at: '2026-09-28T21:49:12.108Z'
-                currency: null
-                environment: sandbox
-                usage:
-                  credits_debited: 0.000412
-                  model_class: fast
+              examples:
+                shop:
+                  summary: A product request
+                  value:
+                    data:
+                      intent: shop
+                      suggestions:
+                        - text: Show me Out and About
+                          kind: collection
+                          collection_id: 323d9dbc-1c9d-42a2-a069-ae4031750e3b
+                        - text: Browse Men's Clothing
+                          kind: category
+                          category: Men's Clothing
+                      constraints:
+                        query: hoodie
+                        price_max: 60
+                        attributes:
+                          color: black
+                        in_stock_only: true
+                      unresolved:
+                        - for my brother
+                    evidence:
+                      - source: hosted_helper
+                        operation: interpret
+                        field: constraints, intent
+                    computed_at: '2026-09-28T21:49:12.108Z'
+                    currency: null
+                    environment: sandbox
+                    usage:
+                      credits_debited: 0.000412
+                      model_class: fast
+                question:
+                  summary: A question about delivery
+                  value:
+                    data:
+                      intent: question
+                      reply: 'Delivery options: Local (within 10 km), $5.99 (free over $75.00); Metro (10–50 km), $9.99 (free over $150.00).'
+                      suggestions:
+                        - text: Show me Out and About
+                          kind: collection
+                          collection_id: 323d9dbc-1c9d-42a2-a069-ae4031750e3b
+                        - text: Browse Men's Clothing
+                          kind: category
+                          category: Men's Clothing
+                      constraints: {}
+                      unresolved: []
+                    evidence:
+                      - source: hosted_helper
+                        operation: interpret
+                        field: constraints, intent
+                      - source: store-info
+                        operation: GET /v1/store/info
+                        field: name
+                      - source: shipping
+                        operation: GET /v1/shipping/zones
+                        field: delivery_zones, pricing_tiers
+                    computed_at: '2026-11-08T10:12:40.000Z'
+                    currency: null
+                    environment: production
+                    usage:
+                      credits_debited: 0.000398
+                      model_class: fast
+                greeting:
+                  summary: A greeting, recognised without a model
+                  value:
+                    data:
+                      intent: small_talk
+                      reply: Hi! I can help you find something at Galactic Test Store. What are you looking for?
+                      suggestions:
+                        - text: Show me Out and About
+                          kind: collection
+                          collection_id: 323d9dbc-1c9d-42a2-a069-ae4031750e3b
+                        - text: Browse Men's Clothing
+                          kind: category
+                          category: Men's Clothing
+                      constraints: {}
+                      unresolved: []
+                    evidence:
+                      - source: agent
+                        field: intent
+                        note: recognised without a model
+                      - source: store-info
+                        operation: GET /v1/store/info
+                        field: name
+                    computed_at: '2026-11-08T10:12:41.000Z'
+                    currency: null
+                    environment: production
+                    usage:
+                      credits_debited: 0
+                      model_class: null
         '400':
           description: The request is invalid
           headers:
@@ -11691,7 +12093,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '402':
-          description: The store has no AI credits available. Returned to a secret key only; a publishable key receives `403 helpers_unavailable` instead.
+          description: Not returned by this endpoint. A store without AI credits has its messages read by the rules at no cost.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -11723,7 +12125,7 @@ paths:
                   code: insufficient_credits
                   message: This store has no AI credits available. The deterministic tools remain available.
         '403':
-          description: Hosted helpers are unavailable. To a publishable key this is the one answer for every reason and carries no `details`. A secret key receives `details.reason` (`disabled`, `paused` or `unavailable`), and `402 insufficient_credits` when the store is out of credits.
+          description: With `conversation_id`, `shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed` when the store's assistant settings do not allow the conversation to be read. Hosted helpers being off is never a refusal here.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -11754,8 +12156,10 @@ paths:
                 error:
                   code: helpers_unavailable
                   message: Hosted helpers are not available for this store. The deterministic tools remain available.
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
         '502':
@@ -12100,7 +12504,7 @@ paths:
                   code: not_found
                   message: 'Product not found: 00000000-0000-4000-8000-000000000000'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
         '502':
@@ -12337,7 +12741,7 @@ paths:
                   code: not_found
                   message: 'Product not found: 00000000-0000-4000-8000-000000000000'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/fit:
@@ -12604,7 +13008,7 @@ paths:
                   code: not_found
                   message: 'Product not found: 00000000-0000-4000-8000-000000000000'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/alternatives:
@@ -12868,7 +13272,7 @@ paths:
                   code: not_found
                   message: 'Product not found: 00000000-0000-4000-8000-000000000000'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/quote:
@@ -13454,7 +13858,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/cart-drafts:
@@ -13871,7 +14275,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/cart-drafts/from-intent:
@@ -14426,7 +14830,7 @@ paths:
                   code: helpers_unavailable
                   message: Hosted helpers are not available for this store. The deterministic tools remain available.
         '404':
-          description: Nothing in stock matches the intent
+          description: Nothing to draft. `details.reason` is `no_candidates` (nothing in stock matches the intent), `no_selection` (the helper selected nothing that fits) or `no_product_request` (the intent asks for no product, for example a greeting or a question about an order; `details.intent` names what it is).
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -14460,7 +14864,7 @@ paths:
                   details:
                     reason: no_candidates
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
         '502':
@@ -14934,7 +15338,7 @@ paths:
                   code: not_found
                   message: 'Cart draft not found: 00000000-0000-4000-8000-000000000000'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/cart-drafts/{id}/apply:
@@ -15240,7 +15644,7 @@ paths:
                     currency: USD
                     environment: sandbox
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/cart-insights:
@@ -15528,7 +15932,7 @@ paths:
                   code: not_found
                   message: 'Cart draft not found: 00000000-0000-4000-8000-000000000000'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/consent:
@@ -15675,7 +16079,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
     post:
@@ -15837,7 +16241,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/context:
@@ -16036,7 +16440,7 @@ paths:
                   code: consent_required
                   message: The shopper has not granted personalisation. Ask them to, then call POST /v1/agent/me/consent.
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/wishlist-insights:
@@ -16185,7 +16589,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/reorder-suggestions:
@@ -16361,7 +16765,7 @@ paths:
                   code: consent_required
                   message: The shopper has not granted personalisation. Ask them to, then call POST /v1/agent/me/consent.
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/orders/{id}/status:
@@ -16600,7 +17004,7 @@ paths:
                   code: not_found
                   message: 'Order not found: 00000000-0000-4000-8000-000000000000'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/orders/{id}/returns:
@@ -16788,7 +17192,7 @@ paths:
                   code: order_not_paid
                   message: This order was not paid, or was cancelled, so there is nothing to return.
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/mandates:
@@ -16986,7 +17390,7 @@ paths:
                   code: consent_required
                   message: The shopper has not granted personalisation. Ask them to, then call POST /v1/agent/me/consent.
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
     post:
@@ -17302,7 +17706,7 @@ paths:
                   details:
                     limit: 10
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/mandates/{id}/cancel:
@@ -17515,7 +17919,7 @@ paths:
                   details:
                     status: cancelled
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/products/{id}/subscribe-save:
@@ -17701,7 +18105,1373 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/me/conversations:
+    get:
+      operationId: listAssistantConversations
+      tags:
+        - Agent
+      summary: List the shopper's assistant conversations
+      description: |-
+        The storefront shopping assistant's saved conversations of the caller, most recently active first. The caller is a
+        signed-in shopper (exactly one of `x-auth-token`, `x-external-auth`, `x-idp-token`) or, when the store allows
+        guests, a guest session (`x-session-id`). A shopper credential wins when both are sent. Only conversations in the
+        API key's environment are returned.
+
+        The store's choices are published in `GET /v1/store/info` as `store.shopping_assistant`. While the assistant is
+        off the call answers `403 shopping_assistant_disabled`; while conversations are not saved, `403 history_disabled`;
+        a guest session while guests are not allowed, `403 guests_not_allowed`. Limited to 120 reads a minute per
+        address and store, in addition to the standard limits.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9._:-]{16,128}$
+          description: The guest session, when no shopper credential is sent. Accepted only when the store allows guests.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: '`next_cursor` from the previous page.'
+      responses:
+        '200':
+          description: A page of conversations
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - conversations
+                      - next_cursor
+                    properties:
+                      conversations:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - id
+                            - title
+                            - created_at
+                            - updated_at
+                            - turn_count
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            title:
+                              type:
+                                - string
+                                - 'null'
+                              description: The title given at creation, else the start of the first user turn; null until then.
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
+                              description: When the last turn was added. Retention is counted from here.
+                            turn_count:
+                              type: integer
+                              minimum: 0
+                              maximum: 200
+                      next_cursor:
+                        type:
+                          - string
+                          - 'null'
+                        description: Pass as `cursor` for the next page; null on the last page.
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        field:
+                          type: string
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type: 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  conversations:
+                    - id: 6f1c2a4e-8b0d-4f3a-9c1e-2d7b5a9e4c10
+                      title: black hoodie under 60
+                      created_at: '2026-11-08T09:36:51.526681+00:00'
+                      updated_at: '2026-11-08T09:41:07.004113+00:00'
+                      turn_count: 4
+                  next_cursor: null
+                evidence:
+                  - source: agent
+                    field: conversations
+                computed_at: '2026-11-08T09:41:09.210Z'
+                currency: null
+                environment: production
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: guests_not_allowed
+                  message: Sign in to keep shopping assistant conversations on this store.
+        '429':
+          $ref: '#/components/responses/AgentRateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: createAssistantConversation
+      tags:
+        - Agent
+      summary: Start an assistant conversation
+      description: |-
+        Starts a saved conversation for the caller (a signed-in shopper or, when the store allows guests, a guest session).
+        A shopper keeps at most 50 conversations and a guest session 10; starting one more deletes the least recently
+        active. Limited to 60 writes a minute per address and store.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9._:-]{16,128}$
+          description: The guest session, when no shopper credential is sent. Accepted only when the store allows guests.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 120
+                  description: Optional. Without it, the title is the start of the first user turn.
+            example: {}
+      responses:
+        '201':
+          description: The conversation
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - id
+                      - title
+                      - created_at
+                      - updated_at
+                      - turn_count
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      title:
+                        type:
+                          - string
+                          - 'null'
+                        description: The title given at creation, else the start of the first user turn; null until then.
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
+                        description: When the last turn was added. Retention is counted from here.
+                      turn_count:
+                        type: integer
+                        minimum: 0
+                        maximum: 200
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        field:
+                          type: string
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type: 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  id: 6f1c2a4e-8b0d-4f3a-9c1e-2d7b5a9e4c10
+                  title: null
+                  created_at: '2026-11-08T09:36:51.526681+00:00'
+                  updated_at: '2026-11-08T09:36:51.526681+00:00'
+                  turn_count: 0
+                evidence:
+                  - source: agent
+                    field: conversations
+                computed_at: '2026-11-08T09:36:51.611Z'
+                currency: null
+                environment: production
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: guests_not_allowed
+                  message: Sign in to keep shopping assistant conversations on this store.
+        '429':
+          $ref: '#/components/responses/AgentRateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      operationId: deleteAllAssistantConversations
+      tags:
+        - Agent
+      summary: Delete all of the shopper's assistant conversations
+      description: |-
+        Deletes every saved conversation of the caller (signed-in shopper or guest session) in the API key's environment.
+        Never refused by the store's assistant settings: a shopper can always delete their own conversations.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9._:-]{16,128}$
+          description: The guest session, when no shopper credential is sent. Accepted only when the store allows guests.
+      responses:
+        '200':
+          description: How many were deleted
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - deleted
+                    properties:
+                      deleted:
+                        type: integer
+                        minimum: 0
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        field:
+                          type: string
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type: 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  deleted: 3
+                evidence:
+                  - source: agent
+                    field: conversations
+                computed_at: '2026-11-08T09:50:02.118Z'
+                currency: null
+                environment: production
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '429':
+          $ref: '#/components/responses/AgentRateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/me/conversations/adopt:
+    post:
+      operationId: adoptGuestAssistantConversations
+      tags:
+        - Agent
+      summary: Move a guest's conversations to the shopper who signed in
+      description: |-
+        Call once after a guest signs in, with the new shopper credential **and** the guest's `x-session-id`. Every saved
+        conversation of that guest session (same store and environment) becomes the shopper's, and the guest session no
+        longer reaches it. The shopper's 50-conversation limit then applies (`pruned` counts any deleted to keep it). The
+        same shape as moving a guest cart with `POST /v1/cart/merge`. Calling it again moves nothing.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: The signed-in shopper. Exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token` is required.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the shopper. Exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token` is required.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider. Exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token` is required.
+        - name: x-session-id
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9._:-]{16,128}$
+          description: The guest session whose conversations move to the shopper.
+      responses:
+        '200':
+          description: What moved
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - adopted
+                      - pruned
+                    properties:
+                      adopted:
+                        type: integer
+                        minimum: 0
+                      pruned:
+                        type: integer
+                        minimum: 0
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        field:
+                          type: string
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type: 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  adopted: 1
+                  pruned: 0
+                evidence:
+                  - source: agent
+                    field: conversations
+                computed_at: '2026-11-08T09:44:20.031Z'
+                currency: null
+                environment: production
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: guests_not_allowed
+                  message: Sign in to keep shopping assistant conversations on this store.
+        '429':
+          $ref: '#/components/responses/AgentRateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/me/conversations/{id}:
+    get:
+      operationId: getAssistantConversation
+      tags:
+        - Agent
+      summary: Get an assistant conversation with its turns
+      description: |-
+        One of the caller's saved conversations and every turn in order. A conversation that does not exist and one that
+        belongs to someone else both answer `404 not_found`. Money in a turn's results is in major units, as the
+        storefront showed it.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9._:-]{16,128}$
+          description: The guest session, when no shopper credential is sent. Accepted only when the store allows guests.
+      responses:
+        '200':
+          description: The conversation
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - id
+                      - title
+                      - created_at
+                      - updated_at
+                      - turn_count
+                      - turns
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      title:
+                        type:
+                          - string
+                          - 'null'
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
+                      turn_count:
+                        type: integer
+                        minimum: 0
+                        maximum: 200
+                      turns:
+                        type: array
+                        maxItems: 200
+                        items:
+                          type: object
+                          required:
+                            - seq
+                            - role
+                            - text
+                            - at
+                            - results
+                            - unresolved
+                            - draft_id
+                          properties:
+                            seq:
+                              type: integer
+                              minimum: 1
+                              maximum: 200
+                            role:
+                              type: string
+                              enum:
+                                - user
+                                - assistant
+                            text:
+                              type: string
+                              minLength: 1
+                              maxLength: 4000
+                            at:
+                              type: string
+                              format: date-time
+                            results:
+                              type: array
+                              maxItems: 24
+                              items:
+                                type: object
+                                required:
+                                  - product_id
+                                  - name
+                                properties:
+                                  product_id:
+                                    type: string
+                                    format: uuid
+                                  variant_id:
+                                    type:
+                                      - string
+                                      - 'null'
+                                    format: uuid
+                                  name:
+                                    type: string
+                                    maxLength: 200
+                                  price:
+                                    type:
+                                      - number
+                                      - 'null'
+                                    minimum: 0
+                                    description: The price shown, in major units (12.50).
+                                  list_price:
+                                    type:
+                                      - number
+                                      - 'null'
+                                    minimum: 0
+                                    description: The price before a discount, in major units, when one was shown.
+                                  currency:
+                                    type:
+                                      - string
+                                      - 'null'
+                                    pattern: ^[A-Z]{3}$
+                                  thumbnail_url:
+                                    type:
+                                      - string
+                                      - 'null'
+                                    maxLength: 1000
+                                    description: An https URL.
+                                  in_stock:
+                                    type:
+                                      - boolean
+                                      - 'null'
+                            unresolved:
+                              type: array
+                              maxItems: 10
+                              items:
+                                type: string
+                                maxLength: 200
+                            draft_id:
+                              type:
+                                - string
+                                - 'null'
+                              format: uuid
+                              description: A cart draft (`/v1/agent/cart-drafts/{id}`) the turn offered.
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        field:
+                          type: string
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type: 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  id: 6f1c2a4e-8b0d-4f3a-9c1e-2d7b5a9e4c10
+                  title: black hoodie under 60
+                  created_at: '2026-11-08T09:36:51.526681+00:00'
+                  updated_at: '2026-11-08T09:37:02.410022+00:00'
+                  turn_count: 2
+                  turns:
+                    - seq: 1
+                      role: user
+                      text: black hoodie under 60
+                      at: '2026-11-08T09:36:58.120443+00:00'
+                      results: []
+                      unresolved: []
+                      draft_id: null
+                    - seq: 2
+                      role: assistant
+                      text: Here are three that fit.
+                      at: '2026-11-08T09:37:02.410022+00:00'
+                      results:
+                        - product_id: 0c6b1f9a-3d2e-4b7a-8e5f-1a2b3c4d5e6f
+                          variant_id: 7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d
+                          name: Heavyweight Hoodie, Black
+                          price: 49.5
+                          list_price: 60
+                          currency: USD
+                          thumbnail_url: https://cdn.example.com/p/hoodie-black.webp
+                          in_stock: true
+                      unresolved:
+                        - for my brother
+                      draft_id: null
+                evidence:
+                  - source: agent
+                    field: conversations
+                computed_at: '2026-11-08T09:41:09.210Z'
+                currency: null
+                environment: production
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: guests_not_allowed
+                  message: Sign in to keep shopping assistant conversations on this store.
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/AgentRateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      operationId: deleteAssistantConversation
+      tags:
+        - Agent
+      summary: Delete an assistant conversation
+      description: |-
+        Deletes one of the caller's conversations and its turns. Never refused by the store's assistant settings. Someone
+        else's conversation answers `404 not_found`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9._:-]{16,128}$
+          description: The guest session, when no shopper credential is sent. Accepted only when the store allows guests.
+      responses:
+        '200':
+          description: Deleted
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - id
+                      - deleted
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      deleted:
+                        type: boolean
+                        const: true
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        field:
+                          type: string
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type: 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  id: 6f1c2a4e-8b0d-4f3a-9c1e-2d7b5a9e4c10
+                  deleted: true
+                evidence:
+                  - source: agent
+                    field: conversations
+                computed_at: '2026-11-08T09:52:40.903Z'
+                currency: null
+                environment: production
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/AgentRateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/agent/me/conversations/{id}/turns:
+    post:
+      operationId: appendAssistantConversationTurn
+      tags:
+        - Agent
+      summary: Add a turn to an assistant conversation
+      description: |-
+        Saves one turn exactly as the storefront showed it: what the shopper wrote (`role: user`) or what the assistant
+        answered (`role: assistant`), with the products shown (money in major units), the parts of the request that could
+        not be matched, and a cart draft if one was offered. Nothing is generated or changed. A conversation holds at most
+        200 turns (`409 conversation_full`); start a new one after that.
+
+        Send an `Idempotency-Key` to make a retry safe: the same key on the same conversation returns the turn already
+        saved, with `200`, instead of adding it twice.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+        - name: x-auth-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Customer session token from `POST /v1/auth/login` or `POST /v1/auth/verify-otp`. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-external-auth
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Bring-your-own-auth assertion identifying the customer. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-idp-token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: A raw token from the store's own identity provider, verified by the store's configured Auth verifier. At most one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+        - name: x-session-id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9._:-]{16,128}$
+          description: The guest session, when no shopper credential is sent. Accepted only when the store allows guests.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - role
+                - text
+              properties:
+                role:
+                  type: string
+                  enum:
+                    - user
+                    - assistant
+                text:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+                results:
+                  type: array
+                  maxItems: 24
+                  items:
+                    type: object
+                    required:
+                      - product_id
+                      - name
+                    properties:
+                      product_id:
+                        type: string
+                        format: uuid
+                      variant_id:
+                        type:
+                          - string
+                          - 'null'
+                        format: uuid
+                      name:
+                        type: string
+                        maxLength: 200
+                      price:
+                        type:
+                          - number
+                          - 'null'
+                        minimum: 0
+                        description: The price shown, in major units (12.50).
+                      list_price:
+                        type:
+                          - number
+                          - 'null'
+                        minimum: 0
+                        description: The price before a discount, in major units, when one was shown.
+                      currency:
+                        type:
+                          - string
+                          - 'null'
+                        pattern: ^[A-Z]{3}$
+                      thumbnail_url:
+                        type:
+                          - string
+                          - 'null'
+                        maxLength: 1000
+                        description: An https URL.
+                      in_stock:
+                        type:
+                          - boolean
+                          - 'null'
+                unresolved:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: string
+                    maxLength: 200
+                draft_id:
+                  type:
+                    - string
+                    - 'null'
+                  format: uuid
+            example:
+              role: assistant
+              text: Here are three that fit.
+              results:
+                - product_id: 0c6b1f9a-3d2e-4b7a-8e5f-1a2b3c4d5e6f
+                  variant_id: 7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d
+                  name: Heavyweight Hoodie, Black
+                  price: 49.5
+                  list_price: 60
+                  currency: USD
+                  thumbnail_url: https://cdn.example.com/p/hoodie-black.webp
+                  in_stock: true
+              unresolved:
+                - for my brother
+      responses:
+        '200':
+          description: The same `Idempotency-Key` was already used on this conversation; the turn saved then is returned.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - turn
+                      - turn_count
+                    properties:
+                      turn:
+                        type: object
+                        required:
+                          - seq
+                          - role
+                          - text
+                          - at
+                          - results
+                          - unresolved
+                          - draft_id
+                        properties:
+                          seq:
+                            type: integer
+                            minimum: 1
+                            maximum: 200
+                          role:
+                            type: string
+                            enum:
+                              - user
+                              - assistant
+                          text:
+                            type: string
+                            minLength: 1
+                            maxLength: 4000
+                          at:
+                            type: string
+                            format: date-time
+                          results:
+                            type: array
+                            maxItems: 24
+                            items:
+                              type: object
+                              required:
+                                - product_id
+                                - name
+                              properties:
+                                product_id:
+                                  type: string
+                                  format: uuid
+                                variant_id:
+                                  type:
+                                    - string
+                                    - 'null'
+                                  format: uuid
+                                name:
+                                  type: string
+                                  maxLength: 200
+                                price:
+                                  type:
+                                    - number
+                                    - 'null'
+                                  minimum: 0
+                                  description: The price shown, in major units (12.50).
+                                list_price:
+                                  type:
+                                    - number
+                                    - 'null'
+                                  minimum: 0
+                                  description: The price before a discount, in major units, when one was shown.
+                                currency:
+                                  type:
+                                    - string
+                                    - 'null'
+                                  pattern: ^[A-Z]{3}$
+                                thumbnail_url:
+                                  type:
+                                    - string
+                                    - 'null'
+                                  maxLength: 1000
+                                  description: An https URL.
+                                in_stock:
+                                  type:
+                                    - boolean
+                                    - 'null'
+                          unresolved:
+                            type: array
+                            maxItems: 10
+                            items:
+                              type: string
+                              maxLength: 200
+                          draft_id:
+                            type:
+                              - string
+                              - 'null'
+                            format: uuid
+                            description: A cart draft (`/v1/agent/cart-drafts/{id}`) the turn offered.
+                      turn_count:
+                        type: integer
+                        minimum: 1
+                        maximum: 200
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        field:
+                          type: string
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type: 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+        '201':
+          description: The turn was saved
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - evidence
+                  - computed_at
+                  - environment
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - turn
+                      - turn_count
+                    properties:
+                      turn:
+                        type: object
+                        required:
+                          - seq
+                          - role
+                          - text
+                          - at
+                          - results
+                          - unresolved
+                          - draft_id
+                        properties:
+                          seq:
+                            type: integer
+                            minimum: 1
+                            maximum: 200
+                          role:
+                            type: string
+                            enum:
+                              - user
+                              - assistant
+                          text:
+                            type: string
+                            minLength: 1
+                            maxLength: 4000
+                          at:
+                            type: string
+                            format: date-time
+                          results:
+                            type: array
+                            maxItems: 24
+                            items:
+                              type: object
+                              required:
+                                - product_id
+                                - name
+                              properties:
+                                product_id:
+                                  type: string
+                                  format: uuid
+                                variant_id:
+                                  type:
+                                    - string
+                                    - 'null'
+                                  format: uuid
+                                name:
+                                  type: string
+                                  maxLength: 200
+                                price:
+                                  type:
+                                    - number
+                                    - 'null'
+                                  minimum: 0
+                                  description: The price shown, in major units (12.50).
+                                list_price:
+                                  type:
+                                    - number
+                                    - 'null'
+                                  minimum: 0
+                                  description: The price before a discount, in major units, when one was shown.
+                                currency:
+                                  type:
+                                    - string
+                                    - 'null'
+                                  pattern: ^[A-Z]{3}$
+                                thumbnail_url:
+                                  type:
+                                    - string
+                                    - 'null'
+                                  maxLength: 1000
+                                  description: An https URL.
+                                in_stock:
+                                  type:
+                                    - boolean
+                                    - 'null'
+                          unresolved:
+                            type: array
+                            maxItems: 10
+                            items:
+                              type: string
+                              maxLength: 200
+                          draft_id:
+                            type:
+                              - string
+                              - 'null'
+                            format: uuid
+                            description: A cart draft (`/v1/agent/cart-drafts/{id}`) the turn offered.
+                      turn_count:
+                        type: integer
+                        minimum: 1
+                        maximum: 200
+                  evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        field:
+                          type: string
+                  computed_at:
+                    type: string
+                    format: date-time
+                  currency:
+                    type: 'null'
+                  environment:
+                    type: string
+                    enum:
+                      - production
+                      - sandbox
+              example:
+                data:
+                  turn:
+                    seq: 2
+                    role: assistant
+                    text: Here are three that fit.
+                    at: '2026-11-08T09:37:02.410022+00:00'
+                    results:
+                      - product_id: 0c6b1f9a-3d2e-4b7a-8e5f-1a2b3c4d5e6f
+                        variant_id: 7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d
+                        name: Heavyweight Hoodie, Black
+                        price: 49.5
+                        list_price: 60
+                        currency: USD
+                        thumbnail_url: https://cdn.example.com/p/hoodie-black.webp
+                        in_stock: true
+                    unresolved:
+                      - for my brother
+                    draft_id: null
+                  turn_count: 2
+                evidence:
+                  - source: agent
+                    field: conversations
+                computed_at: '2026-11-08T09:37:02.488Z'
+                currency: null
+                environment: production
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: guests_not_allowed
+                  message: Sign in to keep shopping assistant conversations on this store.
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: The conversation already holds 200 turns
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: conversation_full
+                  message: A conversation holds at most 200 turns. Start a new conversation.
+        '429':
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/shopper-subscriptions:
@@ -17835,7 +19605,7 @@ paths:
                   code: consent_required
                   message: The shopper has not granted personalization. Ask them to, then call POST /v1/agent/me/consent.
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
     post:
@@ -18468,7 +20238,7 @@ paths:
                   code: account_required
                   message: Subscribe & Save needs a signed-in shopper. Have the shopper sign in or create an account with this store, then try again with their credential.
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/shopper-subscriptions/{id}/pause:
@@ -18623,7 +20393,7 @@ paths:
         '409':
           $ref: '#/components/responses/ConflictError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/shopper-subscriptions/{id}/skip:
@@ -18766,7 +20536,7 @@ paths:
         '409':
           $ref: '#/components/responses/ConflictError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/shopper-subscriptions/{id}/cancel:
@@ -18905,7 +20675,7 @@ paths:
         '409':
           $ref: '#/components/responses/ConflictError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/me/shopper-subscriptions/{id}/update:
@@ -19086,7 +20856,7 @@ paths:
         '409':
           $ref: '#/components/responses/ConflictError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/checkout-intents:
@@ -20250,7 +22020,7 @@ paths:
                   code: idempotency_conflict
                   message: This Idempotency-Key was already used with different items
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/checkout-intents/{id}:
@@ -20733,7 +22503,7 @@ paths:
                   code: not_found
                   message: 'Checkout intent not found: 00000000-0000-4000-8000-000000000000'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/checkout-intents/{id}/confirm:
@@ -22264,7 +24034,7 @@ paths:
                   details:
                     status: cancelled
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/store-policies:
@@ -22445,7 +24215,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/agent/usage:
@@ -22563,7 +24333,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          $ref: '#/components/responses/AgentRateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/search:
@@ -22579,6 +24349,8 @@ paths:
 
         **Auth:** accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys, so
         it is safe to call directly from client-side storefront code — no customer session required.
+
+        **Plans:** keyword search is available on every plan.
 
         **When to use:** use this GET endpoint for fast type-ahead and keyword search where exact
         term matching is enough. For natural-language intent ("wireless headphones with noise
@@ -22606,9 +24378,33 @@ paths:
         requested or configured on the client: the ordering already reflects the rules, and a store with
         none behaves exactly as before.
 
+        **Synonyms.** A merchant can declare words that mean the same ("sofa", "couch", "settee") or a
+        one-way pairing ("trainers" also finds "sneakers", not the reverse). A query containing one of the
+        words is also searched with each alternative; matches for the words typed rank first, then the
+        matches each synonym adds.
+
+        **Understanding.** When neither the words, their synonyms nor the spelling fallback match a product
+        name, the query is read for its meaning: words that carry none ("best", "products", "for") are set
+        aside and the rest are matched against product names, brands, categories, subcategories, SKUs and
+        tags, together with the products of a collection the query names. "best products for summer" finds
+        the summer range. These results carry a `matchReason` of `Related to your search` or
+        `In the <name> collection`. `GET /v1/products?search=` applies the same reading when its own name
+        and SKU match finds nothing, so a search page and a product list agree.
+
+        **Redirects.** A merchant can send a query to one place: a page address, a collection, a category
+        or a product. The response carries `redirect` (null when there is none) beside the results, and the
+        storefront decides whether to navigate.
+
+        **Ranking by popularity, promotions and stock.** A store can turn on a ranking that, after its
+        rules, lifts the products shoppers add to their carts most this week and those in a live
+        buy-one-get-one or bundle offer or on sale, nudges down a product at or below the store's low-stock
+        level, and places sold-out products after the rest. Pinned results stay first and buried results
+        stay last. The setting is the merchant's; nothing is requested on the client.
+
         **Marketplace:** when called with a marketplace operator key, searches products across all
         merchants in the marketplace; pass `?store_id=<merchant>` to narrow results to a single
-        merchant.
+        merchant. Synonyms, understanding, redirects and the ranking setting belong to a store's own search
+        and do not apply to marketplace searches.
       security:
         - BearerAuth: []
       parameters:
@@ -22670,6 +24466,7 @@ paths:
                     score: 0.92
                     matchReason: Matched product name and description
                 totalResults: 1
+                redirect: null
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -22693,6 +24490,10 @@ paths:
         product meaning rather than literal keyword overlap. Results carry a similarity `score` and a
         `matchReason`.
 
+        **Plans:** semantic search is Smart Search, which belongs to the store's plan. A store whose plan does not include it
+        receives `403` `feature_not_available`; keyword search (`GET /v1/search`) and type-ahead (`GET /v1/search/autocomplete`)
+        answer on every plan, so a storefront can fall back to them.
+
         **Auth:** works with both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
         Despite using `POST` (to carry the structured request body), this is a **read-only** operation,
         so publishable keys are allowed for client-side storefront search.
@@ -22709,6 +24510,13 @@ paths:
         label a deliberate placement rather than presenting it as an earned one. Nothing needs to be
         requested or configured on the client: the ordering already reflects the rules, and a store with
         none behaves exactly as before.
+
+        **Synonyms, redirects and ranking.** The store's synonyms apply here too: a query containing a synonym
+        word is embedded with its alternatives, so the meaning the merchant declared is part of the match.
+        When the query cannot be embedded, or nothing scores above `minScore`, the keyword search answers
+        with its synonyms and its understanding of the query (see `searchProducts`). The response carries
+        `redirect` exactly as `searchProducts` does, and the store's ranking by popularity, promotions and
+        stock applies after the rules.
 
         **When to use:** prefer this over the text `GET /v1/search` (`searchProducts`) when the query
         is conversational or descriptive. Two tuning options:
@@ -22838,6 +24646,8 @@ paths:
         **Auth:** accepts a publishable (`tybrite_pk_*`) key, so it is safe to call from client-side
         storefront code on every keystroke. Requires a store-scoped key — marketplace operator keys
         are rejected.
+
+        **Plans:** available on every plan.
 
         **Fewer than two characters** returns an empty `suggestions` array with a `200`, not an
         error: a shopper mid-word has not done anything wrong.
@@ -28541,6 +30351,8 @@ paths:
         - CMS
       summary: List blog posts
       description: |
+        Blog posts and lookbooks belong to the store's plan: when the plan does not include them this returns `403` `feature_not_available`. The content is kept, and is served again as it was when the plan includes it.
+
         List the store's published blog posts, newest first, with cursor-based pagination. Posts may
         be commerce-aware (shoppable) and link to products in the catalog (`product_count` on each
         item).
@@ -28663,7 +30475,7 @@ paths:
       tags:
         - CMS
       summary: Get blog post by slug
-      description: Retrieve a single published blog post by its URL slug, including full `content` and any linked products (for shoppable posts). `content` is an Editor.js document (`time`, `version`, `blocks`), or `null` for a post with no body; the block types and rendering rules are described on the `PostContent` schema. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published post matches the slug.
+      description: 'Blog posts and lookbooks belong to the store''s plan: when the plan does not include them this returns `403` `feature_not_available`. The content is kept, and is served again as it was when the plan includes it. Retrieve a single published blog post by its URL slug, including full `content` and any linked products (for shoppable posts). `content` is an Editor.js document (`time`, `version`, `blocks`), or `null` for a post with no body; the block types and rendering rules are described on the `PostContent` schema. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published post matches the slug.'
       security:
         - BearerAuth: []
       parameters:
@@ -28836,7 +30648,7 @@ paths:
         - CMS
       summary: Most-read blog posts
       description: |-
-        The posts being read most, ranked by reads per day over a recent window. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
+        Blog posts and lookbooks belong to the store's plan: when the plan does not include them this returns `403` `feature_not_available`. The content is kept, and is served again as it was when the plan includes it. The posts being read most, ranked by reads per day over a recent window. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
 
         The window widens — 7, then 21, 45 and 90 days — until enough posts qualify, and the one that was used is returned as `window_days`. A blog that publishes occasionally has quiet weeks, and a shelf that is empty half the time is worse than one that describes a longer period honestly. Render the period beside the list rather than claiming "this week" for all of them.
 
@@ -28924,7 +30736,7 @@ paths:
         - CMS
       summary: Posts related to this one
       description: |-
-        Posts related to the given one, ranked server-side so a storefront does not compute similarity in the browser. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published post matches the slug.
+        Blog posts and lookbooks belong to the store's plan: when the plan does not include them this returns `403` `feature_not_available`. The content is kept, and is served again as it was when the plan includes it. Posts related to the given one, ranked server-side so a storefront does not compute similarity in the browser. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published post matches the slug.
 
         Ranking combines what the writing is about with the topics two posts share and how recent each one is, and nudges a post from a different category up between otherwise equal results.
 
@@ -29045,7 +30857,7 @@ paths:
       tags:
         - CMS
       summary: List lookbooks
-      description: List the store's published shoppable lookbooks (curated, image-led product galleries), newest first, with cursor-based pagination. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.
+      description: 'Blog posts and lookbooks belong to the store''s plan: when the plan does not include them this returns `403` `feature_not_available`. The content is kept, and is served again as it was when the plan includes it. List the store''s published shoppable lookbooks (curated, image-led product galleries), newest first, with cursor-based pagination. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys.'
       security:
         - BearerAuth: []
       parameters:
@@ -29133,7 +30945,7 @@ paths:
       tags:
         - CMS
       summary: Get lookbook details by slug
-      description: Retrieve a single published lookbook by its URL slug, including its images and the products featured in each. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published lookbook matches the slug.
+      description: 'Blog posts and lookbooks belong to the store''s plan: when the plan does not include them this returns `403` `feature_not_available`. The content is kept, and is served again as it was when the plan includes it. Retrieve a single published lookbook by its URL slug, including its images and the products featured in each. Read-only; accepts both publishable (`tybrite_pk_*`) and secret (`tybrite_sk_*`) API keys. Returns 404 if no published lookbook matches the slug.'
       security:
         - BearerAuth: []
       parameters:
@@ -32642,7 +34454,9 @@ paths:
         credentials as **query parameters** on the connection URL (they may also be sent as headers
         from non-browser clients):
 
-        - `api_key` — your publishable key (a publishable key is fine; this is a browser-origin read).
+        - `api_key` — your publishable key (a publishable key is fine; this is a browser-origin read). This handshake is
+          the only request that reads a key from the query string: every other messaging route requires the
+          `Authorization` header and answers `401` without it, and a secret key in the query string is refused with `400`.
         - **one** customer credential, proving the caller owns the thread:
           - `auth_token` — the session token of a customer signed in through Galactic Core
             (equivalently the `x-auth-token` header),
@@ -32673,7 +34487,8 @@ paths:
           required: false
           description: |
             Your publishable key, supplied as a query parameter for the WebSocket handshake (browsers
-            cannot set the `Authorization` header on a WebSocket). May also be sent as the
+            cannot set the `Authorization` header on a WebSocket). Read only on a request carrying
+            `Upgrade: websocket`; a secret key here is refused with `400 invalid_request`. May also be sent as the
             `Authorization: Bearer` header from non-browser clients.
           schema:
             type: string
@@ -38776,7 +40591,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -38846,7 +40661,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -38908,7 +40723,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -38989,7 +40804,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -39036,7 +40851,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -39177,7 +40992,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -39277,7 +41092,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -39349,7 +41164,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -39431,7 +41246,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -39473,6 +41288,13 @@ paths:
         skipped / failed counts and an `errors` array describing every rejected row (its
         position, SKU, the offending field, and a human-readable reason). If **every** row
         fails validation the response status is `422`.
+
+        **Updates keep the merchant's edits.** When a row's SKU already exists, each field is written
+        only if the API owns it: the store chooses, per field, whether the API or the merchant owns it
+        (Settings, Catalog sync, Field ownership, API push). A field the merchant owns is refreshed
+        until the merchant changes it, then left alone. By default the merchant owns names,
+        descriptions, categories, images, SEO fields and tags, and the API owns price, cost, stock,
+        barcodes and product identifiers. A new product always takes every field the row carries.
 
         **Required headers** (same signing scheme as orders and payments):
         - `Idempotency-Key` — a unique key per batch; retrying with the same key returns the
@@ -39537,7 +41359,7 @@ paths:
           schema:
             type: boolean
             default: false
-          description: When `true`, validate and report without writing anything.
+          description: When `true`, validate and report without writing anything. The report separates new rows (`rows_created`), rows that would update an existing SKU (`rows_updated`, or `rows_skipped` under `create_only`), and rows that would fail. A new row whose `fulfilment_kind` the store does not offer, or its plan does not include, is reported as failed with the sentence the real run would give. The response carries `delivery_types_checked` (`false` when the store's delivery types could not be read just now).
         - name: publish
           in: query
           required: false
@@ -39769,7 +41591,9 @@ paths:
       description: |
         Parse and validate a product feed **without writing anything** to your store, and get
         back the same `summary` and `errors` you would receive from a real import — plus a
-        `normalized_preview` of how Galactic Core interpreted your rows. **No API key
+        `normalized_preview` of how Galactic Core interpreted your rows. With no store behind the
+        request, the delivery types a store offers cannot be checked, so the response says
+        `delivery_types_checked: false`; a dry run with a key (`dry_run=true` on the real endpoint) checks them. **No API key
         required**, so you can perfect your feed format before integrating. Accepts JSON, XML,
         or CSV like the real endpoint. Rate-limited to 60 requests/hour per IP.
       parameters:
@@ -39820,6 +41644,9 @@ paths:
                     type: string
                   validate_only:
                     type: boolean
+                  delivery_types_checked:
+                    type: boolean
+                    description: Always `false` here. The open test endpoint has no store, so which delivery types a store offers is not checked.
                   summary:
                     $ref: '#/components/schemas/IngestSummary'
                   errors:
@@ -40727,7 +42554,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -40751,7 +42578,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -40838,7 +42665,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -40938,7 +42765,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -41040,7 +42867,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -41114,7 +42941,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -41224,7 +43051,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -41320,7 +43147,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: No sandbox customer with that id in this store.
           content:
@@ -41450,7 +43277,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -41495,7 +43322,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -41590,7 +43417,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: A variant does not belong to your store.
           content:
@@ -41641,7 +43468,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -41691,7 +43518,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/ScopeForbiddenError'
         '404':
           description: No sandbox stock level is set for that variant.
           content:
@@ -41706,6 +43533,279 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/agency/pricing:
+    get:
+      operationId: getAgencyPricing
+      tags:
+        - Agency Signup
+      summary: Get an agency's plans and its active automatic offers
+      description: |
+        Returns the plans a merchant can subscribe to under the calling agency, with the agency's active automatic offers.
+        Call it from the agency's own signup or pricing page to show current prices and any running campaign without a rebuild.
+
+        **No API key.** The agency is resolved from the `Origin` or `Referer` of the browser call (the host maps to exactly one agency),
+        or from the `x-agency-signup-key` header for a server-side call. A request that resolves to no agency receives the same
+        `404 not_found` answer whatever the reason.
+
+        **What is returned.** `plans` lists the agency's visible tiers (or the platform plans when the agency's merchants are billed by the
+        platform, in which case `billed_by` is `platform` and `offers` is empty). `offers` lists active offers that apply automatically:
+        each carries the discount, how long it lasts, its window, and for every plan and billing period the price, the discount and the
+        final price. Offers that need a code are never listed.
+
+        **Money.** Every amount is a decimal in major units of the plan currency (`12.50`).
+
+        **Caching.** The answer may be cached for up to a minute. Rate limited per caller address.
+      security: []
+      parameters:
+        - name: x-agency-signup-key
+          in: header
+          required: false
+          schema:
+            type: string
+          description: The agency's signup key, for a server-side call that has no browser Origin.
+      responses:
+        '200':
+          description: The agency's plans and active automatic offers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgencyPricing'
+              example:
+                billed_by: agency
+                plans:
+                  - slug: gold
+                    name: Gold
+                    currency: USD
+                    monthly: 123
+                    annual: 1230
+                offers:
+                  - id: 5b0c1c0e-9d7e-4a53-8f6b-2f1d9b6a7c11
+                    title: Black November
+                    discount:
+                      type: percent
+                      percent_off: 20
+                    duration:
+                      mode: first_period
+                      periods: 1
+                    starts_at: null
+                    ends_at: '2026-11-30T23:59:59Z'
+                    prices:
+                      - plan: gold
+                        period: annual
+                        price: 1230
+                        discount: 246
+                        final: 984
+        '404':
+          description: No pricing is available for this request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many requests from this address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Pricing is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/pricing/offers:
+    get:
+      operationId: getPlatformOffers
+      tags:
+        - Agency Signup
+      summary: Get the platform's active automatic offers
+      description: |
+        Returns the active offers that apply automatically to the platform's own plans, so a pricing page can show the current price
+        next to the list price. No API key. Offers that need a code are never listed. Every amount is a decimal in major units.
+        The answer may be cached for up to a minute.
+      security: []
+      responses:
+        '200':
+          description: Active automatic offers
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - offers
+                properties:
+                  offers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AutomaticOffer'
+        '429':
+          description: Too many requests from this address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Pricing is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/agency/merchant-signup:
+    post:
+      operationId: agencyMerchantSignup
+      tags:
+        - Agency Signup
+      summary: Sign a merchant up under an agency (send code, verify, create the store)
+      description: |
+        The three steps an agency's own signup page performs, selected by `action`:
+
+        1. `send` — emails a six-digit code to the merchant's address.
+        2. `verify` — checks the code and confirms the address.
+        3. `provision` — creates the store with its defaults and returns a session, so the merchant lands in the admin signed in.
+
+        **No API key.** The agency is resolved from the `Origin` or `Referer` of the browser call, or from the `x-agency-signup-key`
+        header on a server-side call (which may also pass the end user's address in `x-end-user-ip`). A body-supplied agency id is ignored.
+
+        **Plan, period and offer code.** `provision` accepts an optional `plan` (one of the agency's plan or tier slugs), `period`
+        (`monthly` or `annual`) and `offer_code`. They are carried to the merchant's first checkout, which opens on that plan and period with the
+        code applied. The price and any discount are resolved when the merchant checks out; a value the agency does not sell is ignored.
+        The response returns the values that were kept in `checkout_intent`.
+
+        Rate limited per address, per mailbox and per agency.
+      security: []
+      parameters:
+        - name: x-agency-signup-key
+          in: header
+          required: false
+          schema:
+            type: string
+          description: The agency's signup key, for a server-side call that has no browser Origin.
+        - name: x-end-user-ip
+          in: header
+          required: false
+          schema:
+            type: string
+          description: The end user's address, accepted only together with a valid signup key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+                - email
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - send
+                    - verify
+                    - provision
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  description: Required for `send` and `provision`
+                name:
+                  type: string
+                code:
+                  type: string
+                  description: The six-digit code, for `verify`
+                store_name:
+                  type: string
+                  description: Required for `provision`
+                store_code:
+                  type: string
+                  description: Six letters or digits; derived from the store name when omitted
+                business_type:
+                  type: string
+                country:
+                  type: string
+                currency:
+                  type: string
+                phone:
+                  type: string
+                address:
+                  type: string
+                store_email:
+                  type: string
+                  format: email
+                plan:
+                  type: string
+                  description: Plan or tier slug the merchant chose on the agency's page (`provision`)
+                period:
+                  type: string
+                  enum:
+                    - monthly
+                    - annual
+                offer_code:
+                  type: string
+                  description: An offer code the merchant entered (`provision`)
+      responses:
+        '200':
+          description: The step succeeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  verified:
+                    type: boolean
+                    description: Present after `verify`
+                  store:
+                    type: object
+                    description: The created store, after `provision`
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      store_name:
+                        type: string
+                      store_code:
+                        type: string
+                  checkout_intent:
+                    type:
+                      - object
+                      - 'null'
+                    description: The plan, period and offer code kept for the first checkout, after `provision`
+                    properties:
+                      plan:
+                        type:
+                          - string
+                          - 'null'
+                      period:
+                        type:
+                          - string
+                          - 'null'
+                      offer_code:
+                        type:
+                          - string
+                          - 'null'
+                  session:
+                    type: object
+                    description: A signed-in session for the new merchant, after `provision`
+        '400':
+          description: The request was invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The signup key is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   securitySchemes:
     BearerAuth:
@@ -42219,10 +44319,15 @@ components:
                 - type: 'null'
             shopping_assistant:
               type: object
-              description: The name and logo the merchant has given their shopping assistant, for a storefront or an assistant shopping the store to present it the way the store does. Always present; each field is null when the merchant has not set it.
+              description: 'The merchant''s shopping assistant: the name and logo a storefront or an assistant shopping the store presents it with, and the merchant''s choices for the storefront assistant and its saved conversations (`/v1/agent/me/conversations`). Always present. `name` and `logo_url` are null when the merchant has not set them; the choices carry their defaults when the merchant has not changed them.'
               required:
                 - name
                 - logo_url
+                - enabled
+                - guests
+                - history
+                - retention_days
+                - guest_retention_days
               properties:
                 name:
                   type:
@@ -42234,9 +44339,33 @@ components:
                     - string
                     - 'null'
                   description: URL of the assistant's logo, or null if not set.
+                enabled:
+                  type: boolean
+                  description: The storefront assistant is switched on. Default false.
+                guests:
+                  type: boolean
+                  description: Shoppers who are not signed in may use it, with conversations kept for their guest session. Default false.
+                history:
+                  type: boolean
+                  description: Conversations are saved. Default true.
+                retention_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 730
+                  description: Days a signed-in shopper's conversation is kept after its last turn. Default 90.
+                guest_retention_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 90
+                  description: Days a guest conversation is kept when it is never moved to an account at sign-in. Default 7.
               example:
                 name: Nova
                 logo_url: https://cdn.example.com/stores/acme/assistant.png
+                enabled: true
+                guests: false
+                history: true
+                retention_days: 90
+                guest_retention_days: 7
             description:
               type:
                 - string
@@ -42450,6 +44579,12 @@ components:
                           - string
                           - 'null'
                         format: uri
+                      product_count:
+                        type:
+                          - integer
+                          - 'null'
+                        minimum: 0
+                        description: 'Number of active products sold online that belong to the collection, whether or not they are in stock: the same products `GET /v1/product-collections/{id}/items` returns, the rule''s live members for an automatic collection. A storefront or assistant that links to collections skips any with a count of 0. Null when the count could not be read.'
             taxonomy:
               type: object
               properties:
@@ -45120,6 +47255,43 @@ components:
                   small ranking weight for a padded entry. Read `backfilled` before presenting a score
                   as a measurement.
                 example: 15
+    SearchRedirect:
+      type: object
+      description: Where the merchant sends this query instead of a result list. The search still returns its results; the storefront decides whether to navigate. `url` is set for type `url` (an `https://` address or a storefront path beginning with `/`); `target_id`, `name` and `slug` are set for a collection, category or product, read when the search ran, so a renamed target carries its current name.
+      required:
+        - type
+        - url
+        - target_id
+        - name
+        - slug
+      properties:
+        type:
+          type: string
+          enum:
+            - url
+            - collection
+            - category
+            - product
+        url:
+          type:
+            - string
+            - 'null'
+          example: /pages/returns
+        target_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        name:
+          type:
+            - string
+            - 'null'
+          example: Gift Guide
+        slug:
+          type:
+            - string
+            - 'null'
+          example: gift-guide
     SubscribeSaveInterval:
       type: object
       required:
@@ -45414,7 +47586,7 @@ components:
           example: 0.93
         matchReason:
           type: string
-          description: Why this product matched, in words a storefront can show. `Text match`, `Similar name` and `Similar brand` describe how the query was matched (the last two mean a spelling fallback was used). **`Featured by the store` means the merchant placed this result deliberately** rather than it earning its rank — worth labelling if you distinguish sponsored or featured placements.
+          description: Why this product matched, in words a storefront can show. `Text match`, `Similar name` and `Similar brand` describe how the query was matched (the last two mean a spelling fallback was used). **`Featured by the store` means the merchant placed this result deliberately** rather than it earning its rank — worth labelling if you distinguish sponsored or featured placements. `Related to your search` and `In the <name> collection` mean the words matched no product name, and the result was found by reading the query for its meaning (its brand, category and tag words, the store's synonyms, and a collection it names).
           example: Semantic match
     SearchResponse:
       type: object
@@ -45429,6 +47601,11 @@ components:
           type: integer
         message:
           type: string
+        redirect:
+          description: 'Store-scoped searches: the merchant''s redirect for this query, or null when there is none. Absent on a marketplace-wide search.'
+          anyOf:
+            - $ref: '#/components/schemas/SearchRedirect'
+            - type: 'null'
     RegisterPending:
       type: object
       description: 'The answer to a sign-up request. It is identical whether or not the address already has an account, and it carries no session: a session is issued by `POST /v1/auth/register/verify`.'
@@ -50484,6 +52661,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/IngestRowError'
+        dry_run:
+          type: boolean
+          description: Present and `true` on a dry run (`dry_run=true`); nothing was written.
+        delivery_types_checked:
+          type: boolean
+          description: |
+            On a dry run, whether each new row's delivery type was checked against the store's delivery types and plan
+            (`false` when they could not be read just now). Absent on a real run.
     FeedProduct:
       type: object
       description: |
@@ -51083,6 +53268,140 @@ components:
         updated_at:
           type: string
           format: date-time
+    AgencyPlan:
+      type: object
+      required:
+        - slug
+        - name
+        - currency
+        - monthly
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        currency:
+          type: string
+          example: USD
+        monthly:
+          type: number
+          description: Monthly price in major units
+          example: 79
+        annual:
+          type:
+            - number
+            - 'null'
+          description: Annual price in major units, null when the plan has no annual option
+          example: 790
+    AutomaticOfferPrice:
+      type: object
+      required:
+        - plan
+        - period
+        - price
+        - discount
+        - final
+      properties:
+        plan:
+          type: string
+          description: The plan or tier slug
+        period:
+          type: string
+          enum:
+            - monthly
+            - annual
+        price:
+          type: number
+          description: List price for the period, in major units
+          example: 1990
+        discount:
+          type: number
+          description: Discount on the first billing period, in major units
+          example: 398
+        final:
+          type: number
+          description: Price payable for the first billing period after the discount, in major units
+          example: 1592
+    AutomaticOffer:
+      type: object
+      required:
+        - id
+        - title
+        - discount
+        - duration
+        - prices
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type:
+            - string
+            - 'null'
+          description: The offer's public title
+        discount:
+          type: object
+          required:
+            - type
+          properties:
+            type:
+              type: string
+              enum:
+                - percent
+                - amount
+            percent_off:
+              type: number
+              description: Present when `type` is `percent`
+        duration:
+          type: object
+          required:
+            - mode
+            - periods
+          description: How long the discount lasts. `first_period` is the first billing period only, `n_periods` a set number of periods, `forever` every period.
+          properties:
+            mode:
+              type: string
+              enum:
+                - first_period
+                - n_periods
+                - forever
+            periods:
+              type: integer
+        starts_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        ends_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        prices:
+          type: array
+          items:
+            $ref: '#/components/schemas/AutomaticOfferPrice'
+    AgencyPricing:
+      type: object
+      required:
+        - billed_by
+        - plans
+        - offers
+      properties:
+        billed_by:
+          type: string
+          enum:
+            - agency
+            - platform
+          description: Who bills the agency's merchants for their plan
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgencyPlan'
+        offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AutomaticOffer'
   responses:
     BadRequestError:
       description: Invalid request - malformed data or missing required fields
@@ -51125,12 +53444,15 @@ components:
               code: forbidden
               message: This operation requires a secret key. Publishable keys cover catalogue reads and the actions a shopper takes for themselves.
     RateLimitError:
-      description: 'Too many requests. Two distinct `429` codes: `rate_limited` (an abuse throttle — too many requests too fast; carries an `X-RateLimit-Scope: abuse` header and is NOT counted against your monthly quota) and `quota_exceeded` (your plan''s monthly request allowance is reached).'
+      description: |-
+        Too many requests. Three distinct `429` codes: `rate_limited` (an abuse throttle — too many requests too fast; carries an `X-RateLimit-Scope: abuse` header and is NOT counted against your monthly quota), `guest_limit_reached` (the same per-address throttle, answered to a guest, a request with no shopper credential, whose per-address hourly budget at this store is lower than a signed-in shopper's) and `quota_exceeded` (your plan's monthly request allowance is reached).
+        `guest_limit_reached` carries `details`: `scope` is `guest`, `bucket` is `browse`, `limit` is the guest budget, `window_seconds` is `3600`, `remaining` is `0`, `reset` and `retry_after` say when the hour ends, `signed_in_limit` is the signed-in shopper's budget and `sign_in_raises_limit` is `true`. A storefront shows its sign-in prompt for this code. A signed-in shopper, and a guest whose budget is not lower than the signed-in one, get `rate_limited`.
+        On a throttle refusal (`rate_limited`, `guest_limit_reached`) `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` describe the window that refused the request (the hour, the day or the per-address hour) and `Retry-After` is the time until it ends. On `quota_exceeded` they describe the monthly allowance.
       headers:
         Tybrite-Environment:
           $ref: '#/components/headers/TybriteEnvironment'
         Retry-After:
-          description: Seconds until the limit that refused the request resets. Sent with `rate_limited` and with `quota_exceeded` (for the latter, the seconds until the monthly reset). Not sent when no reset time is known.
+          description: Seconds until the limit that refused the request resets. Sent with `rate_limited`, `guest_limit_reached` and `quota_exceeded` (for the latter, the seconds until the monthly reset). Not sent when no reset time is known.
           schema:
             type: integer
           example: 540
@@ -51138,12 +53460,31 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-          example:
-            error:
-              code: rate_limited
-              message: Too many requests for this API key. Please slow down and try again shortly.
-              remaining: 0
-              reset: 1706198400
+          examples:
+            rate_limited:
+              summary: An abuse throttle
+              value:
+                error:
+                  code: rate_limited
+                  message: Too many requests for this API key. Please slow down and try again shortly.
+                  remaining: 0
+                  reset: 1706198400
+            guest_limit_reached:
+              summary: A guest reached a per-address budget that signing in raises
+              value:
+                error:
+                  code: guest_limit_reached
+                  message: Sign in to keep going — signed-in shoppers get more.
+                  details:
+                    scope: guest
+                    bucket: browse
+                    limit: 500
+                    window_seconds: 3600
+                    remaining: 0
+                    reset: 1706198400
+                    retry_after: 540
+                    signed_in_limit: 2000
+                    sign_in_raises_limit: true
     ServerError:
       description: Internal server error. A 5xx response never carries `details`.
       headers:
@@ -51311,6 +53652,73 @@ components:
             error:
               code: conflict
               message: A customer with this email already exists for this store
+    AgentRateLimitError:
+      description: |-
+        Too many requests. Besides the two codes every endpoint can answer (`rate_limited`, `quota_exceeded`), the shopping assistant endpoints answer `agent_rate_limited` when one shopper (their sign-in or guest session, with their network address, at this store) or one network address at this store passes the store's fair-use budget. There are two budgets: the tools (search, compare, product context, fit, alternatives, cart insights, quotes and drafts) and the AI helpers (`interpret`, `cart-drafts/from-intent`), which have a tighter one. Other shoppers at the store are unaffected. `details` names the budget, the window and when it resets; wait `Retry-After` seconds and retry. Not counted against the monthly quota.
+        A guest (a session with no shopper credential) and a signed-in customer have separate budgets. When a guest reaches a guest budget that is lower than the signed-in budget, the code is `guest_limit_reached` instead: `details.scope` is `guest`, `details.signed_in_limit` is the signed-in shopper's budget for the same bucket and window, and `details.sign_in_raises_limit` is `true`. A storefront shows its sign-in prompt for this code and retries after sign-in, or after `Retry-After` seconds. A signed-in customer at their budget, and a guest stopped by a per-address or per-store ceiling, or whose budget is not lower than the signed-in one, still get `agent_rate_limited`. Both codes carry the same headers.
+      headers:
+        Tybrite-Environment:
+          $ref: '#/components/headers/TybriteEnvironment'
+        Retry-After:
+          description: Seconds until the window that refused the request resets. Sent with `agent_rate_limited`, `guest_limit_reached` and `rate_limited`, and with `quota_exceeded` (the seconds until the monthly reset).
+          schema:
+            type: integer
+          example: 23
+        X-RateLimit-Limit:
+          description: For `agent_rate_limited` and `guest_limit_reached`, the size of the budget that refused the request, in requests per window.
+          schema:
+            type: string
+          example: '12'
+        X-RateLimit-Remaining:
+          description: Requests left in that window (0 on a refusal).
+          schema:
+            type: string
+          example: '0'
+        X-RateLimit-Reset:
+          description: Unix time, in seconds, when that window resets.
+          schema:
+            type: string
+          example: '1794139260'
+        X-RateLimit-Scope:
+          description: '`abuse` on every throttle refusal.'
+          schema:
+            type: string
+          example: abuse
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            agent_rate_limited:
+              summary: A signed-in customer reached their budget
+              value:
+                error:
+                  code: agent_rate_limited
+                  message: Too many shopping assistant questions from this shopper. Wait a moment and try again.
+                  details:
+                    bucket: helpers
+                    scope: shopper
+                    limit: 12
+                    window_seconds: 60
+                    remaining: 0
+                    reset: 1794139260
+                    retry_after: 23
+            guest_limit_reached:
+              summary: A guest reached a guest budget that signing in raises
+              value:
+                error:
+                  code: guest_limit_reached
+                  message: Sign in to keep going — signed-in shoppers get more.
+                  details:
+                    bucket: helpers
+                    scope: guest
+                    limit: 6
+                    window_seconds: 60
+                    remaining: 0
+                    reset: 1794139260
+                    retry_after: 23
+                    signed_in_limit: 12
+                    sign_in_raises_limit: true
   headers:
     TybriteEnvironment:
       description: |
