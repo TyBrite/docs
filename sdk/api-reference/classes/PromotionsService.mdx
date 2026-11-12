@@ -54,7 +54,9 @@ console.log(`Available promotions: ${promotions.length}`);
       "time_zone": "America/New_York",
       "apply_to_days": null,
       "scope_type": "all",
-      "scope_ids": []
+      "scope_ids": [],
+      "min_purchase_basis": "covered",
+      "fixed_applies": "order"
     },
     {
       "id": "b43fd2cc-622a-454a-965f-18323d11c346",
@@ -68,14 +70,16 @@ console.log(`Available promotions: ${promotions.length}`);
       "status": "active",
       "time_zone": "America/New_York",
       "scope_type": "categories",
-      "scope_ids": ["5b0e7c1a-3d24-4f8e-9a61-2c4d8e7f0b13"]
+      "scope_ids": ["5b0e7c1a-3d24-4f8e-9a61-2c4d8e7f0b13"],
+      "min_purchase_basis": "order",
+      "fixed_applies": "order"
     }
   ],
   "pagination": { "limit": 50, "next_cursor": null, "has_more": false }
 }
 ```
 
-A `discount` (percentage) or `fixed` promotion with a `scope_type` of `products` or `categories` takes its discount only from the cart lines it covers: `min_purchase` is measured on those lines, and a cart with none of them is not eligible.
+A `discount` (percentage) or `fixed` promotion with a `scope_type` of `products` or `categories` takes its discount only from the cart lines it covers, and a cart with none of them is not eligible. `min_purchase_basis` sets what `min_purchase` is measured on: `covered` (the covered lines) or `order` (the whole cart). A scoped `fixed` promotion with `fixed_applies` `item` takes `value` once per covered unit, up to the covered lines' subtotal; with `order` it takes `value` once.
 
 **Filter: `cartTotal`**
 Providing a `cartTotal` allows the engine to pre-filter promotions that the customer is actually eligible for based on their current shopping bag value (compared against each promotion's `min_purchase`).
@@ -116,6 +120,8 @@ if (promo.image) {
   "apply_to_days": null,
   "scope_type": "all",
   "scope_ids": [],
+  "min_purchase_basis": "covered",
+  "fixed_applies": "order",
   "image": "https://cdn.example.com/promotions/spring-sale.jpg",
   "image_mobile": "https://cdn.example.com/promotions/spring-sale-mobile.jpg",
   "video": null
@@ -501,6 +507,8 @@ const result = await client.promotions.quoteSubscribeSave({
 | `*_resolved` (e.g. `bundle_products_resolved`) | `array` | Only present when fetched with `expand: 'products'`. Same entries as the matching id array, each with an embedded `product` (`{ product_id, name, price, image, category }`) or `null`. |
 | `scope_type` | `enum` | `all`, `products` or `categories`. For a `discount` or `fixed` promotion, `all` takes the discount from the whole order; `products` and `categories` limit it to the lines named in `scope_ids`. A `bundle` or `bogo` promotion is always `all`. |
 | `scope_ids` | `array` | Product ids (`scope_type` `products`) or category and subcategory ids (`scope_type` `categories`) the promotion covers. Empty when `scope_type` is `all`. |
+| `min_purchase_basis` | `enum` | `covered` or `order`: whether `min_purchase` is measured on the covered lines or the whole cart. Always `covered` when `scope_type` is `all`. |
+| `fixed_applies` | `enum` | `order` or `item`: whether a `fixed` promotion takes `value` once per order or once per covered unit (capped at the covered lines' subtotal). `item` requires a `scope_type` other than `all`. |
 | `has_time_restrictions` | `boolean` | Whether the promotion only applies on certain days/times (`start_time`, `end_time`, `time_zone`, `apply_to_days`). |
 | `target_countries` | `array` | ISO 3166-1 alpha-2 codes the promotion is limited to. An empty array means it applies everywhere. |
 | `target_regions` | `array` | Region or state names the promotion is limited to, matched case-insensitively. An empty array means every region. |
