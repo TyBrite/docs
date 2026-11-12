@@ -141,4 +141,4 @@ const order = await client.orders.createOrder({
 });
 ```
 
-The discount is computed server-side from the campaign's own rules and what is left of its budget, so the amount a storefront displays is never what settles the order. A campaign whose budget is spent adds nothing, and one whose remaining budget is smaller than the discount it would normally grant contributes only what is left.
+The discount is computed server-side from the campaign's own rules and what is left of its budget, so the amount a storefront displays is never what settles the order. A campaign whose budget is spent adds nothing, and one whose remaining budget is smaller than the discount it would normally grant contributes only what is left. Budget reserved by other open orders counts as spent: when what remains no longer covers the discount the order asks for, `createOrder` returns `409 campaign_budget_exhausted`, and the order can be sent again after the cart is re-priced.

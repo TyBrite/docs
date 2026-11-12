@@ -88,7 +88,7 @@ row-level boundary described above, which is the same boundary that separates an
 | `403` | Valid key, wrong type (e.g. a publishable key on a secret-only endpoint) |
 | `404` | Resource not found |
 | `409` | Conflict (duplicate, or an idempotency key reused with a different body) |
-| `429` | Rate limit exceeded |
+| `429` | Rate limit exceeded (`rate_limited`, `guest_limit_reached` or `quota_exceeded`) |
 
 ## Products and variants — which ID to send where
 
@@ -129,11 +129,12 @@ Reads are served through a **multi-tier edge cache**, so catalog, pricing, and s
 return in tens of milliseconds globally and stay fast under load. The SDK retries transient failures
 automatically.
 
-There are **two independent limits**, and a `429` tells you which one you hit by its `error.code`:
+A `429` carries an `error.code` that names the limit reached:
 
 | `429` code | What it means | What to do |
 | :--- | :--- | :--- |
 | `rate_limited` | A short-term **abuse throttle** — too many requests from one client in a small window (per-IP, per-key, or per-session). Transient. | Back off and retry (honor `Retry-After`). This does **not** count against the store's monthly plan. |
+| `guest_limit_reached` | The same per-network throttle, answered to a **guest** (a request with no verified shopper credential) when the merchant has set the guest's hourly budget below a signed-in shopper's. | Offer sign-in; a signed-in shopper has the larger budget. Otherwise retry after `Retry-After`. Not counted against the monthly plan. |
 | `quota_exceeded` | The store's **monthly plan limit** is used up (a billing/capacity signal, not abuse). | Wait for the next cycle, or the merchant upgrades their plan. |
 
 The abuse throttle grows with the store's plan. Every key is limited per hour and per day; a
@@ -152,6 +153,46 @@ shoppers also get a per-session cap.
 `Retry-After` on a `rate_limited` response is the end of the current hour, or of the UTC day for the
 daily limit. **Abuse-throttled traffic is never billed to the merchant**, so a flood can't deplete
 their monthly quota. The monthly quota itself also scales with the plan.
+
+### Guest and signed-in budgets
+
+A publishable-key request counts as a signed-in shopper only when it carries a shopper credential that verifies for the store. A request with no credential, or with an expired, malformed or foreign one, is a guest. Guests and signed-in shoppers are counted apart for each network at each store. The guest's hourly budget equals the signed-in one until the merchant lowers it; below that point a guest that reaches the budget receives `guest_limit_reached` in place of `rate_limited`. The shopping assistant endpoints apply the same split to their per-minute and per-hour budgets, so a guest that reaches an assistant budget receives `guest_limit_reached` as well.
+
+`guest_limit_reached` carries a `details` object:
+
+| Field | Meaning |
+| :--- | :--- |
+| `scope` | `guest`. |
+| `bucket` | The budget reached: `browse` for storefront reads, or the assistant budget's name. |
+| `limit` | The guest's budget in requests per window. |
+| `window_seconds` | The length of the window. |
+| `remaining` | `0`. |
+| `reset` | Unix time, in seconds, when the window ends. |
+| `retry_after` | Seconds until the window ends. |
+| `signed_in_limit` | The signed-in shopper's budget for the same window. |
+| `sign_in_raises_limit` | `true`. |
+
+```json
+{
+  "error": {
+    "code": "guest_limit_reached",
+    "message": "Sign in to keep going — signed-in shoppers get more.",
+    "details": {
+      "scope": "guest",
+      "bucket": "browse",
+      "limit": 500,
+      "window_seconds": 3600,
+      "remaining": 0,
+      "reset": 1706198400,
+      "retry_after": 540,
+      "signed_in_limit": 2000,
+      "sign_in_raises_limit": true
+    }
+  }
+}
+```
+
+On every abuse refusal, including `guest_limit_reached`, `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` describe the window that refused the request, `X-RateLimit-Scope` is `abuse` and `Retry-After` is the time until that window ends. On `quota_exceeded` the same headers describe the monthly allowance.
 
 ## What an order does for you
 

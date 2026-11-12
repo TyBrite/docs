@@ -48755,6 +48755,20 @@ components:
           description: Region or state names this promotion applies in, matched case-insensitively. Empty means everywhere. Use alongside `target_countries` to narrow within a market.
           example:
             - California
+        scope_type:
+          type: string
+          enum:
+            - all
+            - products
+            - categories
+          description: 'What a `discount` (percentage) or `fixed` promotion takes its discount from. `all` is the whole order, which is the default. `products` limits it to the products in `scope_ids`; `categories` limits it to products in the categories or subcategories in `scope_ids`. A bundle or `bogo` promotion is always `all`: it names its own products. The calculate endpoints apply it: only the covered lines are discounted, `min_purchase` is measured on those lines, a fixed amount is capped at their subtotal, and a cart with none of them is not eligible.'
+          example: products
+        scope_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: The product ids (`scope_type` `products`) or category and subcategory ids (`scope_type` `categories`) the promotion covers. Empty when `scope_type` is `all`.
         has_time_restrictions:
           type: boolean
           description: Whether the promotion only applies during specific times/days.
@@ -53444,12 +53458,15 @@ components:
               code: forbidden
               message: This operation requires a secret key. Publishable keys cover catalogue reads and the actions a shopper takes for themselves.
     RateLimitError:
-      description: 'Too many requests. Two distinct `429` codes: `rate_limited` (an abuse throttle — too many requests too fast; carries an `X-RateLimit-Scope: abuse` header and is NOT counted against your monthly quota) and `quota_exceeded` (your plan''s monthly request allowance is reached).'
+      description: |-
+        Too many requests. Three distinct `429` codes: `rate_limited` (an abuse throttle — too many requests too fast; carries an `X-RateLimit-Scope: abuse` header and is NOT counted against your monthly quota), `guest_limit_reached` (the same per-address throttle, answered to a guest, a request with no shopper credential, whose per-address hourly budget at this store is lower than a signed-in shopper's) and `quota_exceeded` (your plan's monthly request allowance is reached).
+        `guest_limit_reached` carries `details`: `scope` is `guest`, `bucket` is `browse`, `limit` is the guest budget, `window_seconds` is `3600`, `remaining` is `0`, `reset` and `retry_after` say when the hour ends, `signed_in_limit` is the signed-in shopper's budget and `sign_in_raises_limit` is `true`. A storefront shows its sign-in prompt for this code. A signed-in shopper, and a guest whose budget is not lower than the signed-in one, get `rate_limited`.
+        On a throttle refusal (`rate_limited`, `guest_limit_reached`) `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` describe the window that refused the request (the hour, the day or the per-address hour) and `Retry-After` is the time until it ends. On `quota_exceeded` they describe the monthly allowance.
       headers:
         Tybrite-Environment:
           $ref: '#/components/headers/TybriteEnvironment'
         Retry-After:
-          description: Seconds until the limit that refused the request resets. Sent with `rate_limited` and with `quota_exceeded` (for the latter, the seconds until the monthly reset). Not sent when no reset time is known.
+          description: Seconds until the limit that refused the request resets. Sent with `rate_limited`, `guest_limit_reached` and `quota_exceeded` (for the latter, the seconds until the monthly reset). Not sent when no reset time is known.
           schema:
             type: integer
           example: 540
@@ -53457,12 +53474,31 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-          example:
-            error:
-              code: rate_limited
-              message: Too many requests for this API key. Please slow down and try again shortly.
-              remaining: 0
-              reset: 1706198400
+          examples:
+            rate_limited:
+              summary: An abuse throttle
+              value:
+                error:
+                  code: rate_limited
+                  message: Too many requests for this API key. Please slow down and try again shortly.
+                  remaining: 0
+                  reset: 1706198400
+            guest_limit_reached:
+              summary: A guest reached a per-address budget that signing in raises
+              value:
+                error:
+                  code: guest_limit_reached
+                  message: Sign in to keep going — signed-in shoppers get more.
+                  details:
+                    scope: guest
+                    bucket: browse
+                    limit: 500
+                    window_seconds: 3600
+                    remaining: 0
+                    reset: 1706198400
+                    retry_after: 540
+                    signed_in_limit: 2000
+                    sign_in_raises_limit: true
     ServerError:
       description: Internal server error. A 5xx response never carries `details`.
       headers:

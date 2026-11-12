@@ -217,11 +217,13 @@ CSV follows standard quoting rules, so commas and newlines inside quoted fields 
 | `stock` | — | On-hand quantity. |
 | `threshold` | — | Low-stock threshold. |
 | `barcode` / `barcode_type` | — | Barcode value and symbology. Common spellings are normalized (e.g. `UPC` → `UPC_A`); unknown values fall back to `CODE128`. |
+| `fulfilment_kind` | — | How the product is delivered: `shipped`, `digital`, `code`, `event_ticket` or `service`. A row that names none takes the store's default delivery type (`shipped` where the store offers it, otherwise the first type the store offers). A type the store does not offer, or an unrecognised value, fails that row. |
 
 Field names are matched leniently on case, spaces, underscores and hyphens, so `Product Name`,
 `product_name` and `productname` all reach `name`. Several fields accept alternative spellings a
 source system is likely to emit: `title` for `name`, `qty` or `quantity` for `stock`, `cost` for
-`cost_price`, `handle` or `parent` for `product_group`, and `image_url` or `image_link` for `image`.
+`cost_price`, `handle` or `parent` for `product_group`, `image_url` or `image_link` for `image`, and
+`fulfillment_kind` or `delivery_type` for `fulfilment_kind`.
 
 ### Cost price and margin reporting
 
