@@ -3471,10 +3471,11 @@ paths:
         **Important — this endpoint is keyed by VARIANT id, not product id.** Specifications are
         stored per variant, so the `{id}` path segment must be a **variant** UUID (e.g. the
         `variant_id` from a product detail, or an `id` from `GET /v1/product-specifications`).
-        Passing a *product* id (or a variant that has no published specifications) returns
-        `404 not_found` — "No specifications found for this product". To browse all specifications
-        across the catalog, use `GET /v1/product-specifications` (which lists them with their
-        `variant_id`).
+        A product or variant that exists in the store but has no published specifications answers
+        `200` with the same fields and an empty `specification_data` (`{}`); `id`, `template_id`,
+        `status`, `version` and the timestamps are `null`. Only an id that matches no product or
+        variant in the store returns `404 not_found`. To browse all specifications across the
+        catalog, use `GET /v1/product-specifications` (which lists them with their `variant_id`).
 
         Read access — works with a publishable or secret key.
       security:
@@ -3484,14 +3485,14 @@ paths:
           in: path
           required: true
           description: |
-            The **variant** UUID whose specifications to fetch (NOT a product id). A product id
-            returns 404 — specifications are variant-keyed.
+            The **variant** UUID whose specifications to fetch. Specifications are variant-keyed, so a
+            product id carries none and answers `200` with empty `specification_data`.
           schema:
             type: string
             format: uuid
       responses:
         '200':
-          description: Successfully retrieved product specification
+          description: The latest published specification, or empty `specification_data` when none is published
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -3501,40 +3502,67 @@ paths:
                 type: object
                 properties:
                   id:
-                    type: string
+                    type:
+                      - string
+                      - 'null'
                     format: uuid
                   variant_id:
                     type: string
                     format: uuid
                   template_id:
-                    type: string
+                    type:
+                      - string
+                      - 'null'
                     format: uuid
                   specification_data:
                     type: object
+                    description: Empty when the product has no published specifications.
                   status:
-                    type: string
+                    type:
+                      - string
+                      - 'null'
                   version:
-                    type: integer
+                    type:
+                      - integer
+                      - 'null'
                   created_at:
-                    type: string
+                    type:
+                      - string
+                      - 'null'
                     format: date-time
                   updated_at:
-                    type: string
+                    type:
+                      - string
+                      - 'null'
                     format: date-time
-              example:
-                id: 3b16b560-418f-4fe5-a35e-7ce9c214d795
-                variant_id: 9a47e047-b1b6-4c35-9617-820629e22e04
-                template_id: 599b4ff3-bda4-463d-a22e-e631d834875a
-                specification_data:
-                  brand: Sony
-                  color: Black
-                  model: WH-1000XM4
-                  product_type: Accessory
-                  storage_type: HDD
-                status: published
-                version: 1
-                created_at: '2026-06-20T10:05:26.106528+00:00'
-                updated_at: '2026-06-20T10:05:26.106528+00:00'
+              examples:
+                published:
+                  summary: A published specification
+                  value:
+                    id: 3b16b560-418f-4fe5-a35e-7ce9c214d795
+                    variant_id: 9a47e047-b1b6-4c35-9617-820629e22e04
+                    template_id: 599b4ff3-bda4-463d-a22e-e631d834875a
+                    specification_data:
+                      brand: Sony
+                      color: Black
+                      model: WH-1000XM4
+                      product_type: Accessory
+                      storage_type: HDD
+                    status: published
+                    version: 1
+                    created_at: '2026-06-20T10:05:26.106528+00:00'
+                    updated_at: '2026-06-20T10:05:26.106528+00:00'
+                empty:
+                  summary: No published specifications
+                  value:
+                    id: null
+                    variant_id: 9a47e047-b1b6-4c35-9617-820629e22e04
+                    template_id: null
+                    specification_data: {}
+                    status: null
+                    version: null
+                    created_at: null
+                    updated_at: null
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -3544,7 +3572,7 @@ paths:
         '403':
           $ref: '#/components/responses/ScopeForbiddenError'
         '404':
-          description: No specifications found for this product
+          description: No product or variant with this id in the store
           content:
             application/json:
               schema:
@@ -3552,7 +3580,7 @@ paths:
               example:
                 error:
                   code: not_found
-                  message: No specifications found for this product
+                  message: Product or variant not found
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':

@@ -594,7 +594,7 @@ fields=name,variants.sku,variants.media,variants.variant_attributes
 
 Retrieve the latest published specifications for a single **variant**. Specifications are stored per
 variant, so pass a **variant id** (e.g. a `variant_id` from `getProduct().variants[]`) — **not** a
-product id. A product id returns `404`.
+product id. A product id, or a variant with no published specification, returns `200` with an empty specification.
 
 ```typescript
 const { specification_data } = await client.products.getProductSpecifications({
@@ -621,10 +621,26 @@ const { specification_data } = await client.products.getProductSpecifications({
 }
 ```
 
+A variant with no published specification (or a product id) returns the same fields with an empty
+`specification_data` and the remaining fields `null`:
+
+```json
+{
+  "id": null,
+  "variant_id": "9a47e047-b1b6-4c35-9617-820629e22e04",
+  "template_id": null,
+  "specification_data": {},
+  "status": null,
+  "version": null,
+  "created_at": null,
+  "updated_at": null
+}
+```
+
 <Note>
-  Returns `404` ("No specifications found for this product") if the variant has no published
-  specification — or if you passed a product id instead of a variant id. To browse all specs across
-  the catalog (each tagged with its `variant_id`), use `listProductSpecifications`.
+  Returns `404` ("Product or variant not found") only when no product or variant with that id exists in
+  the store. To browse all specs across the catalog (each tagged with its `variant_id`), use
+  `listProductSpecifications`.
 </Note>
 
 ### `getProductCustomFields`
