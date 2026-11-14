@@ -146,7 +146,7 @@ Requests a quote for a set of items and quantities. The supplier prices it into 
 - `requestBody.expires_at` — an optional expiry for the request.
 - `idempotencyKey` — required.
 
-Returns the created RFQ (`{ data: B2bRfq }`).
+Returns the created RFQ (`{ data: B2bRfq }`), including its `rfq_number` (for example `RFQ-20260711-4f0c2a`): the reference the supplier sees for the same request. It is assigned on creation and never changes.
 
 ### `listRfqs(options)`
 
@@ -162,7 +162,7 @@ Returns one of your requests for quote by `id`.
 
 ### `getQuote(options)`
 
-Returns a quote addressed to you by `id`, including its priced line items, totals, and validity date.
+Returns a quote addressed to you by `id`, including its `quote_number` (for example `Q-20260711-8d31b7`, the reference the supplier sees), priced line items, totals, and validity date.
 
 ### `acceptQuote(options)`
 

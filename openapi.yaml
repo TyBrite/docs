@@ -51950,6 +51950,7 @@ components:
       type: object
       example:
         id: 9b1e4c22-5f3a-4d18-8e77-2a5b90c1d3ef
+        rfq_number: RFQ-20260711-4f0c2a
         status: open
         line_items:
           - variant_id: ab8411a6-06bf-4383-ae14-a4800ec02005
@@ -51961,6 +51962,10 @@ components:
         id:
           type: string
           format: uuid
+        rfq_number:
+          type: string
+          description: The request's reference, assigned when it is created and never changed. Unique within the store.
+          example: RFQ-20260711-4f0c2a
         status:
           type: string
           enum:
@@ -51988,6 +51993,7 @@ components:
       type: object
       example:
         id: e18980a5-a8d2-454b-9774-f302fcb2a9ea
+        quote_number: Q-20260711-8d31b7
         rfq_id: 9b1e4c22-5f3a-4d18-8e77-2a5b90c1d3ef
         version: 1
         status: sent
@@ -52006,6 +52012,10 @@ components:
         id:
           type: string
           format: uuid
+        quote_number:
+          type: string
+          description: The quote's reference, assigned when it is created and never changed. Unique within the store.
+          example: Q-20260711-8d31b7
         rfq_id:
           type:
             - string
