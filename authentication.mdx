@@ -308,3 +308,9 @@ A key issued through [GC Connect](/gc-connect#scopes) carries only the scopes th
 ## Keys limited to a list of endpoints
 
 A key issued for a single custom extension is limited to an approved list of endpoints. A request outside the list returns `403` with the code `endpoint_not_allowed`. Other keys are not affected.
+
+## Limited publishable keys
+
+A publishable key can be limited to the products that carry one tag, such as `gifts`, so that a second storefront on the same store shows only that range while sharing the store's stock, orders and customers. A merchant creates one in GC Admin under Settings, API keys.
+
+A limited key returns only the slice on every read: products, facets and search, store information, collections, promotions, posts, lookbooks, reviews, recommendations, prices and discovery lists, with counts computed on the slice. A product outside the slice answers `404`. A write that names a product, variant, promotion or review outside the slice (cart, wishlist, stock reservation, an order line, a review, a promotion calculation, a storefront event) returns `403` with the code `out_of_scope`, and nothing is written or reserved. A route that has no slice behaviour returns `403` with the code `endpoint_not_allowed`. Responses are cached per limit, so a limited key never receives a response cached for the whole store. Shopper sign-up and sign-in stay store-wide. Secret keys and GC Connect keys cannot be limited.

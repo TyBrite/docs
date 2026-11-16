@@ -149,7 +149,7 @@ Every service in the SDK follows the same response-code contract, so you can cen
 | `400` | Invalid request body, missing required field, invalid UUID/slug, or invalid query parameter |
 | `401` | Missing or invalid API key or customer JWT; on signed writes, a missing or failed request signature (`signature_missing`, `timestamp_missing`, `timestamp_malformed`, `timestamp_out_of_window`, `signature_invalid`) |
 | `402` | `subscription_expired` — the store's subscription is not active, or the store is deactivated. Every API-keyed request for that store answers `402` until the subscription is renewed. |
-| `403` | Valid auth but wrong key type for the operation (`forbidden`), a Galactic Connect key of the right type that was not granted the operation's scope (`insufficient_scope`, naming the scope), a capability the store's plan does not include (`feature_not_available`), OR customer JWT does not match the `customer_id` in the request |
+| `403` | Valid auth but wrong key type for the operation (`forbidden`), a Galactic Connect key of the right type that was not granted the operation's scope (`insufficient_scope`, naming the scope), a request outside the slice of a limited publishable key (`out_of_scope`, or `endpoint_not_allowed` for a route the key cannot use), a capability the store's plan does not include (`feature_not_available`), OR customer JWT does not match the `customer_id` in the request |
 | `404` | Resource not found by id/slug, OR a referenced resource (e.g. `product_id` on an order) is missing |
 | `405` | `method_not_allowed` — the path exists but does not accept the HTTP method |
 | `409` | Uniqueness conflict (duplicate email on register/customer, duplicate wishlist item, idempotency key reused with a different body) |
