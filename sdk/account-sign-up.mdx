@@ -23,9 +23,11 @@ await server.authentication.register({
 
 // 2. The shopper enters the emailed code, or follows the emailed link.
 const { user, customer, session } = await server.authentication.verifyRegistration({
-  requestBody: { email: 'john.doe@example.com', code: '123456' },
+  requestBody: { email: 'john.doe@example.com', code: '123456', password: 'securePassword123' },
 });
 ```
+
+When `register` carried a `password`, `verifyRegistration` carries the same `password` alongside the code or link. A missing or different password answers `400 invalid_code` with `details.reason` `wrong`, counts as one of the code's attempts, and leaves the code usable. A registration without a password omits it.
 
 ```json Response
 {
@@ -46,12 +48,12 @@ The confirmation email carries a six-digit code and, when `redirect_to` is allow
 ```typescript
 const token = new URLSearchParams(window.location.search).get('link_token');
 // Sent to your server, which calls:
-await server.authentication.verifyRegistration({ requestBody: { link_token: token! } });
+await server.authentication.verifyRegistration({ requestBody: { link_token: token!, password } });
 ```
 
-A `link_token` identifies the store, the address and the purpose, so no `email` accompanies it. It is single-use and shares its code's expiry and attempts. `redirect_to` is honoured only for a storefront origin the merchant has allowed in the dashboard; any other value is ignored and the email carries the code only.
+A `link_token` identifies the store, the address and the purpose, so no `email` accompanies it; `password` accompanies it when the registration set one. It is single-use and shares its code's expiry and attempts. `redirect_to` is honoured only for a storefront origin the merchant has allowed in the dashboard; any other value is ignored and the email carries the code only.
 
-`resendRegistration` sends a new code and link and cancels the earlier ones. At most one email per address is sent every 60 seconds and five an hour.
+`resendRegistration` sends a new code and link and cancels the earlier ones. At most one email per address is sent every 60 seconds and five an hour. A repeat `register` call within those 60 seconds sends no second email; the code already sent confirms with the newest call's password.
 
 A refused `verifyRegistration` answers `400 invalid_code`, and `details.reason` is `expired`, `too_many_attempts` or `wrong`.
 

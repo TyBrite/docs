@@ -206,7 +206,7 @@ await server.authentication.register({
 // → 202 { status: 'verification_required', email: 'john.doe@example.com', expires_in: 900 }
 
 // Confirm the address with the emailed code: creates the account and its first session
-const created = await server.authentication.verifyRegistration({ requestBody: { email: 'john.doe@example.com', code: '123456' } });
+const created = await server.authentication.verifyRegistration({ requestBody: { email: 'john.doe@example.com', code: '123456', password: '••••••••' } });
 // → 201 { message, user: { id, email, email_confirmed: true, has_password: true }, customer: { id, tier: 'bronze' }, session: { access_token: 'eyJ...<redacted>.signature', refresh_token: 'gcsr_...', expires_in: 900, expires_at, token_type: 'shopper' } }
 
 // Who is this token? (hydrate "My Account")

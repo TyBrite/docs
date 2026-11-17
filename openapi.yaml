@@ -26180,7 +26180,12 @@ paths:
       tags:
         - Customers
       summary: Create customer
-      description: Requires secret key
+      description: |
+        Requires secret key. A store holds one customer per email address (compared without
+        case or surrounding spaces). When a customer with the email already exists, the request
+        returns that customer with status 200 instead of creating a second one, and fills only
+        its empty `phone`, `address` and `external_id` from the request; other fields are left
+        unchanged and no `customer.created` event is sent.
       security:
         - BearerAuth: []
       requestBody:
@@ -26238,6 +26243,20 @@ paths:
                     the request is rejected with 400 when `true` and no phone number is given.
                   example: false
       responses:
+        '200':
+          description: A customer with this email already exists; that customer is returned
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - customer
+                properties:
+                  customer:
+                    $ref: '#/components/schemas/Customer'
         '201':
           description: Customer created
           headers:

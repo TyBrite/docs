@@ -63,7 +63,9 @@ Start a customer account. `register` does not return a session: every call answe
 
 The account and the first session are created by [`verifyRegistration`](#verifyregistration). Until the address is confirmed no account exists, so the response reveals nothing about which addresses have one.
 
-`password` is optional. An account created without one signs in by emailed code (`sendMagicLink`, then `verifyOtp`) and can set a password later with [`changePassword`](#changepassword).
+`password` is optional. An account created without one signs in by emailed code (`sendMagicLink`, then `verifyOtp`) and can set a password later with [`changePassword`](#changepassword). When a password is sent, [`verifyRegistration`](#verifyregistration) must carry the same password.
+
+The password and profile of the most recent call for an address are the ones that apply. A repeat call within 60 seconds sends no second email: the code already sent confirms with the newest call's password. When no unexpired code is waiting and the address is still being slowed, the call answers `429 rate_limited` with `Retry-After`.
 
 `redirect_to` is the storefront page that receives the shopper from the email. The email appends `?link_token=<token>` to it, and the page passes that token to `verifyRegistration`. It must be on one of the store's allowed storefront origins, which the merchant sets in the dashboard; otherwise it is ignored and the email carries the code only.
 
@@ -125,7 +127,7 @@ const pending = await client.authentication.register({
 
 Confirm the address and create the account. Send the six-digit code from the email with the `email` that registered, or send the `link_token` from the email's link on its own. Returns **`201 Created`** with the shopper, the customer record and the first session.
 
-A code is valid for 15 minutes and is accepted 5 times. A `link_token` is single-use and shares its code's expiry and attempts. When the address already had an account the code is consumed and the call answers `400 invalid_code`, the same as a wrong code.
+A code is valid for 15 minutes and is accepted 5 times. A `link_token` is single-use and shares its code's expiry and attempts. A registration that carried a `password` is confirmed only with that same `password` alongside the code or link; a missing or different password answers `400 invalid_code` with `details.reason` `wrong`, counts as one of the code's attempts, and leaves the code usable. Omit `password` when the registration carried none. When the address already had an account the code is consumed and the call answers `400 invalid_code`, the same as a wrong code.
 
 A refused call carries the reason in `details.reason`:
 
@@ -138,12 +140,12 @@ A refused call carries the reason in `details.reason`:
 ```typescript
 // From the code screen
 const { user, customer, session } = await client.authentication.verifyRegistration({
-  requestBody: { email: 'john.doe@example.com', code: '123456' }
+  requestBody: { email: 'john.doe@example.com', code: '123456', password: 'securePassword123' }   // password: only when register sent one
 });
 
 // Or from the link: /account?link_token=...
 await client.authentication.verifyRegistration({
-  requestBody: { link_token: new URLSearchParams(location.search).get('link_token')! }
+  requestBody: { link_token: new URLSearchParams(location.search).get('link_token')!, password: 'securePassword123' }
 });
 ```
 
@@ -683,7 +685,7 @@ await client.authentication.register({
   requestBody: { email: 'john.doe@example.com', password: 'securePassword123', name: 'John Doe' }
 });
 const { customer, session } = await client.authentication.verifyRegistration({
-  requestBody: { email: 'john.doe@example.com', code: '123456' }   // the code from the email
+  requestBody: { email: 'john.doe@example.com', code: '123456', password: 'securePassword123' }   // the code from the email, with the sign-up password
 });
 
 const token = session.access_token;

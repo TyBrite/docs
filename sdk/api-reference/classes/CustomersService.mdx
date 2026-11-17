@@ -72,6 +72,10 @@ const customer = result.customer;
 ```
 
 <Note>
+  A store holds one customer per email address, compared without regard to case or surrounding spaces. When a customer with the request's `email` already exists, `createCustomer` responds `200` with that customer instead of creating a second one. Only the existing customer's empty `phone`, `address` and `external_id` are filled from the request; every other field is left unchanged, and no `customer.created` event is sent. A new customer responds `201`. An `external_id` already used by a different customer responds `409`.
+</Note>
+
+<Note>
   A newly created customer starts at the `bronze` `tier` with no purchase history, so `last_purchase` and `store_metrics` are `null` until their first order. `tier` is the pricing tier the merchant assigned to the customer, and is returned by the authentication endpoints.
 </Note>
 
