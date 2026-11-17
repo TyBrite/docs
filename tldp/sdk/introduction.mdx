@@ -1,0 +1,99 @@
+---
+title: "Introduction"
+description: "Get started with the TLDP TypeScript SDK."
+---
+
+`@tybrite-labs/tldp-sdk` is a fully typed TypeScript client for the TLDP API. It
+turns rates, orders, shipments, tracking, returns, and webhooks into typed method
+calls, and handles auth, retries, and idempotency for you.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @tybrite-labs/tldp-sdk
+```
+
+```bash yarn
+yarn add @tybrite-labs/tldp-sdk
+```
+
+```bash pnpm
+pnpm add @tybrite-labs/tldp-sdk
+```
+
+</CodeGroup>
+
+## Initialize the client
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({
+  apiKey: 'tybrite_sk_test_YOUR_KEY',
+});
+```
+
+The base URL defaults to `https://api.tybritelabs.com/logistics`. Your key's middle segment
+(`test` / `live`) selects the environment — see [Authentication](/tldp/authentication).
+
+## Calling a method
+
+Methods are grouped into services on the client (`client.orders`,
+`client.rates`, …). With the SDK's options style, you pass a single object with
+the path/query params and a `requestBody` where applicable.
+
+```typescript
+const quote = await client.rates.calculateRates({
+  requestBody: {
+    origin: { city: 'Nairobi' },
+    destination: { city: 'Mombasa' },
+    weight_kg: 2.5,
+  },
+});
+```
+
+## Idempotency & retries
+
+Pass an `idempotencyKey` on writes so a retried request never double-creates:
+
+```typescript
+const order = await client.orders.createOrder({
+  idempotencyKey: 'order-1042-2026-06-08',
+  requestBody: { /* … */ },
+});
+```
+
+The client also retries transient network and `5xx` failures automatically with
+exponential backoff.
+
+## Error handling
+
+Failed requests throw an `ApiError` carrying the HTTP status and the API's error
+body:
+
+```typescript
+import { TLDP, ApiError } from '@tybrite-labs/tldp-sdk';
+
+try {
+  await client.orders.getOrder({ orderId: 'missing' });
+} catch (err) {
+  if (err instanceof ApiError) {
+    console.error(err.status, err.body); // 404, { error: { code, message } }
+  }
+}
+```
+
+## Services
+
+<CardGroup cols={2}>
+  <Card title="Orders" icon="box" href="/tldp/sdk/api-reference/classes/OrdersService">Create, fulfil, and manage orders.</Card>
+  <Card title="Shipments" icon="truck" href="/tldp/sdk/api-reference/classes/ShipmentsService">Create and manage shipments directly.</Card>
+  <Card title="Rates" icon="calculator" href="/tldp/sdk/api-reference/classes/RatesService">Quote deliveries and list zones.</Card>
+  <Card title="Tracking" icon="location-dot" href="/tldp/sdk/api-reference/classes/TrackingService">Public + detailed tracking.</Card>
+  <Card title="Proof of Delivery" icon="signature" href="/tldp/sdk/api-reference/classes/ProofOfDeliveryService">Retrieve POD for a shipment.</Card>
+  <Card title="Returns" icon="rotate-left" href="/tldp/sdk/api-reference/classes/ReturnsService">Returns and exchanges.</Card>
+  <Card title="Webhooks" icon="bolt" href="/tldp/sdk/api-reference/classes/WebhooksService">Manage endpoints and test events.</Card>
+  <Card title="System" icon="heart-pulse" href="/tldp/sdk/api-reference/classes/SystemService">API info and health.</Card>
+</CardGroup>

@@ -1,0 +1,122 @@
+---
+title: "Returns"
+description: "Reference for the ReturnsService class in the TLDP SDK."
+---
+
+The `ReturnsService` class (accessed via `client.returns`) handles reverse logistics — getting an item *back* from a customer. A return moves through a lifecycle: a customer **requests** it, you **approve** (or **reject**) it, a reverse shipment collects the item, you mark it **received**, then **resolve** to issue the refund, exchange, or store credit.
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
+```
+
+## requestReturn
+
+Opens a return against a delivered order. Capture the customer's reason and, optionally, a note and the specific items being returned.
+
+```typescript
+const { return: ret } = await client.returns.requestReturn({
+  requestBody: {
+    order_id: 'ord_a1b2c3',
+    reason: 'damaged',               // 'damaged' | 'wrong_item' | 'no_longer_needed' | ...
+    customer_note: 'Box arrived crushed', // optional
+    items: [{ description: 'Sneakers', quantity: 1 }], // optional; defaults to whole order
+  },
+});
+
+console.log(ret.id, ret.status); // 'requested'
+```
+
+<Note>
+  The response is **wrapped**: it returns `{ return }`. Because `return` is a reserved word in JavaScript, alias it on destructuring — `const { return: ret } = ...`.
+</Note>
+
+**Returns** `{ return }`.
+
+## getReturn
+
+Fetches a single return by id with its current status and history.
+
+```typescript
+const ret = await client.returns.getReturn({ returnId: 'ret_x1y2z3' });
+```
+
+**Returns** the return object directly.
+
+## listReturns
+
+Lists your returns, newest first. Page with `limit` (1–100, default 50) and `offset`; the response's `pagination` block tells you whether more pages exist and the `next_offset` to request.
+
+```typescript
+let offset = 0;
+const all = [];
+for (;;) {
+  const { returns, pagination } = await client.returns.listReturns({ limit: 100, offset });
+  all.push(...returns);
+  if (!pagination.has_more) break;
+  offset = pagination.next_offset;
+}
+```
+
+**Returns** `{ returns, pagination }` — a page of returns plus `{ limit, offset, has_more, next_offset }`.
+
+## approveReturn
+
+Approves the return and chooses how it will be resolved. Approving creates a **reverse shipment** to collect the item from the customer.
+
+```typescript
+const result = await client.returns.approveReturn({
+  returnId: 'ret_x1y2z3',
+  requestBody: {
+    resolution: 'refund',          // 'refund' | 'exchange' | 'store_credit'
+    merchant_note: 'Approved — defect confirmed', // optional
+  },
+});
+
+console.log(result.status, result.reverse_shipment_id);
+```
+
+**Returns** `{ return_id, status, reverse_shipment_id? }`. Track the `reverse_shipment_id` with [`client.tracking`](/tldp/sdk/api-reference/classes/TrackingService) to see the collection in progress.
+
+## rejectReturn
+
+Declines the return request. Include a note explaining the decision.
+
+```typescript
+await client.returns.rejectReturn({
+  returnId: 'ret_x1y2z3',
+  requestBody: { merchant_note: 'Outside the 14-day return window' },
+});
+```
+
+## receiveReturn
+
+Marks the returned item as physically received back at your end (or the warehouse), after the reverse shipment completes its collection.
+
+```typescript
+await client.returns.receiveReturn({ returnId: 'ret_x1y2z3' });
+```
+
+## resolveReturn
+
+Finalises the return — issuing the refund, exchange, or store credit decided at approval. Optionally restock the item back into inventory.
+
+```typescript
+const result = await client.returns.resolveReturn({
+  returnId: 'ret_x1y2z3',
+  requestBody: { restock: true }, // optional
+});
+
+console.log(result.status, result.resolution, result.refund_amount);
+```
+
+**Returns** `{ return_id, status, resolution, refund_amount }`.
+
+<Warning>
+  Resolve only after the item is **received** — resolving issues the financial outcome (e.g. a refund). The platform reconciles the refund against the original settlement, so order the steps correctly: approve → received → resolve.
+</Warning>
+
+<Note>
+  **Sandbox:** with a `tybrite_sk_test_*` key the whole return flow runs in sandbox — refunds are simulated and no real money moves.
+</Note>

@@ -1,0 +1,91 @@
+---
+title: "Shipments"
+description: "Reference for the ShipmentsService class in the TLDP SDK."
+---
+
+The `ShipmentsService` class (accessed via `client.shipments`) lets you create a shipment **directly from a rate quote**, skipping the separate order step. This is the fast path when you already know exactly what you're sending and just want it picked up and delivered. For tracking a live shipment, see [`client.tracking`](/tldp/sdk/api-reference/classes/TrackingService).
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
+```
+
+<Note>
+  **Sandbox:** a `tybrite_sk_test_*` key creates sandbox shipments — fully isolated from live data, with no real money or real courier pickups.
+</Note>
+
+## createShipment
+
+Books a shipment in one call using a quote from [`client.rates.calculateRates`](/tldp/sdk/api-reference/classes/RatesService#calculaterates). Use this when you don't need a separate order record — the shipment *is* the unit of work.
+
+<Note>
+  **Naming gotcha to remember:** each rate quote exposes its id as **`quote_id`**, but `createShipment` expects that value under the key **`rate_quote_id`**. So you read `quote.quote_id` and pass it as `rate_quote_id`.
+</Note>
+
+```typescript
+const { quotes } = await client.rates.calculateRates({ requestBody: { /* ... */ } });
+const chosen = quotes[0];
+
+const { shipment } = await client.shipments.createShipment({
+  idempotencyKey: `ship-${Date.now()}`,
+  requestBody: {
+    rate_quote_id: chosen.quote_id, // <-- read quote_id, send as rate_quote_id
+    recipient: {
+      name: 'Amara Okeke',
+      phone: '+254700000000',
+      address: '12 Riverside Drive',
+      city: 'Nairobi',
+    },
+    sender: { name: 'My Store', phone: '+254711111111', city: 'Nairobi' }, // optional
+    parcel: { description: 'Sneakers', weight_kg: 1.2 },
+    payment: { method: 'prepaid' },          // optional
+    options: { signature_required: true },   // optional
+    metadata: { internal_ref: 'ORD-10293' }, // optional
+  },
+});
+
+console.log(shipment.id, shipment.tracking_number);
+```
+
+`recipient.name`, `recipient.phone` and `recipient.address` are required — they are stored on
+the shipment and appear on the label. A request missing any of them is rejected with a `400`
+naming the fields. The sender's equivalents are optional and fall back to the quote's origin.
+
+Passing an `idempotencyKey` makes the call safe to retry: repeating a key returns the shipment
+the first call created rather than booking a second one.
+
+<Tip>
+  Always pass an `idempotencyKey` — on a transient network failure the SDK can retry safely and you'll get the original shipment back instead of a duplicate booking.
+</Tip>
+
+**Returns** `{ shipment }` — the wrapped shipment object, including its `tracking_number` and `tracking_url`.
+
+## getShipment
+
+Fetches a shipment you own by id, with its current status, recipient, parcel, and courier assignment.
+
+```typescript
+const { shipment } = await client.shipments.getShipment({ shipmentId: 'shp_a1b2c3' });
+
+console.log(shipment.status); // e.g. 'in_transit'
+```
+
+**Returns** `{ shipment }` — wrapped.
+
+## cancelShipment
+
+Cancels a shipment. Provide an optional `reason` for your records.
+
+<Warning>
+  A shipment can only be cancelled **before pickup**. Once a courier or rider has collected the parcel, it can no longer be cancelled — use [Returns](/tldp/sdk/api-reference/classes/ReturnsService) to send it back instead.
+</Warning>
+
+```typescript
+await client.shipments.cancelShipment({
+  shipmentId: 'shp_a1b2c3',
+  requestBody: { reason: 'duplicate_booking' },
+});
+```
+
+**Returns** the cancellation result with the shipment's new status.

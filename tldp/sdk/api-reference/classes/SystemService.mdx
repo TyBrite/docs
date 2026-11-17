@@ -1,0 +1,43 @@
+---
+title: "System"
+description: "Reference for the SystemService class in the TLDP SDK."
+---
+
+The `SystemService` class (accessed via `client.system`) exposes metadata about the API and a simple health check. Use these for connectivity tests, monitoring, and discovering what the API offers.
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
+```
+
+## getApiInfo
+
+Returns basic information about the API — its name, the current version, and the catalogue of available endpoints. Handy for confirming which version you're integrating against.
+
+```typescript
+const info = await client.system.getApiInfo({});
+
+console.log(`${info.name} v${info.version}`);
+console.log(info.endpoints); // catalogue of available endpoint groups
+```
+
+**Returns** the API name, version, and endpoint catalogue.
+
+## getHealth
+
+A lightweight health check. Use it for uptime monitors, readiness probes, or to confirm your network can reach the API before running a larger workflow.
+
+```typescript
+const health = await client.system.getHealth({});
+
+if (health.status === 'ok') {
+  console.log('API is reachable and operational.');
+}
+```
+
+**Returns** the health status (`status: 'ok'` when the API is operational).
+
+<Note>
+  These endpoints are intentionally minimal and low-cost — safe to poll from monitoring systems. They report API reachability, not the status of any individual shipment.
+</Note>

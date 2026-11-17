@@ -1,0 +1,100 @@
+---
+title: "Rates"
+description: "Reference for the RatesService class in the TLDP SDK."
+---
+
+The `RatesService` class (accessed via `client.rates`) prices a delivery across every courier serving a route and returns the options side by side. You pick a quote, then hand it to [`fulfilOrder`](/tldp/sdk/api-reference/classes/OrdersService#fulfilorder) or [`createShipment`](/tldp/sdk/api-reference/classes/ShipmentsService#createshipment) to book it.
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
+```
+
+## calculateRates
+
+Returns priced quotes from every courier that serves the origin → destination route, ranked so you can present a choice to your customer (cheapest, fastest, highest tier, etc.).
+
+<Note>
+  **Two naming inconsistencies worth memorising:**
+  1. The response field is **`quotes`** (not `rates`).
+  2. Each quote's id is **`quote_id`** — but when you later fulfil with it, `fulfilOrder` / `createShipment` expect it under the key **`rate_quote_id`**. Read `quote.quote_id`, pass it as `rate_quote_id`.
+</Note>
+
+```typescript
+const { quotes, meta } = await client.rates.calculateRates({
+  requestBody: {
+    origin: { city: 'Nairobi', zone: 'CBD' },        // zone optional
+    destination: { city: 'Mombasa', zone: 'Nyali' }, // zone optional
+    weight_kg: 1.2,
+    declared_value: 4500,        // optional, for insurance/liability
+    service_level: 'standard',   // optional: 'standard' | 'express' | ...
+    delivery_method: 'last_mile',// optional: 'last_mile' (door) | 'pickup'
+    special_flags: ['fragile'],  // optional
+  },
+});
+
+// Show the cheapest option:
+const cheapest = quotes.sort((a, b) => a.total_price - b.total_price)[0];
+console.log(cheapest.courier_name, cheapest.total_price, cheapest.currency);
+
+// Later, fulfil with it — note the key change:
+// requestBody: { rate_quote_id: cheapest.quote_id }
+```
+
+### Pricing by exact location
+
+For each endpoint, instead of (or alongside) `city` + `zone`, you can pass exact coordinates or a
+free-form place name. Coordinates take precedence; a `place` string is resolved to coordinates for
+you. When a point is supplied, each courier's price is matched to the bounded service area it falls
+in — more accurate than a city name alone. `city` is always required as the coarse filter.
+
+```typescript
+const { quotes } = await client.rates.calculateRates({
+  requestBody: {
+    origin:      { city: 'Nairobi', lat: -1.2864, lng: 36.8172 },  // exact point
+    destination: { city: 'Nairobi', place: 'Upperhill, Nairobi' }, // resolved to a point
+    weight_kg: 2,
+    delivery_method: 'last_mile',
+  },
+});
+```
+
+<Note>
+  **Door-delivery distance charge.** When `delivery_method` is `last_mile` and the destination is
+  beyond a courier's service area, the quote may include a **`distance_overage`** in `breakdown` —
+  a courier-set surcharge for the extra distance. `pickup` (collected at a station) is never charged
+  this. Inside the area, or within a courier's free allowance past its edge, it is `0`.
+</Note>
+
+**Returns** `{ quotes, meta }`. Each quote includes:
+
+| Field | Description |
+| :--- | :--- |
+| `quote_id` | The quote's id. Pass it back as `rate_quote_id` to fulfil. |
+| `courier_id` / `courier_name` | The courier behind this quote. |
+| `courier_tier` | Service tier (e.g. Gold / Silver / Bronze). |
+| `service_level` | The level priced (standard, express, …). |
+| `total_price` / `currency` | What this delivery costs. |
+| `estimated_delivery_hours` | Expected transit time in hours. |
+| `estimated_delivery_date` | Expected delivery date. |
+| `breakdown` | Line-by-line price components — incl. `distance_overage` (door-delivery distance surcharge; `0` for pickup or within the service area). |
+| `valid_until` | When the quote expires — re-quote after this. |
+
+<Warning>
+  Quotes are time-bound. Once `valid_until` passes, re-run `calculateRates` before fulfilling; a stale `rate_quote_id` will be rejected.
+</Warning>
+
+## listZones
+
+Lists the serviceable zones — the origin and destination cities the platform can route between. Use it to populate city/zone pickers in your checkout before quoting.
+
+```typescript
+const zones = await client.rates.listZones({});
+
+for (const z of zones.zones ?? []) {
+  console.log(z.city, z.zones);
+}
+```
+
+**Returns** the catalogue of serviceable cities and their zones.

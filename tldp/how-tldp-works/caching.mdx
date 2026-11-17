@@ -1,0 +1,94 @@
+---
+title: "Caching & Resilience"
+description: "Which responses are cached and for how long, how revalidation saves a download, the rate limits, and what the API does when something downstream is unavailable."
+---
+
+Two kinds of response are worth caching: those identical for every caller, and those a single
+recipient reloads repeatedly. Coverage areas are the first; a public tracking page is the second.
+Everything else — quotes, shipments, orders, returns — is either specific to one account or
+changes on write, and is never cached.
+
+## What is cached
+
+| Response | Fresh for | Held at the edge | Served stale on error for |
+|---|---|---|---|
+| Coverage areas | 5 minutes | 1 hour | 1 hour |
+| Public tracking | 15 seconds | 15 seconds | 60 seconds |
+
+Coverage areas are the same for everyone and change rarely, so the edge holds them far longer than
+any one browser does. Public tracking is the opposite: it changes as a parcel moves, so it is kept
+fresh for seconds — long enough to absorb a recipient refreshing the page, short enough that a
+status change surfaces quickly.
+
+Authentication and rate limiting run on **every** request, including one answered from cache. A
+cached response is never a way past either, and the rate-limit headers are recalculated per
+request rather than served from the stored copy.
+
+## Revalidation
+
+Every cacheable response carries an `ETag`, a short fingerprint of the body. Send it back on the
+next request as `If-None-Match` and an unchanged resource answers `304 Not Modified` with no body
+at all.
+
+```bash
+curl -H 'If-None-Match: "64d67344504bba7d"' \
+  https://api.tybritelabs.com/logistics/v1/tracking/TLDP-20260824-0338
+```
+
+This matters most for the case it was built for: a tracking page open in a browser, polling. The
+status is usually unchanged, and a `304` settles that in a few bytes instead of resending the
+whole timeline.
+
+Cache entries are keyed on the canonical URL, with query parameters sorted, so `?a=1&b=2` and
+`?b=2&a=1` share one entry rather than each causing a miss.
+
+## Stale responses during an incident
+
+Cached responses carry `stale-if-error`. If the origin cannot answer, a cached copy that has
+passed its freshness window may still be served for the period in the table above, rather than the
+request failing outright. Coverage areas tolerate an hour of this because a coverage list an hour
+old is still substantially correct; tracking allows sixty seconds, because stale delivery status
+stops being useful quickly.
+
+<Note>
+This applies to responses that were cached before the failure. A resource nobody had requested has
+nothing stale to fall back on, and uncached endpoints — every write, and everything account-specific
+— are unaffected: they report the error.
+</Note>
+
+Alongside it, `stale-while-revalidate` lets a slightly-stale copy answer immediately while a fresh
+one is fetched in the background, so the cost of an expiry is not paid by whoever happens to
+arrive first.
+
+## Rate limits
+
+Limits are per key, per minute, in a fixed window:
+
+| Caller | Limit |
+|---|---|
+| Live key | 120 requests/minute |
+| Test key | 30 requests/minute |
+| Public tracking (no key) | 60 requests/minute per client address |
+
+Public tracking is the one unauthenticated surface, so it is limited by client address instead —
+there is no key to attribute it to. Test keys are held lower deliberately: a test integration that
+runs away should be stopped by its own environment rather than by a live limit.
+
+Every response reports `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`, the
+last being the epoch second the window resets. Over the limit, the response is `429` and its body
+carries `retry_after` in seconds.
+
+## Retries that do not duplicate
+
+A write can be retried safely with an `Idempotency-Key`; a repeat returns the original result
+instead of creating a second record. The mechanics are in
+[Request Lifecycle](/tldp/how-tldp-works/request-lifecycle).
+
+## Webhook delivery
+
+Events are queued in the same transaction as the change that caused them, so an event is never
+emitted for something that did not happen. Delivery is attempted repeatedly and retried on
+failure; an endpoint that keeps failing is disabled rather than retried indefinitely, and its
+health is visible in the dashboard. Because delivery is at-least-once, an endpoint should treat a
+repeated event id as the same event. Signature verification and the event catalogue are covered in
+[Webhooks](/tldp/webhooks).

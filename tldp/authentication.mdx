@@ -1,0 +1,56 @@
+---
+title: "Authentication"
+description: "API keys: secret vs publishable, and test vs live."
+---
+
+TLDP uses **Bearer authentication**. Send your API key in the `Authorization`
+header on every request:
+
+```
+Authorization: Bearer tybrite_sk_live_...
+```
+
+## Key types
+
+Your key encodes both your **permissions** and your **environment**.
+
+| Key type | Prefix | Access | Use from |
+|----------|--------|--------|----------|
+| **Secret** | `tybrite_sk_live_…` / `tybrite_sk_test_…` | Read / write | Your backend only. Required for orders, shipments, returns. |
+| **Publishable** | `tybrite_pk_live_…` / `tybrite_pk_test_…` | Read only | Client-side safe. Use for rates, tracking, and system info. |
+
+<Warning>
+  Never expose a **secret** key in a browser, mobile app, or any client a user
+  can inspect. If a secret key leaks, roll it immediately.
+</Warning>
+
+## Test vs live
+
+The middle segment of the key (`test` or `live`) selects the environment:
+
+- **Test** (`…_test_…`) runs entirely in **sandbox** — data is isolated, no money
+  moves, and webhook events are marked `livemode: false`. Build and verify your
+  integration here.
+- **Live** (`…_live_…`) is production. Money moves and events are `livemode: true`.
+
+Every response includes a header confirming which environment your key resolved
+to, so you can assert you're calling the right one.
+
+## Example
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.tybritelabs.com/logistics/v1/rates/calculate \
+  -H "Authorization: Bearer tybrite_sk_test_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "origin": { "city": "Nairobi" }, "destination": { "city": "Mombasa" }, "weight_kg": 2.5 }'
+```
+
+```typescript SDK
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
+```
+
+</CodeGroup>

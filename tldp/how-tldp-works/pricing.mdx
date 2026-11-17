@@ -1,0 +1,89 @@
+---
+title: "Pricing & Rate Quotes"
+description: "How a quote is built from a courier's rate card: weight brackets, zone multipliers, the door-delivery distance overage, and what a quote commits to."
+---
+
+A rate request is priced independently against every courier whose rate card covers the route.
+Each produces its own quote, so the response is a list to choose from rather than a single number.
+A courier that does not serve the destination contributes nothing.
+
+## What a quote is built from
+
+Every quote resolves the same five inputs against the courier's rate card, in this order:
+
+<Steps>
+  <Step title="Base rate">
+    A flat starting price on the rate card for the route's service level.
+  </Step>
+  <Step title="Weight surcharge">
+    Each card includes an allowance. Weight above it is charged per kilogram, and any weight
+    bracket the parcel falls into adds its own surcharge on top.
+  </Step>
+  <Step title="Zone multiplier and flat addon">
+    The origin and destination resolve to named zones, and the pair selects a multiplier and a
+    flat addon. When both ends match a zone the courier has priced explicitly, that entry wins
+    over a partial match.
+  </Step>
+  <Step title="Service level">
+    A multiplier on the subtotal: economy `0.9`, standard `1.0`, same day `1.2`, overnight
+    `1.3`, express `1.5`.
+  </Step>
+  <Step title="Distance overage">
+    Added for a door delivery outside the courier's free allowance. Covered in full below.
+  </Step>
+</Steps>
+
+The courier's subtotal is `(base + weight surcharge + zone addon) × zone multiplier × service
+multiplier + distance overage`, plus any special surcharges the request asked for — a fragile or
+insurance flag, for instance, each either a fixed amount or a percentage of the running subtotal.
+
+The platform commission is added to that subtotal to produce `total_price`. The `breakdown` object
+on every quote carries each component separately, so a quote can be reconciled line by line
+against the total it claims.
+
+## Zone blocks and the distance overage
+
+A courier draws its service areas as polygons on a map — a zone is a named area with a real
+boundary, not a radius from a depot. A door delivery is priced by how far the destination falls
+**from the boundary of the zone**, not from its centre or from the courier's office.
+
+Each zone carries three numbers: a free allowance in metres, a step size in kilometres, and a
+price per step. Distance up to the allowance costs nothing extra. Beyond it, the overage is billed
+in **whole steps**, rounded up:
+
+```
+overage = ceil((distance_from_boundary − free_allowance) ÷ step_size) × step_price
+```
+
+A destination 2.4 km past a zone whose allowance is 500 m, with 1 km steps at 80 each, is
+`ceil((2400 − 500) ÷ 1000) = 2` steps, so 160. Crossing into a new step is what changes the price,
+which means a delivery 1.1 km out and one 1.9 km out cost the same.
+
+Two cases resolve differently. A destination **inside** a service area is priced against that
+area, so it pays nothing beyond the allowance. A destination **outside every area** is matched to
+the nearest zone that will extend delivery there, and charged from that zone's edge.
+
+<Note>
+The overage applies to door delivery, and only where the courier has drawn its service areas and
+priced them. A courier that has not done so quotes no overage, and a shipment routed to a pickup
+point is delivered to a fixed location the courier already serves, so none arises there either.
+In every case the amount charged is on the quote as `breakdown.distance_overage`, including when
+it is zero.
+</Note>
+
+## What a quote commits to
+
+A quote is a firm price with an expiry. Each carries a `quote_id`, a `valid_until` timestamp, and
+the full breakdown. Creating a shipment consumes the quote, and a quote can be consumed once —
+the price that was quoted is the price the shipment is created at, even if the underlying rate
+card changes in between.
+
+A quote that has expired or has already been used is refused rather than silently repriced, so a
+shipment never costs more than the quote a customer was shown.
+
+## On-demand fares
+
+The on-demand pool prices differently: an independent driver is paid a distance fare rather than a
+courier's rate card. Where a corridor has a published flat fare — a fixed price between two named
+cities, valid up to a maximum distance — that fare is used instead of the distance calculation.
+The mechanics of matching a driver are covered in [Dispatch & Fulfilment](/tldp/how-tldp-works/dispatch).

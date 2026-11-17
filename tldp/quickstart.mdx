@@ -1,0 +1,92 @@
+---
+title: "Quickstart"
+description: "From zero to your first tracked delivery."
+---
+
+This guide makes three calls: quote a delivery, create + fulfil an order, and
+track it. Use a **test** secret key so nothing touches production.
+
+## 1. Install the SDK
+
+<CodeGroup>
+
+```bash npm
+npm install @tybrite-labs/tldp-sdk
+```
+
+```bash pnpm
+pnpm add @tybrite-labs/tldp-sdk
+```
+
+</CodeGroup>
+
+## 2. Initialize the client
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_YOUR_KEY' });
+```
+
+## 3. Quote a delivery
+
+```typescript
+const { quotes } = await client.rates.calculateRates({
+  requestBody: {
+    origin: { city: 'Nairobi' },
+    destination: { city: 'Mombasa' },
+    weight_kg: 2.5,
+    service_level: 'standard',
+  },
+});
+
+const best = quotes[0];
+console.log(best.courier_name, best.total_price);
+```
+
+## 4. Create and fulfil an order
+
+```typescript
+const { order } = await client.orders.createOrder({
+  requestBody: {
+    reference: 'ORDER-1042',
+    delivery_method: 'last_mile',
+    recipient: { name: 'Amina N.', phone: '+254700000000', city: 'Mombasa' },
+    item: { description: 'Books', weight_kg: 2.5 },
+  },
+});
+
+// A quote's id is `quote_id` in the rates response; fulfil takes `rate_quote_id`.
+const fulfilled = await client.orders.fulfilOrder({
+  orderId: order.id,
+  requestBody: { rate_quote_id: best.quote_id },
+});
+
+console.log(fulfilled.tracking_number);
+```
+
+## 5. Track it
+
+```typescript
+const status = await client.tracking.trackShipment({
+  trackingNumber: fulfilled.tracking_number,
+});
+console.log(status.status); // pending → picked_up → in_transit → delivered
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/tldp/authentication">
+    Key types and test vs live.
+  </Card>
+  <Card title="Webhooks" icon="bolt" href="/tldp/webhooks">
+    Get notified the moment a delivery changes state.
+  </Card>
+  <Card title="SDK guide" icon="code" href="/tldp/sdk/introduction">
+    The full typed client.
+  </Card>
+  <Card title="API Reference" icon="book" href="/tldp/api-reference/introduction">
+    Every endpoint, request, and response.
+  </Card>
+</CardGroup>

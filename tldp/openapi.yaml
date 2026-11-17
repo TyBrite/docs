@@ -1,0 +1,2715 @@
+# ============================================================================
+# TLDP API — OpenAPI specification
+#
+# The complete, single-file API reference. It is generated from the live API
+# definition, so it stays in sync with what the API actually serves. Please
+# don't hand-edit it — it is regenerated, and manual changes are overwritten.
+# ============================================================================
+
+openapi: 3.1.0
+info:
+  title: TLDP API
+  version: 1.0.0
+  description: |
+    # Tybrite Logistics Developer Platform (TLDP) API
+
+    The unified logistics API — one integration aggregates many courier
+    services (rates, shipment creation, real-time tracking, proof of delivery,
+    webhooks). "Stripe for logistics."
+
+    ## Authentication
+    All requests use API-key bearer auth. Keys are dual-key:
+    - **Secret** (`tybrite_sk_live_*` / `tybrite_sk_test_*`) — full read/write.
+    - **Publishable** (`tybrite_pk_live_*` / `tybrite_pk_test_*`) — read-only.
+
+    ```
+    Authorization: Bearer tybrite_sk_live_...
+    ```
+
+    `_live_` keys hit production; `_test_` keys hit the sandbox.
+
+    ## Rate limits
+    Authenticated endpoints are limited **per API key** (the `/v1` API is server-to-server —
+    your backend holds the key — so the key is the identity). Fixed 60-second window:
+    - **Production: 120 requests / minute / key**
+    - **Sandbox: 30 requests / minute / key** (throttled harder for testing)
+
+    The public tracking endpoint (no key) is limited **per IP** (60 / minute / IP).
+
+    Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and
+    `X-RateLimit-Reset` (unix epoch seconds). Exceeding the window returns
+    **429** `rate_limit_exceeded`.
+
+    ## Status code conventions
+    - **201 Created** — a POST that creates a new resource (`POST /v1/orders`,
+      `/v1/shipments`, `…/fulfil`, `…/fulfil-on-demand`, `POST /v1/webhooks`).
+    - **200 OK** — reads, and POSTs that mutate without creating (`…/cancel`), or an
+      **idempotent replay** (e.g. `POST /v1/shipments` with a reused `Idempotency-Key`
+      returns the original shipment as 200, not a duplicate).
+    - **202 Accepted** — work queued asynchronously (`POST /v1/webhooks/{id}/test`).
+
+    ## Idempotency
+    Write endpoints accept an `Idempotency-Key` header; retrying with the same key
+    returns the original result instead of creating a duplicate.
+
+    ## Caching
+    Read endpoints whose body is the same for everyone — **public tracking** (~15s) and
+    **coverage zones** (~5min) — are edge-cached and ETag-validated. Each returns `ETag`,
+    `Cache-Control`, and `X-Cache` (`HIT`/`MISS`). Send the `ETag` back as `If-None-Match` to
+    get a **304 Not Modified** (empty body) when the resource is unchanged — cheaper for you and
+    for us. Per-tenant/authed data is never edge-cached.
+
+    ## Webhook events — two layers, decoupled on purpose
+    Subscribe at `POST /v1/webhooks`. Events live at **two distinct layers** that answer
+    different questions — subscribe to whichever you need:
+
+    - **`order.*` = business / commitment state** (one event per transition). An order is the
+      thing your buyer placed; these tell you where it is in *your* fulfilment workflow.
+      - `order.created` — an order was pushed/placed.
+      - `order.fulfilled` — the merchant committed the order to delivery and **a shipment now
+        exists for it**. Fires **once**. Use this to mark your order "shipping" and stop allowing
+        buyer edits.
+      - `order.cancelled` — the order was cancelled (and any not-yet-picked-up shipment with it).
+      - *(returns)* `return.requested`, `return.approved`, `return.rejected`, `return.received`,
+        `return.refunded`, `return.exchanged` — the reverse-logistics lifecycle.
+
+    - **`shipment.*` = physical-delivery telemetry** (many events as the parcel moves). This is
+      the play-by-play emitted as the rider advances status: `shipment.created`,
+      `shipment.payment_confirmed`, `shipment.assigned`, `shipment.picked_up`,
+      `shipment.in_transit`, `shipment.out_for_delivery`, `shipment.delivered`,
+      `shipment.failed`, `shipment.cancelled`. Subscribe for live tracking / proof of delivery.
+
+    - **`payment.*`**: `payment.pending_settlement`, `payment.settled`.
+
+    **Relationship:** an order has exactly **one** `order.fulfilled`, but **many** `shipment.*`
+    updates underneath it. They are deliberately decoupled: if you only track order state,
+    subscribe to `order.*`; if you want live movement, subscribe to `shipment.*`. Note that
+    **order-less direct shipments** (created via `POST /v1/shipments` with no order) emit
+    `shipment.*` only — never `order.*`. Conversely an order that hasn't been fulfilled yet has
+    `order.*` but no `shipment.*`.
+
+    Every delivery is HMAC-signed (`TLDP-Signature: t=…,v1=…`, HMAC-SHA256 of `${t}.${body}`
+    with your endpoint's `signing_secret`). Respond `2xx` to acknowledge.
+
+    ## Errors
+    Errors return `{ "error": { "code", "message", "details?" } }` with a conventional
+    HTTP status. Common codes: `invalid_request` (400), `unauthorized` /
+    `invalid_api_key` (401), `forbidden` / `account_inactive` (403), `not_found` (404),
+    `cannot_fulfil` / `cannot_cancel` / `cannot_edit` (409), `rate_limit_exceeded` (429),
+    `server_error` (500).
+  contact:
+    name: TLDP Developer Support
+    email: developers@tybritelabs.com
+  license:
+    name: Proprietary
+    url: https://tybritelabs.com/terms
+servers:
+  - url: https://api.tybritelabs.com/logistics
+    description: Production (use _live_ keys) and Sandbox (use _test_ keys)
+security:
+  - BearerAuth: []
+tags:
+  - name: Rates
+    description: Calculate shipping rates across couriers and list coverage zones.
+  - name: Orders
+    description: Push customer orders from your store and fulfil them with shipments.
+  - name: Returns
+    description: Returns & exchanges — request, approve, receive, and resolve (refund/exchange).
+  - name: Shipments
+    description: Create, retrieve, and cancel shipments.
+  - name: Tracking
+    description: Public and authenticated shipment tracking.
+  - name: Proof of Delivery
+    description: Retrieve proof of delivery for delivered shipments.
+  - name: Webhooks
+    description: Manage webhook endpoints and test deliveries.
+  - name: System
+    description: Health and service metadata.
+externalDocs:
+  description: TLDP Documentation
+  url: https://docs.tybritelabs.com/tldp
+paths:
+  /:
+    get:
+      operationId: getApiInfo
+      tags:
+        - System
+      summary: API info
+      security: []
+      responses:
+        '200':
+          description: Service metadata and available endpoints.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                name: TLDP API
+                version: v1
+                documentation: https://docs.tybritelabs.com/tldp
+                endpoints:
+                  - prefix: /v1/rates
+                    description: Rate calculation
+                  - prefix: /v1/shipments
+                    description: Shipment management
+                  - prefix: /v1/tracking
+                    description: Public + detailed tracking
+                  - prefix: /v1/pod
+                    description: Proof of delivery
+                  - prefix: /v1/webhooks
+                    description: Webhook endpoint management
+                  - prefix: /v1/orders
+                    description: Customer orders + fulfilment
+                  - prefix: /v1/returns
+                    description: Returns + exchanges (reverse logistics)
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/health:
+    get:
+      operationId: getHealth
+      tags:
+        - System
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: healthy
+                service: tldp-api-gateway
+                version: v1
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: Service is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/rates/calculate:
+    post:
+      operationId: calculateRates
+      tags:
+        - Rates
+      summary: Calculate shipping rates
+      description: |
+        Returns quotes from every courier serving the route, sorted by price then
+        courier tier. The platform commission is already included in
+        `total_price`. Each `quote_id` is valid for 2 minutes and is required to
+        create a shipment.
+
+        **Precise pricing by location.** For each endpoint you may pass `zone` (a named
+        pricing area), exact `lat`/`lng` coordinates, or a free-form `place` string —
+        coordinates take precedence, then a place name is resolved to coordinates
+        automatically. When coordinates are supplied, each courier's price is matched to
+        the bounded service area the point falls in (more accurate than a city name alone).
+        `city` is always required as the coarse filter.
+
+        **Door-delivery distance charge.** When `delivery_method` is `last_mile` (door
+        delivery) and the destination lies beyond a courier's service area, the quote may
+        include a `distance_overage` — a courier-set surcharge for distance past the area,
+        shown in `breakdown.distance_overage`. Pickup-station deliveries are never charged
+        this surcharge.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - origin
+                - destination
+                - weight_kg
+              properties:
+                origin:
+                  type: object
+                  required:
+                    - city
+                  properties:
+                    city:
+                      type: string
+                    zone:
+                      type: string
+                      description: Named pricing area within the city.
+                    place:
+                      type: string
+                      description: Free-form place/area, resolved to coordinates.
+                    lat:
+                      type: number
+                      description: Latitude; takes precedence over place/zone for area matching.
+                    lng:
+                      type: number
+                      description: Longitude; takes precedence over place/zone for area matching.
+                destination:
+                  type: object
+                  required:
+                    - city
+                  properties:
+                    city:
+                      type: string
+                    zone:
+                      type: string
+                      description: Named pricing area within the city.
+                    place:
+                      type: string
+                      description: Free-form place/area, resolved to coordinates.
+                    lat:
+                      type: number
+                      description: Latitude; takes precedence over place/zone for area matching.
+                    lng:
+                      type: number
+                      description: Longitude; takes precedence over place/zone for area matching.
+                weight_kg:
+                  type: number
+                  example: 5
+                declared_value:
+                  type: number
+                service_level:
+                  $ref: '#/components/schemas/ServiceLevel'
+                delivery_method:
+                  type: string
+                  enum:
+                    - last_mile
+                    - pickup
+                  default: last_mile
+                  description: '`last_mile` = delivered to the recipient''s door (may incur a distance charge); `pickup` = collected at a pickup station (no distance charge).'
+                special_flags:
+                  type: array
+                  items:
+                    type: string
+                    example: fragile
+      responses:
+        '200':
+          description: Available quotes.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            Tybrite-Environment:
+              $ref: '#/components/headers/Tybrite-Environment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quotes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Quote'
+                  meta:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                      count:
+                        type: integer
+              example:
+                quotes:
+                  - quote_id: quote_1c80aeaced2846beb4d6a02ecd08ce19
+                    courier_id: 6a2d4db2-c385-47ba-a146-a96856f6b199
+                    courier_name: Sendy
+                    courier_tier: gold
+                    service_level: standard
+                    total_price: 291.5
+                    currency: KES
+                    estimated_delivery_hours: 24
+                    estimated_delivery_date: '2026-08-25T08:51:56.474317+00:00'
+                    breakdown:
+                      base_rate: 220
+                      weight_surcharge: 45
+                      zone_addon: 0
+                      service_multiplier: 1
+                      special_surcharges: '[]'
+                      distance_overage: 0
+                      courier_subtotal: 265
+                      platform_fee: 26.5
+                    valid_until: '2026-08-24T08:53:56.474317+00:00'
+                  - quote_id: quote_0008992ff6114ec8b5a5c9e888cc3377
+                    courier_id: 6a2d4db2-c385-47ba-a146-a96856f6b199
+                    courier_name: Sendy
+                    courier_tier: gold
+                    service_level: same_day
+                    total_price: 772.2
+                    currency: KES
+                    estimated_delivery_hours: 6
+                    estimated_delivery_date: '2026-08-24T14:51:56.474317+00:00'
+                    breakdown:
+                      base_rate: 300
+                      weight_surcharge: 100
+                      zone_addon: 50
+                      service_multiplier: 1.2
+                      special_surcharges: '[]'
+                      distance_overage: 0
+                      courier_subtotal: 702
+                      platform_fee: 70.2
+                    valid_until: '2026-08-24T08:53:56.474317+00:00'
+                  - quote_id: quote_59e736831904450cbd29408a511d83b3
+                    courier_id: 180f9109-0cd9-439d-8cba-9c7442515455
+                    courier_name: G4S
+                    courier_tier: gold
+                    service_level: express
+                    total_price: 676.5
+                    currency: KES
+                    estimated_delivery_hours: 8
+                    estimated_delivery_date: '2026-08-24T16:51:56.474317+00:00'
+                    breakdown:
+                      base_rate: 350
+                      weight_surcharge: 60
+                      zone_addon: 0
+                      service_multiplier: 1.5
+                      special_surcharges: '[]'
+                      distance_overage: 0
+                      courier_subtotal: 615
+                      platform_fee: 61.5
+                    valid_until: '2026-08-24T08:53:56.474317+00:00'
+                  - quote_id: quote_008dcc973c5744539c9b6608022f7477
+                    courier_id: 180f9109-0cd9-439d-8cba-9c7442515455
+                    courier_name: G4S
+                    courier_tier: gold
+                    service_level: standard
+                    total_price: 264
+                    currency: KES
+                    estimated_delivery_hours: 24
+                    estimated_delivery_date: '2026-08-25T08:51:56.474317+00:00'
+                    breakdown:
+                      base_rate: 200
+                      weight_surcharge: 40
+                      zone_addon: 0
+                      service_multiplier: 1
+                      special_surcharges: '[]'
+                      distance_overage: 0
+                      courier_subtotal: 240
+                      platform_fee: 24
+                    valid_until: '2026-08-24T08:53:56.474317+00:00'
+                meta:
+                  request_id: req_e7e41a955ae2417a82c5053c
+                  count: 4
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/rates/zones:
+    get:
+      operationId: listZones
+      tags:
+        - Rates
+      summary: List coverage zones
+      description: Coverage cities/zones (global — same for everyone). **Edge-cached** (~5 min) and ETag-validated.
+      responses:
+        '200':
+          description: Cities/zones with coverage.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+            X-Cache:
+              $ref: '#/components/headers/X-Cache'
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                zones:
+                  - city: Nairobi
+                  - city: Nakuru
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/shipments:
+    post:
+      operationId: createShipment
+      tags:
+        - Shipments
+      summary: Create a shipment
+      description: |
+        Locks a rate quote and creates a shipment. Requires a secret (sk_) key.
+        Send an `Idempotency-Key` header to make retries safe — a repeated key
+        returns the original shipment instead of creating a duplicate.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rate_quote_id
+                - recipient
+              properties:
+                rate_quote_id:
+                  type: string
+                  example: quote_abc123
+                recipient:
+                  $ref: '#/components/schemas/RecipientAddress'
+                sender:
+                  $ref: '#/components/schemas/Address'
+                parcel:
+                  $ref: '#/components/schemas/Parcel'
+                payment:
+                  type: object
+                  properties:
+                    method:
+                      type: string
+                    reference:
+                      type: string
+                options:
+                  type: object
+                  properties:
+                    pod_type:
+                      type: string
+                      enum:
+                        - photo
+                        - otp
+                        - signature
+                    signature_required:
+                      type: boolean
+                    insurance:
+                      type: boolean
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Idempotent replay — existing shipment returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shipment:
+                    $ref: '#/components/schemas/Shipment'
+              example:
+                shipment:
+                  id: 00f10705-1bb4-4d46-aee2-e2ed3f43f414
+                  tracking_number: TLDP-20260824-0342
+                  status: pending
+                  created_at: '2026-08-24T08:51:59.249476+00:00'
+                  updated_at: '2026-08-24T08:51:59.249476+00:00'
+                  service_level: standard
+                  recipient:
+                    name: Jane Wanjiru
+                    phone: 254712345678
+                    city: Nakuru
+                  pricing:
+                    total: 291.5
+                    currency: KES
+                  timeline:
+                    created_at: '2026-08-24T08:51:59.249476+00:00'
+                    picked_up_at: null
+                    delivered_at: null
+                    estimated_delivery: '2026-08-25T08:51:56.474317+00:00'
+                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342
+        '201':
+          description: Shipment created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shipment:
+                    $ref: '#/components/schemas/Shipment'
+              example:
+                shipment:
+                  id: 00f10705-1bb4-4d46-aee2-e2ed3f43f414
+                  tracking_number: TLDP-20260824-0342
+                  status: pending
+                  created_at: '2026-08-24T08:51:59.249476+00:00'
+                  updated_at: '2026-08-24T08:51:59.249476+00:00'
+                  service_level: standard
+                  recipient:
+                    name: Jane Wanjiru
+                    phone: 254712345678
+                    city: Nakuru
+                  pricing:
+                    total: 291.5
+                    currency: KES
+                  timeline:
+                    created_at: '2026-08-24T08:51:59.249476+00:00'
+                    picked_up_at: null
+                    delivered_at: null
+                    estimated_delivery: '2026-08-25T08:51:56.474317+00:00'
+                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/shipments/{shipmentId}:
+    get:
+      operationId: getShipment
+      tags:
+        - Shipments
+      summary: Retrieve a shipment
+      parameters:
+        - $ref: '#/components/parameters/ShipmentId'
+      responses:
+        '200':
+          description: The shipment.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shipment:
+                    $ref: '#/components/schemas/Shipment'
+              example:
+                shipment:
+                  id: 00f10705-1bb4-4d46-aee2-e2ed3f43f414
+                  tracking_number: TLDP-20260824-0342
+                  status: pending
+                  created_at: '2026-08-24T08:51:59.249476+00:00'
+                  updated_at: '2026-08-24T08:51:59.249476+00:00'
+                  service_level: standard
+                  recipient:
+                    name: Jane Wanjiru
+                    phone: 254712345678
+                    city: Nakuru
+                  pricing:
+                    total: 291.5
+                    currency: KES
+                  timeline:
+                    created_at: '2026-08-24T08:51:59.249476+00:00'
+                    picked_up_at: null
+                    delivered_at: null
+                    estimated_delivery: '2026-08-25T08:51:56.474317+00:00'
+                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/shipments/{shipmentId}/cancel:
+    post:
+      operationId: cancelShipment
+      tags:
+        - Shipments
+      summary: Cancel a shipment
+      description: Cancels a shipment before pickup. Requires a secret key.
+      parameters:
+        - $ref: '#/components/parameters/ShipmentId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Cancelled, with refund status.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                shipment_id: shp_a12b
+                status: cancelled
+                refund:
+                  status: pending
+                  amount: 462
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/tracking/{trackingNumber}:
+    get:
+      operationId: trackShipment
+      tags:
+        - Tracking
+      summary: Public tracking
+      description: |
+        Public, unauthenticated tracking by tracking number. Sensitive fields are omitted.
+        Rate limited per client IP (60 / minute). **Edge-cached** (~15s) and **ETag-validated** —
+        send the returned `ETag` back as `If-None-Match` to get a `304` (no body) when unchanged.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TrackingNumber'
+      responses:
+        '200':
+          description: Public tracking info.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+            X-Cache:
+              $ref: '#/components/headers/X-Cache'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicTracking'
+              example:
+                tracking_number: TLDP-20260607-0021
+                status: out_for_delivery
+                estimated_delivery: '2026-06-07T18:00:00Z'
+                recipient:
+                  name: John Doe
+                  city: Nakuru
+                courier:
+                  name: G4S
+                events:
+                  - timestamp: '2026-06-07T12:30:00Z'
+                    status: picked_up
+                    description: Picked up at G4S Nakuru
+                  - timestamp: '2026-06-07T14:15:00Z'
+                    status: in_transit
+                    description: On the way
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/shipments/{shipmentId}/tracking:
+    get:
+      operationId: getShipmentTracking
+      tags:
+        - Tracking
+      summary: Detailed tracking (authenticated)
+      parameters:
+        - $ref: '#/components/parameters/ShipmentId'
+      responses:
+        '200':
+          description: Full timeline + events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shipment_id:
+                    type: string
+                    format: uuid
+                  tracking_number:
+                    type: string
+                  status:
+                    $ref: '#/components/schemas/ShipmentStatus'
+                  full_timeline:
+                    type: object
+                    description: |
+                      Each field is the moment the shipment entered that state, or null if it
+                      has not. `estimated_delivery` is the projection made when the shipment
+                      was created.
+                    properties:
+                      created_at:
+                        type: string
+                        format: date-time
+                      payment_confirmed_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      assigned_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      picked_up_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      in_transit_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      delivered_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      estimated_delivery:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                  events:
+                    type: array
+                    description: Scan events in chronological order, oldest first.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        created_at:
+                          type: string
+                          format: date-time
+                        event_type:
+                          type: string
+                        description:
+                          type: string
+                        location_text:
+                          type:
+                            - string
+                            - 'null'
+                        lat:
+                          type:
+                            - number
+                            - 'null'
+                        lng:
+                          type:
+                            - number
+                            - 'null'
+                        metadata:
+                          type: object
+                          additionalProperties: true
+              example:
+                shipment_id: ecc15f0f-6219-4351-ade1-83d78da7d9c7
+                tracking_number: TLDP-20260824-0412
+                status: pending
+                full_timeline:
+                  created_at: '2026-08-24T09:33:28.757338+00:00'
+                  payment_confirmed_at: null
+                  assigned_at: null
+                  picked_up_at: null
+                  in_transit_at: null
+                  delivered_at: null
+                  estimated_delivery: '2026-08-25T09:33:28.268154+00:00'
+                events:
+                  - id: 53129f01-b2f1-4d19-bdd1-71a464e111ae
+                    created_at: '2026-08-24T09:33:28.757338+00:00'
+                    event_type: pending
+                    description: Shipment created
+                    location_text: Nairobi
+                    lat: null
+                    lng: null
+                    metadata: '{}'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/pod/{shipmentId}:
+    get:
+      operationId: getProofOfDelivery
+      tags:
+        - Proof of Delivery
+      summary: Get proof of delivery
+      description: Returns proof of delivery for a delivered shipment. OTP codes are never returned.
+      parameters:
+        - $ref: '#/components/parameters/ShipmentId'
+      responses:
+        '200':
+          description: Proof of delivery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofOfDelivery'
+              example:
+                shipment_id: shp_a12b
+                tracking_number: TLDP-20260607-0021
+                delivered_at: '2026-06-07T16:30:00Z'
+                pod:
+                  type: photo
+                  verified_at: '2026-06-07T16:30:00Z'
+                  data:
+                    recipient_name: John Doe
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/orders:
+    post:
+      operationId: createOrder
+      tags:
+        - Orders
+      summary: Create a customer order
+      description: |
+        Push a customer order captured on your own online channel (e.g. a Shopify /
+        WooCommerce store) into TLDP. The order starts as `pending_fulfilment`; fulfil
+        it later with a shipment. Pass `items[]` to record the cart line items (TLDP is a
+        standalone order store — items are auditable and visible across the platform).
+        Requires a secret (sk_) key. Emits an `order.created` webhook.
+
+        Pass an `Idempotency-Key` header to make retries safe: repeating the same key
+        returns the original order instead of creating a duplicate.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recipient
+              properties:
+                reference:
+                  type: string
+                  description: Your own order reference
+                delivery_method:
+                  $ref: '#/components/schemas/DeliveryMethod'
+                recipient:
+                  type: object
+                  required:
+                    - name
+                    - phone
+                    - address
+                    - city
+                  properties:
+                    name:
+                      type: string
+                    phone:
+                      type: string
+                    email:
+                      type: string
+                    address:
+                      type: string
+                    city:
+                      type: string
+                    lat:
+                      type: number
+                    lng:
+                      type: number
+                item:
+                  type: object
+                  description: Parcel summary used for the shipment.
+                  properties:
+                    description:
+                      type: string
+                    weight_kg:
+                      type: number
+                    declared_value:
+                      type: number
+                items:
+                  type: array
+                  description: Cart line items. Each item's total_price is computed (quantity × unit_price).
+                  items:
+                    $ref: '#/components/schemas/OrderItemInput'
+                origin:
+                  type: object
+                  properties:
+                    city:
+                      type: string
+                    lat:
+                      type: number
+                    lng:
+                      type: number
+      responses:
+        '201':
+          description: Order created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    type: object
+              example:
+                order:
+                  id: ord_7f3a91
+                  status: pending_fulfilment
+                  source: storefront
+                  reference: ORD-1042
+                  delivery_method: last_mile
+                  recipient_name: John Doe
+                  recipient_city: Nakuru
+                  created_at: '2026-06-07T10:15:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: listOrders
+      tags:
+        - Orders
+      summary: List your orders
+      description: |
+        List your orders, newest first. Page with `limit` (default 50, max 100) and `offset`;
+        the response's `pagination` block tells you whether more pages exist and the
+        `next_offset` to request.
+      parameters:
+        - $ref: '#/components/parameters/PageLimit'
+        - $ref: '#/components/parameters/PageOffset'
+      responses:
+        '200':
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+              example:
+                orders:
+                  - id: 7c827437-7cf6-46ef-b587-b02f1741b487
+                    status: fulfilled
+                    source: storefront
+                    reference: SB-1787560387174
+                    delivery_method: last_mile
+                    recipient_name: Sandbox Cust
+                    recipient_city: Nairobi
+                    shipment_id: 5a1636bb-7802-4407-843e-7ed804408977
+                    created_at: '2026-08-24T08:33:08.720398+00:00'
+                  - id: d6eecd3a-d1eb-4c5d-8e0b-8cda3816f5bd
+                    status: fulfilled
+                    source: storefront
+                    reference: SB-1787168314966
+                    delivery_method: last_mile
+                    recipient_name: Sandbox Cust
+                    recipient_city: Nairobi
+                    shipment_id: 3b6af0f9-aafd-45bf-8b1b-cbc67b7f520e
+                    created_at: '2026-08-19T19:38:39.872939+00:00'
+                meta:
+                  count: 2
+                pagination:
+                  limit: 2
+                  offset: 0
+                  has_more: true
+                  next_offset: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/orders/{orderId}:
+    get:
+      operationId: getOrder
+      tags:
+        - Orders
+      summary: Retrieve an order
+      description: Full order detail including line items — TLDP can be used as a standalone order store, not just tracking.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The order (with `items[]`).
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                order:
+                  id: ord_7f3a91
+                  status: fulfilled
+                  reference: ORD-1042
+                  delivery_method: last_mile
+                  recipient_name: John Doe
+                  recipient_address: 12 Biashara St
+                  recipient_city: Nakuru
+                  shipment_id: shp_a12b
+                  items:
+                    - id: itm_1
+                      sku: SKU-1
+                      name: Sneakers
+                      quantity: 1
+                      unit_price: 5000
+                      total_price: 5000
+                    - id: itm_2
+                      sku: SKU-2
+                      name: Socks 3-pack
+                      quantity: 2
+                      unit_price: 750
+                      total_price: 1500
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      operationId: updateOrder
+      tags:
+        - Orders
+      summary: Edit an order
+      description: |
+        Edit an order while it is still `pending_fulfilment` (recipient, parcel,
+        delivery method, reference, and/or line items). Passing `items[]` REPLACES the
+        existing line items. Once fulfilled the shipment is the source of truth and edits
+        are rejected (409). Requires a secret (sk_) key.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reference:
+                  type: string
+                delivery_method:
+                  $ref: '#/components/schemas/DeliveryMethod'
+                recipient:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    phone:
+                      type: string
+                    email:
+                      type: string
+                    address:
+                      type: string
+                    city:
+                      type: string
+                    lat:
+                      type: number
+                    lng:
+                      type: number
+                item:
+                  type: object
+                  properties:
+                    description:
+                      type: string
+                    weight_kg:
+                      type: number
+                    declared_value:
+                      type: number
+                items:
+                  type: array
+                  description: Replaces all existing line items when provided.
+                  items:
+                    $ref: '#/components/schemas/OrderItemInput'
+      responses:
+        '200':
+          description: Updated order (with `items[]`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    type: object
+              example:
+                order:
+                  id: 1621951b-3e21-4330-a784-ed5965203098
+                  merchant_company_id: 7d94c9e8-0000-0000-0000-000000000000
+                  end_customer_id: null
+                  source: manual
+                  status: pending_fulfilment
+                  reference: SPEC-EX-1787561524230-C
+                  item_description: Running shoes
+                  declared_value: 5000
+                  weight_kg: 2
+                  recipient_name: Grace Njeri
+                  recipient_phone: 254712000333
+                  recipient_email: null
+                  recipient_address: Ngong Road, Nairobi
+                  recipient_city: Nairobi
+                  recipient_lat: null
+                  recipient_lng: null
+                  origin_city: Nairobi
+                  origin_lat: null
+                  origin_lng: null
+                  chosen_courier_id: null
+                  pickup_point_id: null
+                  shipment_id: null
+                  metadata: '{}'
+                  created_at: '2026-08-24T08:52:11.594335+00:00'
+                  updated_at: '2026-08-24T08:52:12.436755+00:00'
+                  delivery_method: last_mile
+                  delivery_station_id: null
+                  last_mile_fee: 0
+                  fulfilment_type: courier
+                  environment: production
+                  items:
+                    - id: 49ba3d69-638e-49cf-a0ce-b067167c8034
+                      sku: SKU-1
+                      name: Running shoes
+                      quantity: 1
+                      unit_price: 5000
+                      total_price: 5000
+                      metadata: '{}'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrder
+      tags:
+        - Orders
+      summary: Cancel an order
+      description: |
+        Cancel an order. If a shipment exists but has not yet been picked up it is
+        cancelled too; if it is already in transit the request is rejected (409).
+        Requires a secret (sk_) key. Emits an `order.cancelled` webhook.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                  status:
+                    type: string
+                    example: cancelled
+              example:
+                order_id: ord_7f3a91
+                status: cancelled
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/orders/{orderId}/fulfil:
+    post:
+      operationId: fulfilOrder
+      tags:
+        - Orders
+      summary: Fulfil an order with a shipment
+      description: |
+        Create a shipment for a pending order from a rate quote. Choose the delivery
+        method: `station_pickup` (customer collects at a delivery station) or `last_mile`
+        (a rider delivers from the station; the station's last-mile fee is applied).
+        Requires a secret key. Emits an `order.fulfilled` webhook.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rate_quote_id
+              properties:
+                rate_quote_id:
+                  type: string
+                  example: quote_abc123
+                pickup_point_id:
+                  type: string
+                  format: uuid
+                  description: First-mile pickup point (merchant→courier).
+                delivery_method:
+                  $ref: '#/components/schemas/DeliveryMethod'
+                delivery_station_id:
+                  type: string
+                  format: uuid
+                  description: Last-mile / pickup station (courier→customer). Drives the last-mile fee.
+      responses:
+        '201':
+          description: Fulfilled — shipment created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                  shipment_id:
+                    type: string
+                  tracking_number:
+                    type: string
+                  tracking_url:
+                    type: string
+              example:
+                order_id: ord_7f3a91
+                shipment_id: shp_a12b
+                tracking_number: TLDP-20260607-0021
+                tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260607-0021
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/orders/{orderId}/on-demand-quote:
+    get:
+      operationId: onDemandQuote
+      tags:
+        - Orders
+      summary: Quote on-demand delivery tiers
+      description: |
+        Return on-demand (ride-hail / independent-driver) fare quotes for the order's
+        corridor across the available tiers — `express` (dedicate a trip now, same-city
+        only), `on_the_way` (a driver already heading there carries it; cheapest), and
+        `scheduled` (flexible window). Tiers are eligible only when the merchant has enabled
+        on-demand and the corridor allows it. Pricing is flat per corridor, not per-km.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tier quotes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tiers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tier:
+                          $ref: '#/components/schemas/OnDemandTier'
+                        eligible:
+                          type: boolean
+                        reason:
+                          type:
+                            - string
+                            - 'null'
+                        fare:
+                          type:
+                            - number
+                            - 'null'
+                        eta_min:
+                          type:
+                            - integer
+                            - 'null'
+              example:
+                tiers:
+                  - tier: express
+                    eligible: true
+                    reason: null
+                    fare: 150
+                    eta_min: 15
+                  - tier: on_the_way
+                    eligible: true
+                    reason: null
+                    fare: 60
+                    eta_min: 15
+                  - tier: scheduled
+                    eligible: true
+                    reason: null
+                    fare: 80
+                    eta_min: 15
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/orders/{orderId}/fulfil-on-demand:
+    post:
+      operationId: fulfilOrderOnDemand
+      tags:
+        - Orders
+      summary: Fulfil an order via the on-demand driver pool
+      description: |
+        Dispatch the order to nearby on-demand drivers at the chosen tier (`express` /
+        `on_the_way` / `scheduled`). Creates the shipment at the tier fare and broadcasts an
+        offer to matching online drivers — first to accept picks it up. Requires a secret key.
+        Emits an `order.fulfilled` webhook.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tier:
+                  allOf:
+                    - $ref: '#/components/schemas/OnDemandTier'
+                  default: scheduled
+      responses:
+        '201':
+          description: Dispatched — shipment created and offered to drivers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                  shipment_id:
+                    type: string
+                  tracking_number:
+                    type: string
+                  tracking_url:
+                    type: string
+                  fulfilment:
+                    type: string
+                    example: on_demand
+                  tier:
+                    $ref: '#/components/schemas/OnDemandTier'
+                  fare:
+                    type: number
+                  offers:
+                    type: integer
+                    description: How many drivers were offered the delivery.
+              example:
+                order_id: ord_7f3a91
+                shipment_id: shp_a12b
+                tracking_number: TLDP-20260607-0022
+                tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260607-0022
+                fulfilment: on_demand
+                tier: scheduled
+                fare: 80
+                offers: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns:
+    post:
+      operationId: requestReturn
+      tags:
+        - Returns
+      summary: Request a return or exchange
+      description: |
+        Open a return against a **delivered** order. Validated against the merchant's returns
+        policy (accepts-returns, accepted reasons, window). Pass `items[]` for a partial return.
+        Liability for the reverse-leg/refund is resolved from the merchant's reason→party policy.
+        Requires a secret (sk_) key. Emits `return.requested`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - order_id
+                - reason
+              properties:
+                order_id:
+                  type: string
+                  format: uuid
+                reason:
+                  $ref: '#/components/schemas/ReturnReason'
+                customer_note:
+                  type: string
+                items:
+                  type: array
+                  description: The line items being returned (partial returns supported).
+                  items:
+                    $ref: '#/components/schemas/ReturnItemInput'
+      responses:
+        '201':
+          description: Return created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  return:
+                    type: object
+              example:
+                return:
+                  id: ret_8a1f
+                  return_number: RET-20260607-04217
+                  order_id: ord_7f3a91
+                  status: requested
+                  reason: damaged_in_transit
+                  liability_party: courier
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: listReturns
+      tags:
+        - Returns
+      summary: List your returns
+      description: |
+        List your returns, newest first. Page with `limit` (default 50, max 100) and `offset`;
+        the response's `pagination` block tells you whether more pages exist and the
+        `next_offset` to request.
+      parameters:
+        - $ref: '#/components/parameters/PageLimit'
+        - $ref: '#/components/parameters/PageOffset'
+      responses:
+        '200':
+          description: A page of returns.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  returns:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+              example:
+                returns:
+                  - id: f8a5a7dc-0fd3-450e-8ff2-ec7c3f449ac3
+                    return_number: RET-20260819-26028
+                    order_id: d2af394c-d899-4b95-8a0a-c2c122118fe5
+                    status: resolved
+                    reason: defective
+                    resolution: exchange
+                    liability_party: merchant
+                    refund_amount: null
+                    created_at: '2026-08-19T19:22:36.017177+00:00'
+                  - id: 7adc27f5-2907-416d-8009-00417976bafe
+                    return_number: RET-20260819-80149
+                    order_id: 982992a3-3829-4078-bc0f-ecde4c98d5a6
+                    status: resolved
+                    reason: damaged_in_transit
+                    resolution: refund
+                    liability_party: courier
+                    refund_amount: 5000
+                    created_at: '2026-08-19T19:22:30.030585+00:00'
+                meta:
+                  count: 2
+                pagination:
+                  limit: 2
+                  offset: 0
+                  has_more: true
+                  next_offset: 2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/{returnId}:
+    get:
+      operationId: getReturn
+      tags:
+        - Returns
+      summary: Retrieve a return
+      parameters:
+        - name: returnId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The return (with `items[]`).
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                return:
+                  id: c9ad959e-2d5a-4caa-a812-bf387e071560
+                  return_number: RET-20260723-82980
+                  merchant_company_id: 7d94c9e8-0000-0000-0000-000000000000
+                  order_id: 5b3b25fd-cb3a-48c2-9351-d163862fba26
+                  shipment_id: 47b5ce1f-859a-455f-9edb-38a9a65530a6
+                  end_customer_id: null
+                  status: requested
+                  reason: changed_mind
+                  resolution: null
+                  liability_party: customer
+                  customer_note: null
+                  merchant_note: null
+                  reverse_shipment_id: null
+                  replacement_shipment_id: null
+                  refund_amount: null
+                  refund_reference: null
+                  window_expires_at: '2026-07-30T19:23:57.176285+00:00'
+                  requested_at: '2026-07-23T19:23:57.176285+00:00'
+                  approved_at: null
+                  received_at: null
+                  resolved_at: null
+                  environment: production
+                  created_at: '2026-07-23T19:23:57.176285+00:00'
+                  updated_at: '2026-07-23T19:23:57.176285+00:00'
+                  items: '[]'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/{returnId}/approve:
+    post:
+      operationId: approveReturn
+      tags:
+        - Returns
+      summary: Approve a return + choose resolution
+      description: |
+        Approve the return and pick the resolution (must be allowed by policy). Creates the
+        **reverse pickup shipment** (customer → merchant). For an `exchange`, the replacement is
+        shipped at resolve time. Requires a secret key. Emits `return.approved`.
+      parameters:
+        - name: returnId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - resolution
+              properties:
+                resolution:
+                  $ref: '#/components/schemas/ReturnResolution'
+                merchant_note:
+                  type: string
+      responses:
+        '200':
+          description: Approved — reverse shipment created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  return_id:
+                    type: string
+                  status:
+                    type: string
+                    example: approved
+                  reverse_shipment_id:
+                    type: string
+              example:
+                return_id: c9ad959e-2d5a-4caa-a812-bf387e071560
+                status: approved
+                reverse_shipment_id: 58b796bf-9fe8-4a21-a537-ff2f84c6bd7e
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/{returnId}/reject:
+    post:
+      operationId: rejectReturn
+      tags:
+        - Returns
+      summary: Reject a return
+      description: Reject a requested return with an optional note to the customer. Requires a secret (sk_) key. Emits `return.rejected`.
+      parameters:
+        - name: returnId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                merchant_note:
+                  type: string
+      responses:
+        '200':
+          description: Rejected.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  return_id:
+                    type: string
+                  status:
+                    type: string
+                    example: rejected
+              example:
+                return_id: c79479bf-ca75-48ab-858a-2cc41e10cb8c
+                status: rejected
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/{returnId}/receive:
+    post:
+      operationId: receiveReturn
+      tags:
+        - Returns
+      summary: Mark the returned goods received
+      description: Call after the reverse shipment is delivered back to you. Requires a secret key. Emits `return.received`.
+      parameters:
+        - name: returnId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Received.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  return_id:
+                    type: string
+                  status:
+                    type: string
+                    example: received
+              example:
+                return_id: c9ad959e-2d5a-4caa-a812-bf387e071560
+                status: received
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/returns/{returnId}/resolve:
+    post:
+      operationId: resolveReturn
+      tags:
+        - Returns
+      summary: Resolve a received return
+      description: |
+        Settle a received return per its resolution: `refund` (refunds the customer and claws back
+        the liable party's settled cut via the payout ledger), `exchange` (ships a replacement to
+        the customer — no refund), or `repair`/`store_credit`. Requires a secret key. Emits
+        `return.refunded` or `return.exchanged`.
+      parameters:
+        - name: returnId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                restock:
+                  type: boolean
+                  default: true
+                  description: Flag the returned items to be restocked.
+      responses:
+        '200':
+          description: Resolved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  return_id:
+                    type: string
+                  status:
+                    type: string
+                    example: resolved
+                  resolution:
+                    $ref: '#/components/schemas/ReturnResolution'
+                  refund_amount:
+                    type:
+                      - number
+                      - 'null'
+                  replacement_shipment_id:
+                    type:
+                      - string
+                      - 'null'
+              examples:
+                refund:
+                  summary: Refund resolution
+                  value:
+                    return_id: ret_8a1f
+                    status: resolved
+                    resolution: refund
+                    refund_amount: 5000
+                    replacement_shipment_id: null
+                exchange:
+                  summary: Exchange resolution
+                  value:
+                    return_id: ret_8a1f
+                    status: resolved
+                    resolution: exchange
+                    refund_amount: 0
+                    replacement_shipment_id: shp_new1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/webhooks:
+    post:
+      operationId: createWebhook
+      tags:
+        - Webhooks
+      summary: Create a webhook endpoint
+      description: Registers a webhook URL. The `signing_secret` is returned ONCE — store it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+                - events
+              properties:
+                url:
+                  type: string
+                  example: https://example.com/webhooks/tldp
+                events:
+                  type: array
+                  description: The events to subscribe to (order.* / shipment.* / return.* / payment.*).
+                  items:
+                    $ref: '#/components/schemas/WebhookEvent'
+                  example:
+                    - order.fulfilled
+                    - shipment.delivered
+                    - return.refunded
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Webhook created (includes signing_secret).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook:
+                    $ref: '#/components/schemas/Webhook'
+              example:
+                webhook:
+                  id: whk_5f1c
+                  url: https://example.com/webhooks/tldp
+                  events:
+                    - shipment.delivered
+                    - order.fulfilled
+                  status: active
+                  signing_secret: whsec_a1b2c3d4e5f6
+                  created_at: '2026-06-07T10:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: listWebhooks
+      tags:
+        - Webhooks
+      summary: List webhook endpoints
+      responses:
+        '200':
+          description: Configured webhooks.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                webhooks:
+                  - id: 21ea36f9-a411-465b-8f62-d22bd02540a1
+                    url: https://example.test/perf-1780835394718
+                    events:
+                      - order.created
+                    is_active: false
+                    created_at: '2026-06-07T12:30:09.456077+00:00'
+                    status: inactive
+                meta:
+                  count: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/webhooks/{webhookId}:
+    delete:
+      operationId: deleteWebhook
+      tags:
+        - Webhooks
+      summary: Delete a webhook endpoint
+      parameters:
+        - $ref: '#/components/parameters/WebhookId'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                deleted: true
+                webhook_id: whk_5f1c
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/webhooks/{webhookId}/test:
+    post:
+      operationId: testWebhook
+      tags:
+        - Webhooks
+      summary: Send a test event
+      parameters:
+        - $ref: '#/components/parameters/WebhookId'
+      responses:
+        '202':
+          description: Test event queued for delivery.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                test_event_queued: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ServerError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: tybrite_sk_live_* or tybrite_pk_live_*
+      description: |
+        API key as a bearer token. Secret keys (sk_) allow writes; publishable keys (pk_) are read-only. live = production, test = sandbox.
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: invalid_request
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+            request_id:
+              type: string
+          required:
+            - code
+            - message
+      required:
+        - error
+    ServiceLevel:
+      type: string
+      enum:
+        - economy
+        - standard
+        - express
+        - same_day
+        - overnight
+    RateBreakdown:
+      type: object
+      properties:
+        base_rate:
+          type: number
+        weight_surcharge:
+          type: number
+        zone_addon:
+          type: number
+        service_multiplier:
+          type: number
+        special_surcharges:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              amount:
+                type: number
+        distance_overage:
+          type: number
+          description: Door-delivery surcharge for distance beyond the courier's service area (0 for pickup or within the area).
+        courier_subtotal:
+          type: number
+        platform_fee:
+          type: number
+    Quote:
+      type: object
+      properties:
+        quote_id:
+          type: string
+          example: quote_abc123
+        courier_id:
+          type: string
+          format: uuid
+        courier_name:
+          type: string
+          example: G4S
+        courier_tier:
+          type: string
+          enum:
+            - bronze
+            - silver
+            - gold
+        service_level:
+          $ref: '#/components/schemas/ServiceLevel'
+        total_price:
+          type: number
+          example: 462
+        currency:
+          type: string
+          example: KES
+        estimated_delivery_hours:
+          type: integer
+        estimated_delivery_date:
+          type: string
+          format: date-time
+        breakdown:
+          $ref: '#/components/schemas/RateBreakdown'
+        valid_until:
+          type: string
+          format: date-time
+          description: Quote expires 2 minutes after creation.
+    RecipientAddress:
+      type: object
+      required:
+        - name
+        - phone
+        - address
+      properties:
+        name:
+          type: string
+          example: Jane Wanjiru
+        phone:
+          type: string
+          example: '+254712345678'
+        address:
+          type: string
+          example: Kenyatta Avenue, Nakuru
+        email:
+          type: string
+          example: jane@example.com
+        city:
+          type: string
+          description: Defaults to the destination city of the quote.
+          example: Nakuru
+        zone:
+          type: string
+        notes:
+          type: string
+          example: Leave with the gatekeeper.
+    Address:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        zone:
+          type: string
+        notes:
+          type: string
+    Parcel:
+      type: object
+      properties:
+        description:
+          type: string
+        weight_kg:
+          type: number
+        length_cm:
+          type: number
+        width_cm:
+          type: number
+        height_cm:
+          type: number
+        declared_value:
+          type: number
+        fragile:
+          type: boolean
+    ShipmentStatus:
+      type: string
+      enum:
+        - pending
+        - payment_confirmed
+        - assigned
+        - picked_up
+        - in_transit
+        - out_for_delivery
+        - delivered
+        - cancelled
+        - failed
+    Shipment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tracking_number:
+          type: string
+          example: TLDP-20251003-0001
+        status:
+          $ref: '#/components/schemas/ShipmentStatus'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        service_level:
+          $ref: '#/components/schemas/ServiceLevel'
+        recipient:
+          $ref: '#/components/schemas/Address'
+        pricing:
+          type: object
+          properties:
+            total:
+              type: number
+            currency:
+              type: string
+        timeline:
+          type: object
+          properties:
+            created_at:
+              type: string
+              format: date-time
+            picked_up_at:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            delivered_at:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            estimated_delivery:
+              type: string
+              format: date-time
+        tracking_url:
+          type: string
+    TrackingEvent:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+    PublicTracking:
+      type: object
+      properties:
+        tracking_number:
+          type: string
+        status:
+          $ref: '#/components/schemas/ShipmentStatus'
+        estimated_delivery:
+          type: string
+          format: date-time
+        recipient:
+          type: object
+          properties:
+            name:
+              type: string
+            city:
+              type: string
+        courier:
+          type:
+            - object
+            - 'null'
+          properties:
+            name:
+              type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackingEvent'
+    ProofOfDelivery:
+      type: object
+      properties:
+        shipment_id:
+          type: string
+          format: uuid
+        tracking_number:
+          type: string
+        delivered_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        pod:
+          type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - photo
+                - otp
+                - signature
+            verified_at:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            data:
+              type: object
+              additionalProperties: true
+    Pagination:
+      type: object
+      description: Paging metadata for a list response.
+      properties:
+        limit:
+          type: integer
+          description: The page size that was applied.
+        offset:
+          type: integer
+          description: The offset that was applied.
+        has_more:
+          type: boolean
+          description: Whether more items exist beyond this page.
+        next_offset:
+          type:
+            - integer
+            - 'null'
+          description: The offset to request for the next page, or null when there are no more items.
+      required:
+        - limit
+        - offset
+        - has_more
+    DeliveryMethod:
+      type: string
+      enum:
+        - station_pickup
+        - last_mile
+      description: |
+        How the customer receives the parcel. `station_pickup` = collect at a delivery
+        station (base fee only). `last_mile` = rider delivers from the station to the
+        door (base + station last-mile fee).
+    OrderItemInput:
+      type: object
+      required:
+        - name
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+        unit_price:
+          type: number
+          description: Price per unit in KES
+        metadata:
+          type: object
+          additionalProperties: true
+    OnDemandTier:
+      type: string
+      enum:
+        - express
+        - on_the_way
+        - scheduled
+        - driver_rate_card
+      description: |
+        On-demand delivery speed. `express` = dedicate a trip now (same-city only, priciest);
+        `on_the_way` = a driver already heading there carries it (cheapest); `scheduled` =
+        flexible window (parcel rides along a trip); `driver_rate_card` = a driver's own price.
+        Pricing is flat per corridor, not per-km.
+    ReturnReason:
+      type: string
+      enum:
+        - damaged_in_transit
+        - defective
+        - wrong_item
+        - not_as_described
+        - changed_mind
+        - other
+    ReturnItemInput:
+      type: object
+      required:
+        - name
+      properties:
+        order_item_id:
+          type: string
+          format: uuid
+          description: The original order line item being returned.
+        sku:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+        unit_price:
+          type: number
+        condition:
+          type: string
+          description: e.g. damaged, unused, opened
+    ReturnResolution:
+      type: string
+      enum:
+        - refund
+        - exchange
+        - repair
+        - store_credit
+        - reject
+      description: How a return is settled. `exchange` ships a replacement (no refund); `refund` refunds the customer and claws back the liable party's settled cut; `repair`/`store_credit` move no courier money; `reject` declines it.
+    WebhookEvent:
+      type: string
+      description: |
+        Subscribable webhook event. `order.*` = business/commitment state (one per transition);
+        `shipment.*` = physical-delivery telemetry (many); `return.*` = reverse logistics;
+        `payment.*` = settlement. See the API description → "Webhook events" for the layering.
+      enum:
+        - order.created
+        - order.fulfilled
+        - order.cancelled
+        - return.requested
+        - return.approved
+        - return.rejected
+        - return.received
+        - return.refunded
+        - return.exchanged
+        - shipment.created
+        - shipment.payment_confirmed
+        - shipment.assigned
+        - shipment.picked_up
+        - shipment.in_transit
+        - shipment.out_for_delivery
+        - shipment.delivered
+        - shipment.failed
+        - shipment.cancelled
+        - payment.pending_settlement
+        - payment.settled
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        events:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+        created_at:
+          type: string
+          format: date-time
+        signing_secret:
+          type: string
+          description: Returned ONLY at creation. Store it securely.
+  responses:
+    RateLimited:
+      description: Rate limit exceeded for the current window.
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/X-RateLimit-Limit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/X-RateLimit-Remaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/X-RateLimit-Reset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: rate_limit_exceeded
+              message: Too many requests. Retry after the window resets.
+    ServerError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: server_error
+              message: An unexpected error occurred. Try again or contact support.
+    BadRequest:
+      description: Invalid request — missing or malformed parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_request:
+              summary: Missing required field
+              value:
+                error:
+                  code: invalid_request
+                  message: recipient {name,phone,address,city} required
+            no_coverage:
+              summary: No courier covers this route
+              value:
+                error:
+                  code: no_coverage
+                  message: No courier serves the requested origin/destination.
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unauthorized:
+              summary: No Authorization header
+              value:
+                error:
+                  code: unauthorized
+                  message: Missing or invalid Authorization header
+            invalid_api_key:
+              summary: Key revoked or wrong environment
+              value:
+                error:
+                  code: invalid_api_key
+                  message: API key is invalid or revoked
+    Forbidden:
+      description: The key lacks the required scope, or the account is inactive.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden:
+              summary: Publishable key used on a write endpoint
+              value:
+                error:
+                  code: forbidden
+                  message: This endpoint requires a secret (sk_) key with write scope.
+            account_inactive:
+              summary: Company account disabled
+              value:
+                error:
+                  code: account_inactive
+                  message: Company account is inactive
+    NotFound:
+      description: The requested resource does not exist (or isn't yours).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: not_found
+              message: Order not found
+    NotModified:
+      description: The resource is unchanged since your `If-None-Match` ETag — body omitted.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+    Conflict:
+      description: The resource is in a state that doesn't allow this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            cannot_fulfil:
+              summary: Order already fulfilled
+              value:
+                error:
+                  code: cannot_fulfil
+                  message: Order is fulfilled
+            cannot_cancel:
+              summary: Shipment already in transit
+              value:
+                error:
+                  code: cannot_cancel
+                  message: 'cannot cancel: shipment already in_transit'
+            cannot_edit:
+              summary: Order no longer editable
+              value:
+                error:
+                  code: cannot_edit
+                  message: order can only be edited while pending_fulfilment (is fulfilled)
+  headers:
+    X-RateLimit-Limit:
+      description: Requests allowed in the current window.
+      schema:
+        type: integer
+    X-RateLimit-Remaining:
+      description: Requests remaining in the current window.
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      description: Unix epoch (seconds) when the window resets.
+      schema:
+        type: integer
+    Tybrite-Environment:
+      description: The environment the key resolved to (production | sandbox).
+      schema:
+        type: string
+        enum:
+          - production
+          - sandbox
+    ETag:
+      description: Entity tag of the response body. Send it back as `If-None-Match` to get a 304 when unchanged.
+      schema:
+        type: string
+    Cache-Control:
+      description: Caching directive (e.g. `public, max-age=15, stale-while-revalidate=30`).
+      schema:
+        type: string
+    X-Cache:
+      description: Edge cache outcome — `HIT` (served from edge), `MISS` (generated), or `HIT-304`.
+      schema:
+        type: string
+        enum:
+          - HIT
+          - MISS
+          - HIT-304
+          - MISS-304
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: A unique key (UUID) that makes a write request safely retryable.
+      schema:
+        type: string
+    ShipmentId:
+      name: shipmentId
+      in: path
+      required: true
+      description: The shipment's unique id.
+      schema:
+        type: string
+        format: uuid
+    TrackingNumber:
+      name: trackingNumber
+      in: path
+      required: true
+      description: The shipment's tracking number (e.g. TLDP-20251003-0001).
+      schema:
+        type: string
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items to return (1–100). Defaults to 50.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    PageOffset:
+      name: offset
+      in: query
+      required: false
+      description: Number of items to skip, for paging. Defaults to 0. Use the response's `pagination.next_offset` to fetch the next page.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    WebhookId:
+      name: webhookId
+      in: path
+      required: true
+      description: The webhook endpoint id.
+      schema:
+        type: string
+        format: uuid

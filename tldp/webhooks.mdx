@@ -1,0 +1,99 @@
+---
+title: "Webhooks"
+description: "Receive realtime events at your own URL, and verify every delivery."
+---
+
+Webhooks push events to your server the moment something changes — a shipment is
+delivered, a payment settles, a return is refunded. Subscribe an endpoint to the
+events you care about and verify each delivery's signature.
+
+## Subscribe an endpoint
+
+```typescript
+const endpoint = await client.webhooks.createWebhook({
+  requestBody: {
+    url: 'https://yourapp.com/webhooks/tldp',
+    events: ['shipment.delivered', 'order.fulfilled', 'return.refunded'],
+  },
+});
+
+// endpoint.signing_secret is returned ONCE — store it securely.
+```
+
+## Event types
+
+| Group | Events |
+|-------|--------|
+| **Orders** | `order.created`, `order.fulfilled`, `order.cancelled` |
+| **Shipments** | `shipment.created`, `shipment.payment_confirmed`, `shipment.assigned`, `shipment.picked_up`, `shipment.in_transit`, `shipment.out_for_delivery`, `shipment.delivered`, `shipment.failed`, `shipment.cancelled` |
+| **Payments** | `payment.pending_settlement`, `payment.settled` |
+| **Returns** | `return.requested`, `return.approved`, `return.rejected`, `return.received`, `return.refunded`, `return.exchanged` |
+| **Disputes** | `dispute.created`, `dispute.resolved` |
+
+## Event payload
+
+Every event uses the same envelope:
+
+```json
+{
+  "id": "evt_4f2c…",
+  "type": "shipment.delivered",
+  "created": "2026-06-08T10:30:00Z",
+  "api_version": "v1",
+  "livemode": true,
+  "data": {
+    "object": {
+      "id": "…",
+      "tracking_number": "TLDP-20260608-0001",
+      "status": "delivered"
+    }
+  }
+}
+```
+
+- **`livemode`** — `true` for production, `false` for sandbox (test) events. Key
+  your handler off this so a test event never triggers live logic.
+- **`api_version`** — the schema version, so you can evolve safely.
+- **`data.object`** — a minimal summary (ids + key fields). Call the REST API for
+  the full record if you need more.
+
+## Verify the signature
+
+Each delivery carries a `TLDP-Signature` header of the form `t=<timestamp>,v1=<hex>`.
+Recompute the HMAC-SHA256 of `` `${timestamp}.${rawBody}` `` with your endpoint's
+signing secret and compare.
+
+```typescript
+import crypto from 'crypto';
+
+function verify(rawBody: string, header: string, secret: string): boolean {
+  const parts = Object.fromEntries(header.split(',').map((p) => p.split('=')));
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(`${parts.t}.${rawBody}`)
+    .digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1));
+}
+```
+
+<Warning>
+  Verify the signature on the **raw** request body before parsing JSON. Reject
+  any request that fails verification.
+</Warning>
+
+## Reliability
+
+- **Retries** — a non-2xx response is retried with exponential backoff. Respond
+  `2xx` quickly (do heavy work asynchronously).
+- **Idempotency** — deduplicate on `event.id`; the same event may arrive more
+  than once.
+- **Auto-disable** — an endpoint that fails repeatedly is disabled to stop
+  pointless retries. Re-enable it once it's healthy.
+
+## Test it
+
+Send yourself a realistic sample event (marked `test: true`, `livemode: false`):
+
+```typescript
+await client.webhooks.testWebhook({ webhookId: endpoint.id });
+```

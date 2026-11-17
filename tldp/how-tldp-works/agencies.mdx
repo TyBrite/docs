@@ -1,0 +1,149 @@
+---
+title: "Agencies & White-Label"
+description: "How an operator resells the logistics layer under its own brand: its own price list on both payer sides, its own processor and commission, branded invoices, its own domain, its own API keys and its own specification."
+---
+
+An **operator** resells the logistics layer under its own brand. The platform underneath is
+unchanged — the same couriers, dispatch, tracking, returns and payouts — while everything an
+operator's merchants and couriers see, and everything they are charged, belongs to the operator.
+
+An operator's configuration is authored in one place and read everywhere else. There is a single
+writer for an operator's brand, prices, commission, domain and sender, which is what keeps two
+surfaces from disagreeing about what an operator charges or is called.
+
+## The two payers, and why they are not symmetric
+
+An operator bills two kinds of customer, and the relationship differs in each case.
+
+| | Merchants | Couriers |
+|---|---|---|
+| What they pay for | a subscription | commission on deliveries, in arrears |
+| Relationship | belongs to one operator | serves merchants across many operators |
+
+A merchant belongs to exactly one operator, so a merchant's account carries that operator's brand
+throughout. A courier does not: the same courier can carry deliveries for merchants belonging to
+several operators at once, and there is no single brand it should be shown.
+
+## Branded invoices
+
+Because a courier has no single operator, the **invoice** carries the brand rather than the
+account. Every line on a commission invoice derives from deliveries for one operator's merchants,
+so an invoice partitions cleanly where an account cannot.
+
+A courier serving three operators receives three invoices, each branded by that operator and
+covering only that operator's merchants' deliveries. A courier carrying no operator's merchants
+receives the platform's own invoice, unchanged.
+
+The courier's own dashboard stays the platform's. A courier signs up with the platform and works
+across operators, so re-branding that dashboard would mean choosing one operator's brand to show
+them — a choice no data supports.
+
+<Note>
+The platform never holds another party's money. A merchant pays a courier directly, and each party
+invoices only for its own revenue: the operator for its subscriptions and commission, the platform
+for what the operator owes it. White-labelling does not change that arrangement.
+</Note>
+
+## The price list
+
+An operator prices both payer sides. Each plan carries a monthly and an annual figure, and the
+annual saving shown to a customer is computed from those two numbers rather than stored alongside
+them — a stored percentage is a third value that drifts away from the pair it describes.
+
+Plans an operator has not priced resolve to the platform's own figures, so a catalogue is never
+partially empty while an operator decides what to charge.
+
+An operator re-prices and renames plans that already exist. It cannot invent a tier or widen what
+one grants: the shipment allowances and limits attached to a plan remain the platform's.
+
+Usage-based charging is available alongside the flat figures, expressed in basis points of the
+value an operator's merchants ship, with a floor and a cap so that both a quiet month and an
+exceptional one stay bounded.
+
+## Entitlements
+
+An operator can define its own tiers within the bounds of the plan a customer is on. Those bounds
+are applied when an entitlement is **read**, not only when it is written.
+
+That ordering matters. Every other override in the system narrows what a customer may do; an
+operator-defined tier is the first that could widen it. A check applied only at write time is
+bypassed the moment a value reaches the row by another path, so the ceiling is enforced at the
+point of use. An axis left unset resolves to the platform's ceiling rather than to "unlimited" —
+the opposite default would fail open.
+
+## Payment
+
+An operator charges on its own processor account, so its customers pay the operator directly.
+Four processors are supported natively, alongside an extension point for one that is not.
+
+Card details are entered inside the processor's own hosted fields in every case. That boundary is
+what keeps a deployment within the lightest tier of card-industry compliance, and no amount of
+branding work changes it: one processor's card step cannot be restyled, so it looks like that
+processor inside an otherwise operator-branded page. Everything around it — the page, the line
+labels, the receipt, the wordmark — carries the operator's brand.
+
+An operator that sends branded invoices needs a support address of its own. A courier holding an
+invoice branded by an operator has to be able to reach that operator, so an invoice cannot be sent
+without one.
+
+## Support
+
+The brand on an invoice answers questions about it. An operator escalates to the platform when a
+dispute turns out to be a calculation error it cannot correct itself.
+
+## Domains
+
+An operator's customers reach it on a host of the operator's own, resolved in a fixed order: a
+custom domain the operator owns, otherwise a subdomain assigned to it, otherwise the platform's
+own host. Only an active domain is considered, and a host serving an API is never returned as a
+browser destination.
+
+The fallback is the reason this degrades rather than breaks. An operator part-way through setting
+up a domain reaches the platform host, which serves the product correctly under the platform's
+brand, instead of reaching nothing at all.
+
+## API keys
+
+An operator's merchants are issued keys under the operator's own vendor token — `acme_sk_live_…`
+rather than the platform's. An operator that has not chosen one has its merchants' keys minted
+under the platform token, which is a deliberate configuration rather than a missing value.
+
+Only the vendor segment changes. The `_sk_` and `_pk_` segments and the `_live_` and `_test_`
+segments are structural: they are what the key parser reads to decide whether a key may write and
+which environment it addresses.
+
+<Note>
+Changing an operator's vendor token cannot invalidate a key already issued. Keys are resolved by a
+hash of the whole key, and the vendor segment is never compared against stored state, so keys
+minted under an old token and a new one authenticate side by side indefinitely.
+</Note>
+
+## A specification of the operator's own
+
+An operator can serve the API specification from its own API host, describing its own API. The
+document is the published specification with a defined set of substitutions: the server URL, the
+host where it appears in prose, the title and description, the contact and terms links, the
+platform's name, and the API-key vendor token.
+
+Header names and the structural key segments are deliberately not substituted. Those are wire
+values rather than branding — renaming them would produce a document describing an API that is not
+served, which is worse than one naming an unfamiliar company in a header.
+
+The specification is rendered on request and cached, so an operator that opts in serves a current
+document immediately rather than waiting for the next platform release. It is opt-in: an operator
+that has not enabled it, and any host that is not an operator's, receive `404`.
+
+This is what allows an operator to publish its own client package, generated from its own URL on
+its own release schedule.
+
+## What the platform continues to run
+
+Couriers, riders, dispatch, tracking, proof of delivery, returns and payouts are unchanged under an
+operator's brand. An operator runs the same platform rather than a copy of it, so changes reach an
+operator's customers without a migration on the operator's side.
+
+## Standalone operation
+
+An operator is not required to use any other product to resell logistics. A logistics operator runs
+on its own; where an operator also runs a commerce platform, the two combine, but nothing in the
+design requires it.

@@ -1,0 +1,91 @@
+---
+title: "Webhooks"
+description: "Reference for the WebhooksService class in the TLDP SDK."
+---
+
+The `WebhooksService` class (accessed via `client.webhooks`) lets you register HTTPS endpoints that receive real-time push notifications as deliveries progress — so your systems react to events instead of polling the API.
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
+```
+
+<Warning>
+  **Secret key required.** Webhook management uses a secret key (`tybrite_sk_*`). Publishable keys are rejected — these endpoints expose your account's event configuration.
+</Warning>
+
+## createWebhook
+
+Registers a new endpoint and subscribes it to the events you care about.
+
+```typescript
+const { webhook } = await client.webhooks.createWebhook({
+  requestBody: {
+    url: 'https://yourapp.com/webhooks/tldp',
+    events: ['order.fulfilled', 'shipment.delivered', 'return.refunded'],
+    description: 'Production fulfilment listener', // optional
+  },
+});
+
+// signing_secret is shown ONCE — store it now:
+console.log('Save this:', webhook.signing_secret);
+```
+
+<Warning>
+  The `signing_secret` is returned **only once**, at creation. It cannot be retrieved again — store it immediately in your secrets manager. Use it to verify the signature on every incoming delivery.
+</Warning>
+
+**Returns** `{ webhook }` — wrapped. The `webhook.signing_secret` field is present only on this create response.
+
+**Available event names:**
+
+| Category | Events |
+| :--- | :--- |
+| Orders | `order.created`, `order.fulfilled`, `order.cancelled` |
+| Shipments | `shipment.created`, `shipment.payment_confirmed`, `shipment.assigned`, `shipment.picked_up`, `shipment.in_transit`, `shipment.out_for_delivery`, `shipment.delivered`, `shipment.failed`, `shipment.cancelled` |
+| Payments | `payment.pending_settlement`, `payment.settled` |
+| Returns | `return.requested`, `return.approved`, `return.rejected`, `return.received`, `return.refunded`, `return.exchanged` |
+| Disputes | `dispute.created`, `dispute.resolved` |
+
+## listWebhooks
+
+Lists the endpoints registered on your account.
+
+```typescript
+const result = await client.webhooks.listWebhooks({});
+
+for (const wh of result.webhooks ?? []) {
+  console.log(wh.id, wh.url, wh.events);
+}
+```
+
+**Returns** your webhook endpoints (without the one-time signing secrets).
+
+## deleteWebhook
+
+Removes an endpoint so it stops receiving events.
+
+```typescript
+await client.webhooks.deleteWebhook({ webhookId: 'wh_a1b2c3' });
+```
+
+## testWebhook
+
+Sends a realistic **sample** event to the endpoint so you can verify connectivity and your signature-verification code before relying on live traffic.
+
+```typescript
+const result = await client.webhooks.testWebhook({ webhookId: 'wh_a1b2c3' });
+
+console.log(result.delivered, result.status_code);
+```
+
+<Note>
+  The test payload is marked `test: true` and `livemode: false` so your handler can distinguish it from real events. Sandbox keys (`tybrite_sk_test_*`) also deliver real events with `livemode: false` — check that flag if you must treat live and sandbox traffic differently.
+</Note>
+
+## Delivery contract
+
+- **At-least-once delivery** — make your handler idempotent and dedupe on the event id.
+- **Signed** — verify every delivery with the `signing_secret` from `createWebhook` before acting on it.
+- **Respond fast** — return `2xx` quickly and do heavy work asynchronously; slow responses are treated as failures and retried.

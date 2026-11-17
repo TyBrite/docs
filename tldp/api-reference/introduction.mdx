@@ -1,0 +1,61 @@
+---
+title: "API Reference"
+description: "The TLDP REST API — base URL, conventions, and errors."
+---
+
+The full, interactive endpoint reference is generated from the OpenAPI
+specification — browse it in the pages under this tab. This page covers the
+conventions that apply everywhere.
+
+## Base URL
+
+```
+https://api.tybritelabs.com/logistics/v1
+```
+
+## Authentication
+
+Send your API key as a Bearer token. See [Authentication](/tldp/authentication) for
+secret vs publishable keys and test vs live.
+
+```
+Authorization: Bearer tybrite_sk_live_...
+```
+
+## Conventions
+
+- **JSON everywhere.** Send `Content-Type: application/json`; responses are JSON.
+- **Idempotency.** On write requests, send an `Idempotency-Key` header. A retried
+  request with the same key returns the original result instead of creating a
+  duplicate.
+- **Versioning.** The API is versioned in the path (`/v1`). Breaking changes ship
+  under a new version.
+
+## Errors
+
+Errors use standard HTTP status codes and a consistent body:
+
+```json
+{
+  "error": {
+    "code": "not_found",
+    "message": "Order not found"
+  }
+}
+```
+
+| Status | Meaning |
+|--------|---------|
+| `400` | Invalid request (bad or missing fields). |
+| `401` | Missing or invalid API key. |
+| `403` | The key lacks permission for this operation. |
+| `404` | The resource does not exist. |
+| `409` | Conflict (e.g. an idempotency replay with a different body). |
+| `422` | The request was understood but cannot be processed. |
+| `429` | Rate limit exceeded — back off and retry. |
+| `5xx` | A transient server error — safe to retry with backoff. |
+
+## Rate limits
+
+Requests are limited per API key. When you exceed the limit you receive `429`
+with `X-RateLimit-*` headers indicating your remaining quota and reset time.

@@ -1,0 +1,66 @@
+---
+title: "Proof of Delivery"
+description: "Reference for the ProofOfDeliveryService class in the TLDP SDK."
+---
+
+The `ProofOfDeliveryService` class (accessed via `client.proofOfDelivery`) retrieves the captured proof that a parcel reached its recipient — a photo, a one-time PIN confirmation, or a signature, depending on how the rider closed out the delivery.
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
+```
+
+## getProofOfDelivery
+
+Returns the proof-of-delivery (POD) record for a **delivered** shipment. Use it to confirm successful handover, resolve disputes, or attach evidence to your own order records.
+
+<Warning>
+  POD is only available once a shipment reaches the `delivered` status. Calling it on a shipment that hasn't been delivered yet returns no proof.
+</Warning>
+
+```typescript
+const proof = await client.proofOfDelivery.getProofOfDelivery({
+  shipmentId: 'a1b2c3d4-0000-0000-0000-000000000000',
+});
+
+console.log(proof.tracking_number);
+console.log(proof.delivered_at);
+
+console.log(proof.pod.type);         // 'photo' | 'otp' | 'signature'
+console.log(proof.pod.verified_at);  // when the proof was confirmed
+
+// The evidence itself is nested under `data`, and its shape follows `type`.
+if (proof.pod.type === 'photo')     console.log(proof.pod.data.photo_path);
+if (proof.pod.type === 'signature') console.log(proof.pod.data.signature_path, proof.pod.data.signed_by);
+if (proof.pod.type === 'otp')       console.log(proof.pod.data.verified, proof.pod.data.verified_by_phone);
+
+console.log(proof.recipient_confirmation.name);         // who received it
+console.log(proof.recipient_confirmation.confirmed_at);
+```
+
+**Returns**
+
+| Field | Description |
+| :--- | :--- |
+| `shipment_id` | The shipment the proof belongs to. |
+| `tracking_number` | The shipment's tracking number. |
+| `delivered_at` | When the shipment was delivered. |
+| `pod.type` | How delivery was confirmed: `photo`, `otp`, or `signature`. |
+| `pod.verified_at` | When the proof was confirmed. |
+| `pod.data` | The evidence, shaped by `pod.type` — see below. |
+| `recipient_confirmation.name` | Name of the person who received the parcel. |
+| `recipient_confirmation.confirmed_at` | When the recipient confirmed receipt. |
+
+The contents of `pod.data` depend on the type of proof captured:
+
+| `pod.type` | `pod.data` |
+| :--- | :--- |
+| `photo` | `photo_path` — the stored photograph of the delivered parcel. |
+| `signature` | `signature_path` and `signed_by` — the captured signature and the name given. |
+| `otp` | `verified` and `verified_by_phone` — whether the code was confirmed, and against which number. |
+
+<Note>
+  A shipment with no proof recorded answers `404` rather than an empty object, so a missing proof
+  is distinguishable from a delivery that was never evidenced.
+</Note>

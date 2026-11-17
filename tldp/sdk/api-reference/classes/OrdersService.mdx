@@ -1,0 +1,180 @@
+---
+title: "Orders"
+description: "Reference for the OrdersService class in the TLDP SDK."
+---
+
+The `OrdersService` class (accessed via `client.orders`) is the heart of the delivery lifecycle. An order captures *what* you want delivered and *to whom*; fulfilment then turns it into a live shipment with a tracking number. You can fulfil through a courier (using a rate quote) or — for same-city deliveries — dispatch instantly to nearby independent riders.
+
+```typescript
+import { TLDP } from '@tybrite-labs/tldp-sdk';
+
+const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
+```
+
+<Note>
+  **Sandbox isolation:** a `tybrite_sk_test_*` key runs every call in the sandbox environment — isolated from production, no real money moves, and any webhooks fire with `livemode: false`. Switch to a `tybrite_sk_live_*` key to go live.
+</Note>
+
+## createOrder
+
+Creates a new order in the `pending_fulfilment` state. It records the recipient and the item(s) but does **not** yet dispatch anything — call [`fulfilOrder`](#fulfilorder) or [`fulfilOrderOnDemand`](#fulfilorderondemand) to put it on the road.
+
+```typescript
+const { order } = await client.orders.createOrder({
+  requestBody: {
+    reference: 'ORD-10293',          // optional: your own order number
+    delivery_method: 'courier',      // optional
+    recipient: {
+      name: 'Amara Okeke',
+      phone: '+254700000000',
+      email: 'amara@example.com',    // optional
+      address: '12 Riverside Drive',
+      city: 'Nairobi',
+      lat: -1.2921, lng: 36.8219,    // optional, improves on-demand matching
+    },
+    item: { description: 'Sneakers', weight_kg: 1.2 },
+    // or multiple line items:
+    // items: [{ description: 'Sneakers', weight_kg: 1.2 }, ...],
+    origin: { city: 'Nairobi' },     // optional; defaults to your account origin
+  },
+});
+
+console.log(order.id, order.status); // 'pending_fulfilment'
+```
+
+Pass an `idempotencyKey` so a network retry can't accidentally create two orders — a repeat call with the same key returns the original order.
+
+```typescript
+const { order } = await client.orders.createOrder({
+  idempotencyKey: `create-ORD-10293-${Date.now()}`,
+  requestBody: { /* … */ },
+});
+```
+
+**Returns** `{ order }` — the wrapped order object. Read the id from `order.id`.
+
+## listOrders
+
+Lists your orders, newest first. Page with `limit` (1–100, default 50) and `offset`; the response's `pagination` block tells you whether more pages exist and the `next_offset` to request.
+
+```typescript
+let offset = 0;
+const all = [];
+for (;;) {
+  const { orders, pagination } = await client.orders.listOrders({ limit: 100, offset });
+  all.push(...orders);
+  if (!pagination.has_more) break;
+  offset = pagination.next_offset;
+}
+```
+
+**Returns** `{ orders, pagination }` — a page of orders plus `{ limit, offset, has_more, next_offset }`.
+
+## getOrder
+
+Fetches a single order by id, including its current status, recipient, items, and (once fulfilled) its linked shipment.
+
+```typescript
+const order = await client.orders.getOrder({ orderId: 'ord_a1b2c3' });
+```
+
+**Returns** the order object directly (not wrapped).
+
+## updateOrder
+
+Edits an order's reference, delivery method, recipient, or items.
+
+<Warning>
+  An order can only be updated while it is still **pending fulfilment**. Once it has been fulfilled and a shipment exists, the order is locked.
+</Warning>
+
+```typescript
+const { order } = await client.orders.updateOrder({
+  orderId: 'ord_a1b2c3',
+  requestBody: {
+    recipient: { name: 'Amara Okeke', phone: '+254700000000', city: 'Nairobi' },
+    item: { description: 'Sneakers (size 42)', weight_kg: 1.3 },
+  },
+});
+```
+
+**Returns** `{ order }` — the updated, wrapped order object.
+
+## cancelOrder
+
+Cancels an order. Provide an optional `reason` for your records and reporting.
+
+```typescript
+const result = await client.orders.cancelOrder({
+  orderId: 'ord_a1b2c3',
+  requestBody: { reason: 'customer_changed_mind' },
+});
+
+console.log(result.order_id, result.status); // 'cancelled'
+```
+
+**Returns** `{ order_id, status }`.
+
+## fulfilOrder
+
+Turns a pending order into a live courier shipment using a rate quote from [`client.rates.calculateRates`](/tldp/sdk/api-reference/classes/RatesService#calculaterates).
+
+<Note>
+  **Naming gotcha to remember:** a quote from `calculateRates` exposes its id as **`quote_id`**, but `fulfilOrder` wants that value back under the key **`rate_quote_id`**. Read `quote.quote_id`, pass it as `rate_quote_id`.
+</Note>
+
+```typescript
+const { quotes } = await client.rates.calculateRates({ requestBody: { /* ... */ } });
+const chosen = quotes[0];
+
+const result = await client.orders.fulfilOrder({
+  orderId: 'ord_a1b2c3',
+  idempotencyKey: `fulfil-ord_a1b2c3-${Date.now()}`,
+  requestBody: {
+    rate_quote_id: chosen.quote_id, // <-- read quote_id, send as rate_quote_id
+    pickup_point_id: 'pp_123',      // optional
+    delivery_method: 'courier',     // optional
+    delivery_station_id: 'ds_456',  // optional
+  },
+});
+
+console.log(result.tracking_number, result.tracking_url);
+```
+
+<Tip>
+  Pass an `idempotencyKey` so a network retry can't accidentally create two shipments for one order — a repeat call returns the original result.
+</Tip>
+
+**Returns** `{ order_id, shipment_id, tracking_number, tracking_url }`.
+
+## onDemandQuote
+
+For a same-city order, previews the available **on-demand** delivery tiers and what each would cost and take. On-demand routes the parcel to nearby independent riders rather than a scheduled courier.
+
+```typescript
+const { tiers } = await client.orders.onDemandQuote({ orderId: 'ord_a1b2c3' });
+
+for (const t of tiers) {
+  // tier: 'express' | 'scheduled' | 'on_the_way'
+  if (t.eligible) console.log(t.tier, t.fare, `${t.eta_min} min`);
+  else console.log(t.tier, 'unavailable:', t.reason);
+}
+```
+
+**Returns** `{ tiers: [{ tier, eligible, reason?, fare?, eta_min? }] }`.
+
+## fulfilOrderOnDemand
+
+Dispatches the order to nearby independent riders for same-city delivery. Pick a `tier` from [`onDemandQuote`](#ondemandquote), or omit it to use the default tier.
+
+```typescript
+const result = await client.orders.fulfilOrderOnDemand({
+  orderId: 'ord_a1b2c3',
+  idempotencyKey: `ondemand-ord_a1b2c3-${Date.now()}`,
+  requestBody: { tier: 'express' }, // optional
+});
+
+console.log(result.tracking_number, result.tracking_url);
+```
+
+**Returns** `{ order_id, shipment_id, tracking_number, tracking_url, ... }`. Once dispatched, follow the rider live with [`client.tracking.trackShipment`](/tldp/sdk/api-reference/classes/TrackingService#trackshipment).
