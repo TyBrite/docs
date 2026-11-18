@@ -4910,7 +4910,8 @@ paths:
                         example: Apple MacBook Pro
                       product_sku:
                         type: string
-                        description: Product SKU
+                        deprecated: true
+                        description: Ignored. The line's SKU is read from the variant.
                         example: SKU-001
                       quantity:
                         type: integer
@@ -4931,7 +4932,8 @@ paths:
                         type:
                           - object
                           - 'null'
-                        description: Product variant options (e.g., color, size)
+                        deprecated: true
+                        description: Ignored. The line's options are read from the variant.
                         example:
                           color: Space Black
                           storage: 256GB
@@ -46218,12 +46220,38 @@ components:
         order_id:
           type: string
           format: uuid
+        variant_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: The variant (SKU) this line sold.
+        sku:
+          type:
+            - string
+            - 'null'
+          description: The variant's SKU, recorded on the line when the order was placed.
+          example: FH-FAS-03-32
+        variant_name:
+          type:
+            - string
+            - 'null'
+          description: The variant's name, such as `32` or `Large`.
+          example: '32'
+        options:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+          description: 'The variant''s option values, such as `{ "Size": "32" }`. `null` for a variant with no options.'
+          example:
+            Size: '32'
         product_options:
           type:
             - object
             - 'null'
           additionalProperties: true
-          description: The options the shopper chose on this line.
+          description: The variant's option values as recorded on the line when the order was placed.
         custom_fields:
           type: array
           description: |
@@ -46238,7 +46266,10 @@ components:
         product_name:
           type: string
         product_sku:
-          type: string
+          type:
+            - string
+            - 'null'
+          description: The variant's SKU. Same value as `sku`.
         fulfilment_kind:
           type: string
           enum:

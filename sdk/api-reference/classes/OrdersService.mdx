@@ -228,6 +228,7 @@ Place a new order. Returns **`201 Created`** (semantic create) with the new orde
     *   **Pickup** (`fulfillment_method: 'pickup'`): send the location's `id` as `pickup_location_id`, or omit it to use the store's primary pickup location. `shipping_address` is not needed — the location's address is stored as the order's shipping address, with `type: 'pickup'` — and tax is calculated at the location. `shipping_amount` must equal the location's pickup fee, or the order is refused with `400 price_mismatch`. A location that is not one of the store's pickup locations, or an order below the location's minimum, returns `400 pickup_unavailable`.
 *   **Store credit**: pass `apply_store_credit: true` (optionally with `store_credit_amount` to cap it) to spend the customer's redeemable store-credit balance against this order. Requires a `customer_id`. The amount actually applied — capped at the order total and the available balance — is returned as `store_credit_applied`.
 *   **Ad conversion tracking (optional)**: if the shopper arrived from a paid ad, pass the click id — **`gclid`** (Google) and/or **`fbclid`** (Meta / Facebook & Instagram) — and their privacy-consent state as **`ad_consent: { ad_user_data, ad_personalization, jurisdiction }`** (each consent value `'granted' | 'denied' | 'unspecified'`; `jurisdiction` is the shopper's region, e.g. `EEA`/`UK`/`CH`/`US`). On a paid order this lets the merchant's advertising get credit for the sale on each platform. Galactic Core records the consent state with the order and only reports the conversion to the ad platform where the shopper's consent and region allow it — so always forward the true captured values (never guess). The Meta conversion is sent server-side and de-duplicated against the storefront's Meta Pixel using the order id, so it counts even when the browser blocks the Pixel. A storefront should wire this alongside a consent banner for EEA, UK, and Swiss visitors. The click id is also kept on the order itself, so the merchant's own reports can attribute revenue and profit to the ad that earned it rather than reading it back from the ad platform.
+*   **Order lines**: each line records the SKU, option values and cost of the variant it sold, read from the catalogue, and the response returns them as `variant_id`, `sku`, `variant_name` (the variant's name, such as `32`) and `options` (such as `{ "Size": "32" }`, `null` for a variant with no options). `product_sku` and `product_options` on a request item are ignored.
 *   Missing a required field returns `400` with a message naming the field.
 *   **Replay Protection**: The `X-Timestamp` is a Unix time in seconds or milliseconds and must be within **5 minutes** of the server time.
 *   **Post-processing**: When `payment_status: "paid"` is set, Galactic Core applies gift card redemption, stock reduction, and customer metrics updates. See [Post-Processing Warnings](#post-processing-warnings) below — the response may include a `post_processing_warnings` array that you **must** check.
@@ -462,12 +463,16 @@ for (const note of order.status_notes ?? []) {
       "id": "d72a3cbe-2232-4e84-a25c-fe1245c5e5e0",
       "order_id": "0468af54-5f6b-4be5-a4e6-3aa7a79450ba",
       "product_id": "0186665f-f0a1-4c79-976a-919b5b1c2daa",
+      "variant_id": "5b0e7d52-6c1a-4f0b-8f43-2d6a0c9e1f77",
       "product_name": "Samsung Galaxy Watch 6",
       "product_sku": "SAM-WATCH-6-44-0186",
+      "sku": "SAM-WATCH-6-44-0186",
+      "variant_name": "44",
+      "options": { "Size": "44" },
       "quantity": 2,
       "unit_price": 299,
       "total_price": 598,
-      "product_options": null
+      "product_options": { "Size": "44" }
     }
   ]
 }
