@@ -23,6 +23,12 @@ export type Shipment = {
         delivered_at?: string | null;
         estimated_delivery?: string;
     };
+    /**
+     * The public tracking link for this shipment: the tracking page address plus the shipment's
+     * tracking token (`?k=`). Share this link with the recipient; the tracking number on its own
+     * shows the status only.
+     *
+     */
     tracking_url?: string;
 };
 

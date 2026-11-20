@@ -518,7 +518,7 @@ paths:
                     picked_up_at: null
                     delivered_at: null
                     estimated_delivery: '2026-08-25T08:51:56.474317+00:00'
-                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342
+                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342?k=3f9a1c7e5b2d48f6a0e1c9b7d5f3a1e2
         '201':
           description: Shipment created.
           content:
@@ -548,7 +548,7 @@ paths:
                     picked_up_at: null
                     delivered_at: null
                     estimated_delivery: '2026-08-25T08:51:56.474317+00:00'
-                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342
+                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342?k=3f9a1c7e5b2d48f6a0e1c9b7d5f3a1e2
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -599,7 +599,7 @@ paths:
                     picked_up_at: null
                     delivered_at: null
                     estimated_delivery: '2026-08-25T08:51:56.474317+00:00'
-                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342
+                  tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260824-0342?k=3f9a1c7e5b2d48f6a0e1c9b7d5f3a1e2
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -660,12 +660,17 @@ paths:
         - Tracking
       summary: Public tracking
       description: |
-        Public, unauthenticated tracking by tracking number. Sensitive fields are omitted.
-        Rate limited per client IP (60 / minute). **Edge-cached** (~15s) and **ETag-validated** —
-        send the returned `ETag` back as `If-None-Match` to get a `304` (no body) when unchanged.
+        Public, unauthenticated tracking. Tracking numbers are issued in sequence, so the number alone
+        returns the status, the day of the estimated delivery, the courier and each event's status.
+        The shipment's `tracking_url` carries a tracking token (`k`); with it the response adds the
+        recipient's name and city and each event's description and location, and `full_details` is true.
+        Rate limited per client IP (60 / minute). **Edge-cached** (~15s, separately per token) and
+        **ETag-validated**: send the returned `ETag` back as `If-None-Match` to get a `304` (no body)
+        when unchanged.
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackingNumber'
+        - $ref: '#/components/parameters/TrackingToken'
       responses:
         '200':
           description: Public tracking info.
@@ -680,22 +685,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicTracking'
-              example:
-                tracking_number: TLDP-20260607-0021
-                status: out_for_delivery
-                estimated_delivery: '2026-06-07T18:00:00Z'
-                recipient:
-                  name: John Doe
-                  city: Nakuru
-                courier:
-                  name: G4S
-                events:
-                  - timestamp: '2026-06-07T12:30:00Z'
-                    status: picked_up
-                    description: Picked up at G4S Nakuru
-                  - timestamp: '2026-06-07T14:15:00Z'
-                    status: in_transit
-                    description: On the way
+              examples:
+                with_token:
+                  summary: With the tracking token (`?k=`)
+                  value:
+                    tracking_number: TLDP-20260607-0021
+                    status: out_for_delivery
+                    estimated_delivery: '2026-06-07T18:00:00Z'
+                    full_details: true
+                    recipient:
+                      name: John Doe
+                      city: Nakuru
+                    courier:
+                      name: G4S
+                    events:
+                      - timestamp: '2026-06-07T12:30:00Z'
+                        status: picked_up
+                        description: Picked up at G4S Nakuru
+                        location: Nakuru
+                      - timestamp: '2026-06-07T14:15:00Z'
+                        status: in_transit
+                        description: On the way
+                        location: null
+                number_only:
+                  summary: Tracking number only
+                  value:
+                    tracking_number: TLDP-20260607-0021
+                    status: out_for_delivery
+                    estimated_delivery: '2026-06-07T00:00:00Z'
+                    full_details: false
+                    recipient: null
+                    courier:
+                      name: G4S
+                    events:
+                      - timestamp: '2026-06-07T12:30:00Z'
+                        status: picked_up
+                        description: null
+                        location: null
+                      - timestamp: '2026-06-07T14:15:00Z'
+                        status: in_transit
+                        description: null
+                        location: null
         '304':
           $ref: '#/components/responses/NotModified'
         '404':
@@ -1318,11 +1348,12 @@ paths:
                     type: string
                   tracking_url:
                     type: string
+                    description: 'The public tracking link: the tracking page address plus the shipment''s tracking token (`?k=`). Share it with the recipient; the number alone shows the status only.'
               example:
                 order_id: ord_7f3a91
                 shipment_id: shp_a12b
                 tracking_number: TLDP-20260607-0021
-                tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260607-0021
+                tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260607-0021?k=3f9a1c7e5b2d48f6a0e1c9b7d5f3a1e2
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1456,6 +1487,7 @@ paths:
                     type: string
                   tracking_url:
                     type: string
+                    description: 'The public tracking link: the tracking page address plus the shipment''s tracking token (`?k=`). Share it with the recipient; the number alone shows the status only.'
                   fulfilment:
                     type: string
                     example: on_demand
@@ -1470,7 +1502,7 @@ paths:
                 order_id: ord_7f3a91
                 shipment_id: shp_a12b
                 tracking_number: TLDP-20260607-0022
-                tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260607-0022
+                tracking_url: https://tldp.tybritelabs.com/track/TLDP-20260607-0022?k=3f9a1c7e5b2d48f6a0e1c9b7d5f3a1e2
                 fulfilment: on_demand
                 tier: scheduled
                 fare: 80
@@ -2277,6 +2309,10 @@ components:
               format: date-time
         tracking_url:
           type: string
+          description: |
+            The public tracking link for this shipment: the tracking page address plus the shipment's
+            tracking token (`?k=`). Share this link with the recipient; the tracking number on its own
+            shows the status only.
     TrackingEvent:
       type: object
       properties:
@@ -2286,9 +2322,15 @@ components:
         status:
           type: string
         description:
-          type: string
+          type:
+            - string
+            - 'null'
+          description: Null unless the request carried the shipment's tracking token.
         location:
-          type: string
+          type:
+            - string
+            - 'null'
+          description: Null unless the request carried the shipment's tracking token.
     PublicTracking:
       type: object
       properties:
@@ -2297,10 +2339,20 @@ components:
         status:
           $ref: '#/components/schemas/ShipmentStatus'
         estimated_delivery:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
+          description: |
+            The projected delivery time with the tracking token; without it, the start of that day (UTC).
+        full_details:
+          type: boolean
+          description: True when the request carried the shipment's tracking token.
         recipient:
-          type: object
+          type:
+            - object
+            - 'null'
+          description: Present only with the shipment's tracking token.
           properties:
             name:
               type: string
@@ -2686,6 +2738,17 @@ components:
       description: The shipment's tracking number (e.g. TLDP-20251003-0001).
       schema:
         type: string
+    TrackingToken:
+      name: k
+      in: query
+      required: false
+      description: |
+        The shipment's tracking token, as carried by its `tracking_url`. With a matching token the
+        response includes the recipient and each event's description and location; without one it
+        carries the status, the day of the estimated delivery, the courier and each event's status.
+      schema:
+        type: string
+        pattern: ^[0-9a-f]{32}$
     PageLimit:
       name: limit
       in: query

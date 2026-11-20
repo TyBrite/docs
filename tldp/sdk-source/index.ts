@@ -34,6 +34,7 @@ export type { ShipmentId } from './models/ShipmentId';
 export { ShipmentStatus } from './models/ShipmentStatus';
 export type { TrackingEvent } from './models/TrackingEvent';
 export type { TrackingNumber } from './models/TrackingNumber';
+export type { TrackingToken } from './models/TrackingToken';
 export { Webhook } from './models/Webhook';
 export { WebhookEvent } from './models/WebhookEvent';
 export type { WebhookId } from './models/WebhookId';

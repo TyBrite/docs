@@ -67,9 +67,12 @@ console.log(fulfilled.tracking_number);
 
 ## 5. Track it
 
+`fulfilled.tracking_url` is the tracking link to send the recipient. It carries the shipment's tracking token (`k`), which the full tracking view requires; see [Tracking](/tldp/sdk/api-reference/classes/TrackingService#trackshipment).
+
 ```typescript
 const status = await client.tracking.trackShipment({
   trackingNumber: fulfilled.tracking_number,
+  k: new URL(fulfilled.tracking_url).searchParams.get('k') ?? undefined,
 });
 console.log(status.status); // pending → picked_up → in_transit → delivered
 ```

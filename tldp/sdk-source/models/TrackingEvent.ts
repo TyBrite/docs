@@ -5,7 +5,13 @@
 export type TrackingEvent = {
     timestamp?: string;
     status?: string;
-    description?: string;
-    location?: string;
+    /**
+     * Null unless the request carried the shipment's tracking token.
+     */
+    description?: string | null;
+    /**
+     * Null unless the request carried the shipment's tracking token.
+     */
+    location?: string | null;
 };
 

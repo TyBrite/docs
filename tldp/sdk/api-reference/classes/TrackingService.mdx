@@ -17,27 +17,41 @@ const client = new TLDP({ apiKey: 'tybrite_sk_test_...' });
 
 ## trackShipment
 
-Looks up a shipment by its **tracking number** and returns its current status plus, while the parcel is moving, the rider's live location.
+Looks up a shipment by its **tracking number** and returns its current status, the courier and the scan history.
+
+Tracking numbers are issued in sequence, so the number alone returns a narrow view: the status, the day of the estimated delivery, the courier and each event's status. Every shipment also has a **tracking token**, carried in its `tracking_url` as the `k` query parameter. With the token, the response adds the recipient's name and city and each event's description and location, and `full_details` is `true`. The `tracking_url` returned when a shipment is created or an order is fulfilled is the link to give the recipient.
 
 <Note>
-  This is a **public** endpoint — it works with a publishable key (`tybrite_pk_*`), so you can safely build a "track my order" page in the browser without exposing a secret key. It only reveals delivery-progress fields, not your full order data.
+  The endpoint works with a publishable key (`tybrite_pk_*`), so a "track my order" page can call it from the browser. Pass the token only from a link the recipient was given; the tracking number on its own never returns the recipient.
 </Note>
 
 ```typescript
+// From the shipment or fulfilment response:
+// result.tracking_url === 'https://tldp.tybritelabs.com/track/TLDP-20260608-0001?k=3f9a…'
+const k = new URL(result.tracking_url).searchParams.get('k') ?? undefined;
+
 const status = await publicClient.tracking.trackShipment({
-  trackingNumber: 'TLDP-7H3K9Q',
+  trackingNumber: 'TLDP-20260608-0001',
+  k,
 });
 
 console.log(status.status);               // e.g. 'out_for_delivery'
-console.log(status.estimated_delivery);
-console.log(status.recipient.name, status.recipient.city);
+console.log(status.full_details);         // true when k matched
+console.log(status.recipient?.city);      // null without the token
 console.log(status.courier?.name);        // null until a courier is assigned
 
-// The scan history, oldest first.
+// The scan history, oldest first. description and location are null without the token.
 for (const event of status.events) {
   console.log(event.timestamp, event.status, event.description, event.location);
 }
 ```
+
+**Parameters**
+
+| Name | Description |
+| :--- | :--- |
+| `trackingNumber` | The shipment's tracking number. |
+| `k` | Optional. The tracking token from the shipment's `tracking_url` (32 hexadecimal characters). |
 
 **Returns**
 
@@ -45,10 +59,13 @@ for (const event of status.events) {
 | :--- | :--- |
 | `tracking_number` | The number the shipment is tracked by. |
 | `status` | The shipment's current state. |
-| `estimated_delivery` | The projected delivery time, or `null` if none has been set. |
-| `recipient` | `name` and `city` of the addressee — deliberately narrow, since this endpoint is public. |
+| `estimated_delivery` | The projected delivery time with the token; without it, the start of that day (UTC). `null` if none has been set. |
+| `full_details` | `true` when the request carried the shipment's tracking token. |
+| `recipient` | `name` and `city` of the addressee with the token; `null` without it. |
 | `courier` | `{ name }` of the carrier, or `null` before one is assigned. |
-| `events` | Scan history, oldest first: `timestamp`, `status`, `description`, `location`. |
+| `events` | Scan history, oldest first: `timestamp`, `status`, and, with the token, `description` and `location`. |
+
+Responses are cached for about 15 seconds, separately for each token, and limited to 60 requests per minute per client IP.
 
 ## getShipmentTracking
 
@@ -58,7 +75,7 @@ Returns the full chronological **events timeline** for a shipment you own — ev
   This is keyed on the shipment id rather than the tracking number, so it identifies a shipment in
   your own account and returns its complete record. Either key type can read it;
   [`trackShipment`](#trackshipment) remains the endpoint for a page shown to a recipient, since it
-  needs only the tracking number and returns a narrower view.
+  needs only the tracking link and returns a narrower view.
 </Note>
 
 ```typescript

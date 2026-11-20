@@ -10,26 +10,41 @@ export class TrackingService {
     constructor(public readonly httpRequest: BaseHttpRequest) {}
     /**
      * Public tracking
-     * Public, unauthenticated tracking by tracking number. Sensitive fields are omitted.
-     * Rate limited per client IP (60 / minute). **Edge-cached** (~15s) and **ETag-validated** —
-     * send the returned `ETag` back as `If-None-Match` to get a `304` (no body) when unchanged.
+     * Public, unauthenticated tracking. Tracking numbers are issued in sequence, so the number alone
+     * returns the status, the day of the estimated delivery, the courier and each event's status.
+     * The shipment's `tracking_url` carries a tracking token (`k`); with it the response adds the
+     * recipient's name and city and each event's description and location, and `full_details` is true.
+     * Rate limited per client IP (60 / minute). **Edge-cached** (~15s, separately per token) and
+     * **ETag-validated**: send the returned `ETag` back as `If-None-Match` to get a `304` (no body)
+     * when unchanged.
      *
      * @returns PublicTracking Public tracking info.
      * @throws ApiError
      */
     public trackShipment({
         trackingNumber,
+        k,
     }: {
         /**
          * The shipment's tracking number (e.g. TLDP-20251003-0001).
          */
         trackingNumber: string,
+        /**
+         * The shipment's tracking token, as carried by its `tracking_url`. With a matching token the
+         * response includes the recipient and each event's description and location; without one it
+         * carries the status, the day of the estimated delivery, the courier and each event's status.
+         *
+         */
+        k?: string,
     }): CancelablePromise<PublicTracking> {
         return this.httpRequest.request({
             method: 'GET',
             url: '/v1/tracking/{trackingNumber}',
             path: {
                 'trackingNumber': trackingNumber,
+            },
+            query: {
+                'k': k,
             },
             errors: {
                 304: `The resource is unchanged since your \`If-None-Match\` ETag — body omitted.`,

@@ -284,6 +284,9 @@ export class OrdersService {
         order_id?: string;
         shipment_id?: string;
         tracking_number?: string;
+        /**
+         * The public tracking link: the tracking page address plus the shipment's tracking token (`?k=`). Share it with the recipient; the number alone shows the status only.
+         */
         tracking_url?: string;
     }> {
         return this.httpRequest.request({
@@ -373,6 +376,9 @@ export class OrdersService {
         order_id?: string;
         shipment_id?: string;
         tracking_number?: string;
+        /**
+         * The public tracking link: the tracking page address plus the shipment's tracking token (`?k=`). Share it with the recipient; the number alone shows the status only.
+         */
         tracking_url?: string;
         fulfilment?: string;
         tier?: OnDemandTier;

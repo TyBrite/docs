@@ -11,7 +11,7 @@ export class RatesService {
     /**
      * Calculate shipping rates
      * Returns quotes from every courier serving the route, sorted by price then
-     * courier tier. The 10% platform commission is already included in
+     * courier tier. The platform commission is already included in
      * `total_price`. Each `quote_id` is valid for 2 minutes and is required to
      * create a shipment.
      *

@@ -145,7 +145,7 @@ console.log(result.tracking_number, result.tracking_url);
   Pass an `idempotencyKey` so a network retry can't accidentally create two shipments for one order — a repeat call returns the original result.
 </Tip>
 
-**Returns** `{ order_id, shipment_id, tracking_number, tracking_url }`.
+**Returns** `{ order_id, shipment_id, tracking_number, tracking_url }`. `tracking_url` is the tracking link for the recipient, carrying the shipment's tracking token ([Tracking](/tldp/sdk/api-reference/classes/TrackingService#trackshipment)).
 
 ## onDemandQuote
 
