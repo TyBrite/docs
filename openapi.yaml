@@ -52746,8 +52746,16 @@ components:
             - code
             - event_ticket
             - service
-          description: 'How the product is delivered. Optional: a row that omits it takes the store''s default, which is `shipped` unless the store does not offer shipped products, in which case it is the first type the store offers. A row that names a type the store does not offer is rejected for that row.'
+          description: 'How the product is delivered. Optional: a row that omits it takes the store''s default, which is `shipped` unless the store does not offer shipped products, in which case it is the first type the store offers. A row that names a type the store does not offer is rejected for that row. On an update (`upsert_by_sku`) a stated type changes the existing product''s type.'
           example: digital
+        fulfilment_config:
+          type: object
+          additionalProperties: true
+          description: 'The delivery settings of the product''s type, as an object (in CSV or XML, a JSON string of one): a download''s files (`asset_ids`, `download_limit`, `link_ttl_minutes`, `access_days`), a code''s pool (`pool_id`, `codes_per_unit`), an event ticket''s rules (`admits_per_unit`, `valid_from`, `valid_until`, `sale_starts_at`, `sale_ends_at`, `max_per_order`, `capacity_group_id`, `check_in`, `entry_label`) or a service''s `confirmation_note`. A setting that does not apply to the type rejects the row. A download without a file, or a code without a pool, is saved but not offered for sale until its settings are complete; the row is listed in `warnings`.'
+          example:
+            asset_ids:
+              - 5b1f0a3e-8a59-4a0e-9e2c-1c2f6f1d9b10
+            download_limit: 3
     IngestSummary:
       type: object
       description: Per-batch counts.
@@ -52808,6 +52816,13 @@ components:
           $ref: '#/components/schemas/IngestSummary'
         errors:
           type: array
+          items:
+            $ref: '#/components/schemas/IngestRowError'
+        warnings:
+          type: array
+          description: |
+            Rows that were written but are not offered for sale yet, each with the reason: the product's delivery settings
+            are incomplete, or a field the store requires is missing. Absent when there are none.
           items:
             $ref: '#/components/schemas/IngestRowError'
         dry_run:

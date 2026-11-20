@@ -50,6 +50,8 @@ Push or sync a batch of products into your store.
 | `stock` | — | On-hand quantity. |
 | `threshold` | — | Low-stock threshold. |
 | `barcode` / `barcode_type` | — | The value scanned in-store and its symbology. A row carrying only `gtin`, `ean` or `upc` populates the barcode from it. |
+| `fulfilment_kind` | — | How the product is delivered: `shipped`, `digital`, `code`, `event_ticket` or `service`. A row that names none takes the store's default delivery type. A type the store does not offer fails that row. On an update, a stated type changes the existing product's type. |
+| `fulfilment_config` | — | The delivery settings of the row's type, as an object: a download's files (`asset_ids`, `download_limit`, `link_ttl_minutes`, `access_days`), a code's pool (`pool_id`, `codes_per_unit`), an event ticket's rules (`admits_per_unit`, `valid_from`, `valid_until`, `sale_starts_at`, `sale_ends_at`, `max_per_order`, `capacity_group_id`, `check_in`, `entry_label`) or a service's `confirmation_note`. A setting that does not apply to the type fails the row. |
 
 Field names are matched leniently on case, spaces, underscores and hyphens, and several accept
 alternative spellings: `title` for `name`, `qty` or `quantity` for `stock`, `cost` for `cost_price`,
@@ -148,6 +150,7 @@ console.log(result.errors);   // [] when everything imported cleanly
 | `strategy` | The strategy applied (`upsert_by_sku` / `create_only`). |
 | `summary` | Per-batch counts (see below). |
 | `errors` | One entry per rejected row (see below). |
+| `warnings` | Rows that were written but are not offered for sale yet, each with the reason: a download without a file, a code without a pool, or a field the store requires that the row left empty. Same shape as `errors`; absent when there are none. |
 
 **`summary` counts:**
 
