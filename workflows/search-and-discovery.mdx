@@ -177,7 +177,16 @@ Recommendations back the "you might also like" and "frequently bought together" 
 one discovery call that is secret-key only, running on your server (a publishable key returns `403`).
 One method, `getRecommendations`, serves every rail through the `type` field, and every response
 shares the same `{ type, recommendations[], fromCache, computedAt }` envelope, each item carrying
-`productId`, `score`, and `reason`.
+`productId`, `score`, `reason`, `relation`, and `source`.
+
+`relation` says how an item relates to the product the rail is anchored on. `complement` goes with the
+product (a co-purchase or bundle partner), so it belongs in a "Complete the set" rail. `alternative` can
+replace it (a similar product or a substitute), so it belongs in a "You might also like" rail.
+`relation` is `null` when the rail has no anchor product (`trending`, `new`, `next`, `personalized`) and
+for items added to fill a short rail. `source` names the signal that produced the item: `co_purchase`,
+`bundle`, `similar`, `personalized`, `next`, `trending`, `new`, `featured`, `engagement` or `random`.
+When a rail falls back or is topped up, each item carries the source it actually came from, so filter a
+complement rail on `relation` rather than on the requested `type`.
 
 A rail is never empty, because the engine cascades through fallbacks: a cold product with no
 co-purchase or similarity signal falls back `bundle → also-bought → similar → trending → random`. An
@@ -200,11 +209,11 @@ const similar = await server.recommendations.getRecommendations({
 {
   "type": "similar",
   "recommendations": [
-    { "productId": "3422935b-88ee-43ad-a7df-c03161a35cb4", "score": 0.87, "reason": "Similar product based on description and attributes" },
-    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.82, "reason": "Similar product based on description and attributes" },
-    { "productId": "7c378f6b-6c4b-4608-882e-6b6c6cc0a3e8", "score": 0.81, "reason": "Similar product based on description and attributes" },
-    { "productId": "37ecdce9-e95d-445c-9908-9ffea7f5f419", "score": 0.8, "reason": "Similar product based on description and attributes" },
-    { "productId": "a45fae07-761e-453c-9c4c-cf88cf24a9f7", "score": 0.8, "reason": "Similar product based on description and attributes" }
+    { "productId": "3422935b-88ee-43ad-a7df-c03161a35cb4", "score": 0.87, "reason": "Similar product based on description and attributes", "relation": "alternative", "source": "similar" },
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.82, "reason": "Similar product based on description and attributes", "relation": "alternative", "source": "similar" },
+    { "productId": "7c378f6b-6c4b-4608-882e-6b6c6cc0a3e8", "score": 0.81, "reason": "Similar product based on description and attributes", "relation": "alternative", "source": "similar" },
+    { "productId": "37ecdce9-e95d-445c-9908-9ffea7f5f419", "score": 0.8, "reason": "Similar product based on description and attributes", "relation": "alternative", "source": "similar" },
+    { "productId": "a45fae07-761e-453c-9c4c-cf88cf24a9f7", "score": 0.8, "reason": "Similar product based on description and attributes", "relation": "alternative", "source": "similar" }
   ],
   "fromCache": true,
   "computedAt": "2026-06-20T10:53:58.158Z"
@@ -227,9 +236,9 @@ const alsoBought = await server.recommendations.getRecommendations({
 {
   "type": "also-bought",
   "recommendations": [
-    { "productId": "3422935b-88ee-43ad-a7df-c03161a35cb4", "score": 0.87, "reason": "Similar product based on description and attributes" },
-    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.82, "reason": "Similar product based on description and attributes" },
-    { "productId": "7c378f6b-6c4b-4608-882e-6b6c6cc0a3e8", "score": 0.81, "reason": "Similar product based on description and attributes" }
+    { "productId": "3422935b-88ee-43ad-a7df-c03161a35cb4", "score": 0.87, "reason": "Similar product based on description and attributes", "relation": "alternative", "source": "similar" },
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.82, "reason": "Similar product based on description and attributes", "relation": "alternative", "source": "similar" },
+    { "productId": "7c378f6b-6c4b-4608-882e-6b6c6cc0a3e8", "score": 0.81, "reason": "Similar product based on description and attributes", "relation": "alternative", "source": "similar" }
   ],
   "fromCache": false,
   "computedAt": "2026-06-20T10:53:58.158Z"
@@ -253,9 +262,9 @@ const bundle = await server.recommendations.getRecommendations({
 {
   "type": "bundle",
   "recommendations": [
-    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.33, "reason": "Pairs well together (0% co-purchased)" },
-    { "productId": "7c378f6b-6c4b-4608-882e-6b6c6cc0a3e8", "score": 0.32, "reason": "Pairs well together (0% co-purchased)" },
-    { "productId": "37ecdce9-e95d-445c-9908-9ffea7f5f419", "score": 0.32, "reason": "Pairs well together (0% co-purchased)" }
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.33, "reason": "Pairs well together (0% co-purchased)", "relation": "complement", "source": "bundle" },
+    { "productId": "7c378f6b-6c4b-4608-882e-6b6c6cc0a3e8", "score": 0.32, "reason": "Pairs well together (0% co-purchased)", "relation": "complement", "source": "bundle" },
+    { "productId": "37ecdce9-e95d-445c-9908-9ffea7f5f419", "score": 0.32, "reason": "Pairs well together (0% co-purchased)", "relation": "complement", "source": "bundle" }
   ],
   "fromCache": true,
   "computedAt": "2026-06-20T10:53:58.158Z"
@@ -277,9 +286,9 @@ const trending = await server.recommendations.getRecommendations({
 {
   "type": "trending",
   "recommendations": [
-    { "productId": "0186665f-f0a1-4c79-976a-919b5b1c2daa", "score": 1, "reason": "Trending #1 - 2.1 units/day" },
-    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.2009345794392523, "reason": "Trending #2 - 0.4 units/day" },
-    { "productId": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 0.2009345794392523, "reason": "Trending #3 - 0.4 units/day" }
+    { "productId": "0186665f-f0a1-4c79-976a-919b5b1c2daa", "score": 1, "reason": "Trending #1 - 2.1 units/day", "relation": null, "source": "trending" },
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.2009345794392523, "reason": "Trending #2 - 0.4 units/day", "relation": null, "source": "trending" },
+    { "productId": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 0.2009345794392523, "reason": "Trending #3 - 0.4 units/day", "relation": null, "source": "trending" }
   ],
   "fromCache": true,
   "computedAt": "2026-06-20T10:53:58.158Z"
@@ -297,9 +306,9 @@ const arrivals = await server.recommendations.getRecommendations({
 {
   "type": "new",
   "recommendations": [
-    { "productId": "e99bf2b2-e466-4472-aadc-1a5d99391ad5", "score": 1, "reason": "New arrival" },
-    { "productId": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", "score": 0.99, "reason": "New arrival" },
-    { "productId": "f6a2629e-f899-4615-b17a-e78e2e4c35a4", "score": 0.98, "reason": "New arrival" }
+    { "productId": "e99bf2b2-e466-4472-aadc-1a5d99391ad5", "score": 1, "reason": "New arrival", "relation": null, "source": "new" },
+    { "productId": "7d425c0a-50e7-4e39-af79-6f7945f9dfa8", "score": 0.99, "reason": "New arrival", "relation": null, "source": "new" },
+    { "productId": "f6a2629e-f899-4615-b17a-e78e2e4c35a4", "score": 0.98, "reason": "New arrival", "relation": null, "source": "new" }
   ],
   "fromCache": true,
   "computedAt": "2026-06-20T10:53:58.158Z"
@@ -325,9 +334,9 @@ const forYou = await server.recommendations.getRecommendations({
 {
   "type": "personalized",
   "recommendations": [
-    { "productId": "0186665f-f0a1-4c79-976a-919b5b1c2daa", "score": 1, "reason": "Trending #1 - 2.1 units/day" },
-    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.2009345794392523, "reason": "Trending #2 - 0.4 units/day" },
-    { "productId": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 0.2009345794392523, "reason": "Trending #3 - 0.4 units/day" }
+    { "productId": "0186665f-f0a1-4c79-976a-919b5b1c2daa", "score": 1, "reason": "Trending #1 - 2.1 units/day", "relation": null, "source": "trending" },
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.2009345794392523, "reason": "Trending #2 - 0.4 units/day", "relation": null, "source": "trending" },
+    { "productId": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 0.2009345794392523, "reason": "Trending #3 - 0.4 units/day", "relation": null, "source": "trending" }
   ],
   "fromCache": true,
   "computedAt": "2026-06-20T10:53:58.158Z"
@@ -445,8 +454,8 @@ const next = await server.recommendations.getRecommendations({
 {
   "type": "next",
   "recommendations": [
-    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.6, "reason": "Customers viewed this next" },
-    { "productId": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 0.4, "reason": "Customers viewed this next" }
+    { "productId": "068aa59d-1adf-4685-adf5-9793b1ffb9c9", "score": 0.6, "reason": "Customers viewed this next", "relation": null, "source": "next" },
+    { "productId": "0c498ac2-4b77-4b03-a9b8-dbd4661efa54", "score": 0.4, "reason": "Customers viewed this next", "relation": null, "source": "next" }
   ],
   "fromCache": true,
   "computedAt": "2026-06-20T10:53:58.158Z"

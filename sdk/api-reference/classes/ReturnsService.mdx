@@ -575,7 +575,7 @@ const { data: history } = await client.returns.listReturns({
 | `201` | Return lodged |
 | `400` | Invalid request — missing required field or bad UUID |
 | `401` | Missing or invalid API key, or missing customer session |
-| `403` | Operation not permitted for this key type |
+| `403` | Operation not permitted for this key type. A shopper credential for a closed customer account returns `403` with `account_closed` (see [Closed customer accounts](/sdk/customers-and-auth#closed-customer-accounts)). |
 | `404` | Return or order not found, or it doesn't belong to the customer |
 | `422` | Returns are not enabled for this store (`returns_disabled`) |
 | `429` | Rate limit exceeded |

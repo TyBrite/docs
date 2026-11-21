@@ -43,7 +43,7 @@ gift_cards.forEach(gc => {
 <Note>Customers with no gift cards get `{ "gift_cards": [] }`.</Note>
 
 <Note>
-  When listing gift cards for a customer, the resolved customer identity (`xAuthToken` or `xExternalAuth`) must match the `customerId` parameter. Otherwise the request returns 403. This means a leaked publishable key alone cannot enumerate another customer's gift cards — a customer credential is required.
+  When listing gift cards for a customer, the resolved customer identity (`xAuthToken` or `xExternalAuth`) must match the `customerId` parameter. Otherwise the request returns 403. This means a leaked publishable key alone cannot enumerate another customer's gift cards — a customer credential is required. A credential for a closed customer account returns `403` with `account_closed` (see [Closed customer accounts](/sdk/customers-and-auth#closed-customer-accounts)).
 </Note>
 
 ---
@@ -70,27 +70,29 @@ console.log(`Status: ${details.status}`); // 'active' while redeemable
   "valid": true,
   "balance": 100,
   "status": "active",
-  "expiry_date": "2027-06-20",
-  "maximum_usage_percentage": 100,
+  "expiry_date": "2026-03-31",
+  "maximum_usage_percentage": null,
   "gift_card": {
-    "id": "c91a7…",
+    "id": "c91a7918-4a88-440e-8509-993e7ff2cbac",
     "code": "GTSA-1B2C-3D4E-5F6G",
     "value": 100,
     "balance": 100,
     "status": "active",
-    "expiry_date": "2027-06-20",
     "type": "promotional",
+    "expiry_date": "2026-03-31",
+    "issued_date": "2025-12-17",
+    "last_used": null,
     "minimum_purchase_amount": 0,
-    "maximum_usage_percentage": 100,
-    "redemption_count": 0,
-    "max_redemptions": null
+    "maximum_usage_percentage": null
   }
 }
 ```
 
 <Note>
-  No customer auth required — the gift card code itself is the credential.
+  No customer auth required — the gift card code itself is the credential. The code matches regardless of letter case and surrounding spaces, as it does at redemption, so a code that redeems also checks.
 </Note>
+
+The response describes the card and never the person it was issued to: it carries no `customer_id` or `issued_to`, so a code reveals only what the card is worth. Naming either in `fields` returns `400`, as does any unknown field name.
 
 ---
 

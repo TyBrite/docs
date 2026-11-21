@@ -293,7 +293,7 @@ async function loadProductReviews(productId: string) {
 | `201` | Review submitted (pending moderation) |
 | `400` | Invalid request — missing required field or bad UUID |
 | `401` | Missing or invalid API key |
-| `403` | Attempting to delete a review that the authenticated customer did not write |
+| `403` | Attempting to delete a review that the authenticated customer did not write. A shopper credential for a closed customer account returns `403` with `account_closed` (see [Closed customer accounts](/sdk/customers-and-auth#closed-customer-accounts)). |
 | `404` | Review not found, or review is not approved (publishable key) |
 | `409` | Duplicate review — customer already has a non-rejected review for this product |
 | `429` | Rate limit exceeded |

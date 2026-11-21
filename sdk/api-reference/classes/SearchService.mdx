@@ -314,6 +314,6 @@ All three methods accept **publishable** and **secret** keys. `searchProducts` a
 | `200` | Search results returned (may be empty — check `totalResults`). |
 | `400` | Missing `query`/`q` parameter, invalid `limit`, or malformed request body. |
 | `401` | Invalid or missing API key. |
-| `403` | `feature_not_available` from `semanticSearch` when the store's plan does not include semantic search. |
+| `403` | `feature_not_available` from `semanticSearch` when the store's plan does not include semantic search. A shopper credential for a closed customer account returns `403` with `account_closed` (see [Closed customer accounts](/sdk/customers-and-auth#closed-customer-accounts)). |
 | `429` | Rate limit exceeded. |
 | `500` | Internal server error, from any of the three methods. For `semanticSearch` it also means the query could not be converted for meaning-based matching. |

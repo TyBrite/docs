@@ -322,9 +322,9 @@ const lead = await storefront.cms.submitLeadForm({ slug: 'spring-lookbook', requ
 ```
 
 ```typescript
-// Gift cards: check a balance, or list the customer's cards
+// Gift cards: check a balance (code matched ignoring case and spaces; no holder identity returned), or list the customer's cards
 const giftCard = await storefront.giftCards.checkGiftCard({ code: 'GTSA-1B2C-3D4E-5F6G' });
-// → { code: 'GTSA-1B2C-3D4E-5F6G', balance: 50, currency: 'USD', status: 'active' }
+// → { valid: true, balance: 100, status: 'active', expiry_date, maximum_usage_percentage, gift_card: { id, code, value, balance, … } }
 
 const { gift_cards } = await storefront.giftCards.listGiftCards({ xAuthToken: token, customerId });
 // → { gift_cards: [{ code: 'GTSA-...', balance: 50, status: 'active' }] }  (empty array if none)

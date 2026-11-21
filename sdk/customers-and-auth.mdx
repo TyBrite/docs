@@ -183,6 +183,19 @@ async function handleCustomerProfileFetch(req, res) {
 
 The assertion is signed in your backend, so the storefront never holds `hmac_secret`. The 300-second cap on `exp - iat` bounds how long a leaked assertion remains valid.
 
+## Closed customer accounts
+
+A request that carries a shopper credential (`x-auth-token`, `x-external-auth` or the identity-provider token `x-idp-token`) for a customer whose account has been closed returns `403` with the code `account_closed` and the message "This customer account has been closed." The answer is the same on every route that accepts a shopper credential, and a closed account's credential does not read or change any of the customer's records.
+
+```json Response
+{
+  "error": {
+    "code": "account_closed",
+    "message": "This customer account has been closed."
+  }
+}
+```
+
 ## What Path B still doesn't give you
 
 - **No password reset, magic link, or OTP delivery.** Those live in your identity provider.

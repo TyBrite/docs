@@ -587,7 +587,7 @@ const handleAddToCart = async (selectedVariant: Variant, quantity: number) => {
 | `400` | `insufficient_stock`, missing required fields, or invalid body. |
 | `401` | Missing or invalid `xAuthToken`. |
 | `402` | `subscription_expired` — the store's subscription is not active. |
-| `403` | The customer token does not match the `customer_id` in the request, or a GC Connect key lacks the `cart:write` scope (`insufficient_scope`). |
+| `403` | The customer token does not match the `customer_id` in the request, or a GC Connect key lacks the `cart:write` scope (`insufficient_scope`). A shopper credential for a closed customer account returns `403` with `account_closed` (see [Closed customer accounts](/sdk/customers-and-auth#closed-customer-accounts)). |
 | `404` | Variant, wishlist item, or cart item not found; also returned by `getCart` and `clearCart` when the cart cannot be found. |
 | `409` | Item already in wishlist (on `addToWishlist`); variant in stock (on `notifyWhenAvailable`). |
 

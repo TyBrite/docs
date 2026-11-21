@@ -2484,7 +2484,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -5678,7 +5678,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -7723,7 +7723,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -7821,7 +7821,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -8017,7 +8017,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: Variant not found or not available
           content:
@@ -8176,7 +8176,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -8281,7 +8281,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -8417,7 +8417,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -8521,7 +8521,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -8637,7 +8637,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: Variant not found
           content:
@@ -8732,7 +8732,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -8890,7 +8890,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: Wishlist item or variant not found
           content:
@@ -9015,7 +9015,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: The variant is not sold online by this store (`not_found`), or the store cannot send back-in-stock messages (`not_available`).
           headers:
@@ -9649,7 +9649,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -10018,9 +10018,13 @@ paths:
                   - productId: 7d425c0a-50e7-4e39-af79-6f7945f9dfa8
                     score: 0.99
                     reason: Similar product based on description and attributes
+                    relation: alternative
+                    source: similar
                   - productId: 0186665f-f0a1-4c79-976a-919b5b1c2daa
                     score: 0.85
                     reason: Similar product based on description and attributes
+                    relation: alternative
+                    source: similar
                 fromCache: true
                 computedAt: '2026-06-20T10:30:00Z'
         '400':
@@ -10050,7 +10054,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: The `productId` sent does not name an active product of this store.
           headers:
@@ -11737,7 +11741,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/AgentRateLimitError'
         '500':
@@ -12158,7 +12162,7 @@ paths:
                   code: insufficient_credits
                   message: This store has no AI credits available. The deterministic tools remain available.
         '403':
-          description: With `conversation_id`, `shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed` when the store's assistant settings do not allow the conversation to be read. Hosted helpers being off is never a refusal here.
+          description: With `conversation_id`, `shopping_assistant_disabled`, `history_disabled` or `guests_not_allowed` when the store's assistant settings do not allow the conversation to be read. Hosted helpers being off is never a refusal here. A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -14306,7 +14310,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/AgentRateLimitError'
         '500':
@@ -15337,7 +15341,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: Not found
           headers:
@@ -15559,7 +15563,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: Not found
           headers:
@@ -15931,7 +15935,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: Not found
           headers:
@@ -16110,7 +16114,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/AgentRateLimitError'
         '500':
@@ -16272,7 +16276,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/AgentRateLimitError'
         '500':
@@ -16441,7 +16445,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The shopper has not granted personalisation
+          description: The shopper has not granted personalisation A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -16620,7 +16624,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/AgentRateLimitError'
         '500':
@@ -16766,7 +16770,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The shopper has not granted personalisation
+          description: The shopper has not granted personalisation A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -17003,7 +17007,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: Not found
           headers:
@@ -17211,7 +17215,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '422':
@@ -17413,7 +17417,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: Personalization consent has not been granted
+          description: Personalization consent has not been granted A shopper whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -17697,7 +17701,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: Personalization consent has not been granted
+          description: Personalization consent has not been granted A shopper whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -17918,7 +17922,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -18295,7 +18299,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
-          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`). A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -18441,7 +18445,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
-          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`). A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -18656,7 +18660,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
-          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`). A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -18909,7 +18913,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
-          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`). A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -19476,7 +19480,7 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
-          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`).
+          description: The store's assistant settings refuse the call (`shopping_assistant_disabled`, `history_disabled`, `guests_not_allowed`), or a connected app lacks the `agent:read` or `agent:write` scope (`insufficient_scope`). A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -19628,7 +19632,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The shopper has not granted personalization consent (`consent_required`), or the key lacks the `agent:read` scope.
+          description: The shopper has not granted personalization consent (`consent_required`), or the key lacks the `agent:read` scope. A shopper whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -22019,7 +22023,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '409':
           description: The key was used with different items, or the basket cannot be bought as quoted. `insufficient_stock` means a line sold out between the quote and the hold (`details` is a sentence naming the variant, the stock available and the quantity asked for)
           headers:
@@ -22502,7 +22506,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: Not found
           headers:
@@ -23358,7 +23362,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The token does not match, or the emailed code does not (`invalid_confirmation_token`, `invalid_person_proof`)
+          description: The token does not match, or the emailed code does not (`invalid_confirmation_token`, `invalid_person_proof`) A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -23975,7 +23979,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The intent needs its confirmation token or the shopper it was prepared for
+          description: The intent needs its confirmation token or the shopper it was prepared for A shopper whose account has been closed receives `account_closed`.
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -24652,7 +24656,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -26399,7 +26403,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -26519,7 +26523,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -26628,7 +26632,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -26762,7 +26766,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -26861,7 +26865,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '500':
           $ref: '#/components/responses/ServerError'
     post:
@@ -27009,7 +27013,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/customers/{id}/addresses/{addressId}:
@@ -27144,7 +27148,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -27232,7 +27236,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -27352,7 +27356,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -27475,7 +27479,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -27680,7 +27684,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -27830,7 +27834,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -27966,7 +27970,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -28103,7 +28107,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -28280,7 +28284,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -28385,7 +28389,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -28497,7 +28501,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -28590,7 +28594,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -28683,7 +28687,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -28859,7 +28863,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -28966,7 +28970,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -29091,7 +29095,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -29188,7 +29192,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -29313,7 +29317,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: The link, the entry or the file is not valid.
           content:
@@ -29479,7 +29483,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -29495,6 +29499,9 @@ paths:
         maximum-usage rules. Accessible with both publishable (`tybrite_pk_*`) and
         secret (`tybrite_sk_*`) API keys.
 
+        The response describes the card and never the person it was issued to: it contains no
+        `customer_id` or `issued_to`, so anyone holding a code learns only what the card is worth.
+
         The `valid` flag is `true` only when the gift card is active, has a
         positive balance, and has not expired.
 
@@ -29508,7 +29515,7 @@ paths:
           required: true
           schema:
             type: string
-          description: The unique gift card code to look up (e.g. `GTSA-1B2C-3D4E-5F6G`).
+          description: The unique gift card code to look up (e.g. `GTSA-1B2C-3D4E-5F6G`). Matching ignores letter case and surrounding spaces, the same as redemption, so a code that redeems also checks.
         - name: fields
           in: query
           schema:
@@ -29518,11 +29525,12 @@ paths:
 
             **Allowed Fields:**
             - `id`, `code`, `value`, `balance`, `status`, `type`
-            - `expiry_date`, `customer_id`, `issued_to`, `issued_date`, `last_used`
+            - `expiry_date`, `issued_date`, `last_used`
             - `minimum_purchase_amount`, `maximum_usage_percentage`, `usage_restrictions`
             - `redemption_count`, `max_redemptions`, `created_at`, `updated_at`
 
-            Unknown field names will return a `400` error.
+            The holder's identity is never returned: `customer_id` and `issued_to` are not part of the
+            response, and naming either answers `400`. Unknown field names also return a `400` error.
           example: code,balance,expiry_date
       responses:
         '200':
@@ -29553,7 +29561,7 @@ paths:
                       - number
                       - 'null'
                   gift_card:
-                    $ref: '#/components/schemas/GiftCard'
+                    $ref: '#/components/schemas/GiftCardCheck'
               example:
                 valid: true
                 balance: 100
@@ -29568,8 +29576,6 @@ paths:
                   status: active
                   type: promotional
                   expiry_date: '2026-03-31'
-                  customer_id: a1b2c3d4-5e6f-4abc-9def-000000000abc
-                  issued_to: john.doe@example.com
                   issued_date: '2025-12-17'
                   last_used: null
                   minimum_purchase_amount: 0
@@ -31239,7 +31245,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: A GC Connect key without the operation's scope (`insufficient_scope`).
+          description: A GC Connect key without the operation's scope (`insufficient_scope`). A shopper whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -32110,7 +32116,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -32749,7 +32755,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -33332,7 +33338,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -33530,7 +33536,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -33630,7 +33636,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -33749,7 +33755,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -33899,7 +33905,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -34000,7 +34006,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -34213,7 +34219,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -34288,7 +34294,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -34398,7 +34404,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -34481,7 +34487,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -34614,7 +34620,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '426':
@@ -37221,7 +37227,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -37391,7 +37397,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -37638,7 +37644,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           description: No such order for this customer.
           content:
@@ -37737,7 +37743,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -37882,7 +37888,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -38104,7 +38110,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '422':
@@ -38239,7 +38245,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '429':
@@ -38341,7 +38347,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -38443,7 +38449,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -38620,7 +38626,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -38748,7 +38754,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -38838,7 +38844,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -38925,7 +38931,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -39027,7 +39033,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
@@ -39103,7 +39109,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: No B2B buyer account for this customer on this store (`forbidden`).
+          description: No B2B buyer account for this customer on this store (`forbidden`). A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -39210,7 +39216,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/b2b/rfqs/{id}:
@@ -39282,7 +39288,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`.
+          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`. A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -39371,7 +39377,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`.
+          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`. A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -39452,7 +39458,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -39519,7 +39525,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ScopeForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '500':
@@ -39591,7 +39597,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: No B2B buyer account for this customer on this store (`forbidden`).
+          description: No B2B buyer account for this customer on this store (`forbidden`). A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -39673,7 +39679,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`.
+          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`. A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -39753,7 +39759,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: No B2B buyer account for this customer on this store (`forbidden`).
+          description: No B2B buyer account for this customer on this store (`forbidden`). A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -39835,7 +39841,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`.
+          description: No B2B buyer account for this customer on this store (`forbidden`). A GC Connect key without the operation's scope receives `insufficient_scope`. A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -39946,7 +39952,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The key is publishable, or the customer has no wholesale account with this store.
+          description: The key is publishable, or the customer has no wholesale account with this store. A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -40031,7 +40037,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: No B2B buyer account for this customer on this store (`forbidden`).
+          description: No B2B buyer account for this customer on this store (`forbidden`). A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -40138,7 +40144,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          description: The key is publishable, the person is not an approver of this account, or they placed the order themselves.
+          description: The key is publishable, the person is not an approver of this account, or they placed the order themselves. A buyer whose account has been closed receives `account_closed`.
           content:
             application/json:
               schema:
@@ -40310,7 +40316,7 @@ paths:
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          $ref: '#/components/responses/CustomerForbiddenError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/webhook_endpoints:
@@ -47294,6 +47300,31 @@ components:
         reason:
           type: string
           example: Similar product based on description and attributes
+        relation:
+          type:
+            - string
+            - 'null'
+          enum:
+            - complement
+            - alternative
+            - null
+          description: How the item relates to the anchor product. `complement` goes with it (a co-purchase or bundle partner); `alternative` can replace it (a similar product or a substitute). `null` when the list has no anchor relationship (trending, new, next, personalized, and padding).
+          example: complement
+        source:
+          type: string
+          enum:
+            - co_purchase
+            - bundle
+            - similar
+            - personalized
+            - next
+            - trending
+            - new
+            - featured
+            - engagement
+            - random
+          description: The kind of signal that produced the item. When a list is topped up or falls back to another kind, each item carries the source it actually came from, so a storefront can keep a "Complete the set" rail to items whose `relation` is `complement`.
+          example: co_purchase
         merchant_store_id:
           type: string
           format: uuid
@@ -48677,6 +48708,74 @@ components:
             - string
             - 'null'
           description: Free-text recipient the card was issued to (e.g. an email or name), if any.
+        issued_date:
+          type: string
+          format: date
+        last_used:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: Date the gift card was last redeemed, or `null` if never used.
+        minimum_purchase_amount:
+          type:
+            - number
+            - 'null'
+          description: Minimum order total required before this gift card can be applied.
+        maximum_usage_percentage:
+          type:
+            - number
+            - 'null'
+          description: Maximum percentage of the balance that may be applied to a single order.
+        usage_restrictions:
+          type: object
+          description: Optional restrictions on where the card can be applied (e.g. excluded categories or products).
+        redemption_count:
+          type: integer
+          description: Number of times the gift card has been redeemed.
+        max_redemptions:
+          type:
+            - integer
+            - 'null'
+          description: Maximum number of redemptions allowed, or `null` for unlimited.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    GiftCardCheck:
+      description: |
+        The card as the public balance check returns it: the same fields as `GiftCard` without the holder's
+        identity. `customer_id` and `issued_to` are never part of it, because the code is the only credential on this route.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique gift card identifier.
+        code:
+          type: string
+          description: The unique redeemable code.
+        value:
+          type: number
+          description: The original face value the gift card was issued with.
+        balance:
+          type: number
+          description: Remaining redeemable balance.
+        status:
+          type: string
+          description: Lifecycle status. A gift card is only redeemable while `active`.
+          example: active
+        type:
+          type: string
+          description: Gift card type (e.g. `promotional`, `purchased`).
+        expiry_date:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: Date the gift card expires (null if it never expires). It is not redeemable on or after this date.
         issued_date:
           type: string
           format: date
@@ -53688,6 +53787,46 @@ components:
             error:
               code: subscription_expired
               message: This store's subscription is not active
+    CustomerForbiddenError:
+      description: Insufficient permissions for this key. A GC Connect key that was not granted the operation's scope (for example `agent:read` or `orders:write`) receives `insufficient_scope`, and the message names the scope. A request that needs a secret key (a publishable key on a write, whatever scopes it holds), or a marketplace operator key calling a single-store operation, receives `forbidden`. A store whose plan does not include the feature the route belongs to receives `feature_not_available`, whatever the key. A publishable key limited to the products that carry one tag receives `out_of_scope` for a product, variant, promotion or review outside its slice, and `endpoint_not_allowed` on a route that has no slice behaviour. A request that identifies a customer (`x-auth-token`, `x-external-auth` or `x-idp-token`) whose account has been closed receives `account_closed`.
+      headers:
+        Tybrite-Environment:
+          $ref: '#/components/headers/TybriteEnvironment'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            insufficient_scope:
+              summary: Connect key without the operation's scope
+              value:
+                error:
+                  code: insufficient_scope
+                  message: This connected app was not granted the 'agent:read' scope.
+            forbidden:
+              summary: Secret key required
+              value:
+                error:
+                  code: forbidden
+                  message: This operation requires a secret key. Publishable keys cover catalogue reads and the actions a shopper takes for themselves.
+            feature_not_available:
+              summary: The store's plan does not include the feature
+              value:
+                error:
+                  code: feature_not_available
+                  message: Smart Search is not available for this store.
+            out_of_scope:
+              summary: A publishable key limited to one tag named a product outside its slice
+              value:
+                error:
+                  code: out_of_scope
+                  message: This key is limited to part of the catalogue and this product is outside it.
+            account_closed:
+              summary: The identified customer account has been closed
+              value:
+                error:
+                  code: account_closed
+                  message: This customer account has been closed.
     ScopeForbiddenError:
       description: Insufficient permissions for this key. A GC Connect key that was not granted the operation's scope (for example `agent:read` or `orders:write`) receives `insufficient_scope`, and the message names the scope. A request that needs a secret key (a publishable key on a write, whatever scopes it holds), or a marketplace operator key calling a single-store operation, receives `forbidden`. A store whose plan does not include the feature the route belongs to receives `feature_not_available`, whatever the key. A publishable key limited to the products that carry one tag receives `out_of_scope` for a product, variant, promotion or review outside its slice, and `endpoint_not_allowed` on a route that has no slice behaviour.
       headers:

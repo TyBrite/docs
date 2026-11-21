@@ -159,6 +159,8 @@ successful sign-up confirmation, login, emailed-code verification, or password r
 | `GET /v1/gift-cards?customer_id=...` | **Required** when `customer_id` is supplied. |
 | `GET` / `POST` / `PATCH /v1/messaging/*` | **Required**, gated by thread or message ownership. |
 
+A customer credential for a closed customer account returns `403` with the code `account_closed` on every endpoint above. See [Closed customer accounts](/sdk/customers-and-auth#closed-customer-accounts).
+
 ### Example flow
 
 ```typescript
