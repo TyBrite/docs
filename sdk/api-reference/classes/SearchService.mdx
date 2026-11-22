@@ -154,7 +154,7 @@ const result = await client.search.autocompleteSearch({
 }
 ```
 
-Requires a store-scoped key; marketplace operator keys are rejected.
+With a marketplace operator key the suggestions span every active merchant: merchants first, then categories, brands and products, a product whose name starts with the typed text ranking before one where it starts a later word. Merchant, category and product suggestions carry `merchant_store_id`, `category_id`, `product_id` and `product_slug`; product suggestions add `merchant_store_name`, `thumbnail_url` and `price`.
 
 ---
 

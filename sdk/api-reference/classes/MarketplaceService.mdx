@@ -318,7 +318,7 @@ When a merchant prices in a currency other than the marketplace's, its entry in 
 
 ### `marketplaceCheckoutQuote`
 
-What `marketplaceCheckout` will charge for a basket, per merchant, before the shopper pays. It takes the same body and runs the same computation as the checkout, but holds no stock, creates no order and starts no payment, so a storefront can call it whenever the basket or the address changes. The quote carries each merchant's shipping line and never includes commission or what a merchant is paid.
+What `marketplaceCheckout` will charge for a basket, per merchant, before the shopper pays. It takes the same body and runs the same computation as the checkout, but holds no stock, creates no order and starts no payment, so a storefront can call it whenever the basket or the address changes. The quote carries each merchant's shipping line and never includes commission or what a merchant is paid. When a marketplace offer prices the basket, `operator_funded_discount` is the part of `discount_total` the marketplace funds and `offers` lists each such offer (`id`, `name`, `type`, `value`, `starts_at`, `ends_at`, `funded_by`), so a storefront can name the offer and count down to its end.
 
 When a merchant's entry in `shipping_selections` carries a `parcel` and the request carries a street `shipping_address`, that merchant's carrier options are listed in `shipping.rates`. Send the chosen option's `rate_id` and `source` (as `rate_source`) to `marketplaceCheckout`. Carrier options are not offered for items the marketplace ships itself.
 
@@ -353,6 +353,8 @@ The same fields as `marketplaceCheckout`. `customer_email` is not required, and 
   "discount_total": 0,
   "shipping_total": 5.99,
   "total_amount": 129.99,
+  "operator_funded_discount": 0,
+  "offers": [],
   "sellers": [
     {
       "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
@@ -557,6 +559,8 @@ const { categories } = await market.taxonomy.listCategories();
 const results = await market.search.searchProducts({ q: 'headphones' });
 ```
 
+The marketplace listing sorts (`featured`, `price_asc`, `price_desc`, `newest`), filters by price (`minPrice`, `maxPrice`) and counts (`includeTotal`, in `pagination.total`) by the price a shopper pays: `sale_price` when set, otherwise `price`. Each listed product carries `merchant_store_name` and `variant_options`, the values its variants differ by (`{"Size": ["S", "M"], "Colour": [{"value": "Moss", "hex": "#5B6B3A"}]}`, empty for a single-variant product). `listProductFacets` counts the same listing and adds each merchant (`merchants`) and each variant attribute (`attributes`) with its product count. `brand` and `spec` filters are not available on the marketplace listing; `listBrands` lists the brands across merchants. Autocomplete suggests merchants and categories as well as brands and products, with the ids a storefront links to.
+
 ### Single merchant "shop page"
 
 To render one merchant's storefront *inside* the marketplace, pass `storeId` (the merchant's id) to the aggregated reads. Everything narrows to that one (active) merchant:
@@ -752,7 +756,7 @@ A marketplace storefront can show **placements** in named **slots** (a hero bann
 - **Sponsored** (`sponsored: true`) — paid spots that promote a merchant's products or shop. These **must** be rendered with their `disclosure_label`.
 - **Curated fallback** (`curated: true, sponsored: false`) — placements the marketplace operator hand-picks to fill a slot when no paid placement is available. These are **not** labelled as sponsored.
 
-Two operator-key methods cover the whole storefront side: `getAdSlot` fetches what to show in a slot, and `logAdEvent` reports impressions and clicks. Booking placements, setting rates, and managing slot inventory are **operator back-office** tasks done in the Super Admin app — they're not part of this API.
+Three operator-key methods cover the whole storefront side: `getAdSlot` fetches what to show in a slot, `getAdSlots` fetches several slots in one call, and `logAdEvent` reports impressions and clicks. Booking placements, setting rates, and managing slot inventory are **operator back-office** tasks done in the Super Admin app — they're not part of this API.
 
 <Warning>
   Paid placements carry a `disclosure_label` (for example `"Sponsored"`), and advertising-disclosure rules in most jurisdictions require it to be rendered wherever `sponsored` is `true`, so a shopper can distinguish it from an organic result. Curated fallback placements (`sponsored: false`) are not paid advertising and do not carry the label.
@@ -823,6 +827,52 @@ for (const p of placements) {
   See **PromotionsService → Getting the products in a promotion** for how each
   promotion `type` (percentage / fixed / bundle / bogo) resolves its products.
 </Tip>
+
+### `getAdSlots` — several slots in one call
+
+Returns the placements for up to ten slots at once, for a page that renders several slots. Each entry in `slots` is what `getAdSlot` returns for that slot, in the order the keys were given; a repeated key is answered once. `context` and `limit` apply to every slot.
+
+```typescript
+const { slots } = await market.marketplace.getAdSlots({
+  keys: 'home_hero,home_spotlight,promo_banner',
+  limit: 4,
+});
+const bySlot = Object.fromEntries(slots.map(s => [s.slot, s.placements]));
+```
+
+```json Response
+{
+  "context": null,
+  "slots": [
+    {
+      "slot": "home_hero",
+      "context": null,
+      "placements": [
+        {
+          "booking_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+          "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+          "placement_kind": "product",
+          "product_ids": ["715b8c10-eb11-4289-8c0e-2966e78cf9a5"],
+          "creative": {
+            "headline": "Summer audio sale",
+            "image_url": "https://cdn.example.com/ads/acme-hero.png",
+            "cta": "Shop now"
+          },
+          "sponsored": true,
+          "disclosure_label": "Sponsored"
+        }
+      ]
+    },
+    { "slot": "promo_banner", "context": null, "placements": [] }
+  ]
+}
+```
+
+| Param | Required | Notes |
+|---|---|---|
+| `keys` | yes | Comma-separated slot keys, at most 10. More than 10, or an invalid key, returns `400`. |
+| `context` | no | A category id or search term, applied to every slot. |
+| `limit` | no | Max placements per slot. |
 
 ### Blending with organic recommendations
 

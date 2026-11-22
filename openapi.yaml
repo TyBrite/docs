@@ -1961,8 +1961,15 @@ paths:
         adds the exact number of matching products to `pagination`. Every filter combines with `search`,
         `brand`, `category_id` and `subcategory_id` and with the single `cursor`. Use
         `GET /v1/products/facets` to list the values a shopper can filter by, with a count for each.
-        These parameters are not available on marketplace operator keys or together with `personalize`
-        or `b2b`; those requests return `400`.
+        With a marketplace operator key, `min_price`, `max_price`, `sort` and `include_total` apply to the
+        marketplace's combined catalogue, priced at each product's default variant (its sale price when one is set);
+        `brand` and `spec[...]` are not available there and return `400` (`GET /v1/brands` and
+        `GET /v1/products/facets` list the marketplace's brands and filter values). None of these parameters combine
+        with `personalize` or `b2b`; those requests return `400`.
+
+        **Variant options.** On a marketplace listing each product carries `variant_options`: every attribute its
+        variants differ by (for example size or colour) with the values on offer, so a grid can show swatches without
+        a call per product. A colour attribute lists `{ value, hex }` pairs.
 
         **Performance:**
         - Default variant data included at root level (price, stock, sku)
@@ -2578,7 +2585,11 @@ paths:
         currency (`display_currency`); both are `null` when nothing matches. A product's price is that of its
         lowest-priced variant, sale included, the same price `min_price`, `max_price` and `sort` use.
 
-        Not available on marketplace operator keys, which return `400`.
+        **Marketplace.** With a marketplace operator key the counts cover the marketplace's combined catalogue, with
+        the same `search`, `category_id`, `subcategory_id` and `store_id` filters as its listing, and the response adds
+        `merchants` (each merchant with its count) and `attributes` (the values of each variant attribute, such as size
+        or colour, counted per product); `specs` is empty, and `brand`, `min_price`, `max_price`, `sort`,
+        `include_total` and `spec[...]` return `400`. A product's price is its default variant's (sale included).
       security:
         - BearerAuth: []
       parameters:
@@ -2594,6 +2605,13 @@ paths:
           schema:
             type: string
           example: Samsung
+        - name: store_id
+          in: query
+          required: false
+          description: Marketplace operator key only. Counts only the products of this merchant.
+          schema:
+            type: string
+            format: uuid
         - name: category_id
           in: query
           description: |
@@ -2763,6 +2781,48 @@ paths:
                               example: 3
                       truncated:
                         type: boolean
+                  merchants:
+                    type: object
+                    description: Marketplace operator key only. Each merchant with the number of matching products it sells.
+                    properties:
+                      values:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            name:
+                              type: string
+                              example: Fernhill Home & Outdoor
+                            count:
+                              type: integer
+                              example: 30
+                      truncated:
+                        type: boolean
+                  attributes:
+                    type: array
+                    description: Marketplace operator key only. The variant attributes (such as size or colour) the matching products carry, each value with the number of products offering it; at most 10 attributes.
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: Size
+                        values:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              value:
+                                type: string
+                                example: M
+                              count:
+                                type: integer
+                                example: 11
+                        truncated:
+                          type: boolean
                   specs:
                     type: array
                     description: Specification fields with the values the matching products carry, at most 20 fields.
@@ -24691,8 +24751,13 @@ paths:
         first characters are already mistyped.
 
         **Auth:** accepts a publishable (`tybrite_pk_*`) key, so it is safe to call from client-side
-        storefront code on every keystroke. Requires a store-scoped key — marketplace operator keys
-        are rejected.
+        storefront code on every keystroke.
+
+        **Marketplace.** With a marketplace operator key the suggestions span every active merchant: matching
+        merchants first, then categories, brands and products (a product whose name starts with the text before one
+        where it starts a later word, before a match inside a word). Merchant, category and product suggestions carry
+        the ids a storefront links to (`merchant_store_id`, `category_id`, `product_id`, `product_slug`) and products
+        add `merchant_store_name`, `thumbnail_url` and `price`.
 
         **Plans:** available on every plan.
 
@@ -24752,7 +24817,31 @@ paths:
                             - product
                             - brand
                             - subcategory
-                          description: What the suggestion refers to.
+                            - merchant
+                            - category
+                          description: What the suggestion refers to (`merchant` and `category` with a marketplace operator key).
+                        merchant_store_id:
+                          type: string
+                          format: uuid
+                          description: Marketplace operator key — the merchant (a `merchant` suggestion) or the product's merchant.
+                        merchant_store_name:
+                          type: string
+                        category_id:
+                          type: string
+                          format: uuid
+                        product_id:
+                          type: string
+                          format: uuid
+                        product_slug:
+                          type: string
+                        thumbnail_url:
+                          type:
+                            - string
+                            - 'null'
+                        price:
+                          type:
+                            - number
+                            - 'null'
                         score:
                           type: number
                           format: float
@@ -42335,6 +42424,90 @@ paths:
           $ref: '#/components/responses/NotFoundError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/marketplace/ad-slots:
+    get:
+      operationId: getAdSlots
+      tags:
+        - Marketplace
+      summary: Get placements for several slots
+      description: |
+        Returns the placements for up to ten slots in one call, for a page that renders several slots
+        (for example a home page with a hero, a spotlight and a promotion banner). Each entry in
+        `slots` is the same answer `GET /v1/marketplace/ad-slots/{slot_key}` gives for that slot, in
+        the order the keys were given; a repeated key is answered once. **Requires a marketplace
+        operator key.** The disclosure and beacon rules of the single-slot operation apply to every
+        placement returned.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: keys
+          in: query
+          required: true
+          description: Comma-separated slot keys, at most 10.
+          schema:
+            type: string
+          example: home_hero,home_spotlight,promo_banner
+        - name: context
+          in: query
+          required: false
+          description: Optional context applied to every slot — a category identifier or a search term.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of placements to return per slot.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: The placements for each slot, in the order asked.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  context:
+                    type:
+                      - string
+                      - 'null'
+                  slots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdSlotResponse'
+              example:
+                context: null
+                slots:
+                  - slot: home_hero
+                    context: null
+                    placements:
+                      - booking_id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                        merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                        placement_kind: product
+                        product_ids:
+                          - 715b8c10-eb11-4289-8c0e-2966e78cf9a5
+                        creative:
+                          headline: Summer audio sale
+                          image_url: https://cdn.example.com/ads/acme-hero.png
+                          cta: Shop now
+                        sponsored: true
+                        disclosure_label: Sponsored
+                  - slot: promo_banner
+                    context: null
+                    placements: []
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/marketplace/ad-slots/{slot_key}:
     get:
       operationId: getAdSlot
@@ -45692,6 +45865,10 @@ components:
         listing as a whole and belong to the product. All of them are returned on
         the list endpoint and on detail, and any of them can be named in `fields=`.
       properties:
+        variant_options:
+          type: object
+          additionalProperties: true
+          description: 'Marketplace listing only: each attribute the product''s variants differ by, with the values on offer, e.g. `{"Size": ["S", "M", "L"], "Colour": [{"value": "Moss", "hex": "#5B6B3A"}]}`. A colour attribute lists `{ value, hex }` pairs (`hex` null when the merchant set none). Empty when the product has one variant.'
         merchant_store_id:
           type: string
           format: uuid
@@ -47319,6 +47496,50 @@ components:
       type: object
       description: What a unified checkout will charge, per merchant, before the shopper pays.
       properties:
+        operator_funded_discount:
+          type: number
+          description: The part of `discount_total` the marketplace funds through its own offers (in `offers`).
+          example: 4.2
+        offers:
+          type: array
+          description: The marketplace's own offers that priced this basket, so a storefront can name each one and count down to its end.
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+                example: 'Flash Friday: 10% off everything'
+              type:
+                type: string
+                enum:
+                  - percentage
+                  - fixed
+                  - bogo
+                  - bundle
+              value:
+                type:
+                  - number
+                  - 'null'
+                example: 10
+              starts_at:
+                type:
+                  - string
+                  - 'null'
+                format: date-time
+                description: When the offer starts (UTC).
+              ends_at:
+                type:
+                  - string
+                  - 'null'
+                format: date-time
+                description: When the offer ends (UTC).
+              funded_by:
+                type: string
+                enum:
+                  - marketplace
         currency:
           type: string
           example: USD

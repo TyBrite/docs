@@ -317,7 +317,9 @@ value maps to a `listProducts` option (`brand`, `categoryId`, `subcategoryId`, `
 
 It accepts the filters of `listProducts` (`search`, `brand`, `categoryId`, `subcategoryId`, `minPrice`,
 `maxPrice`, `spec`) and counts the products that match all of them. It takes no cursor, sort or page
-size.
+size. With a marketplace operator key it counts the marketplace listing (`search`, `categoryId`,
+`subcategoryId`, `storeId` for one merchant) and adds `merchants` and `attributes` (variant values such as
+size and colour, each with its product count).
 
 ```typescript
 const facets = await client.products.listProductFacets({
