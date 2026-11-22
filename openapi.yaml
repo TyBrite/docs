@@ -9298,6 +9298,12 @@ paths:
         amounts. Once payment succeeds, the order finalizes automatically — no further
         call is required.
 
+        **Which key sees what.** A publishable operator key (a storefront's browser) and a secret
+        operator key (the operator's server) can both check out. The operator's terms in
+        `merchant_breakdown` (`commission_amount`, `net_amount`, `commission_rule_id`,
+        `shipping_amount`, `shipping_retained`, `shipping_commission`) are returned to the secret key
+        only, including on an idempotent replay.
+
         **Discounts.** Pass the optional `discounts` array to apply a merchant's own
         promotion or gift card to that merchant's portion of the basket — each entry
         names the `merchant_store_id` and an optional `promotion_id` and/or
@@ -47069,7 +47075,7 @@ components:
             $ref: '#/components/schemas/MarketplaceShippingRate'
     MerchantBreakdownItem:
       type: object
-      description: Commission, shipping and payout breakdown for a single merchant within a unified order.
+      description: Commission, shipping and payout breakdown for a single merchant within a unified order. The operator's terms (`commission_amount`, `net_amount`, `commission_rule_id`, `shipping_amount`, `shipping_retained` and `shipping_commission`) are returned to a secret operator key only; a publishable key receives the other fields.
       properties:
         merchant_store_id:
           type: string
@@ -47103,15 +47109,15 @@ components:
           example: 6
         shipping_amount:
           type: number
-          description: The part of `shipping_charged` the merchant receives — all of it when the merchant ships, none when the marketplace does.
+          description: The part of `shipping_charged` the merchant receives — all of it when the merchant ships, none when the marketplace does. Secret operator key only.
           example: 6
         shipping_retained:
           type: number
-          description: The part of `shipping_charged` the marketplace keeps because it ships these items.
+          description: The part of `shipping_charged` the marketplace keeps because it ships these items. Secret operator key only.
           example: 0
         shipping_commission:
           type: number
-          description: Commission taken on the merchant's shipping, when the marketplace charges commission on shipping. Included in `commission_amount`.
+          description: Commission taken on the merchant's shipping, when the marketplace charges commission on shipping. Included in `commission_amount`. Secret operator key only.
           example: 0
         shipping_pricing:
           type: string
@@ -47125,18 +47131,18 @@ components:
           example: seller_rate
         commission_amount:
           type: number
-          description: Commission deducted from this merchant's share, including any `shipping_commission`.
+          description: Commission deducted from this merchant's share, including any `shipping_commission`. Secret operator key only.
           example: 12
         net_amount:
           type: number
-          description: 'Amount this merchant receives: `merchant_gross` plus `shipping_amount`, less `commission_amount`.'
+          description: 'Amount this merchant receives: `merchant_gross` plus `shipping_amount`, less `commission_amount`. Secret operator key only.'
           example: 114
         commission_rule_id:
           type:
             - string
             - 'null'
           format: uuid
-          description: Identifier of the commission rule applied to this merchant, or null if none matched.
+          description: Identifier of the commission rule applied to this merchant, or null if none matched. Secret operator key only.
         seller_currency:
           type: string
           description: The currency this seller prices in (ISO 4217, upper case).
