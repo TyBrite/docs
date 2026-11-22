@@ -26335,6 +26335,12 @@ paths:
         reports which applies. A marketplace shopper holds no customer record with any
         merchant, so `customer.ids` is empty.
 
+        The name, phone and marketing-consent answer given at sign-up are the shopper's profile from the moment
+        their account exists: a shopper who has not ordered yet receives `200` with that profile and empty
+        `stores` and `orders`, and a name or phone on the profile takes precedence over what a later checkout
+        carried. `404` means the shopper has neither a profile nor a purchase in this marketplace (for example a
+        shopper signed in through the marketplace's own sign-in with `x-external-auth` who has not ordered).
+
         Requires the marketplace operator key plus exactly one shopper credential:
         `x-auth-token` (a Galactic Core shopper session, also accepted as
         `X-Customer-Token`) or `x-external-auth` (an assertion signed with the
@@ -42325,6 +42331,8 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '500':
           $ref: '#/components/responses/ServerError'
   /v1/marketplace/ad-slots/{slot_key}:
@@ -48192,6 +48200,9 @@ components:
             email_verified:
               type: boolean
               description: Whether the shopper has verified their email address. Purchases made as a guest with that address are included only when it is true.
+            marketing_consent:
+              type: boolean
+              description: Whether the shopper agreed to marketing from the marketplace, as answered at sign-up. False when they did not answer.
         stores:
           type: array
           description: The merchants this shopper has a relationship with.

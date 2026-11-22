@@ -402,6 +402,8 @@ The same fields as `marketplaceCheckout`. `customer_email` is not required, and 
 
 ### `getMarketplaceCustomer`
 
+The shopper's name, phone and marketing-consent answer from sign-up are their profile from the moment the account exists: a shopper who has not ordered yet receives that profile with empty `stores` and `orders`, and `customer.marketing_consent` reports their answer (false when they did not answer). A name or phone on the profile takes precedence over what a later checkout carried.
+
 Return a shopper's **marketplace profile** — their identity, the merchants they have bought from, and their order history across every merchant in this marketplace — in one response. Use it for the shopper's account page.
 
 A purchase belongs to the shopper when it was placed with their credential. A purchase made as a guest belongs to them once they have verified the email address it was bought with, by a one-time code or a sign-in link; registering an account with that address is not enough. `customer.email_verified` reports which applies. A marketplace shopper holds no customer record with any merchant, so `customer.ids` is empty.
