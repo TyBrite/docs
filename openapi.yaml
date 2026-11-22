@@ -2001,7 +2001,8 @@ paths:
           description: |
             Filter products to a single brand (case-insensitive exact match). Use this to build a
             brand landing page — pair it with `GET /v1/brands` to render a "shop by brand" row, then
-            pass the chosen brand here to list that brand's products.
+            pass the chosen brand here to list that brand's products. Not supported with a marketplace
+            operator key: the request is refused with `400 invalid_request`.
           schema:
             type: string
           example: Samsung
@@ -7162,6 +7163,9 @@ paths:
         **Key Type Support:**
         - ✅ Secret keys (full access)
         - ❌ Publishable keys (forbidden - returns 403)
+        - ❌ Marketplace operator keys (forbidden - returns 403). Verification reads one store's payment providers;
+          a marketplace checkout is settled by the processor's notification, and the shopper's orders and their
+          payment status are on `GET /v1/customers/me`.
       security:
         - BearerAuth: []
       requestBody:
