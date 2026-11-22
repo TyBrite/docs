@@ -272,6 +272,8 @@ Retrieve the absolute source of truth for a transaction. This is a read operatio
 
 A call made with a secret key returns `X-Signature` and `X-Signature-Timestamp` when the store has a signing secret, so a server can confirm that the payment status is the one Galactic Core produced. See [Verify a response](/verify-response).
 
+Verification reads one store's own payment providers, so a marketplace operator key receives `403`. A marketplace checkout is settled by the processor's notification; a signed-in shopper's orders and their payment status are on `GET /v1/customers/me`.
+
 <Warning>
   **Secret Key required.** `verifyPayment` will reject publishable keys with `403`. Verification responses include charge details (amounts, customer email, payment intents) and must not be exposed to untrusted clients.
 </Warning>
