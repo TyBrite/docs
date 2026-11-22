@@ -45643,6 +45643,15 @@ components:
         listing as a whole and belong to the product. All of them are returned on
         the list endpoint and on detail, and any of them can be named in `fields=`.
       properties:
+        merchant_store_id:
+          type: string
+          format: uuid
+          description: 'Present only with a marketplace operator key: the merchant that sells this product, on the product list and the product detail. Name it as the item''s `merchant_store_id` at checkout.'
+        merchant_store_name:
+          type:
+            - string
+            - 'null'
+          description: Present only with a marketplace operator key — the selling merchant's store name.
         id:
           type: string
           format: uuid
