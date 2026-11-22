@@ -111,6 +111,30 @@ console.log(merchant.catalog?.products.sample);                  // a thin sampl
 
 ---
 
+### `listMarketplaceMerchants`
+
+Lists every merchant selling in the marketplace, sorted by name, with its logo, description and the number of products it sells online. A storefront uses it for a shops directory, a merchant filter and merchant pages. Each merchant's `store_id` narrows `listProducts`, `listCategories` and `listBrands` to that shop, fetches its full profile through `getMarketplaceInfo({ storeId })`, and names the merchant on a checkout item. Only merchants active in the marketplace are listed; the call requires a marketplace operator key or a marketplace key.
+
+```typescript
+const { merchants } = await client.marketplace.listMarketplaceMerchants();
+```
+
+```json Response
+{
+  "merchants": [
+    {
+      "store_id": "86bf3722-dcd1-455e-94d1-fc10fdd5463e",
+      "store_name": "Fernhill Home & Outdoor",
+      "store_code": "FERN001",
+      "logo_url": "https://cdn.example.com/store-logo/fernhill-logo.png",
+      "description": "A neighbourhood home, garden and outdoor shop.",
+      "product_count": 30
+    }
+  ],
+  "total": 1
+}
+```
+
 ### `marketplaceCheckout`
 
 Check out a cart that may contain items from **multiple merchants** in one call. Each line item names the merchant it belongs to. Tybrite validates the items against the live marketplace catalog, resolves commission per merchant, and creates **one payment** for the entire basket.
@@ -602,6 +626,8 @@ A marketplace operator can curate **merchandising sections** for the storefront 
 Two operator-key methods cover this: `listMarketplaceCollections` returns the sections, and `getMarketplaceCollection` returns one section's resolved members. Curating the sections themselves is an operator back-office task in the Super Admin app — not part of this API.
 
 ### `listMarketplaceCollections` — the storefront's curated sections
+
+Each section carries the banner artwork the operator set, `image` and `image_mobile` (null when none is set), on the list and on `getMarketplaceCollection`.
 
 ```typescript
 const market = new Tybrite({ apiKey: 'tybrite_pk_live_operator_...' });

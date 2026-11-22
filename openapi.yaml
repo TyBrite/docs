@@ -42290,6 +42290,43 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/ServerError'
+  /v1/marketplace/info/merchants:
+    get:
+      operationId: listMarketplaceMerchants
+      tags:
+        - Marketplace
+      summary: List the marketplace's merchants
+      description: |
+        Returns every merchant selling in the marketplace, sorted by name, with its logo, description and the number of
+        products it sells online. A storefront uses it for a "Shops" directory, a merchant filter and merchant pages;
+        pass a merchant's `store_id` to `GET /v1/products?store_id=`, `GET /v1/categories?store_id=`,
+        `GET /v1/brands?store_id=` and `GET /v1/marketplace/info?store_id=` for its catalogue and full profile.
+
+        Requires a marketplace operator key or a marketplace key. Only merchants active in that marketplace are listed.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The marketplace's merchants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketplaceMerchantDirectory'
+              example:
+                merchants:
+                  - store_id: 86bf3722-dcd1-455e-94d1-fc10fdd5463e
+                    store_name: Fernhill Home & Outdoor
+                    store_code: FERN001
+                    logo_url: https://cdn.example.com/store-logo/fernhill-logo.png
+                    description: A neighbourhood home, garden and outdoor shop.
+                    product_count: 30
+                total: 1
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /v1/marketplace/ad-slots/{slot_key}:
     get:
       operationId: getAdSlot
@@ -53108,6 +53145,49 @@ components:
         commission_enabled:
           type: boolean
           description: Whether commission is applied to marketplace sales.
+    MarketplaceMerchant:
+      type: object
+      description: One merchant selling in the marketplace, as listed in the merchant directory.
+      required:
+        - store_id
+        - store_name
+        - product_count
+      properties:
+        store_id:
+          type: string
+          format: uuid
+          description: The merchant's store. Pass it as `store_id` to narrow product, category and brand reads, and as `merchant_store_id` on a checkout item.
+        store_name:
+          type: string
+        store_code:
+          type:
+            - string
+            - 'null'
+          description: The merchant's short store code.
+        logo_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        description:
+          type:
+            - string
+            - 'null'
+        product_count:
+          type: integer
+          description: The merchant's active products sold online.
+    MarketplaceMerchantDirectory:
+      type: object
+      required:
+        - merchants
+        - total
+      properties:
+        merchants:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketplaceMerchant'
+        total:
+          type: integer
     AdPlacement:
       type: object
       description: 'A single placement to render inside a marketplace storefront slot. A placement is either a paid (`sponsored: true`) advertisement — which must be rendered with its disclosure label so shoppers can tell it apart from organic results — or an operator-curated fallback (`curated: true, sponsored: false`) used to fill a slot when no paid placement is available. Only sponsored placements require the disclosure label.'
@@ -53204,6 +53284,18 @@ components:
         - name
         - placement_kind
       properties:
+        image:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: The collection's banner image set by the operator, or null when none is set.
+        image_mobile:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: The banner image for narrow screens, or null when none is set.
         slug:
           type: string
           description: Stable identifier for the section. Use it to fetch the section's resolved members.
@@ -53278,6 +53370,18 @@ components:
         - curated
         - items
       properties:
+        image:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: The collection's banner image set by the operator, or null when none is set.
+        image_mobile:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: The banner image for narrow screens, or null when none is set.
         slug:
           type: string
           example: trending-now
