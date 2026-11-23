@@ -1663,7 +1663,7 @@ const { data } = await client.agent.getReorderSuggestions({ xAuthToken: shopperT
 
 ### `getOrderStatus`
 
-The status of one of the shopper's own orders: order and payment status, tracking, the return window for this order, and `allowed_actions` — what the shopper can do next, such as `request_return` until a date, `track_shipment`, or `complete_payment`. `placed_through_agent` is `true` for an order placed from a checkout intent.
+The status of one of the shopper's own orders: order and payment status, tracking (`tracking_number`, `carrier` and `tracking_url`, each `null` when none is recorded), the return window for this order, and `allowed_actions` — what the shopper can do next, such as `request_return` until a date, `track_shipment`, or `complete_payment`. `placed_through_agent` is `true` for an order placed from a checkout intent.
 
 ```typescript
 const { data } = await client.agent.getOrderStatus({
@@ -1681,6 +1681,8 @@ const { data } = await client.agent.getOrderStatus({
     "payment_status": "pending",
     "total": 63,
     "tracking_number": null,
+    "carrier": null,
+    "tracking_url": null,
     "estimated_delivery": null,
     "shipped_at": null,
     "delivered_at": null,

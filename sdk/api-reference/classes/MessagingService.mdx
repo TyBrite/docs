@@ -28,6 +28,60 @@ below use `xAuthToken`, but every one of these endpoints accepts any of the thre
   Each `Thread` object returned by `listThreads` and `getThread` includes an `unread_count_customer` field. Sum these client-side to compute a customer's total unread count — no separate endpoint is needed.
 </Tip>
 
+## Messaging on a marketplace
+
+A marketplace shopper writes to one seller at a time. With a marketplace operator or marketplace key, `createConversation` names the seller in `storeId` (an active seller of that marketplace, otherwise `404`), and `listThreads` returns the signed-in shopper's conversations across every seller of the marketplace, newest activity first. Passing `storeId` to `listThreads` narrows the inbox to one seller. Each thread carries `store_id` and `store_name`.
+
+- **Shopper identity.** A signed-in shopper sends a marketplace shopper session (`xAuthToken`) or an assertion signed with the marketplace's secret (`xExternalAuth`). A guest sends `customer_email`; the seller's replies reach the guest by email with a link that opens `viewGuestThread` and `replyToGuestThread`.
+- **Thread types.** `general` contacts the shop, `product_inquiry` needs a `product_id` of that seller, and `order_inquiry` needs the `order_id` of an order the signed-in shopper placed in this marketplace (a guest receives `401`, another shopper's order `404`). An order conversation carries `order_help`, the endpoints for returns, return eligibility and disputes; a conversation never opens a return or a dispute.
+- **Contact details.** Neither side receives the other's email address or phone number. `customer_name` is the name the seller sees and cannot contain an email address or phone number. Reply notices go to the address the shopper's credential carries. The store's internal notes are never returned.
+- **Marketplace visibility.** The marketplace can read a conversation and join it. Each marketplace thread carries a `marketplace` object (`name`, `operator_can_read`, `operator_joined`, `restricted`, `notice`) so a storefront can disclose this beside the conversation. A message from the marketplace has `sender_type: system` and the marketplace's name as `sender_name`. While `restricted` is `true` the shopper's replies are refused with `403`.
+- **Limits.** New conversations are limited to 30 an hour per address (10 at one seller), 10 an hour per signed-in shopper or guest email, and 3 at one seller per shopper. A server calling with a secret key forwards the shopper's address in `xForwardedShopperIp` so each shopper has a separate budget.
+
+```typescript
+const market = new Tybrite({ apiKey: 'tybrite_pk_live_marketplace_...' });
+
+const { thread } = await market.messaging.createConversation({
+  storeId: '3f1a2b4c-1111-2222-3333-444455556666',
+  xAuthToken: marketplaceShopperToken,
+  requestBody: {
+    thread_type: 'order_inquiry',
+    order_id: 'e9b398b5-40d9-476d-bae6-efc401861190',
+    subject: 'Delivery date',
+    message: 'When will this arrive?',
+  },
+});
+```
+
+### `reportThread`
+
+Reports a conversation to the marketplace for spam, abuse, a scam or a request to deal off the marketplace (`reason` is `spam`, `abuse`, `scam`, `off_platform` or `other`, with an optional `note` and `message_id`). The thread must be the signed-in shopper's own (`404` otherwise). Repeating an open report on the same conversation and message returns the existing report with `already_reported: true`. The limit is 20 reports an hour per address and per shopper.
+
+```typescript
+const report = await market.messaging.reportThread({
+  id: thread.id,
+  xAuthToken: marketplaceShopperToken,
+  requestBody: { reason: 'off_platform', note: 'Asked me to pay outside the site.' },
+});
+```
+
+```json Response
+{
+  "report_id": "5e0b7c1d-3a49-4f26-8d17-9b2c4a6e8f03",
+  "already_reported": false
+}
+```
+
+### `reportGuestThread`
+
+Reports a marketplace guest conversation from the token in the reply email, under the token rules of `viewGuestThread`. Every token failure answers the same `404`. The limit is 20 reports an hour per address and 12 per token.
+
+```typescript
+await market.messaging.reportGuestThread({
+  requestBody: { token: guestLinkToken, reason: 'spam' },
+});
+```
+
 ## Thread Discovery & Filtering
 
 ### `listThreads`
@@ -387,6 +441,9 @@ await client.messaging.replyToGuestThread({
 | `is_pinned`| `boolean`| Always at top of list. |
 | `thread_type` | `enum` | `general`, `order_inquiry`, `product_inquiry`, `support`, `complaint`, `delivery`, `return`, `refund`, `technical`, `dispute`. `dispute` is a conversation about a dispute over an order. |
 | `unread_count_customer`| `number`| Store messages the shopper has not read. |
+| `marketplace` | `object` | Marketplace conversations only: `name`, `operator_can_read`, `operator_joined`, `restricted`, `notice`. See [Messaging on a marketplace](#messaging-on-a-marketplace). |
+| `order_help` | `object` | Marketplace `order_inquiry` conversations only: `returns`, `return_eligibility` and `disputes` endpoints for the order. |
+| `store_id`, `store_name` | `uuid`, `string` | Marketplace key only: the seller the conversation is with. |
 | `unread_count_store`| `number`| Messages awaiting store reply. |
 | `source_thread_id` | `uuid \| null` | The earlier conversation this one was opened from. `null` when it was not opened from another. |
 | `customer_last_read_at`| `datetime \| null`| When the shopper last read the thread. Messages the store sent before this time have been read. |
@@ -521,6 +578,6 @@ bubble from `presence.typing`, and read ticks from `presence.read`.
 | `401` | Missing or invalid `xAuthToken`, or missing/invalid API key. A request outside the WebSocket handshake that carries the key only in the query string has no key. |
 | `402` | `subscription_expired` — the store's subscription is not active. |
 | `403` | A GC Connect key without `messaging:read` or `messaging:write` (`insufficient_scope`). A shopper credential for a closed customer account returns `403` with `account_closed` (see [Closed customer accounts](/sdk/customers-and-auth#closed-customer-accounts)). |
-| `404` | Thread or message not found, filtered out by store scoping, or owned by another customer (the same answer, so a thread's existence is not revealed). |
-| `429` | Rate limit exceeded. |
+| `404` | Thread or message not found, filtered out by store scoping, or owned by another customer (the same answer, so a thread's existence is not revealed). With a marketplace key, also a seller not active in the marketplace or an order that is not the shopper's. |
+| `429` | Rate limit exceeded, including the marketplace conversation and report limits. |
 | `500` | Internal server error — safe to retry idempotent reads. |

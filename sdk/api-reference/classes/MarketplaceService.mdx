@@ -224,6 +224,7 @@ const { error } = await stripe.confirmPayment({
 | `shipping_destination` | `object?` | Optional. `latitude` and `longitude`, or a `place_name` with an optional `country_code`, used to price each merchant's delivery rate. |
 | `shipping_selections` | `array?` | Optional per-merchant carrier choices: `{ merchant_store_id, rate_id, rate_source }`, using a `rate_id` from `marketplaceCheckoutQuote`. Without one, the merchant's own delivery rate applies. |
 | `billing_address` | `object?` | Optional address object. |
+| `attribution` | `object?` | Optional. Where the shopper came from, with the same fields as an order's attribution (`utm_*`, `gclid`, `gbraid`, `wbraid`, `fbclid`, `fbc`, `fbp`, `clicked_at`, `ad_consent`; see [Orders](/sdk/api-reference/classes/OrdersService)). Each seller's order in the basket keeps a copy. For a marketplace's own advertising, `utm_campaign` is the campaign id carried on the ad's link. |
 | `discounts` | `array?` | Optional per-merchant discounts. Each entry: `{ merchant_store_id, promotion_id?, gift_card_code? }`. Applies a merchant's own promotion/gift card to that merchant's portion of the basket. Marketplace-wide operator promotions apply automatically and are **not** passed here. |
 | `wallet_amount` | `number?` | Optional. Spend up to this much of the signed-in shopper's marketplace wallet. Must be positive; capped by the balance and by the payment provider's minimum charge. |
 | `use_wallet` | `boolean?` | Optional. Spend as much of the signed-in shopper's wallet as the checkout allows. |
@@ -318,7 +319,7 @@ When a merchant prices in a currency other than the marketplace's, its entry in 
 
 ### `marketplaceCheckoutQuote`
 
-What `marketplaceCheckout` will charge for a basket, per merchant, before the shopper pays. It takes the same body and runs the same computation as the checkout, but holds no stock, creates no order and starts no payment, so a storefront can call it whenever the basket or the address changes. The quote carries each merchant's shipping line and never includes commission or what a merchant is paid. When a marketplace offer prices the basket, `operator_funded_discount` is the part of `discount_total` the marketplace funds and `offers` lists each such offer (`id`, `name`, `type`, `value`, `starts_at`, `ends_at`, `funded_by`), so a storefront can name the offer and count down to its end.
+What `marketplaceCheckout` will charge for a basket, per merchant, before the shopper pays. It takes the same body and runs the same computation as the checkout, but holds no stock, creates no order and starts no payment, so a storefront can call it whenever the basket or the address changes. The quote carries each merchant's shipping line and never includes commission or what a merchant is paid. When a marketplace offer prices the basket, `operator_funded_discount` is the part of `discount_total` the marketplace funds and `offers` lists each such offer (`id`, `name`, `type`, `value`, `amount`, `starts_at`, `ends_at`, `funded_by`), so a storefront can name the offer and count down to its end. A merchant's own promotion applies automatically (the best eligible one, or the `promotion_id` named in `discounts`). A marketplace offer applies once to the basket and its amount is split across the sellers it covers; `offers[].amount` is what it took off in total.
 
 When a merchant's entry in `shipping_selections` carries a `parcel` and the request carries a street `shipping_address`, that merchant's carrier options are listed in `shipping.rates`. Send the chosen option's `rate_id` and `source` (as `rate_source`) to `marketplaceCheckout`. Carrier options are not offered for items the marketplace ships itself.
 
@@ -358,6 +359,9 @@ The same fields as `marketplaceCheckout`. `customer_email` is not required, and 
   "sellers": [
     {
       "merchant_store_id": "3f1a2b4c-1111-2222-3333-444455556666",
+      "merchandise_subtotal": 80,
+      "discounts": [],
+      "gift_card_amount": 0,
       "merchandise_total": 80,
       "shipping": {
         "amount": 0,
@@ -372,6 +376,9 @@ The same fields as `marketplaceCheckout`. `customer_email` is not required, and 
     },
     {
       "merchant_store_id": "7a8b9c0d-1111-2222-3333-444455556666",
+      "merchandise_subtotal": 44,
+      "discounts": [],
+      "gift_card_amount": 0,
       "merchandise_total": 44,
       "shipping": {
         "amount": 5.99,
@@ -388,7 +395,7 @@ The same fields as `marketplaceCheckout`. `customer_email` is not required, and 
 }
 ```
 
-`total_amount` is what the checkout will charge before any wallet balance. `merchandise_total` is a merchant's items after discounts. `shipping.pricing` names what priced the line: `seller_rate` (the merchant's own delivery rate), `carrier_rate` (a chosen carrier option), `flat` (the marketplace's flat rate) or `free`. `shipping.fulfilled_by` is `seller` or `marketplace`.
+`total_amount` is what the checkout will charge before any wallet balance. Each seller entry reads in order: `merchandise_subtotal` (items before any discount), `discounts` (what came off, as `{ promotion_id, name, amount, funded_by }` with `funded_by` of `seller` or `marketplace`), `gift_card_amount` (applied as payment, not listed as a discount) and `merchandise_total` (items after discounts). `shipping.pricing` names what priced the line: `seller_rate` (the merchant's own delivery rate), `carrier_rate` (a chosen carrier option), `flat` (the marketplace's flat rate) or `free`. `shipping.fulfilled_by` is `seller` or `marketplace`.
 
 **Responses**
 

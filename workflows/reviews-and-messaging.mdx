@@ -568,6 +568,10 @@ thread's messages.
   own identity provider.
 </Note>
 
+## Messaging on a marketplace
+
+With a marketplace key a shopper writes to one seller at a time and reads one inbox across every seller. `createConversation` takes the seller in `storeId`, a signed-in shopper is identified by a marketplace session or a signed assertion, and a guest sends an email address and continues by the link in the seller's reply. Neither side receives the other's contact details. The marketplace can read and join conversations and discloses this through the `marketplace` object on each thread, and a shopper can report a conversation with `reportThread` or `reportGuestThread`. See [Messaging on a marketplace](/sdk/api-reference/classes/MessagingService#messaging-on-a-marketplace).
+
 ## What's next
 
 - The shopper arrived from a [storefront checkout](/workflows/storefront-checkout), which the

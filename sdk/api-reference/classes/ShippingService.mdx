@@ -360,5 +360,6 @@ All three methods accept **publishable** and **secret** keys. `calculateShipping
 | `400` | Invalid carrier or tracking number. |
 | `401` | Invalid or missing API key. |
 | `404` | With a publishable key, the tracking number is not on any of the store's orders. |
+| `422` | `tracking_not_found` — the carrier holds no tracking for that carrier and number: a mistyped number, a parcel not yet scanned, or, on a store connected with a test carrier account, a real carrier number the test account does not supply. |
 | `429` | Rate limit exceeded. |
-| `502` | The carrier's tracking service could not be reached (`tracking_unavailable`). |
+| `500` | `tracking_unavailable` — the carrier's tracking service could not be reached. |

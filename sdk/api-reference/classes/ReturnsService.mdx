@@ -128,12 +128,20 @@ if (data.eligible) {
     "reason": null,
     "window_days": 30,
     "closes_at": "2026-09-15T09:42:17.761Z",
-    "days_remaining": 25
+    "days_remaining": 25,
+    "basis": "merchant_policy",
+    "statutory_days": null,
+    "exempt_items": [],
+    "message": null
   }
 }
 ```
 
-`reason` is `window_closed` when the period has passed and `returns_disabled` when the store does not
+### Statutory right of withdrawal
+
+A consumer who buys at a distance (online) for delivery to the UK, the EU or the EEA may cancel within 14 days of delivery whatever shorter window the merchant sets. `closes_at` is the later of the merchant's window and the statutory period, and `basis` names the rule that sets it: `merchant_policy` or `statutory_withdrawal`. `statutory_days` is the statutory period that applies to the order, or `null`. Lines the right does not cover (personalised, perishable, sealed hygiene items, an excluded category, digital content, services and dated tickets) stay on the merchant's window and are listed in `exempt_items` as `{ order_item_id, reason }`. When every line is excluded and the merchant's window has closed, `reason` is `item_excluded`. When `eligible` is `false`, `message` is a sentence that can be shown to the shopper, and `null` otherwise. The merchant's own window is never shortened. Before delivery is recorded, `closes_at` is `null` while the statutory right is open.
+
+`reason` is `window_closed` when the period has passed, `item_excluded` when every line is outside the statutory right and the merchant's window has closed, and `returns_disabled` when the store does not
 accept returns at all; it is `null` while eligible. When the merchant has stated no period,
 `window_days` and `closes_at` are both `null` and `eligible` is `true` — say returns are accepted
 without naming a deadline rather than assuming a common default, since none exists.
@@ -377,7 +385,8 @@ for (const item of detail.items) {
   reason_code: string;              // one of the reason codes
   reason_description: string | null;
   total_return_amount: number;
-  refund_amount: number;            // 0 until the merchant processes the return
+  estimated_refund_amount: number | null; // what the return is expected to refund while pending or approved; null once processed, rejected or cancelled
+  refund_amount: number;            // money actually refunded; 0 until the merchant processes the return
   refund_method: string | null;
   created_at: string;               // ISO 8601
   processed_at: string | null;
@@ -401,6 +410,8 @@ for (const item of detail.items) {
 ```
 
 ---
+
+`estimated_refund_amount` is an estimate and not a commitment: the merchant may approve fewer lines.
 
 ## Store credit & offers
 

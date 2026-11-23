@@ -5314,6 +5314,24 @@ paths:
                       type: string
                       description: The creative or placement the shopper clicked, for comparing one ad variant against another.
                       example: hero-video-a
+                    gbraid:
+                      type: string
+                      description: The Google ad click id for iOS app-to-web traffic, kept on the order beside `gclid`.
+                    wbraid:
+                      type: string
+                      description: The Google ad click id for iOS web-to-app traffic, kept on the order beside `gclid`.
+                    fbc:
+                      type: string
+                      description: The value of the shopper's `_fbc` browser cookie (`fb.<n>.<timestamp>.<click id>`).
+                      example: fb.1.1763800000000.IwAR1abc
+                    fbp:
+                      type: string
+                      description: The value of the shopper's `_fbp` browser cookie (`fb.<n>.<timestamp>.<random number>`).
+                      example: fb.1.1763800000000.1234567890
+                    clicked_at:
+                      type: string
+                      format: date-time
+                      description: When the shopper last clicked the ad.
                     referrer:
                       type: string
                       example: https://www.google.com/
@@ -6036,8 +6054,9 @@ paths:
         - `payment_status`: `pending` → `paid` or `failed`; `failed` → `paid`. A `paid` order
           does not move back, and `refunded` is set by processing a refund, not by this endpoint.
         - `order_status` moves forward only (`pending` → `confirmed` → `processing` → `shipped` →
-          `delivered`). `cancelled` is available until the order ships. `cancelled` and `delivered`
-          are final, and a cancelled order cannot be marked paid.
+          `delivered`). `cancelled` is available until the order ships, and only while the order is
+          unpaid: a `paid` order is refused with `409 refund_required` until it is refunded.
+          `cancelled` and `delivered` are final, and a cancelled order cannot be marked paid.
         - Sending a field with the value it already has is not a transition: the request succeeds
           and nothing is repeated. Any other move is refused with `409 invalid_transition`.
         - A status change applies only if the order is still in the state it was in when the
@@ -6266,7 +6285,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
         '409':
-          description: The requested status change is not allowed from the order's current state (`invalid_transition`), or the order changed while the request was being applied (`order_changed`), or the `Idempotency-Key` was already used with a different request body or for a different order (`idempotency_key_reused`), or the verified payment belongs to another order, is in another currency or is already attached to another order (`payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use`), or the payment method is in the other mode from the key's environment (`provider_not_live` for a live order on test credentials, `provider_not_test_mode` for a sandbox order on live credentials), or `shipping_metadata` tries to set purchased-label details (`shipping_label_locked`). The order is left as it was.
+          description: The requested status change is not allowed from the order's current state (`invalid_transition`), or the order is paid and must be refunded before it is cancelled (`refund_required`), or the order changed while the request was being applied (`order_changed`), or the `Idempotency-Key` was already used with a different request body or for a different order (`idempotency_key_reused`), or the verified payment belongs to another order, is in another currency or is already attached to another order (`payment_order_mismatch`, `payment_currency_mismatch`, `payment_reference_in_use`), or the payment method is in the other mode from the key's environment (`provider_not_live` for a live order on test credentials, `provider_not_test_mode` for a sandbox order on live credentials), or `shipping_metadata` tries to set purchased-label details (`shipping_label_locked`). The order is left as it was.
           content:
             application/json:
               schema:
@@ -9571,7 +9590,7 @@ paths:
                         description: A gift card code to redeem against this merchant's portion.
                 attribution:
                   type: object
-                  description: Where the shopper came from, recorded so the sale is credited to the right traffic source in the merchant's reports. The same fields are also accepted at the top level of this request body if you already send them that way.
+                  description: Where the shopper came from, recorded so the sale is credited to the right traffic source in the merchant's reports, and to the advertising campaign that earned it. The same fields are also accepted at the top level of this request body if you already send them that way. Every field is optional; values that are not recognisable as what the field names are ignored. Each seller's order in the basket keeps a copy.
                   properties:
                     session_id:
                       type: string
@@ -9585,7 +9604,62 @@ paths:
                       example: cpc
                     utm_campaign:
                       type: string
+                      description: The campaign tag the shopper arrived with. For a marketplace's own advertising it is the campaign id carried on the ad's link.
                       example: spring-sale
+                    utm_term:
+                      type: string
+                      description: The paid keyword the shopper searched.
+                      example: running shoes
+                    utm_content:
+                      type: string
+                      description: The creative or placement the shopper clicked.
+                      example: hero-video-a
+                    gclid:
+                      type: string
+                      description: The Google ad click id captured on landing. Forward the captured value unchanged.
+                      example: Cj0KCQiA...gclid
+                    gbraid:
+                      type: string
+                      description: The Google ad click id for iOS app-to-web traffic, captured on landing.
+                    wbraid:
+                      type: string
+                      description: The Google ad click id for iOS web-to-app traffic, captured on landing.
+                    fbclid:
+                      type: string
+                      description: The Meta (Facebook and Instagram) ad click id captured on landing.
+                      example: IwAR1abc...fbclid
+                    fbc:
+                      type: string
+                      description: The value of the shopper's `_fbc` browser cookie (`fb.<n>.<timestamp>.<click id>`).
+                      example: fb.1.1763800000000.IwAR1abc
+                    fbp:
+                      type: string
+                      description: The value of the shopper's `_fbp` browser cookie (`fb.<n>.<timestamp>.<random number>`).
+                      example: fb.1.1763800000000.1234567890
+                    clicked_at:
+                      type: string
+                      format: date-time
+                      description: When the shopper last clicked the ad. A click is credited to a campaign only while it is inside that campaign's click window; without this field the order is credited on the tag alone.
+                    ad_consent:
+                      type: object
+                      description: 'What the shopper agreed to for advertising. Conversions are reported to an advertising platform only where this permits it: in the European Economic Area and where the country is unknown, `ad_user_data` must be `granted`.'
+                      properties:
+                        ad_user_data:
+                          type: string
+                          enum:
+                            - granted
+                            - denied
+                            - unspecified
+                        ad_personalization:
+                          type: string
+                          enum:
+                            - granted
+                            - denied
+                            - unspecified
+                        jurisdiction:
+                          type: string
+                          description: The shopper's region (`EEA`, `UK`, `CH`, or an ISO country code) when the storefront resolves it; otherwise the delivery country decides.
+                          example: EEA
                     referrer:
                       type: string
                       example: https://www.google.com/
@@ -9873,6 +9947,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/MarketplaceCheckoutQuote'
               example:
+                operator_funded_discount: 0
+                offers: []
                 currency: USD
                 subtotal: 124
                 discount_total: 0
@@ -9880,6 +9956,9 @@ paths:
                 total_amount: 129.99
                 sellers:
                   - merchant_store_id: 3f1a2b4c-1111-2222-3333-444455556666
+                    merchandise_subtotal: 80
+                    discounts: []
+                    gift_card_amount: 0
                     merchandise_total: 80
                     shipping:
                       amount: 0
@@ -9891,6 +9970,9 @@ paths:
                       selected_rate_id: null
                       rates: []
                   - merchant_store_id: 7a8b9c0d-1111-2222-3333-444455556666
+                    merchandise_subtotal: 44
+                    discounts: []
+                    gift_card_amount: 0
                     merchandise_total: 44
                     shipping:
                       amount: 5.99
@@ -16953,6 +17035,16 @@ paths:
                         type:
                           - string
                           - 'null'
+                      carrier:
+                        type:
+                          - string
+                          - 'null'
+                        description: The carrier shipping the order, from the purchased label or the merchant's own entry. `null` when none is recorded.
+                      tracking_url:
+                        type:
+                          - string
+                          - 'null'
+                        description: The carrier's tracking page for `tracking_number`. `null` when none is recorded.
                       estimated_delivery:
                         type:
                           - string
@@ -17017,6 +17109,8 @@ paths:
                   payment_status: pending
                   total: 63
                   tracking_number: null
+                  carrier: null
+                  tracking_url: null
                   estimated_delivery: null
                   shipped_at: null
                   delivered_at: null
@@ -17254,6 +17348,7 @@ paths:
                   reason_description: null
                   total_return_amount: 48
                   refund_amount: 0
+                  estimated_refund_amount: 0
                   refund_method: null
                   created_at: '2026-10-01T11:25:17.785759+00:00'
                   processed_at: null
@@ -26775,6 +26870,10 @@ paths:
         because guest orders are linked to a customer by email address. Changing
         `email` to an address another customer of the store already uses returns
         `409`.
+
+        A storefront with no server of its own changes a shopper's address with
+        `POST /v1/customers/{id}/email-change` and `.../email-change/confirm`,
+        which prove the shopper can read the new address with a one-time code.
       security:
         - BearerAuth: []
       parameters:
@@ -29068,6 +29167,215 @@ paths:
                     - id: 9f8e7d6c-5b4a-4321-8fed-cba987654321
                       order_number: '1042'
                       total_amount: 54.5
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/CustomerForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/customers/{id}/email-change:
+    post:
+      operationId: requestCustomerEmailChange
+      tags:
+        - Customers
+      summary: Start changing a shopper's email address
+      description: |
+        Send a six-digit code to the new address, which the shopper enters in `POST /v1/customers/{id}/email-change/confirm`.
+        The account keeps its current address until the code is confirmed, and the current address is sent a notice that a
+        change was requested. The code is valid for 15 minutes, can be tried 5 times and works once. A new request replaces
+        the previous pending one. Emails carry the store's name and branding.
+
+        Responds `202` with the address the code was sent to. `409 conflict` when the new address is already the account's
+        address; `409 email_managed_externally` when the account is signed in through the store's own identity system;
+        `429` when a code was already sent to that address in the last minute, or the shopper has made 5 requests in an hour.
+
+        **Customer-self access.** Works with a publishable key (safe from the browser). The credential must resolve to the
+        customer in the `{id}` path parameter, otherwise the request returns `403`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter. Only a store-managed shopper account can change its email here; a shopper signed in with `x-external-auth` or `x-idp-token` is refused with `409 email_managed_externally`, because the store's own identity system owns that address.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: The store's bring-your-own-auth assertion. Accepted so the credential can be resolved, then refused with `409 email_managed_externally`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: A raw token from the store's own identity provider. Accepted so the credential can be resolved, then refused with `409 email_managed_externally`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              additionalProperties: false
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 320
+                  description: The new email address.
+            example:
+              email: jordan@example.com
+      responses:
+        '202':
+          description: A code was sent to the new address.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - email
+                  - expires_in
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - code_sent
+                  email:
+                    type: string
+                    description: The address the code was sent to.
+                  expires_in:
+                    type: integer
+                    description: Seconds until the code expires.
+              example:
+                status: code_sent
+                email: jordan@example.com
+                expires_in: 900
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/CustomerAuthError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/CustomerForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/customers/{id}/email-change/confirm:
+    post:
+      operationId: confirmCustomerEmailChange
+      tags:
+        - Customers
+      summary: Confirm a shopper's new email address
+      description: |
+        Check the code sent to the new address and change the account's email. The shopper's sign-in address and customer
+        record change together, and the previous address is sent a notice. The address is read from the pending request,
+        never from this call.
+
+        Refusals: `400 invalid_code` (wrong, already used, or no change pending), `400 code_expired`,
+        `429 too_many_attempts` (5 wrong codes lock the code; request a new one), `409 email_taken` (another customer of
+        the store already uses the address), `409 email_managed_externally`. Limited to 10 confirmations per shopper per hour.
+
+        **Customer-self access.** Works with a publishable key (safe from the browser). The credential must resolve to the
+        customer in the `{id}` path parameter, otherwise the request returns `403`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The shopper's customer id.
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: true
+          description: The signed-in shopper's session token, obtained when the shopper logs in. Must resolve to the customer in the `{id}` path parameter. Only a store-managed shopper account can change its email here; a shopper signed in with `x-external-auth` or `x-idp-token` is refused with `409 email_managed_externally`, because the store's own identity system owns that address.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: The store's bring-your-own-auth assertion. Accepted so the credential can be resolved, then refused with `409 email_managed_externally`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+        - name: x-idp-token
+          in: header
+          required: false
+          description: A raw token from the store's own identity provider. Accepted so the credential can be resolved, then refused with `409 email_managed_externally`. Provide exactly one of `x-auth-token`, `x-external-auth`, or `x-idp-token`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              additionalProperties: false
+              properties:
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                  description: The six-digit code from the email.
+            example:
+              code: '482913'
+      responses:
+        '200':
+          description: The email address was changed.
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - email
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - email_changed
+                  email:
+                    type: string
+                    description: The account's new email address.
+              example:
+                status: email_changed
+                email: jordan@example.com
         '400':
           $ref: '#/components/responses/BadRequestError'
         '401':
@@ -33460,6 +33768,13 @@ paths:
         Returns messaging threads filtered by customer. Supports cursor-based pagination, field
         filtering, and server-side status/priority/archived/unread filtering. Pinned threads are
         returned first in the result set.
+
+        **Marketplace key:** with a marketplace operator or marketplace key the list is the signed-in marketplace
+        shopper's conversations across every seller of that marketplace, newest activity first. The shopper is identified
+        by `x-auth-token` (a marketplace shopper session) or `x-external-auth` (an assertion signed with the marketplace's
+        secret); `customer_id`, `priority`, `thread_type`, `archived` and `fields` are not used, `store_id` narrows the
+        list to one seller, and `limit` is at most 100. Each thread carries `marketplace`, and an `order_inquiry` thread
+        carries `order_help`. No thread carries the shopper's or the seller's email or phone.
       security:
         - BearerAuth: []
       parameters:
@@ -33483,11 +33798,18 @@ paths:
             type: string
         - name: customer_id
           in: query
-          required: true
+          required: false
           schema:
             type: string
             format: uuid
-          description: Customer UUID to filter threads by
+          description: Customer UUID to filter threads by. Required with a store key; not used with a marketplace key.
+        - name: store_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Marketplace key only. Limits the list to the conversations with this seller.
         - name: status
           in: query
           required: false
@@ -33582,7 +33904,38 @@ paths:
                   threads:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Thread'
+                      allOf:
+                        - $ref: '#/components/schemas/Thread'
+                        - type: object
+                          properties:
+                            marketplace:
+                              type: object
+                              description: Present on a conversation opened through a marketplace. Discloses that the marketplace can read the conversation and join it, and whether it has.
+                              properties:
+                                name:
+                                  type: string
+                                  description: The marketplace's name.
+                                operator_can_read:
+                                  type: boolean
+                                  const: true
+                                notice:
+                                  type: string
+                                  description: A sentence to show the shopper beside the conversation.
+                                operator_joined:
+                                  type: boolean
+                                restricted:
+                                  type: boolean
+                                  description: When true the marketplace has paused the shopper's replies.
+                            order_help:
+                              type: object
+                              description: 'Present on a marketplace `order_inquiry` conversation: the endpoints that act on the order. A conversation never opens a return or a dispute.'
+                              properties:
+                                returns:
+                                  type: string
+                                return_eligibility:
+                                  type: string
+                                disputes:
+                                  type: string
                   pagination:
                     type: object
                     properties:
@@ -33615,7 +33968,7 @@ paths:
                   next_cursor: null
                   has_more: false
         '400':
-          description: '`invalid_request` when `customer_id` is missing or not a UUID, or when `status`, `priority`, `thread_type`, `archived` or `unread` is not one of its listed values; `invalid_cursor` when `cursor` is not one this endpoint issued.'
+          description: '`invalid_request` when `customer_id` is missing (store key) or not a UUID, or when `status`, `priority`, `thread_type`, `archived` or `unread` is not one of its listed values; `invalid_cursor` when `cursor` is not one this endpoint issued.'
           headers:
             Tybrite-Environment:
               $ref: '#/components/headers/TybriteEnvironment'
@@ -33652,6 +34005,10 @@ paths:
       tags:
         - Messaging
       summary: Get thread details
+      description: |
+        Returns one thread of the shopper who owns it. With a marketplace operator or marketplace key the thread is the
+        signed-in marketplace shopper's own conversation in that marketplace and environment (any other answers `404`),
+        and it carries `marketplace` (and `order_help` on an `order_inquiry` thread) in place of contact details.
       security:
         - BearerAuth: []
       parameters:
@@ -33710,7 +34067,38 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Thread'
+                allOf:
+                  - $ref: '#/components/schemas/Thread'
+                  - type: object
+                    properties:
+                      marketplace:
+                        type: object
+                        description: Present on a conversation opened through a marketplace. Discloses that the marketplace can read the conversation and join it, and whether it has.
+                        properties:
+                          name:
+                            type: string
+                            description: The marketplace's name.
+                          operator_can_read:
+                            type: boolean
+                            const: true
+                          notice:
+                            type: string
+                            description: A sentence to show the shopper beside the conversation.
+                          operator_joined:
+                            type: boolean
+                          restricted:
+                            type: boolean
+                            description: When true the marketplace has paused the shopper's replies.
+                      order_help:
+                        type: object
+                        description: 'Present on a marketplace `order_inquiry` conversation: the endpoints that act on the order. A conversation never opens a return or a dispute.'
+                        properties:
+                          returns:
+                            type: string
+                          return_eligibility:
+                            type: string
+                          disputes:
+                            type: string
               example:
                 id: de30ebb3-d8d0-4b55-9ca6-e2f2d9ac2383
                 customer_id: cf80ef73-dc60-470b-8d29-e98bd4d65b82
@@ -33874,8 +34262,13 @@ paths:
         - Messaging
       summary: Get messages in a thread
       description: |
-        Returns messages in a thread. Soft-deleted messages are always excluded.
+        Returns messages in a thread. Soft-deleted messages and the store's internal notes are always excluded.
         Supports cursor-based pagination and sort order (default: oldest first).
+
+        **Marketplace key:** the thread must be the signed-in marketplace shopper's own. A page is the newest `limit`
+        messages (at most 200) before the cursor, returned oldest first, and `next_cursor` walks back to older messages;
+        `order` and `fields` are not used. A message from the marketplace itself has `sender_type: system` and the
+        marketplace's name as `sender_name`. No message carries a staff member's id.
       security:
         - BearerAuth: []
       parameters:
@@ -34155,9 +34548,38 @@ paths:
         **`source_thread_id`** opens the conversation from an earlier one of the same shopper, so the store sees the
         history in one place. It must be a thread of this shopper in the same store and environment (otherwise `400`);
         when `order_id` or `product_id` is omitted, the earlier thread's value is used.
+
+        With a store key, `customer_name` and `customer_email` are required (`400` otherwise).
+
+        **Marketplace key:** with a marketplace operator or marketplace key the conversation is with ONE seller, named
+        by `store_id`, which must be active in that marketplace (`404` otherwise). The shopper is either signed in
+        (`x-auth-token` with a marketplace shopper session, or `x-external-auth` signed with the marketplace's secret)
+        or a guest, who must send `customer_email`; the store's replies reach the guest by email with a link for
+        `viewGuestThread` and `replyToGuestThread`. `thread_type` is `general` (contact the shop), `product_inquiry`
+        (needs `product_id`, a product of that seller) or `order_inquiry` (needs `order_id`). Help with an order is for
+        the signed-in shopper who placed it: a guest is answered `401`, and an order outside the shopper's purchases in
+        this marketplace `404`; the thread carries `order_help`, which points at returns and disputes. `customer_name`
+        is the name the seller sees and may not contain an email address or a phone number; `customer_phone`,
+        `customer_id`, `source_thread_id` and `priority` are refused. Neither side ever receives the other's email or
+        phone: a signed-in shopper's reply notices go to the address their credential carries. The marketplace can read
+        the conversation and join it, which the answer's `marketplace` discloses. At most 30 new conversations an hour
+        per address (10 at one seller), 10 per signed-in shopper or guest email, and 3 at one seller per shopper.
       security:
         - BearerAuth: []
       parameters:
+        - name: store_id
+          in: query
+          required: false
+          description: Marketplace key only, and required with one. The seller the shopper is writing to.
+          schema:
+            type: string
+            format: uuid
+        - name: X-Forwarded-Shopper-Ip
+          in: header
+          required: false
+          description: The shopper's IP address, sent by a server calling with a secret key so each shopper has their own rate-limit budget. Honoured on a secret key only; without it every request on that key counts as one address.
+          schema:
+            type: string
         - name: x-auth-token
           in: header
           required: false
@@ -34189,8 +34611,6 @@ paths:
             schema:
               type: object
               required:
-                - customer_name
-                - customer_email
                 - subject
                 - message
               properties:
@@ -34299,6 +34719,41 @@ paths:
                           - 'null'
                         format: uuid
                         description: The product this conversation is about, echoed from the request.
+                      store_id:
+                        type: string
+                        format: uuid
+                        description: Marketplace key only. The seller the conversation is with.
+                      store_name:
+                        type: string
+                        description: Marketplace key only. The seller's name.
+                      marketplace:
+                        type: object
+                        description: Present on a conversation opened through a marketplace. Discloses that the marketplace can read the conversation and join it, and whether it has.
+                        properties:
+                          name:
+                            type: string
+                            description: The marketplace's name.
+                          operator_can_read:
+                            type: boolean
+                            const: true
+                          notice:
+                            type: string
+                            description: A sentence to show the shopper beside the conversation.
+                          operator_joined:
+                            type: boolean
+                          restricted:
+                            type: boolean
+                            description: When true the marketplace has paused the shopper's replies.
+                      order_help:
+                        type: object
+                        description: 'Present on a marketplace `order_inquiry` conversation: the endpoints that act on the order. A conversation never opens a return or a dispute.'
+                        properties:
+                          returns:
+                            type: string
+                          return_eligibility:
+                            type: string
+                          disputes:
+                            type: string
                   message:
                     type: object
                     properties:
@@ -34325,6 +34780,12 @@ paths:
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
           $ref: '#/components/responses/CustomerForbiddenError'
+        '404':
+          description: Marketplace key only. The seller is not active in this marketplace, or the order is not the shopper's.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           $ref: '#/components/responses/RateLimitError'
         '500':
@@ -34752,8 +35213,19 @@ paths:
         conversation is closed. Every failure (malformed, unknown, expired, rotated, closed,
         another store's) is the same `404` with no other detail; so is a body without a `token`. A body that is not a JSON object answers `400`. Internal notes and the guest's
         contact details are never returned. At most 120 reads an hour per address and 60 per token.
+
+        With a marketplace operator or marketplace key the token opens a guest conversation of that marketplace only,
+        the thread carries `marketplace`, and `seller_name` names the seller. A seller's own key never opens a marketplace
+        conversation.
       security:
         - BearerAuth: []
+      parameters:
+        - name: X-Forwarded-Shopper-Ip
+          in: header
+          required: false
+          description: The shopper's IP address, sent by a server calling with a secret key so each shopper has their own rate-limit budget. Honoured on a secret key only; without it every request on that key counts as one address.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -34855,9 +35327,17 @@ paths:
       description: |
         Posts the guest's message on the conversation the link opens. The token rules are those of
         `viewGuestThread`. A resolved conversation reopens. At most 20 replies an hour per address, 12
-        per token and 10 per conversation; past that the answer is `429`.
+        per token and 10 per conversation; past that the answer is `429`. A conversation the marketplace has
+        restricted answers `403`.
       security:
         - BearerAuth: []
+      parameters:
+        - name: X-Forwarded-Shopper-Ip
+          in: header
+          required: false
+          description: The shopper's IP address, sent by a server calling with a secret key so each shopper has their own rate-limit budget. Honoured on a secret key only; without it every request on that key counts as one address.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -34902,6 +35382,170 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '403':
+          $ref: '#/components/responses/ScopeForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/messaging/guest-thread/report:
+    post:
+      operationId: reportGuestThread
+      tags:
+        - Messaging
+      summary: Report a marketplace guest conversation from its email link
+      description: |
+        A guest reports their marketplace conversation to the marketplace, authorised by the token from the reply email
+        under the token rules of `viewGuestThread`. Available with a marketplace operator or marketplace key only. Every
+        token failure is the same `404`. At most 20 reports an hour per address and 12 per token.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: X-Forwarded-Shopper-Ip
+          in: header
+          required: false
+          description: The shopper's IP address, sent by a server calling with a secret key so each shopper has their own rate-limit budget. Honoured on a secret key only; without it every request on that key counts as one address.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - reason
+              properties:
+                token:
+                  type: string
+                  pattern: ^[0-9a-f]{64}$
+                reason:
+                  type: string
+                  enum:
+                    - spam
+                    - abuse
+                    - scam
+                    - off_platform
+                    - other
+                note:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '201':
+          description: Report recorded
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    format: uuid
+                  already_reported:
+                    type: boolean
+              example:
+                report_id: 3c9e2a71-5b0d-4f8e-9a12-6d7e8f9a0b1c
+                already_reported: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '402':
+          $ref: '#/components/responses/SubscriptionExpiredError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /v1/messaging/threads/{id}/report:
+    post:
+      operationId: reportThread
+      tags:
+        - Messaging
+      summary: Report a marketplace conversation
+      description: |
+        Reports a marketplace conversation to the marketplace that runs it, for spam, abuse, a scam or a request to deal
+        off the marketplace. Available with a marketplace operator or marketplace key only; the thread must be the
+        signed-in marketplace shopper's own (`404` otherwise). A report may name one message of the conversation. Repeating
+        an open report on the same conversation and message answers the existing report with `already_reported: true`.
+        At most 20 reports an hour per address and per shopper.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: x-auth-token
+          in: header
+          required: false
+          description: A marketplace shopper session. Provide exactly one of `x-auth-token` or `x-external-auth`.
+          schema:
+            type: string
+        - name: x-external-auth
+          in: header
+          required: false
+          description: An assertion signed with the marketplace's secret. Provide exactly one of `x-auth-token` or `x-external-auth`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  enum:
+                    - spam
+                    - abuse
+                    - scam
+                    - off_platform
+                    - other
+                note:
+                  type: string
+                  maxLength: 1000
+                message_id:
+                  type: string
+                  format: uuid
+                  description: The message being reported, when it is one message.
+      responses:
+        '201':
+          description: Report recorded
+          headers:
+            Tybrite-Environment:
+              $ref: '#/components/headers/TybriteEnvironment'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    format: uuid
+                  already_reported:
+                    type: boolean
+              example:
+                report_id: 3c9e2a71-5b0d-4f8e-9a12-6d7e8f9a0b1c
+                already_reported: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/CustomerAuthError'
         '402':
           $ref: '#/components/responses/SubscriptionExpiredError'
         '403':
@@ -35594,9 +36238,19 @@ paths:
                 error:
                   code: not_found
                   message: No order from this store carries that tracking number.
+        '422':
+          description: '`tracking_not_found` when the carrier holds no tracking for that carrier and number: a mistyped number, a parcel not yet scanned, or, on a store connected with a test carrier account, a number the test account does not supply.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: tracking_not_found
+                  message: The carrier has no tracking for that carrier and number yet. Check both, or try again once the parcel has been scanned.
         '429':
           $ref: '#/components/responses/RateLimitError'
-        '502':
+        '500':
           description: The carrier's tracking service could not be reached (`tracking_unavailable`).
           content:
             application/json:
@@ -37651,6 +38305,14 @@ paths:
         **When `window_days` is `null`** the merchant has stated no period, `eligible` is `true`, and
         `closes_at` is `null` — say returns are accepted without naming a deadline.
 
+        **Statutory right of withdrawal.** For an order shipped to the UK, the EU or the EEA, a consumer may
+        cancel within 14 days of delivery whatever shorter window the merchant sets. `closes_at` is the later of
+        the two windows and `basis` names the one that governs it (`merchant_policy` or `statutory_withdrawal`).
+        Lines the right does not cover (personalised, perishable, sealed hygiene, an excluded category, digital
+        content, services, dated tickets) stay on the merchant window and are listed in `exempt_items`; when every
+        line is excluded and the merchant window has closed, `reason` is `item_excluded`. A refused return carries
+        a `message` sentence that can be shown to the shopper. The merchant's window is never shortened by this.
+
         **Customer session required** — the order must belong to the signed-in shopper, so this can
         never be used to probe whether an arbitrary order id exists on the store.
       security:
@@ -37711,35 +38373,72 @@ paths:
                         type:
                           - string
                           - 'null'
-                        description: Why not, when `eligible` is false. `window_closed` (the period has passed), `returns_disabled` (the store does not accept returns) or `not_paid` (the order was never paid, or was cancelled). Null when eligible.
+                        description: Why not, when `eligible` is false. `window_closed` (the period has passed), `item_excluded` (the merchant window has closed and every item on the order is outside the statutory right of withdrawal), `returns_disabled` (the store does not accept returns) or `not_paid` (the order was never paid, or was cancelled). Null when eligible.
                         enum:
                           - window_closed
+                          - item_excluded
                           - returns_disabled
                           - not_paid
                           - null
+                      basis:
+                        type: string
+                        enum:
+                          - merchant_policy
+                          - statutory_withdrawal
+                        description: 'Which rule sets `closes_at`: the store''s own window, or the statutory right of withdrawal (UK, EU and EEA orders, 14 days from delivery at least) when it outlasts the store''s window.'
                       window_days:
                         type:
                           - integer
                           - 'null'
                         description: The store's return window, or null when it has stated none.
+                      statutory_days:
+                        type:
+                          - integer
+                          - 'null'
+                        description: The statutory withdrawal period that applies to this order, or null when none applies.
                       closes_at:
                         type:
                           - string
                           - 'null'
                         format: date-time
-                        description: When the window closes for THIS order, measured from delivery where the store records it and from the order date otherwise. Null when there is no window.
+                        description: 'When the window closes for THIS order: the later of the store''s window and the statutory period, measured from delivery where the store records it and from the order date otherwise. Null when there is no window, or when the statutory right is open because the order has not been delivered.'
                       days_remaining:
                         type:
                           - integer
                           - 'null'
-                        description: Whole days left, 0 once closed and null when there is no window.
+                        description: Whole days left, 0 once closed and null when there is no closing date.
+                      exempt_items:
+                        type: array
+                        description: Order lines the statutory right of withdrawal does not cover; they stay on the store's window.
+                        items:
+                          type: object
+                          required:
+                            - order_item_id
+                            - reason
+                          properties:
+                            order_item_id:
+                              type: string
+                              format: uuid
+                            reason:
+                              type: string
+                              description: Why the line is excluded, for example `personalised`, `perishable`, `hygiene_sealed`, `category`, `digital`, `code`, `service` or `event_ticket`.
+                      message:
+                        type:
+                          - string
+                          - 'null'
+                        description: A sentence that can be shown to the shopper when `eligible` is false. Null when eligible.
                     required:
                       - eligible
+                      - basis
               example:
                 data:
                   eligible: true
                   reason: null
+                  basis: merchant_policy
                   window_days: 30
+                  statutory_days: null
+                  exempt_items: []
+                  message: null
                   closes_at: '2026-09-18T10:24:00.000Z'
                   days_remaining: 12
         '400':
@@ -37968,7 +38667,8 @@ paths:
                     reason_code: damaged
                     reason_description: null
                     total_return_amount: 299
-                    refund_amount: 299
+                    refund_amount: 0
+                    estimated_refund_amount: 299
                     refund_method: null
                     created_at: '2026-06-20T13:49:26.887932+00:00'
                     processed_at: null
@@ -38190,7 +38890,8 @@ paths:
                   reason_code: damaged
                   reason_description: null
                   total_return_amount: 299
-                  refund_amount: 299
+                  refund_amount: 0
+                  estimated_refund_amount: 299
                   refund_method: null
                   created_at: '2026-06-20T13:49:26.887932+00:00'
                   processed_at: null
@@ -38325,7 +39026,8 @@ paths:
                   reason_code: damaged
                   reason_description: null
                   total_return_amount: 299
-                  refund_amount: 299
+                  refund_amount: 0
+                  estimated_refund_amount: 299
                   refund_method: null
                   created_at: '2026-06-20T13:49:26.887932+00:00'
                   processed_at: null
@@ -47524,6 +48226,10 @@ components:
                   - number
                   - 'null'
                 example: 10
+              amount:
+                type: number
+                description: What the offer took off this basket in total. An offer applies once to the basket and is shared across the sellers it covers.
+                example: 4.2
               starts_at:
                 type:
                   - string
@@ -47566,6 +48272,41 @@ components:
               merchant_store_id:
                 type: string
                 format: uuid
+              merchandise_subtotal:
+                type: number
+                description: This merchant's items before any discount.
+                example: 84.2
+              discounts:
+                type: array
+                description: Each discount on this merchant's items. A merchant's own promotions apply automatically; a marketplace offer appears with its share of the basket-wide amount.
+                items:
+                  type: object
+                  required:
+                    - promotion_id
+                    - amount
+                    - funded_by
+                  properties:
+                    promotion_id:
+                      type: string
+                      format: uuid
+                    name:
+                      type:
+                        - string
+                        - 'null'
+                      example: 'Flash Friday: 10% off everything'
+                    amount:
+                      type: number
+                      example: 4.2
+                    funded_by:
+                      type: string
+                      enum:
+                        - seller
+                        - marketplace
+                      description: Who pays for the discount, the merchant or the marketplace.
+              gift_card_amount:
+                type: number
+                description: Amount redeemed from a gift card against this merchant's items.
+                example: 0
               merchandise_total:
                 type: number
                 description: This merchant's items after every discount.
@@ -52271,8 +53012,17 @@ components:
         refund_amount:
           type: number
           format: float
-          description: Amount refunded so far. Zero until the merchant processes the return.
+          description: Money actually refunded. Zero until the merchant processes the return.
           example: 0
+        estimated_refund_amount:
+          type:
+            - number
+            - 'null'
+          format: float
+          description: |
+            What the return is expected to refund, while it is `pending` or `approved`. Not a commitment: the merchant may
+            approve fewer lines. `null` once the return is processed (see `refund_amount`), rejected or cancelled.
+          example: 129.99
         refund_method:
           type:
             - string

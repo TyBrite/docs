@@ -1227,6 +1227,59 @@ const copy = await client.customers.downloadCustomerDataExport({
 }
 ```
 
+## Changing the email address
+
+A shopper changes the sign-in address of a store-managed account in two calls that prove control of the new address with a six-digit code. The account keeps its current address until the code is confirmed. Both calls are customer-self: the publishable key plus the shopper's `xAuthToken`, which must resolve to the customer in `id` (otherwise `403`).
+
+An account signed in through the store's own identity system (`xExternalAuth` or `xIdpToken`) answers `409 email_managed_externally` on both calls, because the store's identity system owns that address.
+
+### `requestCustomerEmailChange`
+
+Sends a code to the new address and a notice that a change was requested to the current address. The code is valid for 15 minutes, can be tried 5 times and works once; a new request replaces the pending one. The emails carry the store's name and branding.
+
+```typescript
+const pending = await client.customers.requestCustomerEmailChange({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  xAuthToken: shopperToken,
+  requestBody: { email: 'john.new@example.com' },
+});
+```
+
+```json Response
+{
+  "status": "code_sent",
+  "email": "john.new@example.com",
+  "expires_in": 900
+}
+```
+
+`409 conflict` is returned when the new address is already the account's address. `429` is returned when a code was already sent to that address in the last minute, or the shopper has made 5 requests in an hour.
+
+### `confirmCustomerEmailChange`
+
+Checks the code and changes the account's sign-in address and customer record together. The address is read from the pending request, never from this call. The previous address receives a notice.
+
+```typescript
+const changed = await client.customers.confirmCustomerEmailChange({
+  id: '2f9c1a7e-5b3d-4e8a-9c01-7d6e5f4a3b21',
+  xAuthToken: shopperToken,
+  requestBody: { code: '482913' },
+});
+```
+
+```json Response
+{
+  "status": "email_changed",
+  "email": "john.new@example.com"
+}
+```
+
+| Code | Meaning |
+|------|---------|
+| `400` | `invalid_code` (wrong, already used, or no change pending) or `code_expired`. |
+| `409` | `email_taken` (another customer of the store uses the address) or `email_managed_externally`. |
+| `429` | `too_many_attempts` after 5 wrong codes, which locks the code until a new one is requested; or more than 10 confirmations by the shopper in an hour. |
+
 ## Customer Utilities
 
 <Tip>
@@ -1271,7 +1324,8 @@ const profile = await client.customers.getCustomer({
 | `402` | `subscription_expired` — the store's subscription is not active |
 | `403` | Forbidden — the customer token does not match the `customer_id` in the path |
 | `404` | Customer not found, or a data request that is not the shopper's |
-| `409` | Duplicate email at this store (on `createCustomer`, or an `email` change on `updateCustomer`) |
+| `409` | Duplicate email at this store (on `createCustomer`, or an `email` change on `updateCustomer`); `email_taken` or `email_managed_externally` on the email-change calls |
+| `429` | Rate limit exceeded; on the email-change calls, a code requested too soon or too often, or too many wrong codes |
 
 ## Data requests
 
