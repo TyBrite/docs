@@ -50008,6 +50008,12 @@ components:
             type: string
             format: uuid
           description: The product ids (`scope_type` `products`) or category and subcategory ids (`scope_type` `categories`) the promotion covers. Empty when `scope_type` is `all`.
+        excluded_product_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: 'Products this promotion never discounts, whatever its `scope_type`. Empty (the default) excludes nothing. The calculate endpoints leave an excluded product out of the covered lines: no discount comes off it, `min_purchase` is measured on the lines that remain (unless `min_purchase_basis` is `order`), and a cart holding only excluded products is not eligible. A `bundle` or `bogo` promotion that names an excluded product as one it discounts is not eligible.'
         min_purchase_basis:
           type: string
           enum:

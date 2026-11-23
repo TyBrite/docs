@@ -55,6 +55,7 @@ console.log(`Available promotions: ${promotions.length}`);
       "apply_to_days": null,
       "scope_type": "all",
       "scope_ids": [],
+      "excluded_product_ids": [],
       "min_purchase_basis": "covered",
       "fixed_applies": "order"
     },
@@ -71,6 +72,7 @@ console.log(`Available promotions: ${promotions.length}`);
       "time_zone": "America/New_York",
       "scope_type": "categories",
       "scope_ids": ["5b0e7c1a-3d24-4f8e-9a61-2c4d8e7f0b13"],
+      "excluded_product_ids": [],
       "min_purchase_basis": "order",
       "fixed_applies": "order"
     }
@@ -80,6 +82,8 @@ console.log(`Available promotions: ${promotions.length}`);
 ```
 
 A `discount` (percentage) or `fixed` promotion with a `scope_type` of `products` or `categories` takes its discount only from the cart lines it covers, and a cart with none of them is not eligible. `min_purchase_basis` sets what `min_purchase` is measured on: `covered` (the covered lines) or `order` (the whole cart). A scoped `fixed` promotion with `fixed_applies` `item` takes `value` once per covered unit, up to the covered lines' subtotal; with `order` it takes `value` once.
+
+`excluded_product_ids` lists products a promotion never discounts, whatever its `scope_type`; empty excludes nothing. The calculate methods leave an excluded product out of the covered lines: no discount comes off it, `min_purchase` is measured on the lines that remain (unless `min_purchase_basis` is `order`), and a cart holding only excluded products is not eligible. A `bundle` or `bogo` promotion whose discounted product is excluded is not eligible.
 
 **Filter: `cartTotal`**
 Providing a `cartTotal` allows the engine to pre-filter promotions that the customer is actually eligible for based on their current shopping bag value (compared against each promotion's `min_purchase`).
@@ -120,6 +124,7 @@ if (promo.image) {
   "apply_to_days": null,
   "scope_type": "all",
   "scope_ids": [],
+  "excluded_product_ids": [],
   "min_purchase_basis": "covered",
   "fixed_applies": "order",
   "image": "https://cdn.example.com/promotions/spring-sale.jpg",
