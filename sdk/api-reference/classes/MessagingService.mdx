@@ -498,8 +498,9 @@ unsubscribe();
 | :--- | :--- | :--- |
 | `apiKey` | `string` | Your publishable key (`tybrite_pk_*`). |
 | `threadId` | `string` | The conversation to subscribe to. |
-| `authToken` | `string` | The signed-in customer's session token. Supply this **or** `externalAuth`. |
-| `externalAuth` | `string` | A signed bring-your-own-auth identity assertion. Supply this **or** `authToken`. |
+| `authToken` | `string` | The signed-in customer's session token. Supply exactly one of `authToken`, `externalAuth` or `idpToken`. |
+| `externalAuth` | `string` | A signed bring-your-own-auth identity assertion. Supply exactly one of `authToken`, `externalAuth` or `idpToken`. |
+| `idpToken` | `string` | A raw token from the store's own identity provider, verified by the store's configured verifier (the `x-idp-token` credential). Supply exactly one of `authToken`, `externalAuth` or `idpToken`. |
 | `onMessage` | `(message) => void` | Called with each new message as it arrives. |
 | `onPresence` | `({ type, participant, participants }) => void` | Optional — called when a participant joins (`type: 'join'`) or leaves (`type: 'leave'`) **this** conversation. `participants` is the current connected set (each `{ pid, role }`). Use it for a "seller is online" indicator. |
 | `onTyping` | `({ participant, isTyping }) => void` | Optional — the other participant started/stopped typing. Ephemeral (never stored). |
